@@ -40,13 +40,18 @@ export function RightPanel() {
               Select a workspace to browse files
             </span>
           </div>
-        ) : rightPanelMode === 'files' ? (
-          <FileTree worktreePath={workspace.worktreePath} />
         ) : (
-          <ChangedFiles
-            worktreePath={workspace.worktreePath}
-            workspaceId={workspace.id}
-          />
+          <>
+            <div style={{ display: rightPanelMode === 'files' ? 'contents' : 'none' }}>
+              <FileTree worktreePath={workspace.worktreePath} />
+            </div>
+            <div style={{ display: rightPanelMode === 'changes' ? 'contents' : 'none' }}>
+              <ChangedFiles
+                worktreePath={workspace.worktreePath}
+                workspaceId={workspace.id}
+              />
+            </div>
+          </>
         )}
       </div>
     </div>
