@@ -87,6 +87,21 @@ export class GitService {
     return worktrees
   }
 
+  /** Sanitize a string into a valid git branch name */
+  static sanitizeBranchName(name: string): string {
+    return name
+      .trim()
+      .replace(/\s+/g, '-')       // spaces → dashes
+      .replace(/\.{2,}/g, '-')    // consecutive dots (..)
+      .replace(/[\x00-\x1f\x7f~^:?*[\]\\]/g, '-') // control chars & git-illegal chars
+      .replace(/\/{2,}/g, '/')    // collapse consecutive slashes
+      .replace(/\/\./g, '/-')     // no component starting with dot
+      .replace(/@\{/g, '-')       // no @{
+      .replace(/\.lock(\/|$)/g, '-lock$1') // no .lock component
+      .replace(/^[.\-/]+/, '')    // no leading dot, dash, or slash
+      .replace(/[.\-/]+$/, '')    // no trailing dot, dash, or slash
+  }
+
   static async createWorktree(
     repoPath: string,
     name: string,
@@ -94,6 +109,9 @@ export class GitService {
     newBranch: boolean,
     force = false
   ): Promise<string> {
+    branch = GitService.sanitizeBranchName(branch)
+    if (!branch) throw new Error('Branch name is empty after sanitization')
+
     const parentDir = dirname(repoPath)
     const repoName = basename(repoPath)
     const worktreePath = resolve(parentDir, `${repoName}-ws-${name}`)

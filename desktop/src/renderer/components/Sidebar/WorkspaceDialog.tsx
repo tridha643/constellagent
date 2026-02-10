@@ -1,6 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { Project } from '../../store/types'
 import styles from './WorkspaceDialog.module.css'
+
+/** Live-sanitize a string into a valid git branch name as the user types */
+function toBranchName(input: string): string {
+  return input
+    .replace(/\s+/g, '-')
+    .replace(/[\x00-\x1f\x7f~^:?*[\]\\]/g, '')
+    .replace(/\.{2,}/g, '.')
+    .replace(/\/{2,}/g, '/')
+}
 
 interface Props {
   project: Project
@@ -84,8 +93,8 @@ export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
           <input
             className={styles.input}
             value={newBranchName}
-            onChange={(e) => setNewBranchName(e.target.value)}
-            placeholder={name || 'branch-name'}
+            onChange={(e) => setNewBranchName(toBranchName(e.target.value))}
+            placeholder={toBranchName(name) || 'branch-name'}
           />
         ) : (
           <div className={styles.branchInputRow} ref={pickerRef}>
