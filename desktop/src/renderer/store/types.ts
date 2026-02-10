@@ -1,3 +1,5 @@
+import type { PrInfo } from '@shared/github-types'
+
 export interface StartupCommand {
   name: string
   command: string
@@ -97,6 +99,8 @@ export interface AppState {
   quickOpenVisible: boolean
   unreadWorkspaceIds: Set<string>
   activeClaudeWorkspaceIds: Set<string>
+  prStatusMap: Map<string, PrInfo | null>
+  ghAvailability: Map<string, boolean>
 
   // Actions
   addProject: (project: Project) => void
@@ -144,6 +148,10 @@ export interface AppState {
 
   // Claude activity actions
   setActiveClaudeWorkspaces: (workspaceIds: string[]) => void
+
+  // PR status actions
+  setPrStatuses: (projectId: string, statuses: Record<string, PrInfo | null>) => void
+  setGhAvailability: (projectId: string, available: boolean) => void
 
   // Automation actions
   addAutomation: (automation: Automation) => void

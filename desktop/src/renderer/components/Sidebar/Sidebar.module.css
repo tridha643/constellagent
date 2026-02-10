@@ -261,6 +261,39 @@
   margin-top: 1px;
 }
 
+/* ── PR Status (inline with branch meta) ── */
+
+.prInline {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.prInline:hover {
+  color: var(--text-secondary);
+}
+
+
+.prNumber {
+  opacity: 0.8;
+}
+
+/* PR state colors — applies to icon (currentColor) and number */
+.pr_open {
+  color: var(--accent-green);
+}
+
+.pr_merged {
+  color: var(--accent-purple);
+}
+
+.pr_closed {
+  color: var(--accent-red);
+}
+
+
 .branchBadge {
   font-size: var(--text-xs);
   color: var(--text-tertiary);

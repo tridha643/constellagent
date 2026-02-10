@@ -22,6 +22,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   quickOpenVisible: false,
   unreadWorkspaceIds: new Set<string>(),
   activeClaudeWorkspaceIds: new Set<string>(),
+  prStatusMap: new Map(),
+  ghAvailability: new Map(),
 
   addProject: (project) =>
     set((s) => ({ projects: [...s.projects, project] })),
@@ -338,6 +340,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setActiveClaudeWorkspaces: (workspaceIds) =>
     set(() => ({ activeClaudeWorkspaceIds: new Set(workspaceIds) })),
+
+  setPrStatuses: (projectId, statuses) =>
+    set((s) => {
+      const newMap = new Map(s.prStatusMap)
+      for (const [branch, info] of Object.entries(statuses)) {
+        newMap.set(`${projectId}:${branch}`, info)
+      }
+      return { prStatusMap: newMap }
+    }),
+
+  setGhAvailability: (projectId, available) =>
+    set((s) => {
+      const newMap = new Map(s.ghAvailability)
+      newMap.set(projectId, available)
+      return { ghAvailability: newMap }
+    }),
 
   addAutomation: (automation) =>
     set((s) => ({ automations: [...s.automations, automation] })),

@@ -5,6 +5,7 @@ import { watch, type FSWatcher } from 'fs'
 import { IPC } from '../shared/ipc-channels'
 import { PtyManager } from './pty-manager'
 import { GitService } from './git-service'
+import { GithubService } from './github-service'
 import { FileService } from './file-service'
 import { AutomationScheduler, type AutomationConfig } from './automation-scheduler'
 import { trustPathForClaude, loadClaudeSettings, saveClaudeSettings, loadJsonFile, saveJsonFile } from './claude-config'
@@ -59,6 +60,11 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.GIT_COMMIT, async (_e, worktreePath: string, message: string) => {
     return GitService.commit(worktreePath, message)
+  })
+
+  // ── GitHub handlers ──
+  ipcMain.handle(IPC.GITHUB_GET_PR_STATUSES, async (_e, repoPath: string, branches: string[]) => {
+    return GithubService.getPrStatuses(repoPath, branches)
   })
 
   // ── PTY handlers ──

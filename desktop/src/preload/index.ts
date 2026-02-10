@@ -126,6 +126,11 @@ const api = {
     },
   },
 
+  github: {
+    getPrStatuses: (repoPath: string, branches: string[]) =>
+      ipcRenderer.invoke(IPC.GITHUB_GET_PR_STATUSES, repoPath, branches),
+  },
+
   state: {
     save: (data: unknown) =>
       ipcRenderer.invoke(IPC.STATE_SAVE, data),

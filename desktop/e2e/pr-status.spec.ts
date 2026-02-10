@@ -1,0 +1,280 @@
+import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test'
+import { resolve, join } from 'path'
+import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync } from 'fs'
+import { execSync } from 'child_process'
+
+const appPath = resolve(__dirname, '../out/main/index.js')
+
+async function launchApp(): Promise<{ app: ElectronApplication; window: Page }> {
+  const app = await electron.launch({ args: [appPath], env: { ...process.env, CI_TEST: '1' } })
+  const window = await app.firstWindow()
+  await window.waitForLoadState('domcontentloaded')
+  await window.waitForSelector('#root', { timeout: 10000 })
+  await window.waitForTimeout(1500)
+  return { app, window }
+}
+
+function createTestRepo(name: string): string {
+  const repoPath = join('/tmp', `test-repo-${name}-${Date.now()}`)
+  mkdirSync(repoPath, { recursive: true })
+  execSync('git init', { cwd: repoPath })
+  execSync('git checkout -b main', { cwd: repoPath })
+  writeFileSync(join(repoPath, 'README.md'), '# Test Repo\n')
+  execSync('git add .', { cwd: repoPath })
+  execSync('git commit -m "initial commit"', { cwd: repoPath })
+  return repoPath
+}
+
+function cleanupTestRepo(repoPath: string): void {
+  try {
+    if (existsSync(repoPath)) {
+      rmSync(repoPath, { recursive: true, force: true })
+    }
+    const parentDir = resolve(repoPath, '..')
+    const repoName = repoPath.split('/').pop()
+    if (repoName) {
+      const entries = readdirSync(parentDir)
+      for (const entry of entries) {
+        if (entry.startsWith(`${repoName}-ws-`)) {
+          rmSync(join(parentDir, entry), { recursive: true, force: true })
+        }
+      }
+    }
+  } catch {
+    // best effort
+  }
+}
+
+test.describe('PR status indicators', () => {
+  test('getPrStatuses returns unavailable for local-only repo', async () => {
+    const repoPath = createTestRepo('pr-local')
+    const { app, window } = await launchApp()
+
+    try {
+      // Local test repo has no GitHub remote — should gracefully return unavailable
+      const result = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.github.getPrStatuses(repo, ['main'])
+      }, repoPath)
+
+      expect(result.available).toBe(false)
+      // Should be one of: gh_not_installed or not_github_repo
+      expect(['gh_not_installed', 'not_github_repo']).toContain(result.error)
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('store setPrStatuses populates prStatusMap', async () => {
+    const { app, window } = await launchApp()
+
+    try {
+      const prNumber = await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        store.setPrStatuses('proj-1', {
+          'feature-branch': {
+            number: 42,
+            state: 'open',
+            title: 'Add feature',
+            url: 'https://github.com/test/repo/pull/42',
+            checkStatus: 'passing',
+            updatedAt: new Date().toISOString(),
+          },
+        })
+
+        const updated = (window as any).__store.getState()
+        const pr = updated.prStatusMap.get('proj-1:feature-branch')
+        return pr?.number ?? null
+      })
+
+      expect(prNumber).toBe(42)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('store setGhAvailability tracks per-project availability', async () => {
+    const { app, window } = await launchApp()
+
+    try {
+      const result = await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        store.setGhAvailability('proj-1', true)
+        store.setGhAvailability('proj-2', false)
+
+        const updated = (window as any).__store.getState()
+        return {
+          proj1: updated.ghAvailability.get('proj-1'),
+          proj2: updated.ghAvailability.get('proj-2'),
+        }
+      })
+
+      expect(result.proj1).toBe(true)
+      expect(result.proj2).toBe(false)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('PR badge renders in sidebar when store has PR data', async () => {
+    const repoPath = createTestRepo('pr-badge')
+    const { app, window } = await launchApp()
+
+    try {
+      // Set up project and workspace first
+      await window.evaluate(async (repo: string) => {
+        const store = (window as any).__store.getState()
+        store.hydrateState({ projects: [], workspaces: [] })
+
+        const projectId = 'test-proj-id'
+        store.addProject({ id: projectId, name: 'pr-test-project', repoPath: repo })
+
+        const worktreePath = await (window as any).api.git.createWorktree(repo, 'pr-ws', 'feature-branch', true)
+        store.addWorkspace({
+          id: crypto.randomUUID(),
+          name: 'my-feature',
+          branch: 'feature-branch',
+          worktreePath,
+          projectId,
+        })
+      }, repoPath)
+
+      // Wait for the poller's initial run (2s delay + execution) to finish
+      // so it doesn't overwrite our injected state
+      await window.waitForTimeout(4000)
+
+      // Now inject PR data after the poller has settled
+      await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        store.setGhAvailability('test-proj-id', true)
+        store.setPrStatuses('test-proj-id', {
+          'feature-branch': {
+            number: 99,
+            state: 'open',
+            title: 'My cool PR',
+            url: 'https://github.com/test/repo/pull/99',
+            checkStatus: 'passing',
+            updatedAt: new Date().toISOString(),
+          },
+        })
+      })
+
+      await window.waitForTimeout(500)
+
+      // PR badge should be visible in sidebar with #99
+      const prBadge = window.locator('[class*="prInline"]')
+      await expect(prBadge).toBeVisible({ timeout: 3000 })
+
+      const prText = await prBadge.textContent()
+      expect(prText).toContain('#99')
+
+      // Check indicator shows (open + passing = ✓)
+      const checkMark = window.locator('[class*="prCheck"]')
+      await expect(checkMark).toBeVisible()
+      const checkText = await checkMark.textContent()
+      expect(checkText).toBe('✓')
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('PR badge does not render when ghAvailability is false', async () => {
+    const repoPath = createTestRepo('pr-no-gh')
+    const { app, window } = await launchApp()
+
+    try {
+      await window.evaluate(async (repo: string) => {
+        const store = (window as any).__store.getState()
+        store.hydrateState({ projects: [], workspaces: [] })
+
+        const projectId = 'test-proj-nope'
+        store.addProject({ id: projectId, name: 'no-gh-project', repoPath: repo })
+        store.addWorkspace({
+          id: crypto.randomUUID(),
+          name: 'ws-no-gh',
+          branch: 'some-branch',
+          worktreePath: repo,
+          projectId,
+        })
+
+        // Set gh as unavailable — PR badge should not render
+        store.setGhAvailability(projectId, false)
+        store.setPrStatuses(projectId, {
+          'some-branch': {
+            number: 50,
+            state: 'open',
+            title: 'Should not show',
+            url: 'https://github.com/test/repo/pull/50',
+            checkStatus: 'passing',
+            updatedAt: new Date().toISOString(),
+          },
+        })
+      }, repoPath)
+
+      await window.waitForTimeout(500)
+
+      const prBadge = window.locator('[class*="prInline"]')
+      await expect(prBadge).not.toBeVisible()
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('merged PR shows without check indicator', async () => {
+    const repoPath = createTestRepo('pr-merged')
+    const { app, window } = await launchApp()
+
+    try {
+      // Set up project and workspace
+      await window.evaluate(async (repo: string) => {
+        const store = (window as any).__store.getState()
+        store.hydrateState({ projects: [], workspaces: [] })
+
+        const projectId = 'test-proj-merged'
+        store.addProject({ id: projectId, name: 'merged-project', repoPath: repo })
+        store.addWorkspace({
+          id: crypto.randomUUID(),
+          name: 'merged-ws',
+          branch: 'merged-branch',
+          worktreePath: repo,
+          projectId,
+        })
+      }, repoPath)
+
+      // Wait for poller to settle before injecting PR data
+      await window.waitForTimeout(4000)
+
+      await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        store.setGhAvailability('test-proj-merged', true)
+        store.setPrStatuses('test-proj-merged', {
+          'merged-branch': {
+            number: 77,
+            state: 'merged',
+            title: 'Already merged',
+            url: 'https://github.com/test/repo/pull/77',
+            checkStatus: 'passing',
+            updatedAt: new Date().toISOString(),
+          },
+        })
+      })
+
+      await window.waitForTimeout(500)
+
+      // PR number should show
+      const prBadge = window.locator('[class*="prInline"]')
+      await expect(prBadge).toBeVisible({ timeout: 3000 })
+      const prText = await prBadge.textContent()
+      expect(prText).toContain('#77')
+
+      // Check indicator should NOT show for merged PRs
+      const checkMark = window.locator('[class*="prCheck"]')
+      await expect(checkMark).not.toBeVisible()
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+})

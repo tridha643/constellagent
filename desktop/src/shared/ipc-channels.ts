@@ -54,6 +54,9 @@ export const IPC = {
   AUTOMATION_STOP: 'automation:stop',
   AUTOMATION_RUN_STARTED: 'automation:run-started',
 
+  // GitHub operations
+  GITHUB_GET_PR_STATUSES: 'github:get-pr-statuses',
+
   // State persistence
   STATE_SAVE: 'state:save',
   STATE_LOAD: 'state:load',

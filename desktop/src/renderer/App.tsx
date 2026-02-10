@@ -13,10 +13,12 @@ import { AutomationsPanel } from './components/Automations/AutomationsPanel'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
 import { ToastContainer } from './components/Toast/Toast'
 import { useShortcuts } from './hooks/useShortcuts'
+import { usePrStatusPoller } from './hooks/usePrStatusPoller'
 import styles from './App.module.css'
 
 export function App() {
   useShortcuts()
+  usePrStatusPoller()
 
   // Listen for workspace notification signals from Claude Code hooks
   useEffect(() => {
