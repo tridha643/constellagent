@@ -43,12 +43,13 @@ export function RightPanel() {
         ) : (
           <>
             <div style={{ display: rightPanelMode === 'files' ? 'contents' : 'none' }}>
-              <FileTree worktreePath={workspace.worktreePath} />
+              <FileTree worktreePath={workspace.worktreePath} isActive={rightPanelMode === 'files'} />
             </div>
             <div style={{ display: rightPanelMode === 'changes' ? 'contents' : 'none' }}>
               <ChangedFiles
                 worktreePath={workspace.worktreePath}
                 workspaceId={workspace.id}
+                isActive={rightPanelMode === 'changes'}
               />
             </div>
           </>

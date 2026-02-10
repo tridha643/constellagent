@@ -12,6 +12,7 @@ interface FileStatus {
 interface Props {
   worktreePath: string
   workspaceId: string
+  isActive?: boolean
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -22,7 +23,7 @@ const STATUS_LABELS: Record<string, string> = {
   untracked: 'U',
 }
 
-export function ChangedFiles({ worktreePath, workspaceId }: Props) {
+export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const [files, setFiles] = useState<FileStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -62,6 +63,11 @@ export function ChangedFiles({ worktreePath, workspaceId }: Props) {
       window.api.fs.unwatchDir(worktreePath)
     }
   }, [worktreePath, refresh])
+
+  // Re-fetch when tab becomes visible (git ops only touch .git/ which the watcher ignores)
+  useEffect(() => {
+    if (isActive) refresh()
+  }, [isActive, refresh])
 
   const staged = files.filter((f) => f.staged)
   const unstaged = files.filter((f) => !f.staged)

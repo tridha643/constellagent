@@ -13,6 +13,7 @@ interface FileNode {
 
 interface Props {
   worktreePath: string
+  isActive?: boolean
 }
 
 function basename(p: string) {
@@ -98,7 +99,7 @@ function Node({ node, style }: NodeRendererProps<FileNode>) {
   )
 }
 
-export function FileTree({ worktreePath }: Props) {
+export function FileTree({ worktreePath, isActive }: Props) {
   const [tree, setTree] = useState<FileNode[] | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [height, setHeight] = useState(400)
@@ -132,6 +133,11 @@ export function FileTree({ worktreePath }: Props) {
       window.api.fs.unwatchDir(worktreePath)
     }
   }, [worktreePath, fetchTree])
+
+  // Re-fetch when tab becomes visible (git ops only touch .git/ which the watcher ignores)
+  useEffect(() => {
+    if (isActive) fetchTree()
+  }, [isActive, fetchTree])
 
   // Measure container height for virtualization
   useEffect(() => {
