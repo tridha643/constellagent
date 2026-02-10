@@ -36,6 +36,10 @@ const api = {
       ipcRenderer.send(IPC.PTY_RESIZE, ptyId, cols, rows),
     destroy: (ptyId: string) =>
       ipcRenderer.send(IPC.PTY_DESTROY, ptyId),
+    list: () =>
+      ipcRenderer.invoke(IPC.PTY_LIST) as Promise<string[]>,
+    reattach: (ptyId: string) =>
+      ipcRenderer.invoke(IPC.PTY_REATTACH, ptyId) as Promise<boolean>,
     onData: (ptyId: string, callback: (data: string) => void) => {
       const channel = `${IPC.PTY_DATA}:${ptyId}`
       const listener = (_event: Electron.IpcRendererEvent, data: string) => callback(data)

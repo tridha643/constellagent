@@ -162,7 +162,9 @@ export interface AppState {
 export interface PersistedState {
   projects: Project[]
   workspaces: Workspace[]
+  tabs?: Tab[]
   automations?: Automation[]
   activeWorkspaceId?: string | null
+  activeTabId?: string | null
   settings?: Settings
 }

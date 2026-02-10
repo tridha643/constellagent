@@ -40,8 +40,8 @@ export class PtyManager {
 
     let pendingWrite = initialWrite
     proc.onData((data) => {
-      if (!webContents.isDestroyed()) {
-        webContents.send(`${IPC.PTY_DATA}:${id}`, data)
+      if (!instance.webContents.isDestroyed()) {
+        instance.webContents.send(`${IPC.PTY_DATA}:${id}`, data)
       }
       // Write initial command on first output (shell is ready)
       if (pendingWrite) {
@@ -81,6 +81,19 @@ export class PtyManager {
       instance.process.kill()
       this.ptys.delete(ptyId)
     }
+  }
+
+  /** Return IDs of all live PTY processes */
+  list(): string[] {
+    return Array.from(this.ptys.keys())
+  }
+
+  /** Update the webContents reference for an existing PTY (e.g. after renderer reload) */
+  reattach(ptyId: string, webContents: WebContents): boolean {
+    const instance = this.ptys.get(ptyId)
+    if (!instance) return false
+    instance.webContents = webContents
+    return true
   }
 
   destroyAll(): void {

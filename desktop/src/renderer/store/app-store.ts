@@ -388,11 +388,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     const activeWorkspaceId = settings.restoreWorkspace
       ? ((saved && workspaces.some((w) => w.id === saved) ? saved : workspaces[0]?.id) ?? null)
       : null
+    // Tabs will be reconciled with live PTYs asynchronously after set
+    const tabs = data.tabs ?? []
+    const activeTabId = data.activeTabId ?? null
     set({
       projects: data.projects ?? [],
       workspaces,
+      tabs,
       automations: data.automations ?? [],
       activeWorkspaceId,
+      activeTabId,
       settings,
     })
   },
@@ -415,8 +420,10 @@ function getPersistedSlice(state: AppState): PersistedState {
   return {
     projects: state.projects,
     workspaces: state.workspaces,
+    tabs: state.tabs,
     automations: state.automations,
     activeWorkspaceId: state.activeWorkspaceId,
+    activeTabId: state.activeTabId,
     settings: state.settings,
   }
 }
@@ -435,6 +442,8 @@ useAppStore.subscribe((state, prevState) => {
   if (
     state.projects !== prevState.projects ||
     state.workspaces !== prevState.workspaces ||
+    state.tabs !== prevState.tabs ||
+    state.activeTabId !== prevState.activeTabId ||
     state.automations !== prevState.automations ||
     state.activeWorkspaceId !== prevState.activeWorkspaceId ||
     state.settings !== prevState.settings
@@ -452,6 +461,39 @@ export async function hydrateFromDisk(): Promise<void> {
     }
   } catch (err) {
     console.error('Failed to load persisted state:', err)
+  }
+
+  // Reconcile persisted terminal tabs against live PTY processes
+  try {
+    const livePtyIds = new Set(await window.api.pty.list())
+    const store = useAppStore.getState()
+    const tabs = store.tabs
+
+    if (tabs.length > 0 && livePtyIds.size > 0) {
+      // Reattach surviving terminal tabs to the new webContents
+      const reattachPromises: Promise<boolean>[] = []
+      for (const tab of tabs) {
+        if (tab.type === 'terminal' && livePtyIds.has(tab.ptyId)) {
+          reattachPromises.push(window.api.pty.reattach(tab.ptyId))
+        }
+      }
+      await Promise.all(reattachPromises)
+    }
+
+    // Drop terminal tabs whose PTY is no longer alive
+    const deadTabs = tabs.filter(
+      (t) => t.type === 'terminal' && !livePtyIds.has(t.ptyId)
+    )
+    if (deadTabs.length > 0) {
+      const deadIds = new Set(deadTabs.map((t) => t.id))
+      const remainingTabs = tabs.filter((t) => !deadIds.has(t.id))
+      const activeTabId = store.activeTabId && deadIds.has(store.activeTabId)
+        ? (remainingTabs.find((t) => t.workspaceId === store.activeWorkspaceId)?.id ?? null)
+        : store.activeTabId
+      useAppStore.setState({ tabs: remainingTabs, activeTabId })
+    }
+  } catch (err) {
+    console.error('Failed to reconcile PTY tabs:', err)
   }
 
   // Schedule all enabled automations on startup

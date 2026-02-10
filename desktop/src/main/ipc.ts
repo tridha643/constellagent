@@ -80,6 +80,16 @@ export function registerIpcHandlers(): void {
     ptyManager.destroy(ptyId)
   })
 
+  ipcMain.handle(IPC.PTY_LIST, async () => {
+    return ptyManager.list()
+  })
+
+  ipcMain.handle(IPC.PTY_REATTACH, async (_e, ptyId: string) => {
+    const win = BrowserWindow.fromWebContents(_e.sender)
+    if (!win) throw new Error('No window found')
+    return ptyManager.reattach(ptyId, win.webContents)
+  })
+
   // ── File handlers ──
   ipcMain.handle(IPC.FS_GET_TREE, async (_e, dirPath: string) => {
     return FileService.getTree(dirPath)
