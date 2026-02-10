@@ -102,11 +102,20 @@ export class GitService {
       .replace(/[.\-/]+$/, '')    // no trailing dot, dash, or slash
   }
 
+  static async getDefaultBranch(repoPath: string): Promise<string> {
+    // Sync origin/HEAD with what the remote reports as default
+    await git(['remote', 'set-head', 'origin', '--auto'], repoPath)
+    const ref = await git(['symbolic-ref', 'refs/remotes/origin/HEAD'], repoPath)
+    // "refs/remotes/origin/main" → "origin/main"
+    return ref.replace('refs/remotes/', '')
+  }
+
   static async createWorktree(
     repoPath: string,
     name: string,
     branch: string,
     newBranch: boolean,
+    baseBranch?: string,
     force = false
   ): Promise<string> {
     branch = GitService.sanitizeBranchName(branch)
@@ -118,6 +127,14 @@ export class GitService {
 
     // Clean up stale worktree refs
     await git(['worktree', 'prune'], repoPath).catch(() => {})
+
+    // Fetch remote refs so worktree branches from latest state
+    await git(['fetch', '--prune'], repoPath).catch(() => {})
+
+    // Auto-detect base branch when creating a new branch without explicit base
+    if (newBranch && !baseBranch) {
+      baseBranch = await GitService.getDefaultBranch(repoPath).catch(() => undefined)
+    }
 
     if (existsSync(worktreePath)) {
       if (!force) {
@@ -133,11 +150,10 @@ export class GitService {
     const args = ['worktree', 'add']
     if (force) args.push('--force')
     if (newBranch && !branchExists) {
-      args.push('-b', branch)
-    }
-    args.push(worktreePath)
-    if (!newBranch || branchExists) {
-      args.push(branch)
+      args.push('-b', branch, worktreePath)
+      if (baseBranch) args.push(baseBranch)
+    } else {
+      args.push(worktreePath, branch)
     }
 
     try {

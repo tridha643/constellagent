@@ -24,8 +24,8 @@ export function registerIpcHandlers(): void {
     return GitService.listWorktrees(repoPath)
   })
 
-  ipcMain.handle(IPC.GIT_CREATE_WORKTREE, async (_e, repoPath: string, name: string, branch: string, newBranch: boolean, force?: boolean) => {
-    return GitService.createWorktree(repoPath, name, branch, newBranch, force)
+  ipcMain.handle(IPC.GIT_CREATE_WORKTREE, async (_e, repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean) => {
+    return GitService.createWorktree(repoPath, name, branch, newBranch, baseBranch, force)
   })
 
   ipcMain.handle(IPC.GIT_REMOVE_WORKTREE, async (_e, repoPath: string, worktreePath: string) => {
@@ -66,6 +66,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.GIT_GET_CURRENT_BRANCH, async (_e, worktreePath: string) => {
     return GitService.getCurrentBranch(worktreePath)
+  })
+
+  ipcMain.handle(IPC.GIT_GET_DEFAULT_BRANCH, async (_e, repoPath: string) => {
+    return GitService.getDefaultBranch(repoPath)
   })
 
   // ── GitHub handlers ──

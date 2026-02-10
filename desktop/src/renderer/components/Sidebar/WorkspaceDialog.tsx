@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Project } from '../../store/types'
 import styles from './WorkspaceDialog.module.css'
 
@@ -13,46 +13,67 @@ function toBranchName(input: string): string {
 
 interface Props {
   project: Project
-  onConfirm: (name: string, branch: string, newBranch: boolean) => void
+  onConfirm: (name: string, branch: string, newBranch: boolean, baseBranch?: string) => void
   onCancel: () => void
 }
 
 export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
   const [name, setName] = useState(`ws-${Date.now().toString(36)}`)
   const [branches, setBranches] = useState<string[]>([])
-  const [selectedBranch, setSelectedBranch] = useState('main')
+  const [selectedBranch, setSelectedBranch] = useState('')
   const [isNewBranch, setIsNewBranch] = useState(true)
   const [newBranchName, setNewBranchName] = useState('')
+  const [baseBranch, setBaseBranch] = useState('')
   const [loading, setLoading] = useState(true)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [basePickerOpen, setBasePickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
+  const basePickerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    window.api.git.getBranches(project.repoPath).then((b) => {
-      setBranches(b)
-      if (b.length > 0 && !b.includes('main')) {
-        setSelectedBranch(b[0])
+    const loadBranches = async () => {
+      try {
+        // Detect default branch from remote
+        const defaultBranch = await window.api.git.getDefaultBranch(project.repoPath)
+          .then((ref) => ref.replace(/^origin\//, ''))
+          .catch(() => '')
+
+        const b = await window.api.git.getBranches(project.repoPath).catch(() => [] as string[])
+        setBranches(b)
+
+        if (defaultBranch && b.includes(defaultBranch)) {
+          setSelectedBranch(defaultBranch)
+          setBaseBranch(defaultBranch)
+        } else if (b.length > 0) {
+          setSelectedBranch(b[0])
+          setBaseBranch(b[0])
+        }
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
-    }).catch(() => setLoading(false))
+    }
+    loadBranches()
   }, [project.repoPath])
 
   const handleSubmit = useCallback(() => {
     const branch = isNewBranch ? (newBranchName || name) : selectedBranch
-    onConfirm(name, branch, isNewBranch)
-  }, [name, isNewBranch, newBranchName, selectedBranch, onConfirm])
+    onConfirm(name, branch, isNewBranch, isNewBranch ? baseBranch : undefined)
+  }, [name, isNewBranch, newBranchName, selectedBranch, baseBranch, onConfirm])
 
-  // Close picker on click outside
+  // Close pickers on click outside
   useEffect(() => {
-    if (!pickerOpen) return
+    if (!pickerOpen && !basePickerOpen) return
     const handler = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+      if (pickerOpen && pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
         setPickerOpen(false)
+      }
+      if (basePickerOpen && basePickerRef.current && !basePickerRef.current.contains(e.target as Node)) {
+        setBasePickerOpen(false)
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [pickerOpen])
+  }, [pickerOpen, basePickerOpen])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSubmit()
@@ -90,12 +111,45 @@ export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
         </div>
 
         {isNewBranch ? (
-          <input
-            className={styles.input}
-            value={newBranchName}
-            onChange={(e) => setNewBranchName(toBranchName(e.target.value))}
-            placeholder={toBranchName(name) || 'branch-name'}
-          />
+          <>
+            <input
+              className={styles.input}
+              value={newBranchName}
+              onChange={(e) => setNewBranchName(toBranchName(e.target.value))}
+              placeholder={toBranchName(name) || 'branch-name'}
+            />
+            <label className={styles.label}>Base branch</label>
+            <div className={styles.branchInputRow} ref={basePickerRef}>
+              <input
+                className={styles.input}
+                value={baseBranch}
+                onChange={(e) => setBaseBranch(e.target.value)}
+                disabled={loading}
+                placeholder="Base branch"
+              />
+              <button
+                className={styles.pickerBtn}
+                onClick={() => setBasePickerOpen((v) => !v)}
+                disabled={loading}
+                type="button"
+              >
+                &#9662;
+              </button>
+              {basePickerOpen && (
+                <div className={styles.pickerDropdown}>
+                  {branches.map((b) => (
+                    <div
+                      key={b}
+                      className={`${styles.pickerOption} ${b === baseBranch ? styles.pickerOptionActive : ''}`}
+                      onClick={() => { setBaseBranch(b); setBasePickerOpen(false) }}
+                    >
+                      {b}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
         ) : (
           <div className={styles.branchInputRow} ref={pickerRef}>
             <input

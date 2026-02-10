@@ -212,6 +212,7 @@ export function Sidebar() {
       branch: string,
       newBranch: boolean,
       force = false,
+      baseBranch?: string,
     ) => {
       try {
         const worktreePath = await window.api.git.createWorktree(
@@ -219,6 +220,7 @@ export function Sidebar() {
           name,
           branch,
           newBranch,
+          baseBranch,
           force,
         );
         await finishCreateWorkspace(project, name, branch, worktreePath);
@@ -245,7 +247,7 @@ export function Sidebar() {
             destructive: true,
             onConfirm: () => {
               dismissConfirmDialog();
-              handleCreateWorkspace(project, name, branch, newBranch, true);
+              handleCreateWorkspace(project, name, branch, newBranch, true, baseBranch);
             },
           });
           return;
@@ -480,8 +482,8 @@ export function Sidebar() {
       {dialogProject && (
         <WorkspaceDialog
           project={dialogProject}
-          onConfirm={(name, branch, newBranch) => {
-            handleCreateWorkspace(dialogProject, name, branch, newBranch);
+          onConfirm={(name, branch, newBranch, baseBranch) => {
+            handleCreateWorkspace(dialogProject, name, branch, newBranch, false, baseBranch);
             openWorkspaceDialog(null);
           }}
           onCancel={() => openWorkspaceDialog(null)}

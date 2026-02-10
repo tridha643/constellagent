@@ -14,6 +14,7 @@ export const IPC = {
   GIT_DISCARD: 'git:discard',
   GIT_COMMIT: 'git:commit',
   GIT_GET_CURRENT_BRANCH: 'git:get-current-branch',
+  GIT_GET_DEFAULT_BRANCH: 'git:get-default-branch',
 
   // PTY operations
   PTY_CREATE: 'pty:create',
