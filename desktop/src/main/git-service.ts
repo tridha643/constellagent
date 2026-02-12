@@ -195,8 +195,30 @@ export class GitService {
       stage: 'inspect-branch',
       message: 'Checking branch state...',
     })
-    const branchExists = await git(['rev-parse', '--verify', `refs/heads/${branch}`], repoPath)
+    let branchExists = await git(['rev-parse', '--verify', `refs/heads/${branch}`], repoPath)
       .then(() => true, () => false)
+
+    // If checking out an existing branch that doesn't exist locally or on origin,
+    // try fetching it as a GitHub PR branch (fork PRs aren't included in normal fetch)
+    if (!newBranch && !branchExists) {
+      const remoteExists = await git(['rev-parse', '--verify', `refs/remotes/origin/${branch}`], repoPath)
+        .then(() => true, () => false)
+      if (!remoteExists) {
+        try {
+          const { stdout } = await execFileAsync('gh', [
+            'pr', 'list', '--repo', '.', '--head', branch, '--json', 'number',
+            '--jq', '.[0].number',
+          ], { cwd: repoPath })
+          const prNumber = stdout.trim()
+          if (prNumber) {
+            await git(['fetch', 'origin', `pull/${prNumber}/head:${branch}`], repoPath)
+            branchExists = true
+          }
+        } catch {
+          // gh not available or no matching PR — fall through to normal error
+        }
+      }
+    }
 
     const args = ['worktree', 'add']
     if (force) args.push('--force')
