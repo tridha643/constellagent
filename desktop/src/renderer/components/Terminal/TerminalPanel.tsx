@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import styles from './TerminalPanel.module.css'
 
+const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
+const PR_POLL_HINT_COMMAND_RE =
+  /^(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+)*(?:sudo\s+)?(?:(?:git\s+push)|(?:gh\s+pr\s+(?:create|ready|reopen|merge)))(?:\s|$)/
+
 interface Props {
   ptyId: string
   active: boolean
@@ -12,13 +16,60 @@ export function TerminalPanel({ ptyId, active }: Props) {
   const termDivRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<any>(null)
   const fitFnRef = useRef<(() => void) | null>(null)
+  const inputLineRef = useRef('')
   const [loading, setLoading] = useState(true)
   const terminalFontSize = useAppStore((s) => s.settings.terminalFontSize)
+
+  const emitPrPollHint = (command: string) => {
+    const normalized = command.trim().toLowerCase()
+    const kind = normalized.startsWith('git push') ? 'push' : 'pr'
+    window.dispatchEvent(
+      new CustomEvent(PR_POLL_HINT_EVENT, {
+        detail: { ptyId, command, kind },
+      })
+    )
+  }
+
+  const detectPrPollHint = (chunk: string) => {
+    // Remove cursor-control escape sequences so arrow keys do not pollute the command buffer.
+    const cleaned = chunk
+      .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+      .replace(/\x1bO./g, '')
+      .replace(/\x1b./g, '')
+
+    for (const char of cleaned) {
+      if (char === '\r' || char === '\n') {
+        const command = inputLineRef.current.trim()
+        if (command && PR_POLL_HINT_COMMAND_RE.test(command)) {
+          emitPrPollHint(command)
+        }
+        inputLineRef.current = ''
+        continue
+      }
+
+      if (char === '\u0003' || char === '\u0015') {
+        inputLineRef.current = ''
+        continue
+      }
+
+      if (char === '\u007f' || char === '\b') {
+        inputLineRef.current = inputLineRef.current.slice(0, -1)
+        continue
+      }
+
+      if (char < ' ' || char > '~') continue
+      inputLineRef.current += char
+      if (inputLineRef.current.length > 512) {
+        inputLineRef.current = inputLineRef.current.slice(-512)
+      }
+    }
+  }
 
   // Single effect for terminal lifecycle — StrictMode safe
   useEffect(() => {
     if (!termDivRef.current) return
     const termDiv = termDivRef.current!
+    inputLineRef.current = ''
 
     let disposed = false
     let cleanup: (() => void) | null = null
@@ -134,6 +185,7 @@ export function TerminalPanel({ ptyId, active }: Props) {
 
         // Connect to PTY via IPC
         term.onData((data: string) => {
+          detectPrPollHint(data)
           window.api.pty.write(ptyId, data)
         })
 
@@ -173,6 +225,7 @@ export function TerminalPanel({ ptyId, active }: Props) {
       cleanup = null
       termRef.current = null
       fitFnRef.current = null
+      inputLineRef.current = ''
     }
   }, [ptyId])
 

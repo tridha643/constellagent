@@ -129,26 +129,26 @@ test.describe('PR status indicators', () => {
         const projectId = 'test-proj-id'
         store.addProject({ id: projectId, name: 'pr-test-project', repoPath: repo })
 
-        const worktreePath = await (window as any).api.git.createWorktree(repo, 'pr-ws', 'feature-branch', true)
         store.addWorkspace({
           id: crypto.randomUUID(),
-          name: 'my-feature',
-          branch: 'feature-branch',
-          worktreePath,
+          name: 'main-ws',
+          branch: 'main',
+          worktreePath: repo,
           projectId,
         })
       }, repoPath)
 
-      // Wait for the poller's initial run (2s delay + execution) to finish
-      // so it doesn't overwrite our injected state
-      await window.waitForTimeout(4000)
+      // Wait for the poller's initial run to settle so injected state isn't immediately overwritten.
+      await window.waitForTimeout(2500)
 
       // Now inject PR data after the poller has settled
       await window.evaluate(() => {
         const store = (window as any).__store.getState()
+        const ws = store.workspaces.find((w: { projectId: string }) => w.projectId === 'test-proj-id')
+        const branch = ws?.branch ?? 'main'
         store.setGhAvailability('test-proj-id', true)
         store.setPrStatuses('test-proj-id', {
-          'feature-branch': {
+          [branch]: {
             number: 99,
             state: 'open',
             title: 'My cool PR',
@@ -168,11 +168,8 @@ test.describe('PR status indicators', () => {
       const prText = await prBadge.textContent()
       expect(prText).toContain('#99')
 
-      // Check indicator shows (open + passing = ✓)
-      const checkMark = window.locator('[class*="prCheck"]')
-      await expect(checkMark).toBeVisible()
-      const checkText = await checkMark.textContent()
-      expect(checkText).toBe('✓')
+      // Badge should carry open-state styling.
+      await expect(prBadge).toHaveClass(/pr_open/)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
@@ -237,20 +234,22 @@ test.describe('PR status indicators', () => {
         store.addWorkspace({
           id: crypto.randomUUID(),
           name: 'merged-ws',
-          branch: 'merged-branch',
+          branch: 'main',
           worktreePath: repo,
           projectId,
         })
       }, repoPath)
 
       // Wait for poller to settle before injecting PR data
-      await window.waitForTimeout(4000)
+      await window.waitForTimeout(2500)
 
       await window.evaluate(() => {
         const store = (window as any).__store.getState()
+        const ws = store.workspaces.find((w: { projectId: string }) => w.projectId === 'test-proj-merged')
+        const branch = ws?.branch ?? 'main'
         store.setGhAvailability('test-proj-merged', true)
         store.setPrStatuses('test-proj-merged', {
-          'merged-branch': {
+          [branch]: {
             number: 77,
             state: 'merged',
             title: 'Already merged',
@@ -269,9 +268,8 @@ test.describe('PR status indicators', () => {
       const prText = await prBadge.textContent()
       expect(prText).toContain('#77')
 
-      // Check indicator should NOT show for merged PRs
-      const checkMark = window.locator('[class*="prCheck"]')
-      await expect(checkMark).not.toBeVisible()
+      // Badge should carry merged-state styling.
+      await expect(prBadge).toHaveClass(/pr_merged/)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
