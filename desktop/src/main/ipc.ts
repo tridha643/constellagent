@@ -185,9 +185,13 @@ export function registerIpcHandlers(): void {
 
     try {
       const watcher = watch(dirPath, { recursive: true }, (_eventType, filename) => {
-        // Ignore .git internal changes
+        // For .git/ changes, only notify on meaningful state changes (commit, stage, branch switch)
+        // Ignore noisy internals like objects/, logs/, COMMIT_EDITMSG
         if (filename && (filename.startsWith('.git/') || filename.startsWith('.git\\'))) {
-          if (filename !== '.git/index' && filename !== '.git\\index') return
+          const f = filename.replaceAll('\\', '/')
+          const isStateChange =
+            f === '.git/index' || f === '.git/HEAD' || f.startsWith('.git/refs/')
+          if (!isStateChange) return
         }
 
         const entry = fsWatchers.get(dirPath)
