@@ -19,10 +19,31 @@ interface Props {
   isFocusedPane?: boolean
 }
 
+interface TerminalMetrics {
+  width: number
+  height: number
+}
+
+interface TerminalLike {
+  cols: number
+  rows: number
+  renderer?: {
+    getMetrics?: () => TerminalMetrics | undefined
+  }
+  open: (element: HTMLElement) => void
+  write: (data: string) => void
+  resize: (cols: number, rows: number) => void
+  focus: () => void
+  dispose: () => void
+  onData: (callback: (data: string) => void) => void
+  onResize: (callback: (size: { cols: number; rows: number }) => void) => void
+  setOption?: (key: string, value: unknown) => void
+}
+
 export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocusedPane }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termDivRef = useRef<HTMLDivElement>(null)
-  const termRef = useRef<any>(null)
+  const termRef = useRef<TerminalLike | null>(null)
   const fitFnRef = useRef<(() => void) | null>(null)
   const inputLineRef = useRef('')
   const [loading, setLoading] = useState(true)
@@ -120,7 +141,7 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
             brightCyan: '#7dcfff',
             brightWhite: '#c0caf5',
           },
-        })
+        }) as TerminalLike
 
         term.open(termDiv)
 
@@ -242,7 +263,7 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
     const term = termRef.current
     if (!term) return
     try {
-      term.setOption('fontSize', terminalFontSize)
+      term.setOption?.('fontSize', terminalFontSize)
       fitFnRef.current?.()
     } catch {
       // ghostty-web may not support setOption — font applies on next terminal create
