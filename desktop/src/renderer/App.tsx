@@ -4,7 +4,7 @@ import 'allotment/dist/style.css'
 import { useAppStore } from './store/app-store'
 import { Sidebar } from './components/Sidebar/Sidebar'
 import { TabBar } from './components/TabBar/TabBar'
-import { TerminalPanel } from './components/Terminal/TerminalPanel'
+import { TerminalSplitContainer } from './components/Terminal/TerminalSplitContainer'
 import { FileEditor } from './components/Editor/FileEditor'
 import { DiffViewer } from './components/Editor/DiffEditor'
 import { RightPanel } from './components/RightPanel/RightPanel'
@@ -94,9 +94,9 @@ export function App() {
                   {/* Keep ALL terminal panels alive across workspaces so PTY
                       state (scrollback, TUI layout) is never lost */}
                   {allTerminals.map((t) => (
-                    <TerminalPanel
+                    <TerminalSplitContainer
                       key={t.id}
-                      ptyId={t.ptyId}
+                      tab={t}
                       active={t.id === activeTabId}
                     />
                   ))}

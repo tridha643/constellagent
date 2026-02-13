@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type { Tab } from '../../store/types'
+import { getAllPtyIds } from '../../store/split-helpers'
 import { Tooltip } from '../Tooltip/Tooltip'
 import styles from './TabBar.module.css'
 
@@ -39,7 +40,9 @@ export function TabBar() {
       }
 
       if (tab.type === 'terminal') {
-        window.api.pty.destroy(tab.ptyId)
+        const ptyIds = new Set(tab.splitRoot ? getAllPtyIds(tab.splitRoot) : [])
+        ptyIds.add(tab.ptyId)
+        ptyIds.forEach((id) => window.api.pty.destroy(id))
       }
       removeTab(tabId)
     },
