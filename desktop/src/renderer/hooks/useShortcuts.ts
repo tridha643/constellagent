@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useAppStore } from '../store/app-store'
+import { getFocusedPtyId } from '../store/split-helpers'
 
 export function useShortcuts() {
   useEffect(() => {
@@ -13,7 +14,8 @@ export function useShortcuts() {
           const s = useAppStore.getState()
           const tab = s.tabs.find((t) => t.id === s.activeTabId)
           if (tab?.type === 'terminal') {
-            window.api.pty.write(tab.ptyId, '\x1b[Z')
+            const pty = getFocusedPtyId(tab.splitRoot, tab.focusedPaneId, tab.ptyId)
+            window.api.pty.write(pty, '\x1b[Z')
           }
         } else {
           // Regular Tab: prevent browser focus navigation, let ghostty-web handle it
@@ -32,7 +34,8 @@ export function useShortcuts() {
         const s = useAppStore.getState()
         const tab = s.tabs.find((t) => t.id === s.activeTabId)
         if (tab?.type === 'terminal') {
-          window.api.pty.write(tab.ptyId, '\x1b[13;2u')
+          const pty = getFocusedPtyId(tab.splitRoot, tab.focusedPaneId, tab.ptyId)
+          window.api.pty.write(pty, '\x1b[13;2u')
         }
         return
       }
@@ -44,22 +47,23 @@ export function useShortcuts() {
         const s = useAppStore.getState()
         const tab = s.tabs.find((t) => t.id === s.activeTabId)
         if (tab?.type === 'terminal') {
+          const pty = getFocusedPtyId(tab.splitRoot, tab.focusedPaneId, tab.ptyId)
           if (e.key === 'ArrowLeft') {
             e.preventDefault()
             e.stopPropagation()
-            window.api.pty.write(tab.ptyId, '\x01') // Ctrl+A — beginning of line
+            window.api.pty.write(pty, '\x01') // Ctrl+A — beginning of line
             return
           }
           if (e.key === 'ArrowRight') {
             e.preventDefault()
             e.stopPropagation()
-            window.api.pty.write(tab.ptyId, '\x05') // Ctrl+E — end of line
+            window.api.pty.write(pty, '\x05') // Ctrl+E — end of line
             return
           }
           if (e.key === 'Backspace') {
             e.preventDefault()
             e.stopPropagation()
-            window.api.pty.write(tab.ptyId, '\x15') // Ctrl+U — kill to beginning of line
+            window.api.pty.write(pty, '\x15') // Ctrl+U — kill to beginning of line
             return
           }
         }
@@ -113,6 +117,18 @@ export function useShortcuts() {
       if (shift && !alt && e.code === 'KeyN') {
         consume()
         store.createTerminalForActiveWorkspace()
+        return
+      }
+      // Cmd+D — split terminal right (Ghostty-style)
+      if (!shift && !alt && e.code === 'KeyD') {
+        consume()
+        store.splitTerminalPane('horizontal')
+        return
+      }
+      // Cmd+Shift+D — split terminal down (Ghostty-style)
+      if (shift && !alt && e.code === 'KeyD') {
+        consume()
+        store.splitTerminalPane('vertical')
         return
       }
       if (!shift && !alt && e.key === 'w') {
@@ -236,7 +252,8 @@ export function useShortcuts() {
       const s = useAppStore.getState()
       const tab = s.tabs.find((t) => t.id === s.activeTabId)
       if (tab?.type === 'terminal') {
-        window.api.pty.write(tab.ptyId, `\x1b[200~${filePath}\x1b[201~`)
+        const pty = getFocusedPtyId(tab.splitRoot, tab.focusedPaneId, tab.ptyId)
+        window.api.pty.write(pty, `\x1b[200~${filePath}\x1b[201~`)
       }
     }
 

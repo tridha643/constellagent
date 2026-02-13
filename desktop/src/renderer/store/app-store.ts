@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { AppState, PersistedState, Tab } from './types'
 import { DEFAULT_SETTINGS } from './types'
+import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, firstLeaf } from './split-helpers'
 
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
@@ -185,7 +186,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!window.confirm('This file has unsaved changes. Close anyway?')) return
     }
     if (tab.type === 'terminal') {
-      window.api.pty.destroy(tab.ptyId)
+      // Destroy all PTYs including those in split panes
+      if (tab.splitRoot) {
+        getAllPtyIds(tab.splitRoot).forEach((id) => window.api.pty.destroy(id))
+      } else {
+        window.api.pty.destroy(tab.ptyId)
+      }
     }
     get().removeTab(tab.id)
   },
@@ -262,7 +268,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const hasUnsaved = wsTabs.some((t) => t.type === 'file' && t.unsaved)
     if (hasUnsaved && !window.confirm('Close all tabs? Some have unsaved changes.')) return
     wsTabs.forEach((t) => {
-      if (t.type === 'terminal') window.api.pty.destroy(t.ptyId)
+      if (t.type === 'terminal') {
+        if (t.splitRoot) {
+          getAllPtyIds(t.splitRoot).forEach((id) => window.api.pty.destroy(id))
+        } else {
+          window.api.pty.destroy(t.ptyId)
+        }
+      }
     })
     const wsId = s.activeWorkspaceId
     set((state) => ({
@@ -283,6 +295,75 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  splitTerminalPane: async (direction) => {
+    const s = get()
+    if (!s.activeTabId) return
+    const tab = s.tabs.find((t) => t.id === s.activeTabId)
+    if (!tab || tab.type !== 'terminal') return
+    const ws = s.workspaces.find((w) => w.id === tab.workspaceId)
+    if (!ws) return
+
+    const shell = s.settings.defaultShell || undefined
+    const newPtyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
+    const newLeafId = crypto.randomUUID()
+
+    // Build the split tree: if no splitRoot yet, create one from the existing single pane
+    const currentRoot = tab.splitRoot ?? { type: 'leaf' as const, id: tab.id, ptyId: tab.ptyId }
+    const targetPaneId = tab.focusedPaneId ?? (currentRoot.type === 'leaf' ? currentRoot.id : firstLeaf(currentRoot).id)
+    const newRoot = splitLeaf(currentRoot, targetPaneId, direction, newLeafId, newPtyId)
+
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tab.id && t.type === 'terminal'
+          ? { ...t, splitRoot: newRoot, focusedPaneId: newLeafId }
+          : t
+      ),
+    }))
+  },
+
+  setFocusedPane: (tabId, paneId) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === tabId && t.type === 'terminal' ? { ...t, focusedPaneId: paneId } : t
+      ),
+    })),
+
+  closeSplitPane: (paneId) => {
+    const s = get()
+    if (!s.activeTabId) return
+    const tab = s.tabs.find((t) => t.id === s.activeTabId)
+    if (!tab || tab.type !== 'terminal' || !tab.splitRoot) return
+
+    // Find the pane to destroy its PTY
+    const leaf = findLeaf(tab.splitRoot, paneId)
+    if (!leaf) return
+    window.api.pty.destroy(leaf.ptyId)
+
+    const newRoot = removeLeaf(tab.splitRoot, paneId)
+    if (!newRoot) {
+      // All panes removed — close the whole tab
+      get().removeTab(tab.id)
+      return
+    }
+
+    // If collapsed to a single leaf, clear splitRoot
+    const isSingleLeaf = newRoot.type === 'leaf'
+    const newFocused = firstLeaf(newRoot).id
+
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tab.id && t.type === 'terminal'
+          ? {
+              ...t,
+              ptyId: isSingleLeaf ? (newRoot as { type: 'leaf'; ptyId: string }).ptyId : t.ptyId,
+              splitRoot: isSingleLeaf ? undefined : newRoot,
+              focusedPaneId: isSingleLeaf ? undefined : newFocused,
+            }
+          : t
+      ),
+    }))
+  },
+
   openWorkspaceDialog: (projectId) => set({ workspaceDialogProjectId: projectId }),
 
   deleteWorkspace: async (workspaceId) => {
@@ -291,9 +372,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!ws) return
     const project = s.projects.find((p) => p.id === ws.projectId)
 
-    // Destroy PTYs for this workspace
+    // Destroy PTYs for this workspace (including split panes)
     s.tabs.filter((t) => t.workspaceId === workspaceId && t.type === 'terminal').forEach((t) => {
-      if (t.type === 'terminal') window.api.pty.destroy(t.ptyId)
+      if (t.type === 'terminal') {
+        if (t.splitRoot) {
+          getAllPtyIds(t.splitRoot).forEach((id) => window.api.pty.destroy(id))
+        } else {
+          window.api.pty.destroy(t.ptyId)
+        }
+      }
     })
 
     // Remove from state immediately so sidebar updates
@@ -324,7 +411,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Destroy PTYs and remove worktrees for all workspaces in this project
     for (const ws of projectWorkspaces) {
       s.tabs.filter((t) => t.workspaceId === ws.id && t.type === 'terminal').forEach((t) => {
-        if (t.type === 'terminal') window.api.pty.destroy(t.ptyId)
+        if (t.type === 'terminal') {
+          if (t.splitRoot) {
+            getAllPtyIds(t.splitRoot).forEach((id) => window.api.pty.destroy(id))
+          } else {
+            window.api.pty.destroy(t.ptyId)
+          }
+        }
       })
       if (ws.worktreePath !== project.repoPath) {
         try {
@@ -521,14 +614,26 @@ export async function hydrateFromDisk(): Promise<void> {
       // Reattach surviving terminal tabs to the new webContents
       const reattachPromises: Promise<boolean>[] = []
       for (const tab of tabs) {
-        if (tab.type === 'terminal' && livePtyIds.has(tab.ptyId)) {
-          reattachPromises.push(window.api.pty.reattach(tab.ptyId))
+        if (tab.type === 'terminal') {
+          // Reattach primary PTY
+          if (livePtyIds.has(tab.ptyId)) {
+            reattachPromises.push(window.api.pty.reattach(tab.ptyId))
+          }
+          // Reattach split pane PTYs
+          if (tab.splitRoot) {
+            for (const splitPtyId of getAllPtyIds(tab.splitRoot)) {
+              if (splitPtyId !== tab.ptyId && livePtyIds.has(splitPtyId)) {
+                reattachPromises.push(window.api.pty.reattach(splitPtyId))
+              }
+            }
+          }
         }
       }
       await Promise.all(reattachPromises)
     }
 
-    // Respawn PTYs for terminal tabs whose process is no longer alive
+    // Respawn PTYs for terminal tabs whose primary process is no longer alive.
+    // For simplicity, split panes are collapsed on restart — only the primary PTY is respawned.
     const deadTabs = tabs.filter(
       (t): t is Extract<Tab, { type: 'terminal' }> =>
         t.type === 'terminal' && !livePtyIds.has(t.ptyId)
@@ -542,7 +647,8 @@ export async function hydrateFromDisk(): Promise<void> {
         try {
           const newPtyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
           const idx = updatedTabs.findIndex((t) => t.id === dead.id)
-          if (idx !== -1) updatedTabs[idx] = { ...dead, ptyId: newPtyId }
+          // Collapse splits on respawn — start fresh with a single terminal
+          if (idx !== -1) updatedTabs[idx] = { ...dead, ptyId: newPtyId, splitRoot: undefined, focusedPaneId: undefined }
         } catch {
           // If respawn fails, drop the tab
           const idx = updatedTabs.findIndex((t) => t.id === dead.id)
