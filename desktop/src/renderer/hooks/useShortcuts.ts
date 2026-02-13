@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useAppStore } from '../store/app-store'
-import { getFocusedPtyId } from '../store/split-helpers'
+import { getFocusedPtyId, isFocusedPaneTerminal } from '../store/split-helpers'
 
 export function useShortcuts() {
   useEffect(() => {
@@ -13,9 +13,9 @@ export function useShortcuts() {
           e.stopPropagation()
           const s = useAppStore.getState()
           const tab = s.tabs.find((t) => t.id === s.activeTabId)
-          if (tab?.type === 'terminal') {
+          if (tab?.type === 'terminal' && isFocusedPaneTerminal(tab.splitRoot, tab.focusedPaneId)) {
             const pty = getFocusedPtyId(tab.splitRoot, tab.focusedPaneId, tab.ptyId)
-            window.api.pty.write(pty, '\x1b[Z')
+            if (pty) window.api.pty.write(pty, '\x1b[Z')
           }
         } else {
           // Regular Tab: prevent browser focus navigation, let ghostty-web handle it
@@ -27,40 +27,42 @@ export function useShortcuts() {
       // Shift+Enter handling when terminal is focused
       if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey
         && (e.target as HTMLElement)?.closest?.('[class*="terminalInner"]')) {
-        // Write kitty keyboard protocol so CLIs (e.g. Claude Code) can distinguish
-        // Shift+Enter (new line) from Enter (submit).
-        e.preventDefault()
-        e.stopPropagation()
         const s = useAppStore.getState()
         const tab = s.tabs.find((t) => t.id === s.activeTabId)
-        if (tab?.type === 'terminal') {
+        // Skip when focused pane is a file editor — let Monaco handle Shift+Enter natively
+        if (tab?.type === 'terminal' && isFocusedPaneTerminal(tab.splitRoot, tab.focusedPaneId)) {
+          // Write kitty keyboard protocol so CLIs (e.g. Claude Code) can distinguish
+          // Shift+Enter (new line) from Enter (submit).
+          e.preventDefault()
+          e.stopPropagation()
           const pty = getFocusedPtyId(tab.splitRoot, tab.focusedPaneId, tab.ptyId)
-          window.api.pty.write(pty, '\x1b[13;2u')
+          if (pty) window.api.pty.write(pty, '\x1b[13;2u')
         }
         return
       }
 
       // Cmd+Left/Right/Backspace: macOS line-editing conventions.
       // Only Cmd (not Ctrl) — Ctrl+arrow is word movement handled by ghostty.
+      // Skip when focused pane is a file editor — let Monaco handle these natively.
       if (e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey
         && (e.target as HTMLElement)?.closest?.('[class*="terminalInner"]')) {
         const s = useAppStore.getState()
         const tab = s.tabs.find((t) => t.id === s.activeTabId)
-        if (tab?.type === 'terminal') {
+        if (tab?.type === 'terminal' && isFocusedPaneTerminal(tab.splitRoot, tab.focusedPaneId)) {
           const pty = getFocusedPtyId(tab.splitRoot, tab.focusedPaneId, tab.ptyId)
-          if (e.key === 'ArrowLeft') {
+          if (pty && e.key === 'ArrowLeft') {
             e.preventDefault()
             e.stopPropagation()
             window.api.pty.write(pty, '\x01') // Ctrl+A — beginning of line
             return
           }
-          if (e.key === 'ArrowRight') {
+          if (pty && e.key === 'ArrowRight') {
             e.preventDefault()
             e.stopPropagation()
             window.api.pty.write(pty, '\x05') // Ctrl+E — end of line
             return
           }
-          if (e.key === 'Backspace') {
+          if (pty && e.key === 'Backspace') {
             e.preventDefault()
             e.stopPropagation()
             window.api.pty.write(pty, '\x15') // Ctrl+U — kill to beginning of line
@@ -119,21 +121,36 @@ export function useShortcuts() {
         store.createTerminalForActiveWorkspace()
         return
       }
-      // Cmd+D — split terminal right (Ghostty-style)
+      // Cmd+D — split terminal pane right
       if (!shift && !alt && e.code === 'KeyD') {
         consume()
         store.splitTerminalPane('horizontal')
         return
       }
-      // Cmd+Shift+D — split terminal down (Ghostty-style)
+      // Cmd+Shift+D — split terminal pane down
       if (shift && !alt && e.code === 'KeyD') {
         consume()
         store.splitTerminalPane('vertical')
         return
       }
+      // Cmd+\ — open current file in split pane alongside terminal
+      if (!shift && !alt && e.key === '\\') {
+        consume()
+        const activeTab = store.tabs.find((t) => t.id === store.activeTabId)
+        if (activeTab?.type === 'file') {
+          store.openFileInSplit(activeTab.filePath)
+        }
+        return
+      }
       if (!shift && !alt && e.key === 'w') {
         consume()
-        store.closeActiveTab()
+        // If the active terminal tab has splits, close just the focused pane
+        const wTab = store.tabs.find((t) => t.id === store.activeTabId)
+        if (wTab?.type === 'terminal' && wTab.splitRoot && wTab.focusedPaneId) {
+          store.closeSplitPane(wTab.focusedPaneId)
+        } else {
+          store.closeActiveTab()
+        }
         return
       }
       if (shift && !alt && e.code === 'KeyW') {
@@ -251,9 +268,9 @@ export function useShortcuts() {
 
       const s = useAppStore.getState()
       const tab = s.tabs.find((t) => t.id === s.activeTabId)
-      if (tab?.type === 'terminal') {
+      if (tab?.type === 'terminal' && isFocusedPaneTerminal(tab.splitRoot, tab.focusedPaneId)) {
         const pty = getFocusedPtyId(tab.splitRoot, tab.focusedPaneId, tab.ptyId)
-        window.api.pty.write(pty, `\x1b[200~${filePath}\x1b[201~`)
+        if (pty) window.api.pty.write(pty, `\x1b[200~${filePath}\x1b[201~`)
       }
     }
 

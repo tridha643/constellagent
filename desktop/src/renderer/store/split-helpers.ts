@@ -1,13 +1,15 @@
-import type { SplitNode } from './types'
+import type { SplitNode, SplitLeaf } from './types'
 
-/** Recursively collect all PTY IDs from a split tree. */
+/** Recursively collect all PTY IDs from a split tree (terminal leaves only). */
 export function getAllPtyIds(node: SplitNode): string[] {
-  if (node.type === 'leaf') return [node.ptyId]
+  if (node.type === 'leaf') {
+    return node.contentType === 'terminal' ? [node.ptyId] : []
+  }
   return node.children.flatMap(getAllPtyIds)
 }
 
 /** Find a leaf node by its pane ID. */
-export function findLeaf(root: SplitNode, paneId: string): (SplitNode & { type: 'leaf' }) | null {
+export function findLeaf(root: SplitNode, paneId: string): SplitLeaf | null {
   if (root.type === 'leaf') return root.id === paneId ? root : null
   for (const child of root.children) {
     const found = findLeaf(child, paneId)
@@ -16,9 +18,11 @@ export function findLeaf(root: SplitNode, paneId: string): (SplitNode & { type: 
   return null
 }
 
-/** Find a leaf node by its PTY ID. */
-export function findLeafByPtyId(root: SplitNode, ptyId: string): (SplitNode & { type: 'leaf' }) | null {
-  if (root.type === 'leaf') return root.ptyId === ptyId ? root : null
+/** Find a leaf node by its PTY ID (terminal leaves only). */
+export function findLeafByPtyId(root: SplitNode, ptyId: string): (SplitLeaf & { contentType: 'terminal' }) | null {
+  if (root.type === 'leaf') {
+    return root.contentType === 'terminal' && root.ptyId === ptyId ? root : null
+  }
   for (const child of root.children) {
     const found = findLeafByPtyId(child, ptyId)
     if (found) return found
@@ -34,8 +38,7 @@ export function splitLeaf(
   root: SplitNode,
   leafId: string,
   direction: 'horizontal' | 'vertical',
-  newLeafId: string,
-  newPtyId: string,
+  newLeaf: SplitLeaf,
 ): SplitNode {
   if (root.type === 'leaf') {
     if (root.id === leafId) {
@@ -43,10 +46,7 @@ export function splitLeaf(
         type: 'split',
         id: crypto.randomUUID(),
         direction,
-        children: [
-          root,
-          { type: 'leaf', id: newLeafId, ptyId: newPtyId },
-        ],
+        children: [root, newLeaf],
       }
     }
     return root
@@ -54,7 +54,7 @@ export function splitLeaf(
 
   // Recurse into children
   const newChildren = root.children.map((child) =>
-    splitLeaf(child, leafId, direction, newLeafId, newPtyId),
+    splitLeaf(child, leafId, direction, newLeaf),
   ) as [SplitNode, SplitNode]
 
   // Only create a new node if something changed
@@ -87,18 +87,75 @@ export function removeLeaf(root: SplitNode, leafId: string): SplitNode | null {
 }
 
 /** Get the first leaf in the tree (depth-first, left-to-right). */
-export function firstLeaf(root: SplitNode): SplitNode & { type: 'leaf' } {
+export function firstLeaf(root: SplitNode): SplitLeaf {
   if (root.type === 'leaf') return root
   return firstLeaf(root.children[0])
 }
 
-/** Get the focused pane's PTY ID, falling back to the tab's primary ptyId. */
+/** Get the first terminal leaf in the tree, or null if none exist. */
+export function firstTerminalLeaf(root: SplitNode): (SplitLeaf & { contentType: 'terminal' }) | null {
+  if (root.type === 'leaf') {
+    return root.contentType === 'terminal' ? root : null
+  }
+  return firstTerminalLeaf(root.children[0]) ?? firstTerminalLeaf(root.children[1])
+}
+
+/** Get the focused leaf node, or null if not found. */
+export function getFocusedLeaf(
+  splitRoot: SplitNode | undefined,
+  focusedPaneId: string | undefined,
+): SplitLeaf | null {
+  if (!splitRoot || !focusedPaneId) return null
+  return findLeaf(splitRoot, focusedPaneId)
+}
+
+/**
+ * Get the focused pane's PTY ID, falling back to the tab's primary ptyId.
+ * Returns undefined if the focused leaf is a file pane.
+ */
 export function getFocusedPtyId(
   splitRoot: SplitNode | undefined,
   focusedPaneId: string | undefined,
   fallbackPtyId: string,
-): string {
+): string | undefined {
   if (!splitRoot || !focusedPaneId) return fallbackPtyId
   const leaf = findLeaf(splitRoot, focusedPaneId)
-  return leaf ? leaf.ptyId : fallbackPtyId
+  if (!leaf) return fallbackPtyId
+  return leaf.contentType === 'terminal' ? leaf.ptyId : undefined
+}
+
+/**
+ * Check whether the focused pane in the active tab is a terminal.
+ * Returns true for non-split terminals and terminal leaves in splits.
+ * Returns false when the focused pane is a file editor.
+ */
+export function isFocusedPaneTerminal(
+  splitRoot: SplitNode | undefined,
+  focusedPaneId: string | undefined,
+): boolean {
+  if (!splitRoot || !focusedPaneId) return true // no split = single terminal
+  const leaf = findLeaf(splitRoot, focusedPaneId)
+  if (!leaf) return true // fallback
+  return leaf.contentType === 'terminal'
+}
+
+/**
+ * Normalize a split tree from persisted state.
+ * Old format leaves have `ptyId` but no `contentType` — add `contentType: 'terminal'`.
+ */
+export function normalizeSplitTree(node: SplitNode): SplitNode {
+  if (node.type === 'leaf') {
+    // Widen to a generic record so the `in` check doesn't narrow to `never`
+    // (all current SplitLeaf variants declare `contentType`, but legacy persisted data may lack it)
+    const raw = node as Record<string, unknown>
+    if (!raw.contentType) {
+      return { type: 'leaf', id: raw.id as string, contentType: 'terminal', ptyId: raw.ptyId as string }
+    }
+    return node
+  }
+  const newChildren = node.children.map(normalizeSplitTree) as [SplitNode, SplitNode]
+  if (newChildren[0] === node.children[0] && newChildren[1] === node.children[1]) {
+    return node
+  }
+  return { ...node, children: newChildren }
 }

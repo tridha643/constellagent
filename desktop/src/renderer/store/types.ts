@@ -33,8 +33,12 @@ export interface Workspace {
   automationId?: string
 }
 
+export type SplitLeaf =
+  | { type: 'leaf'; id: string; contentType: 'terminal'; ptyId: string }
+  | { type: 'leaf'; id: string; contentType: 'file'; filePath: string }
+
 export type SplitNode =
-  | { type: 'leaf'; id: string; ptyId: string }
+  | SplitLeaf
   | { type: 'split'; id: string; direction: 'horizontal' | 'vertical'; children: [SplitNode, SplitNode] }
 
 export type Tab = {
@@ -137,6 +141,7 @@ export interface AppState {
   closeAllWorkspaceTabs: () => void
   focusOrCreateTerminal: () => Promise<void>
   splitTerminalPane: (direction: 'horizontal' | 'vertical') => Promise<void>
+  openFileInSplit: (filePath: string, direction?: 'horizontal' | 'vertical') => Promise<void>
   setFocusedPane: (tabId: string, paneId: string) => void
   closeSplitPane: (paneId: string) => void
   openWorkspaceDialog: (projectId: string | null) => void

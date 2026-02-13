@@ -1,7 +1,7 @@
 import { create } from 'zustand'
-import type { AppState, PersistedState, Tab } from './types'
+import type { AppState, PersistedState, Tab, SplitNode } from './types'
 import { DEFAULT_SETTINGS } from './types'
-import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, firstLeaf } from './split-helpers'
+import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, firstLeaf, firstTerminalLeaf, normalizeSplitTree } from './split-helpers'
 
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
@@ -217,12 +217,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!window.confirm('This file has unsaved changes. Close anyway?')) return
     }
     if (tab.type === 'terminal') {
-      // Destroy all PTYs including those in split panes
-      if (tab.splitRoot) {
-        getAllPtyIds(tab.splitRoot).forEach((id) => window.api.pty.destroy(id))
-      } else {
-        window.api.pty.destroy(tab.ptyId)
-      }
+      // Destroy all PTYs: backing PTY + any in the split tree
+      const ptyIds = new Set(tab.splitRoot ? getAllPtyIds(tab.splitRoot) : [])
+      ptyIds.add(tab.ptyId)
+      ptyIds.forEach((id) => window.api.pty.destroy(id))
     }
     get().removeTab(tab.id)
   },
@@ -300,11 +298,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (hasUnsaved && !window.confirm('Close all tabs? Some have unsaved changes.')) return
     wsTabs.forEach((t) => {
       if (t.type === 'terminal') {
-        if (t.splitRoot) {
-          getAllPtyIds(t.splitRoot).forEach((id) => window.api.pty.destroy(id))
-        } else {
-          window.api.pty.destroy(t.ptyId)
-        }
+        const ptyIds = new Set(t.splitRoot ? getAllPtyIds(t.splitRoot) : [])
+        ptyIds.add(t.ptyId)
+        ptyIds.forEach((id) => window.api.pty.destroy(id))
       }
     })
     const wsId = s.activeWorkspaceId
@@ -339,9 +335,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newLeafId = crypto.randomUUID()
 
     // Build the split tree: if no splitRoot yet, create one from the existing single pane
-    const currentRoot = tab.splitRoot ?? { type: 'leaf' as const, id: tab.id, ptyId: tab.ptyId }
+    const currentRoot = tab.splitRoot ?? { type: 'leaf' as const, id: tab.id, contentType: 'terminal' as const, ptyId: tab.ptyId }
     const targetPaneId = tab.focusedPaneId ?? (currentRoot.type === 'leaf' ? currentRoot.id : firstLeaf(currentRoot).id)
-    const newRoot = splitLeaf(currentRoot, targetPaneId, direction, newLeafId, newPtyId)
+    const newLeaf = { type: 'leaf' as const, id: newLeafId, contentType: 'terminal' as const, ptyId: newPtyId }
+    const newRoot = splitLeaf(currentRoot, targetPaneId, direction, newLeaf)
 
     set((state) => ({
       tabs: state.tabs.map((t) =>
@@ -349,6 +346,88 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? { ...t, splitRoot: newRoot, focusedPaneId: newLeafId }
           : t
       ),
+    }))
+  },
+
+  openFileInSplit: async (filePath, direction = 'horizontal') => {
+    const s = get()
+    if (!s.activeWorkspaceId) return
+
+    let tab = s.tabs.find((t) => t.id === s.activeTabId)
+
+    // Active tab is a file tab — convert to a split container with two file panes
+    if (tab && tab.type === 'file') {
+      const ws = s.workspaces.find((w) => w.id === tab!.workspaceId)
+      if (!ws) return
+
+      // Create a backing PTY (required by the terminal tab type)
+      const shell = s.settings.defaultShell || undefined
+      const backingPtyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
+
+      const originalLeafId = crypto.randomUUID()
+      const newLeafId = crypto.randomUUID()
+      const originalFilePath = tab.filePath
+
+      const splitRoot = {
+        type: 'split' as const,
+        id: crypto.randomUUID(),
+        direction,
+        children: [
+          { type: 'leaf' as const, id: originalLeafId, contentType: 'file' as const, filePath: originalFilePath },
+          { type: 'leaf' as const, id: newLeafId, contentType: 'file' as const, filePath },
+        ] as [SplitNode, SplitNode],
+      }
+
+      const fileName = originalFilePath.split('/').pop() || 'Split'
+      const tabId = tab.id
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === tabId
+            ? {
+                id: tabId,
+                workspaceId: t.workspaceId,
+                type: 'terminal' as const,
+                title: fileName,
+                ptyId: backingPtyId,
+                splitRoot,
+                focusedPaneId: newLeafId,
+              }
+            : t
+        ),
+        activeTabId: tabId,
+      }))
+      return
+    }
+
+    // Find the active terminal tab, or fall back to the first terminal tab in this workspace
+    if (!tab || tab.type !== 'terminal') {
+      tab = s.tabs.find((t) => t.workspaceId === s.activeWorkspaceId && t.type === 'terminal')
+    }
+
+    // No terminal tab exists — create one first so we have a pane to split with
+    if (!tab || tab.type !== 'terminal') {
+      await get().createTerminalForActiveWorkspace()
+      const updated = get()
+      tab = updated.tabs.find((t) => t.id === updated.activeTabId)
+      if (!tab || tab.type !== 'terminal') return
+    }
+
+    const newLeafId = crypto.randomUUID()
+    const newLeaf = { type: 'leaf' as const, id: newLeafId, contentType: 'file' as const, filePath }
+
+    // Build the split tree: if no splitRoot yet, create one from the existing single pane
+    const currentRoot = tab.splitRoot ?? { type: 'leaf' as const, id: tab.id, contentType: 'terminal' as const, ptyId: tab.ptyId }
+    const targetPaneId = tab.focusedPaneId ?? (currentRoot.type === 'leaf' ? currentRoot.id : firstLeaf(currentRoot).id)
+    const newRoot = splitLeaf(currentRoot, targetPaneId, direction, newLeaf)
+
+    const tabId = tab.id
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId && t.type === 'terminal'
+          ? { ...t, splitRoot: newRoot, focusedPaneId: newLeafId }
+          : t
+      ),
+      activeTabId: tabId,
     }))
   },
 
@@ -365,31 +444,83 @@ export const useAppStore = create<AppState>((set, get) => ({
     const tab = s.tabs.find((t) => t.id === s.activeTabId)
     if (!tab || tab.type !== 'terminal' || !tab.splitRoot) return
 
-    // Find the pane to destroy its PTY
+    // Find the pane — only destroy PTY for terminal leaves
     const leaf = findLeaf(tab.splitRoot, paneId)
     if (!leaf) return
-    window.api.pty.destroy(leaf.ptyId)
+    if (leaf.contentType === 'terminal') {
+      window.api.pty.destroy(leaf.ptyId)
+    }
 
     const newRoot = removeLeaf(tab.splitRoot, paneId)
     if (!newRoot) {
-      // All panes removed — close the whole tab
+      // All panes removed — close the whole tab (destroy any remaining PTYs)
+      window.api.pty.destroy(tab.ptyId)
       get().removeTab(tab.id)
       return
     }
 
-    // If collapsed to a single leaf, clear splitRoot
     const isSingleLeaf = newRoot.type === 'leaf'
+
+    // Collapsed to a single file leaf → open file as standalone tab, close terminal tab
+    if (isSingleLeaf && newRoot.type === 'leaf' && newRoot.contentType === 'file') {
+      const filePath = newRoot.filePath
+      const workspaceId = tab.workspaceId
+      // Destroy the tab's primary PTY if it's still alive (it may already be destroyed)
+      // getAllPtyIds from the *original* tree minus the removed leaf gives us the surviving PTYs
+      const survivingPtyIds = getAllPtyIds(newRoot)
+      // Also destroy tab.ptyId if it wasn't already destroyed
+      if (leaf.contentType !== 'terminal' || leaf.ptyId !== tab.ptyId) {
+        // tab.ptyId is still alive — destroy it
+        window.api.pty.destroy(tab.ptyId)
+      }
+      survivingPtyIds.forEach((id) => window.api.pty.destroy(id))
+
+      get().removeTab(tab.id)
+      // Open the file as a standalone file tab
+      if (!get().tabs.some((t) => t.workspaceId === workspaceId && t.type === 'file' && t.filePath === filePath)) {
+        get().addTab({
+          id: crypto.randomUUID(),
+          workspaceId,
+          type: 'file',
+          filePath,
+        })
+      } else {
+        // File tab already open — just switch to it
+        const existing = get().tabs.find(
+          (t) => t.workspaceId === workspaceId && t.type === 'file' && t.filePath === filePath
+        )
+        if (existing) set({ activeTabId: existing.id })
+      }
+      return
+    }
+
+    // Collapsed to a single terminal leaf → promote as primary PTY, clear split
+    if (isSingleLeaf && newRoot.type === 'leaf' && newRoot.contentType === 'terminal') {
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === tab.id && t.type === 'terminal'
+            ? { ...t, ptyId: newRoot.ptyId, splitRoot: undefined, focusedPaneId: undefined }
+            : t
+        ),
+      }))
+      return
+    }
+
+    // Multiple panes remain — keep the split tree
     const newFocused = firstLeaf(newRoot).id
+
+    // If the destroyed pane's PTY matched tab.ptyId, promote another terminal's PTY
+    // so tab.ptyId always references a live process
+    let promotedPtyId = tab.ptyId
+    if (leaf.contentType === 'terminal' && leaf.ptyId === tab.ptyId) {
+      const nextTerminal = firstTerminalLeaf(newRoot)
+      if (nextTerminal) promotedPtyId = nextTerminal.ptyId
+    }
 
     set((state) => ({
       tabs: state.tabs.map((t) =>
         t.id === tab.id && t.type === 'terminal'
-          ? {
-              ...t,
-              ptyId: isSingleLeaf ? (newRoot as { type: 'leaf'; ptyId: string }).ptyId : t.ptyId,
-              splitRoot: isSingleLeaf ? undefined : newRoot,
-              focusedPaneId: isSingleLeaf ? undefined : newFocused,
-            }
+          ? { ...t, ptyId: promotedPtyId, splitRoot: newRoot, focusedPaneId: newFocused }
           : t
       ),
     }))
@@ -403,14 +534,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!ws) return
     const project = s.projects.find((p) => p.id === ws.projectId)
 
-    // Destroy PTYs for this workspace (including split panes)
+    // Destroy PTYs for this workspace (including backing PTYs and split panes)
     s.tabs.filter((t) => t.workspaceId === workspaceId && t.type === 'terminal').forEach((t) => {
       if (t.type === 'terminal') {
-        if (t.splitRoot) {
-          getAllPtyIds(t.splitRoot).forEach((id) => window.api.pty.destroy(id))
-        } else {
-          window.api.pty.destroy(t.ptyId)
-        }
+        const ptyIds = new Set(t.splitRoot ? getAllPtyIds(t.splitRoot) : [])
+        ptyIds.add(t.ptyId)
+        ptyIds.forEach((id) => window.api.pty.destroy(id))
       }
     })
 
@@ -443,11 +572,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const ws of projectWorkspaces) {
       s.tabs.filter((t) => t.workspaceId === ws.id && t.type === 'terminal').forEach((t) => {
         if (t.type === 'terminal') {
-          if (t.splitRoot) {
-            getAllPtyIds(t.splitRoot).forEach((id) => window.api.pty.destroy(id))
-          } else {
-            window.api.pty.destroy(t.ptyId)
-          }
+          const ptyIds = new Set(t.splitRoot ? getAllPtyIds(t.splitRoot) : [])
+          ptyIds.add(t.ptyId)
+          ptyIds.forEach((id) => window.api.pty.destroy(id))
         }
       })
       if (ws.worktreePath !== project.repoPath) {
@@ -551,8 +678,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const activeWorkspaceId = settings.restoreWorkspace
       ? ((saved && workspaces.some((w) => w.id === saved) ? saved : workspaces[0]?.id) ?? null)
       : null
-    // Tabs will be reconciled with live PTYs asynchronously after set
-    const tabs = data.tabs ?? []
+    // Tabs will be reconciled with live PTYs asynchronously after set.
+    // Normalize split trees from old persisted state (leaves without contentType).
+    const rawTabs = data.tabs ?? []
+    const tabs = rawTabs.map((tab) => {
+      if (tab.type === 'terminal' && tab.splitRoot) {
+        return { ...tab, splitRoot: normalizeSplitTree(tab.splitRoot) }
+      }
+      return tab
+    })
     const activeTabId = data.activeTabId ?? null
     set({
       projects: data.projects ?? [],

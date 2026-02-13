@@ -40,11 +40,9 @@ export function TabBar() {
       }
 
       if (tab.type === 'terminal') {
-        if (tab.splitRoot) {
-          getAllPtyIds(tab.splitRoot).forEach((id) => window.api.pty.destroy(id))
-        } else {
-          window.api.pty.destroy(tab.ptyId)
-        }
+        const ptyIds = new Set(tab.splitRoot ? getAllPtyIds(tab.splitRoot) : [])
+        ptyIds.add(tab.ptyId)
+        ptyIds.forEach((id) => window.api.pty.destroy(id))
       }
       removeTab(tabId)
     },

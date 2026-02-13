@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { Allotment } from 'allotment'
 import { useAppStore } from '../../store/app-store'
 import { TerminalPanel } from './TerminalPanel'
+import { FileEditorPane } from './FileEditorPane'
 import type { SplitNode, Tab } from '../../store/types'
 import styles from './TerminalSplitContainer.module.css'
 
@@ -53,6 +54,19 @@ interface SplitTreeProps {
 
 function SplitTreeNode({ node, focusedPaneId, onPaneFocus }: SplitTreeProps) {
   if (node.type === 'leaf') {
+    // Render file editor pane for file leaves
+    if (node.contentType === 'file') {
+      return (
+        <FileEditorPane
+          filePath={node.filePath}
+          paneId={node.id}
+          onFocus={onPaneFocus}
+          isFocusedPane={node.id === focusedPaneId}
+        />
+      )
+    }
+
+    // Render terminal pane for terminal leaves
     return (
       <TerminalPanel
         ptyId={node.ptyId}
@@ -71,7 +85,7 @@ function SplitTreeNode({ node, focusedPaneId, onPaneFocus }: SplitTreeProps) {
   return (
     <Allotment vertical={isVertical}>
       {node.children.map((child) => (
-        <Allotment.Pane key={child.id}>
+        <Allotment.Pane key={child.id} minSize={100}>
           <SplitTreeNode
             node={child}
             focusedPaneId={focusedPaneId}
