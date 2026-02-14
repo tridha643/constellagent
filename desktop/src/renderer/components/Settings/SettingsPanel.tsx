@@ -125,7 +125,7 @@ function SelectRow({ label, description, value, onChange, options }: {
         <div className={styles.rowDescription}>{description}</div>
       </div>
       <select
-        className={styles.selectInput}
+        className={styles.textInput}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -352,17 +352,14 @@ export function SettingsPanel() {
             placeholder="/bin/zsh"
           />
 
-          <SelectRow
-            label="PR link provider"
-            description="Where to open pull request links"
-            value={settings.prLinkProvider}
-            onChange={(v) => update('prLinkProvider', v as Settings['prLinkProvider'])}
-            options={[
-              { value: 'github', label: 'GitHub' },
-              { value: 'graphite', label: 'Graphite' },
-              { value: 'devinreview', label: 'Devin Review' },
-            ]}
-          />
+          <div className={styles.row}>
+            <div className={styles.rowText}>
+              <div className={styles.rowLabel}>PR link provider</div>
+              <div className={styles.rowDescription}>
+                Set per project in Project Settings (gear icon in the sidebar).
+              </div>
+            </div>
+          </div>
 
           <SelectRow
             label="Favorite editor"

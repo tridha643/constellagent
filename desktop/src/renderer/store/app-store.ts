@@ -3,6 +3,8 @@ import type { AppState, PersistedState, Tab, SplitNode } from './types'
 import { DEFAULT_SETTINGS } from './types'
 import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, firstLeaf, firstTerminalLeaf, collectLeaves, normalizeSplitTree } from './split-helpers'
 
+const DEFAULT_PR_LINK_PROVIDER = 'github' as const
+
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
   workspaces: [],
@@ -29,7 +31,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   gitFileStatuses: new Map(),
 
   addProject: (project) =>
-    set((s) => ({ projects: [...s.projects, project] })),
+    set((s) => ({
+      projects: [
+        ...s.projects,
+        {
+          ...project,
+          prLinkProvider: project.prLinkProvider ?? DEFAULT_PR_LINK_PROVIDER,
+        },
+      ],
+    })),
 
   removeProject: (id) =>
     set((s) => {
@@ -768,6 +778,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   hydrateState: (data) => {
+    const projects = (data.projects ?? []).map((project) => ({
+      ...project,
+      prLinkProvider: project.prLinkProvider ?? DEFAULT_PR_LINK_PROVIDER,
+    }))
     const workspaces = data.workspaces ?? []
     const saved = data.activeWorkspaceId
     const settings = data.settings ? { ...DEFAULT_SETTINGS, ...data.settings } : { ...DEFAULT_SETTINGS }
@@ -785,7 +799,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
     const activeTabId = data.activeTabId ?? null
     set({
-      projects: data.projects ?? [],
+      projects,
       workspaces,
       tabs,
       automations: data.automations ?? [],
