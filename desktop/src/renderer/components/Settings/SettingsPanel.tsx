@@ -305,39 +305,101 @@ function ClaudeHooksSection() {
   }
 
   return (
-    <div className={styles.section}>
-      <div className={styles.sectionTitle}>Claude Code Integration</div>
-      <div className={styles.row}>
-        <div className={styles.rowText}>
-          <div className={styles.rowLabel}>Notification hooks</div>
-          <div className={styles.rowDescription}>
-            Show an unread indicator when Claude Code finishes responding in a workspace
-          </div>
+    <div className={styles.row}>
+      <div className={styles.rowText}>
+        <div className={styles.rowLabel}>Claude Code hooks</div>
+        <div className={styles.rowDescription}>
+          Show an unread indicator when Claude Code finishes responding in a workspace
         </div>
-        {installed === true ? (
-          <button
-            className={styles.actionBtnDanger}
-            onClick={handleUninstall}
-            disabled={installing}
-          >
-            {installing ? 'Removing...' : 'Uninstall'}
-          </button>
-        ) : (
-          <button
-            className={styles.actionBtn}
-            onClick={handleInstall}
-            disabled={installing || installed === null}
-          >
-            {installing ? 'Installing...' : 'Install Hooks'}
-          </button>
-        )}
       </div>
+      {installed === true ? (
+        <button
+          className={styles.actionBtnDanger}
+          onClick={handleUninstall}
+          disabled={installing}
+        >
+          {installing ? 'Removing...' : 'Uninstall'}
+        </button>
+      ) : (
+        <button
+          className={styles.actionBtn}
+          onClick={handleInstall}
+          disabled={installing || installed === null}
+        >
+          {installing ? 'Installing...' : 'Install'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function CodexNotifySection() {
+  const [installed, setInstalled] = useState<boolean | null>(null)
+  const [installing, setInstalling] = useState(false)
+
+  useEffect(() => {
+    window.api.codex.checkNotify().then((result: { installed: boolean }) => {
+      setInstalled(result.installed)
+    }).catch(() => setInstalled(false))
+  }, [])
+
+  const handleInstall = async () => {
+    setInstalling(true)
+    try {
+      await window.api.codex.installNotify()
+      setInstalled(true)
+    } catch {
+      setInstalled(false)
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  const handleUninstall = async () => {
+    setInstalling(true)
+    try {
+      await window.api.codex.uninstallNotify()
+      setInstalled(false)
+    } catch {
+      // keep current state
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  return (
+    <div className={styles.row}>
+      <div className={styles.rowText}>
+        <div className={styles.rowLabel}>Codex notify hook</div>
+        <div className={styles.rowDescription}>
+          Show done/unread state for Codex turns and clear active state when a turn completes
+        </div>
+      </div>
+      {installed === true ? (
+        <button
+          className={styles.actionBtnDanger}
+          onClick={handleUninstall}
+          disabled={installing}
+        >
+          {installing ? 'Removing...' : 'Uninstall'}
+        </button>
+      ) : (
+        <button
+          className={styles.actionBtn}
+          onClick={handleInstall}
+          disabled={installing || installed === null}
+        >
+          {installing ? 'Installing...' : 'Install'}
+        </button>
+      )}
     </div>
   )
 }
 
 export function SettingsPanel() {
-  const { settings, updateSettings, toggleSettings } = useAppStore()
+  const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+  const toggleSettings = useAppStore((s) => s.toggleSettings)
 
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     updateSettings({ [key]: value })
@@ -423,20 +485,21 @@ export function SettingsPanel() {
             placeholder="/bin/zsh"
           />
 
-          <SelectRow
-            label="PR link provider"
-            description="Where to open pull request links"
-            value={settings.prLinkProvider}
-            onChange={(v) => update('prLinkProvider', v as Settings['prLinkProvider'])}
-            options={[
-              { value: 'github', label: 'GitHub' },
-              { value: 'graphite', label: 'Graphite' },
-              { value: 'devinreview', label: 'Devin Review' },
-            ]}
-          />
+          <div className={styles.row}>
+            <div className={styles.rowText}>
+              <div className={styles.rowLabel}>PR link provider</div>
+              <div className={styles.rowDescription}>
+                Set per project in Project Settings (gear icon in the sidebar).
+              </div>
+            </div>
+          </div>
         </div>
 
-        <ClaudeHooksSection />
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Agent Integrations</div>
+          <ClaudeHooksSection />
+          <CodexNotifySection />
+        </div>
 
         <SkillsSubagentsSection />
 

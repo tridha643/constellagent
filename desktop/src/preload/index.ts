@@ -1,12 +1,23 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
+import type { AutomationConfig, AutomationRunStartedEvent } from '../shared/automation-types'
+import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 
 const api = {
   git: {
     listWorktrees: (repoPath: string) =>
       ipcRenderer.invoke(IPC.GIT_LIST_WORKTREES, repoPath),
-    createWorktree: (repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean) =>
-      ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE, repoPath, name, branch, newBranch, baseBranch, force),
+    createWorktree: (repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean, requestId?: string) =>
+      ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE, repoPath, name, branch, newBranch, baseBranch, force, requestId),
+    createWorktreeFromPr: (repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string) =>
+      ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE_FROM_PR, repoPath, name, prNumber, localBranch, force, requestId) as Promise<{ worktreePath: string; branch: string }>,
+    onCreateWorktreeProgress: (callback: (progress: CreateWorktreeProgressEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, progress: CreateWorktreeProgressEvent) => callback(progress)
+      ipcRenderer.on(IPC.GIT_CREATE_WORKTREE_PROGRESS, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.GIT_CREATE_WORKTREE_PROGRESS, listener)
+      }
+    },
     removeWorktree: (repoPath: string, worktreePath: string) =>
       ipcRenderer.invoke(IPC.GIT_REMOVE_WORKTREE, repoPath, worktreePath),
     getStatus: (worktreePath: string) =>
@@ -83,8 +94,6 @@ const api = {
       ipcRenderer.invoke(IPC.APP_SELECT_FILE, filters) as Promise<string | null>,
     addProjectPath: (dirPath: string) =>
       ipcRenderer.invoke(IPC.APP_ADD_PROJECT_PATH, dirPath),
-    getDataPath: () =>
-      ipcRenderer.invoke(IPC.APP_GET_DATA_PATH),
   },
 
   skills: {
@@ -130,19 +139,28 @@ const api = {
     },
   },
 
+  codex: {
+    installNotify: () =>
+      ipcRenderer.invoke(IPC.CODEX_INSTALL_NOTIFY),
+    uninstallNotify: () =>
+      ipcRenderer.invoke(IPC.CODEX_UNINSTALL_NOTIFY),
+    checkNotify: () =>
+      ipcRenderer.invoke(IPC.CODEX_CHECK_NOTIFY),
+  },
+
   automations: {
-    create: (automation: unknown) =>
+    create: (automation: AutomationConfig) =>
       ipcRenderer.invoke(IPC.AUTOMATION_CREATE, automation),
-    update: (automation: unknown) =>
+    update: (automation: AutomationConfig) =>
       ipcRenderer.invoke(IPC.AUTOMATION_UPDATE, automation),
     delete: (automationId: string) =>
       ipcRenderer.invoke(IPC.AUTOMATION_DELETE, automationId),
-    runNow: (automation: unknown) =>
+    runNow: (automation: AutomationConfig) =>
       ipcRenderer.invoke(IPC.AUTOMATION_RUN_NOW, automation),
     stop: (automationId: string) =>
       ipcRenderer.invoke(IPC.AUTOMATION_STOP, automationId),
-    onRunStarted: (callback: (data: { automationId: string; automationName: string; projectId: string; ptyId: string; worktreePath: string; branch: string }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, data: { automationId: string; automationName: string; projectId: string; ptyId: string; worktreePath: string; branch: string }) => callback(data)
+    onRunStarted: (callback: (data: AutomationRunStartedEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: AutomationRunStartedEvent) => callback(data)
       ipcRenderer.on(IPC.AUTOMATION_RUN_STARTED, listener)
       return () => {
         ipcRenderer.removeListener(IPC.AUTOMATION_RUN_STARTED, listener)
@@ -153,6 +171,8 @@ const api = {
   github: {
     getPrStatuses: (repoPath: string, branches: string[]) =>
       ipcRenderer.invoke(IPC.GITHUB_GET_PR_STATUSES, repoPath, branches),
+    listOpenPrs: (repoPath: string) =>
+      ipcRenderer.invoke(IPC.GITHUB_LIST_OPEN_PRS, repoPath),
   },
 
   clipboard: {

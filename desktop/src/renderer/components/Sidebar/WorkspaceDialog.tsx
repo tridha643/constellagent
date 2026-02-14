@@ -15,9 +15,19 @@ interface Props {
   project: Project
   onConfirm: (name: string, branch: string, newBranch: boolean, baseBranch?: string) => void
   onCancel: () => void
+  isCreating?: boolean
+  createProgressMessage?: string
+  showSlowCreateMessage?: boolean
 }
 
-export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
+export function WorkspaceDialog({
+  project,
+  onConfirm,
+  onCancel,
+  isCreating = false,
+  createProgressMessage = '',
+  showSlowCreateMessage = false,
+}: Props) {
   const [name, setName] = useState(`ws-${Date.now().toString(36)}`)
   const [branches, setBranches] = useState<string[]>([])
   const [selectedBranch, setSelectedBranch] = useState('')
@@ -56,9 +66,10 @@ export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
   }, [project.repoPath])
 
   const handleSubmit = useCallback(() => {
+    if (isCreating) return
     const branch = isNewBranch ? (newBranchName || name) : selectedBranch
     onConfirm(name, branch, isNewBranch, isNewBranch ? baseBranch : undefined)
-  }, [name, isNewBranch, newBranchName, selectedBranch, baseBranch, onConfirm])
+  }, [name, isNewBranch, newBranchName, selectedBranch, baseBranch, onConfirm, isCreating])
 
   // Close pickers on click outside
   useEffect(() => {
@@ -76,12 +87,13 @@ export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
   }, [pickerOpen, basePickerOpen])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (isCreating) return
     if (e.key === 'Enter') handleSubmit()
     if (e.key === 'Escape') onCancel()
-  }, [handleSubmit, onCancel])
+  }, [handleSubmit, onCancel, isCreating])
 
   return (
-    <div className={styles.overlay} onClick={onCancel}>
+    <div className={styles.overlay} onClick={() => { if (!isCreating) onCancel() }}>
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
         <div className={styles.title}>New Workspace</div>
 
@@ -91,6 +103,7 @@ export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoFocus
+          disabled={isCreating}
           placeholder="workspace-name"
         />
 
@@ -99,12 +112,14 @@ export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
           <button
             className={`${styles.toggleBtn} ${isNewBranch ? styles.active : ''}`}
             onClick={() => setIsNewBranch(true)}
+            disabled={isCreating}
           >
             New branch
           </button>
           <button
             className={`${styles.toggleBtn} ${!isNewBranch ? styles.active : ''}`}
             onClick={() => setIsNewBranch(false)}
+            disabled={isCreating}
           >
             Existing
           </button>
@@ -116,6 +131,7 @@ export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
               className={styles.input}
               value={newBranchName}
               onChange={(e) => setNewBranchName(toBranchName(e.target.value))}
+              disabled={isCreating}
               placeholder={toBranchName(name) || 'branch-name'}
             />
             <label className={styles.label}>Base branch</label>
@@ -124,13 +140,13 @@ export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
                 className={styles.input}
                 value={baseBranch}
                 onChange={(e) => setBaseBranch(e.target.value)}
-                disabled={loading}
+                disabled={loading || isCreating}
                 placeholder="Base branch"
               />
               <button
                 className={styles.pickerBtn}
                 onClick={() => setBasePickerOpen((v) => !v)}
-                disabled={loading}
+                disabled={loading || isCreating}
                 type="button"
               >
                 &#9662;
@@ -156,13 +172,13 @@ export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
               className={styles.input}
               value={selectedBranch}
               onChange={(e) => setSelectedBranch(e.target.value)}
-              disabled={loading}
+              disabled={loading || isCreating}
               placeholder="Branch name"
             />
             <button
               className={styles.pickerBtn}
               onClick={() => setPickerOpen((v) => !v)}
-              disabled={loading}
+              disabled={loading || isCreating}
               type="button"
             >
               &#9662;
@@ -183,10 +199,22 @@ export function WorkspaceDialog({ project, onConfirm, onCancel }: Props) {
           </div>
         )}
 
+        {isCreating && (
+          <div className={styles.createStatus} role="status" aria-live="polite">
+            <span className={styles.createSpinner} />
+            <span>{createProgressMessage || 'Creating workspace...'}</span>
+          </div>
+        )}
+        {isCreating && showSlowCreateMessage && (
+          <div className={styles.createSlowNote}>
+            Taking longer than usual. Git network sync may be slow.
+          </div>
+        )}
+
         <div className={styles.actions}>
-          <button className={styles.cancelBtn} onClick={onCancel}>Cancel</button>
-          <button className={styles.createBtn} onClick={handleSubmit} disabled={!name.trim()}>
-            Create
+          <button className={styles.cancelBtn} onClick={onCancel} disabled={isCreating}>Cancel</button>
+          <button className={styles.createBtn} onClick={handleSubmit} disabled={!name.trim() || isCreating}>
+            {isCreating ? 'Creating...' : 'Create'}
           </button>
         </div>
       </div>

@@ -31,26 +31,37 @@ export function App() {
     return unsub
   }, [])
 
-  // Listen for Claude Code activity updates
+  // Listen for agent activity updates (Claude hooks + Codex submit/notify markers)
   useEffect(() => {
+    let prevActive = new Set<string>()
     const unsub = window.api.claude.onActivityUpdate((workspaceIds: string[]) => {
-      useAppStore.getState().setActiveClaudeWorkspaces(workspaceIds)
+      const nextActive = new Set(workspaceIds)
+      const state = useAppStore.getState()
+
+      // Fallback unread signal on activity completion:
+      // if a workspace was active and is now inactive, mark unread unless it's open.
+      for (const wsId of prevActive) {
+        if (!nextActive.has(wsId) && wsId !== state.activeWorkspaceId && state.workspaces.some((w) => w.id === wsId)) {
+          state.markWorkspaceUnread(wsId)
+        }
+      }
+
+      state.setActiveClaudeWorkspaces(workspaceIds)
+      prevActive = nextActive
     })
     return unsub
   }, [])
 
-  const {
-    tabs: allTabs,
-    activeTabId,
-    rightPanelOpen,
-    sidebarCollapsed,
-    activeWorkspaceTabs,
-    workspaces,
-    activeWorkspaceId,
-    settingsOpen,
-    automationsOpen,
-    quickOpenVisible,
-  } = useAppStore()
+  const allTabs = useAppStore((s) => s.tabs)
+  const activeTabId = useAppStore((s) => s.activeTabId)
+  const rightPanelOpen = useAppStore((s) => s.rightPanelOpen)
+  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed)
+  const activeWorkspaceTabs = useAppStore((s) => s.activeWorkspaceTabs)
+  const workspaces = useAppStore((s) => s.workspaces)
+  const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
+  const settingsOpen = useAppStore((s) => s.settingsOpen)
+  const automationsOpen = useAppStore((s) => s.automationsOpen)
+  const quickOpenVisible = useAppStore((s) => s.quickOpenVisible)
 
   const wsTabs = activeWorkspaceTabs()
   const activeTab = wsTabs.find((t) => t.id === activeTabId)

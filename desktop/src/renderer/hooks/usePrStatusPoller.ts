@@ -1,14 +1,33 @@
 import { useEffect, useRef } from 'react'
 import { useAppStore } from '../store/app-store'
 
-const POLL_INTERVAL = 90_000
-const INITIAL_DELAY = 2_000
+const FAST_POLL_INTERVAL = 7_000
+const NORMAL_POLL_INTERVAL = 25_000
+const STARTUP_BURST_MS = 60_000
+const RESUME_BURST_MS = 30_000
+const EVENT_BURST_MS = 120_000
+const PENDING_BURST_MS = 60_000
+const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
 
 export function usePrStatusPoller(): void {
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const runningRef = useRef(false)
+  const queuedImmediateRef = useRef(false)
+  const burstUntilRef = useRef(0)
 
   useEffect(() => {
-    async function pollAll() {
+    let disposed = false
+
+    const inBurst = () => Date.now() < burstUntilRef.current
+
+    const extendBurst = (durationMs: number) => {
+      const until = Date.now() + durationMs
+      if (until > burstUntilRef.current) burstUntilRef.current = until
+    }
+
+    const nextIntervalMs = () => (inBurst() ? FAST_POLL_INTERVAL : NORMAL_POLL_INTERVAL)
+
+    async function pollAll(): Promise<{ hasPendingChecks: boolean }> {
       const { projects, workspaces, setPrStatuses, setGhAvailability, updateWorkspaceBranch } =
         useAppStore.getState()
 
@@ -52,22 +71,98 @@ export function usePrStatusPoller(): void {
             setGhAvailability(projectId, result.available)
             if (result.available) {
               setPrStatuses(projectId, result.data)
+              return Object.values(result.data).some(
+                (pr) => pr !== null && pr.state === 'open' && pr.checkStatus === 'pending'
+              )
             }
+            return false
           } catch {
             // PR status is nice-to-have — silently ignore errors
+            return false
           }
         }
       )
 
-      await Promise.allSettled(fetches)
+      const settled = await Promise.allSettled(fetches)
+      const hasPendingChecks = settled.some((item) => item.status === 'fulfilled' && item.value)
+      return { hasPendingChecks }
     }
 
-    const initialTimer = setTimeout(pollAll, INITIAL_DELAY)
-    timerRef.current = setInterval(pollAll, POLL_INTERVAL)
+    const clearTimer = () => {
+      if (!timerRef.current) return
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+
+    const schedule = (delayMs: number) => {
+      if (disposed || document.hidden) return
+      clearTimer()
+      timerRef.current = setTimeout(() => {
+        void runPoll()
+      }, delayMs)
+    }
+
+    const requestImmediatePoll = () => {
+      if (disposed || document.hidden) return
+      if (runningRef.current) {
+        queuedImmediateRef.current = true
+        return
+      }
+      schedule(0)
+    }
+
+    async function runPoll() {
+      if (disposed || document.hidden) return
+      if (runningRef.current) {
+        queuedImmediateRef.current = true
+        return
+      }
+
+      runningRef.current = true
+      let hasPendingChecks = false
+      try {
+        const result = await pollAll()
+        hasPendingChecks = result.hasPendingChecks
+      } finally {
+        runningRef.current = false
+      }
+
+      if (disposed || document.hidden) return
+      if (hasPendingChecks) {
+        extendBurst(PENDING_BURST_MS)
+      }
+      if (queuedImmediateRef.current) {
+        queuedImmediateRef.current = false
+        schedule(0)
+        return
+      }
+      schedule(nextIntervalMs())
+    }
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        clearTimer()
+        return
+      }
+      extendBurst(RESUME_BURST_MS)
+      requestImmediatePoll()
+    }
+
+    const onPrPollHint = (_event: Event) => {
+      extendBurst(EVENT_BURST_MS)
+      requestImmediatePoll()
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener(PR_POLL_HINT_EVENT, onPrPollHint)
+    extendBurst(STARTUP_BURST_MS)
+    requestImmediatePoll()
 
     return () => {
-      clearTimeout(initialTimer)
-      if (timerRef.current) clearInterval(timerRef.current)
+      disposed = true
+      clearTimer()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener(PR_POLL_HINT_EVENT, onPrPollHint)
     }
   }, [])
 }

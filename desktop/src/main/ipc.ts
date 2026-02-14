@@ -1,23 +1,151 @@
-import { ipcMain, dialog, app, BrowserWindow, clipboard } from 'electron'
+import { ipcMain, dialog, app, BrowserWindow, clipboard, type WebContents } from 'electron'
 import { join, relative } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
-import { mkdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { watch, type FSWatcher } from 'fs'
 import { IPC } from '../shared/ipc-channels'
+import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import { PtyManager } from './pty-manager'
 import { GitService } from './git-service'
 import { GithubService } from './github-service'
-import { FileService } from './file-service'
-import { AutomationScheduler, type AutomationConfig } from './automation-scheduler'
+import { FileService, type FileNode } from './file-service'
+import { AutomationScheduler } from './automation-scheduler'
+import type { AutomationConfig } from '../shared/automation-types'
 import { trustPathForClaude, loadClaudeSettings, saveClaudeSettings, loadJsonFile, saveJsonFile } from './claude-config'
 import { SkillsService } from './skills-service'
+import { loadCodexConfigText, saveCodexConfigText } from './codex-config'
 
 const ptyManager = new PtyManager()
 const automationScheduler = new AutomationScheduler(ptyManager)
 
-// Filesystem watchers: dirPath → { watcher, debounceTimer }
-const fsWatchers = new Map<string, { watcher: FSWatcher; timer: ReturnType<typeof setTimeout> | null }>()
+interface FsWatchSubscriber {
+  webContents: WebContents
+  refs: number
+}
+
+interface FsWatcherEntry {
+  watcher: FSWatcher
+  timer: ReturnType<typeof setTimeout> | null
+  subscribers: Map<number, FsWatchSubscriber>
+  totalRefs: number
+}
+
+// Filesystem watchers keyed by watched directory.
+// Each renderer subscription increments a ref count so one panel unmounting
+// does not tear down a shared watcher used by another panel.
+const fsWatchers = new Map<string, FsWatcherEntry>()
+
+interface StateSanitizeResult {
+  data: unknown
+  changed: boolean
+  removedWorkspaceCount: number
+}
+
+interface WorkspaceLike {
+  id: string
+  worktreePath: string
+}
+
+interface TabLike {
+  id: string
+  workspaceId: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isWorkspaceLike(value: unknown): value is WorkspaceLike {
+  return isRecord(value) && typeof value.id === 'string' && typeof value.worktreePath === 'string'
+}
+
+function isTabLike(value: unknown): value is TabLike {
+  return isRecord(value) && typeof value.id === 'string' && typeof value.workspaceId === 'string'
+}
+
+function sanitizeLoadedState(data: unknown): StateSanitizeResult {
+  if (!isRecord(data)) return { data, changed: false, removedWorkspaceCount: 0 }
+  const rawWorkspaces = Array.isArray(data.workspaces) ? data.workspaces : null
+  if (!rawWorkspaces) return { data, changed: false, removedWorkspaceCount: 0 }
+
+  const keptWorkspaces: unknown[] = []
+  const keptWorkspaceIds = new Set<string>()
+  let removedWorkspaceCount = 0
+
+  for (const workspace of rawWorkspaces) {
+    if (!isWorkspaceLike(workspace) || !existsSync(workspace.worktreePath)) {
+      removedWorkspaceCount += 1
+      continue
+    }
+    keptWorkspaces.push(workspace)
+    keptWorkspaceIds.add(workspace.id)
+  }
+
+  if (removedWorkspaceCount === 0) {
+    return { data, changed: false, removedWorkspaceCount: 0 }
+  }
+
+  const next: Record<string, unknown> = { ...data, workspaces: keptWorkspaces }
+  let changed = true
+
+  const rawTabs = Array.isArray(data.tabs) ? data.tabs : null
+  const keptTabs = rawTabs
+    ? rawTabs.filter((tab) => isTabLike(tab) && keptWorkspaceIds.has(tab.workspaceId))
+    : []
+  if (rawTabs) next.tabs = keptTabs
+
+  const rawActiveWorkspaceId = typeof data.activeWorkspaceId === 'string' ? data.activeWorkspaceId : null
+  let nextActiveWorkspaceId: string | null = null
+  if (rawActiveWorkspaceId && keptWorkspaceIds.has(rawActiveWorkspaceId)) {
+    nextActiveWorkspaceId = rawActiveWorkspaceId
+  } else {
+    const firstWorkspace = keptWorkspaces.find(isWorkspaceLike)
+    nextActiveWorkspaceId = firstWorkspace?.id ?? null
+  }
+  if ((data.activeWorkspaceId ?? null) !== nextActiveWorkspaceId) {
+    changed = true
+  }
+  next.activeWorkspaceId = nextActiveWorkspaceId
+
+  const rawActiveTabId = typeof data.activeTabId === 'string' ? data.activeTabId : null
+  let nextActiveTabId: string | null = null
+  if (rawTabs) {
+    const tabIds = new Set<string>()
+    for (const tab of keptTabs) {
+      if (isTabLike(tab)) tabIds.add(tab.id)
+    }
+    if (rawActiveTabId && tabIds.has(rawActiveTabId)) {
+      nextActiveTabId = rawActiveTabId
+    } else if (nextActiveWorkspaceId) {
+      const fallback = keptTabs.find(
+        (tab) => isTabLike(tab) && tab.workspaceId === nextActiveWorkspaceId
+      )
+      if (isTabLike(fallback)) nextActiveTabId = fallback.id
+    }
+  }
+  if ((data.activeTabId ?? null) !== nextActiveTabId) {
+    changed = true
+  }
+  next.activeTabId = nextActiveTabId
+
+  if (isRecord(data.lastActiveTabByWorkspace)) {
+    const filtered = Object.fromEntries(
+      Object.entries(data.lastActiveTabByWorkspace).filter(([workspaceId]) =>
+        keptWorkspaceIds.has(workspaceId)
+      )
+    )
+    if (
+      Object.keys(filtered).length !==
+      Object.keys(data.lastActiveTabByWorkspace).length
+    ) {
+      changed = true
+    }
+    next.lastActiveTabByWorkspace = filtered
+  }
+
+  return { data: next, changed, removedWorkspaceCount }
+}
 
 export function registerIpcHandlers(): void {
   // ── Git handlers ──
@@ -25,8 +153,33 @@ export function registerIpcHandlers(): void {
     return GitService.listWorktrees(repoPath)
   })
 
-  ipcMain.handle(IPC.GIT_CREATE_WORKTREE, async (_e, repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean) => {
-    return GitService.createWorktree(repoPath, name, branch, newBranch, baseBranch, force)
+  ipcMain.handle(IPC.GIT_CREATE_WORKTREE, async (_e, repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean, requestId?: string) => {
+    return GitService.createWorktree(
+      repoPath,
+      name,
+      branch,
+      newBranch,
+      baseBranch,
+      force,
+      (progress) => {
+        const payload: CreateWorktreeProgressEvent = { requestId, ...progress }
+        _e.sender.send(IPC.GIT_CREATE_WORKTREE_PROGRESS, payload)
+      }
+    )
+  })
+
+  ipcMain.handle(IPC.GIT_CREATE_WORKTREE_FROM_PR, async (_e, repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string) => {
+    return GitService.createWorktreeFromPr(
+      repoPath,
+      name,
+      prNumber,
+      localBranch,
+      force,
+      (progress) => {
+        const payload: CreateWorktreeProgressEvent = { requestId, ...progress }
+        _e.sender.send(IPC.GIT_CREATE_WORKTREE_PROGRESS, payload)
+      }
+    )
   })
 
   ipcMain.handle(IPC.GIT_REMOVE_WORKTREE, async (_e, repoPath: string, worktreePath: string) => {
@@ -76,6 +229,10 @@ export function registerIpcHandlers(): void {
   // ── GitHub handlers ──
   ipcMain.handle(IPC.GITHUB_GET_PR_STATUSES, async (_e, repoPath: string, branches: string[]) => {
     return GithubService.getPrStatuses(repoPath, branches)
+  })
+
+  ipcMain.handle(IPC.GITHUB_LIST_OPEN_PRS, async (_e, repoPath: string) => {
+    return GithubService.listOpenPrs(repoPath)
   })
 
   // ── PTY handlers ──
@@ -140,7 +297,7 @@ export function registerIpcHandlers(): void {
     }
 
     // Attach gitStatus to nodes, propagate to parent dirs
-    function annotate(nodes: Awaited<ReturnType<typeof FileService.getTree>>): boolean {
+    function annotate(nodes: FileNode[]): boolean {
       let hasStatus = false
       for (const node of nodes) {
         // Compute relative path from dirPath
@@ -151,13 +308,13 @@ export function registerIpcHandlers(): void {
         if (node.type === 'file') {
           const st = statusMap.get(rel)
           if (st) {
-            ;(node as any).gitStatus = st
+            node.gitStatus = st
             hasStatus = true
           }
         } else if (node.children) {
           const childHasStatus = annotate(node.children)
           if (childHasStatus) {
-            ;(node as any).gitStatus = 'modified'
+            node.gitStatus = 'modified'
             hasStatus = true
           }
         }
@@ -179,15 +336,29 @@ export function registerIpcHandlers(): void {
 
   // ── Filesystem watcher handlers ──
   ipcMain.handle(IPC.FS_WATCH_START, (_e, dirPath: string) => {
-    if (fsWatchers.has(dirPath)) return // already watching
-
-    const win = BrowserWindow.fromWebContents(_e.sender)
-    if (!win) return
+    const senderId = _e.sender.id
+    const existing = fsWatchers.get(dirPath)
+    if (existing) {
+      const subscriber = existing.subscribers.get(senderId)
+      if (subscriber) {
+        subscriber.refs += 1
+      } else {
+        existing.subscribers.set(senderId, { webContents: _e.sender, refs: 1 })
+      }
+      existing.totalRefs += 1
+      return
+    }
 
     try {
       const watcher = watch(dirPath, { recursive: true }, (_eventType, filename) => {
-        // Ignore .git internal changes
-        if (filename && (filename.startsWith('.git/') || filename.startsWith('.git\\'))) return
+        // For .git/ changes, only notify on meaningful state changes (commit, stage, branch switch)
+        // Ignore noisy internals like objects/, logs/, COMMIT_EDITMSG
+        if (filename && (filename.startsWith('.git/') || filename.startsWith('.git\\'))) {
+          const f = filename.replaceAll('\\', '/')
+          const isStateChange =
+            f === '.git/index' || f === '.git/HEAD' || f.startsWith('.git/refs/')
+          if (!isStateChange) return
+        }
 
         const entry = fsWatchers.get(dirPath)
         if (!entry) return
@@ -195,13 +366,29 @@ export function registerIpcHandlers(): void {
         // Debounce: wait 500ms of quiet before notifying
         if (entry.timer) clearTimeout(entry.timer)
         entry.timer = setTimeout(() => {
-          if (!win.isDestroyed()) {
-            win.webContents.send(IPC.FS_WATCH_CHANGED, dirPath)
+          for (const [id, subscriber] of entry.subscribers.entries()) {
+            if (subscriber.webContents.isDestroyed()) {
+              entry.totalRefs = Math.max(0, entry.totalRefs - subscriber.refs)
+              entry.subscribers.delete(id)
+              continue
+            }
+            subscriber.webContents.send(IPC.FS_WATCH_CHANGED, dirPath)
+          }
+
+          if (entry.totalRefs <= 0 || entry.subscribers.size === 0) {
+            if (entry.timer) clearTimeout(entry.timer)
+            entry.watcher.close()
+            fsWatchers.delete(dirPath)
           }
         }, 500)
       })
 
-      fsWatchers.set(dirPath, { watcher, timer: null })
+      fsWatchers.set(dirPath, {
+        watcher,
+        timer: null,
+        subscribers: new Map([[senderId, { webContents: _e.sender, refs: 1 }]]),
+        totalRefs: 1,
+      })
     } catch {
       // Directory may not exist or be inaccessible — ignore
     }
@@ -209,7 +396,21 @@ export function registerIpcHandlers(): void {
 
   ipcMain.on(IPC.FS_WATCH_STOP, (_e, dirPath: string) => {
     const entry = fsWatchers.get(dirPath)
-    if (entry) {
+    if (!entry) return
+
+    const senderId = _e.sender.id
+    const subscriber = entry.subscribers.get(senderId)
+    if (subscriber) {
+      subscriber.refs -= 1
+      entry.totalRefs = Math.max(0, entry.totalRefs - 1)
+      if (subscriber.refs <= 0) {
+        entry.subscribers.delete(senderId)
+      }
+    } else {
+      entry.totalRefs = Math.max(0, entry.totalRefs - 1)
+    }
+
+    if (entry.totalRefs <= 0 || entry.subscribers.size === 0) {
       if (entry.timer) clearTimeout(entry.timer)
       entry.watcher.close()
       fsWatchers.delete(dirPath)
@@ -238,10 +439,6 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(IPC.APP_GET_DATA_PATH, async () => {
-    return app.getPath('userData')
-  })
-
   // ── Claude Code trust ──
   ipcMain.handle(IPC.CLAUDE_TRUST_PATH, async (_e, dirPath: string) => {
     await trustPathForClaude(dirPath)
@@ -255,8 +452,20 @@ export function registerIpcHandlers(): void {
     return join(__dirname, '..', '..', 'claude-hooks', name)
   }
 
+  function getCodexHookScriptPath(name: string): string {
+    if (app.isPackaged) {
+      return join(process.resourcesPath, 'codex-hooks', name)
+    }
+    return join(__dirname, '..', '..', 'codex-hooks', name)
+  }
+
   // Stable identifiers to match our hook entries regardless of full path
   const HOOK_IDENTIFIERS = ['claude-hooks/notify.sh', 'claude-hooks/activity.sh']
+
+  function shellQuoteArg(value: string): string {
+    // Claude executes hook commands via /bin/sh; paths can contain spaces.
+    return `'${value.replace(/'/g, `'\"'\"'`)}'`
+  }
 
   function isOurHook(rule: { hooks?: Array<{ command?: string }> }): boolean {
     return !!rule.hooks?.some((h) => HOOK_IDENTIFIERS.some((id) => h.command?.includes(id)))
@@ -284,7 +493,7 @@ export function registerIpcHandlers(): void {
     function ensureHook(event: string, scriptPath: string, matcher = '') {
       const rules = (hooks[event] ?? []) as Array<Record<string, unknown>>
       const filtered = rules.filter((rule) => !isOurHook(rule as { hooks?: Array<{ command?: string }> }))
-      filtered.push({ matcher, hooks: [{ type: 'command', command: scriptPath }] })
+      filtered.push({ matcher, hooks: [{ type: 'command', command: shellQuoteArg(scriptPath) }] })
       hooks[event] = filtered
     }
 
@@ -314,6 +523,114 @@ export function registerIpcHandlers(): void {
 
     if (Object.keys(hooks).length === 0) delete settings.hooks
     await saveClaudeSettings(settings)
+    return { success: true }
+  })
+
+  // ── Codex notify hook ──
+  const CODEX_NOTIFY_IDENTIFIER = 'codex-hooks/notify.sh'
+  const TABLE_HEADER_RE = /^\s*\[[^\n]+\]\s*$/m
+  const NOTIFY_ASSIGNMENT_RE = /^\s*notify\s*=/
+
+  function tomlEscape(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  }
+
+  function firstTableHeaderIndex(configText: string): number {
+    const match = configText.match(TABLE_HEADER_RE)
+    return match?.index ?? -1
+  }
+
+  function topLevelSection(configText: string): string {
+    const firstTableIndex = firstTableHeaderIndex(configText)
+    return firstTableIndex === -1 ? configText : configText.slice(0, firstTableIndex)
+  }
+
+  function hasOurCodexNotify(configText: string): boolean {
+    return topLevelSection(configText).includes(CODEX_NOTIFY_IDENTIFIER)
+  }
+
+  function stripNotifyAssignments(configText: string, shouldStrip: (assignment: string) => boolean = () => true): string {
+    const lines = configText.split('\n')
+    const kept: string[] = []
+    let i = 0
+
+    while (i < lines.length) {
+      const line = lines[i]
+      if (!NOTIFY_ASSIGNMENT_RE.test(line)) {
+        kept.push(line)
+        i += 1
+        continue
+      }
+
+      let end = i
+      const startsArray = line.includes('[')
+      const endsArray = line.includes(']')
+      if (startsArray && !endsArray) {
+        let j = i + 1
+        while (j < lines.length) {
+          end = j
+          if (lines[j].includes(']')) break
+          j += 1
+        }
+      }
+
+      const assignment = lines.slice(i, end + 1).join('\n')
+      if (!shouldStrip(assignment)) {
+        kept.push(...lines.slice(i, end + 1))
+      }
+      i = end + 1
+    }
+
+    return kept.join('\n')
+  }
+
+  function insertTopLevelNotify(configText: string, notifyLine: string): string {
+    const withoutNotify = configText.trimEnd()
+    if (!withoutNotify) return `${notifyLine}\n`
+
+    const firstTableIndex = firstTableHeaderIndex(withoutNotify)
+    if (firstTableIndex === -1) {
+      return `${withoutNotify}\n${notifyLine}\n`
+    }
+
+    const beforeTables = withoutNotify.slice(0, firstTableIndex).trimEnd()
+    const tablesAndBelow = withoutNotify.slice(firstTableIndex).replace(/^\n+/, '')
+
+    const rebuilt = beforeTables
+      ? `${beforeTables}\n${notifyLine}\n\n${tablesAndBelow}`
+      : `${notifyLine}\n\n${tablesAndBelow}`
+
+    return `${rebuilt.replace(/\n{3,}/g, '\n\n').trimEnd()}\n`
+  }
+
+  ipcMain.handle(IPC.CODEX_CHECK_NOTIFY, async () => {
+    const config = await loadCodexConfigText()
+    return { installed: hasOurCodexNotify(config) }
+  })
+
+  ipcMain.handle(IPC.CODEX_INSTALL_NOTIFY, async () => {
+    const notifyPath = getCodexHookScriptPath('notify.sh')
+    const notifyLine = `notify = ["${tomlEscape(notifyPath)}"]`
+    let config = await loadCodexConfigText()
+
+    // `notify` must be at true top-level in TOML. Appending at EOF can accidentally
+    // nest it under the last table (for example `[projects."..."]`), which Codex ignores.
+    config = stripNotifyAssignments(config)
+    config = insertTopLevelNotify(config, notifyLine)
+
+    await saveCodexConfigText(config)
+    return { success: true }
+  })
+
+  ipcMain.handle(IPC.CODEX_UNINSTALL_NOTIFY, async () => {
+    let config = await loadCodexConfigText()
+    if (!config.includes(CODEX_NOTIFY_IDENTIFIER)) return { success: true }
+
+    config = stripNotifyAssignments(config, (assignment) => assignment.includes(CODEX_NOTIFY_IDENTIFIER))
+    config = config.replace(/\n{3,}/g, '\n\n').trimEnd()
+    if (config) config += '\n'
+
+    await saveCodexConfigText(config)
     return { success: true }
   })
 
@@ -412,6 +729,15 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.STATE_LOAD, async () => {
-    return loadJsonFile(stateFilePath(), null)
+    const loaded = await loadJsonFile(stateFilePath(), null)
+    const sanitized = sanitizeLoadedState(loaded)
+    if (sanitized.changed) {
+      await saveJsonFile(stateFilePath(), sanitized.data).catch(() => {})
+      const count = sanitized.removedWorkspaceCount
+      if (count > 0) {
+        console.info(`[state] removed ${count} stale workspace${count === 1 ? '' : 's'}`)
+      }
+    }
+    return sanitized.data
   })
 }

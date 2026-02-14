@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type { AppState, PersistedState, Tab } from './types'
 import { DEFAULT_SETTINGS } from './types'
 
+const DEFAULT_PR_LINK_PROVIDER = 'github' as const
+
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
   workspaces: [],
@@ -27,7 +29,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   ghAvailability: new Map(),
 
   addProject: (project) =>
-    set((s) => ({ projects: [...s.projects, project] })),
+    set((s) => ({
+      projects: [
+        ...s.projects,
+        {
+          ...project,
+          prLinkProvider: project.prLinkProvider ?? DEFAULT_PR_LINK_PROVIDER,
+        },
+      ],
+    })),
 
   removeProject: (id) =>
     set((s) => {
@@ -37,12 +47,40 @@ export const useAppStore = create<AppState>((set, get) => ({
         window.api.automations.delete(a.id)
       }
       const removedWsIds = new Set(s.workspaces.filter((w) => w.projectId === id).map((w) => w.id))
+      const newProjects = s.projects.filter((p) => p.id !== id)
+      const newWorkspaces = s.workspaces.filter((w) => w.projectId !== id)
+      const newTabs = s.tabs.filter((t) => !removedWsIds.has(t.workspaceId))
+      const newAutomations = s.automations.filter((a) => a.projectId !== id)
+      const newUnread = new Set(Array.from(s.unreadWorkspaceIds).filter((wsId) => !removedWsIds.has(wsId)))
+      const newActiveClaude = new Set(Array.from(s.activeClaudeWorkspaceIds).filter((wsId) => !removedWsIds.has(wsId)))
+      const newPrStatusMap = new Map(
+        Array.from(s.prStatusMap.entries()).filter(([key]) => !key.startsWith(`${id}:`))
+      )
+      const newGhAvailability = new Map(s.ghAvailability)
+      newGhAvailability.delete(id)
+
       const tabMap = { ...s.lastActiveTabByWorkspace }
       for (const wsId of removedWsIds) delete tabMap[wsId]
+
+      const activeWorkspaceId =
+        s.activeWorkspaceId && removedWsIds.has(s.activeWorkspaceId)
+          ? (newWorkspaces[0]?.id ?? null)
+          : s.activeWorkspaceId
+      const activeTabId = newTabs.some((t) => t.id === s.activeTabId)
+        ? s.activeTabId
+        : (newTabs.find((t) => t.workspaceId === activeWorkspaceId)?.id ?? newTabs[0]?.id ?? null)
+
       return {
-        projects: s.projects.filter((p) => p.id !== id),
-        workspaces: s.workspaces.filter((w) => w.projectId !== id),
-        automations: s.automations.filter((a) => a.projectId !== id),
+        projects: newProjects,
+        workspaces: newWorkspaces,
+        tabs: newTabs,
+        automations: newAutomations,
+        unreadWorkspaceIds: newUnread,
+        activeClaudeWorkspaceIds: newActiveClaude,
+        prStatusMap: newPrStatusMap,
+        ghAvailability: newGhAvailability,
+        activeWorkspaceId,
+        activeTabId,
         lastActiveTabByWorkspace: tabMap,
       }
     }),
@@ -59,12 +97,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       const newTabs = s.tabs.filter((t) => t.workspaceId !== id)
       const newUnread = new Set(s.unreadWorkspaceIds)
       newUnread.delete(id)
+      const newActiveClaude = new Set(s.activeClaudeWorkspaceIds)
+      newActiveClaude.delete(id)
       const tabMap = { ...s.lastActiveTabByWorkspace }
       delete tabMap[id]
       return {
         workspaces: newWorkspaces,
         tabs: newTabs,
         unreadWorkspaceIds: newUnread,
+        activeClaudeWorkspaceIds: newActiveClaude,
         lastActiveTabByWorkspace: tabMap,
         activeWorkspaceId:
           s.activeWorkspaceId === id
@@ -434,6 +475,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   hydrateState: (data) => {
+    const projects = (data.projects ?? []).map((project) => ({
+      ...project,
+      prLinkProvider: project.prLinkProvider ?? DEFAULT_PR_LINK_PROVIDER,
+    }))
     const workspaces = data.workspaces ?? []
     const saved = data.activeWorkspaceId
     const settings = data.settings ? { ...DEFAULT_SETTINGS, ...data.settings } : { ...DEFAULT_SETTINGS }
@@ -444,7 +489,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const tabs = data.tabs ?? []
     const activeTabId = data.activeTabId ?? null
     set({
-      projects: data.projects ?? [],
+      projects,
       workspaces,
       tabs,
       automations: data.automations ?? [],

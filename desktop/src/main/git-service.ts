@@ -2,9 +2,12 @@ import { execFile } from 'child_process'
 import { existsSync } from 'fs'
 import { copyFile, mkdir, readdir, rm } from 'fs/promises'
 import { promisify } from 'util'
-import { basename, dirname, join, resolve } from 'path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
+import type { CreateWorktreeProgress } from '../shared/workspace-creation'
 
 const execFileAsync = promisify(execFile)
+
+type CreateWorktreeProgressReporter = (progress: CreateWorktreeProgress) => void
 
 export interface WorktreeInfo {
   path: string
@@ -24,6 +27,11 @@ export interface FileDiff {
   hunks: string // raw unified diff text
 }
 
+export interface PrWorktreeResult {
+  worktreePath: string
+  branch: string
+}
+
 async function git(args: string[], cwd: string): Promise<string> {
   const { stdout } = await execFileAsync('git', args, {
     cwd,
@@ -34,7 +42,10 @@ async function git(args: string[], cwd: string): Promise<string> {
 
 /** Extract a user-friendly message from a git exec error */
 function friendlyGitError(err: unknown, fallback: string): string {
-  const stderr = (err as any)?.stderr as string | undefined
+  const stderr =
+    typeof err === 'object' && err !== null && 'stderr' in err
+      ? String((err as { stderr?: unknown }).stderr ?? '')
+      : undefined
   if (!stderr) return fallback
 
   // "fatal: 'branch' is already used by worktree at '/path'"
@@ -63,6 +74,25 @@ function friendlyGitError(err: unknown, fallback: string): string {
   return fallback
 }
 
+/** Sanitize user-facing workspace names for safe filesystem directory names */
+function sanitizeWorktreeName(name: string): string {
+  const sanitized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '')
+    .slice(0, 80)
+  return sanitized || 'workspace'
+}
+
+function ensureWithinParent(parentDir: string, candidatePath: string): void {
+  const relPath = relative(parentDir, candidatePath)
+  if (relPath.startsWith('..') || isAbsolute(relPath)) {
+    throw new Error('Invalid workspace name')
+  }
+}
+
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next'])
 
 async function copyEnvFiles(dir: string, destRoot: string, srcRoot: string): Promise<void> {
@@ -83,7 +113,21 @@ async function copyEnvFiles(dir: string, destRoot: string, srcRoot: string): Pro
   } catch {}
 }
 
+function reportCreateWorktreeProgress(
+  onProgress: CreateWorktreeProgressReporter | undefined,
+  progress: CreateWorktreeProgress
+): void {
+  onProgress?.(progress)
+}
+
 export class GitService {
+  private static async hasRemote(repoPath: string, remoteName: string): Promise<boolean> {
+    return git(['remote', 'get-url', remoteName], repoPath).then(
+      () => true,
+      () => false,
+    )
+  }
+
   static async listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
     const output = await git(['worktree', 'list', '--porcelain'], repoPath)
     if (!output) return []
@@ -123,11 +167,34 @@ export class GitService {
   }
 
   static async getDefaultBranch(repoPath: string): Promise<string> {
-    // Sync origin/HEAD with what the remote reports as default
-    await git(['remote', 'set-head', 'origin', '--auto'], repoPath)
-    const ref = await git(['symbolic-ref', 'refs/remotes/origin/HEAD'], repoPath)
-    // "refs/remotes/origin/main" → "origin/main"
-    return ref.replace('refs/remotes/', '')
+    const hasOrigin = await this.hasRemote(repoPath, 'origin')
+
+    if (hasOrigin) {
+      // Best effort sync of origin/HEAD. Network hiccups should not block worktree creation.
+      await git(['remote', 'set-head', 'origin', '--auto'], repoPath).catch(() => {})
+
+      const ref = await git(['symbolic-ref', 'refs/remotes/origin/HEAD'], repoPath).catch(() => '')
+      // "refs/remotes/origin/main" → "origin/main"
+      if (ref) return ref.replace('refs/remotes/', '')
+
+      // Fallback for repos where origin/HEAD is unset.
+      for (const candidate of ['origin/main', 'origin/master']) {
+        const exists = await git(['rev-parse', '--verify', `refs/remotes/${candidate}`], repoPath)
+          .then(() => true, () => false)
+        if (exists) return candidate
+      }
+    }
+
+    const local = await git(['rev-parse', '--abbrev-ref', 'HEAD'], repoPath).catch(() => '')
+    if (local && local !== 'HEAD') return local
+
+    for (const candidate of ['main', 'master']) {
+      const exists = await git(['rev-parse', '--verify', `refs/heads/${candidate}`], repoPath)
+        .then(() => true, () => false)
+      if (exists) return candidate
+    }
+
+    return 'main'
   }
 
   static async createWorktree(
@@ -136,26 +203,51 @@ export class GitService {
     branch: string,
     newBranch: boolean,
     baseBranch?: string,
-    force = false
+    force = false,
+    onProgress?: CreateWorktreeProgressReporter
   ): Promise<string> {
-    branch = GitService.sanitizeBranchName(branch)
+    const requestedBranch = branch.trim()
+    branch = GitService.sanitizeBranchName(requestedBranch)
     if (!branch) throw new Error('Branch name is empty after sanitization')
 
     const parentDir = dirname(repoPath)
     const repoName = basename(repoPath)
-    const worktreePath = resolve(parentDir, `${repoName}-ws-${name}`)
+    const safeWorktreeName = sanitizeWorktreeName(name)
+    const worktreePath = resolve(parentDir, `${repoName}-ws-${safeWorktreeName}`)
+    ensureWithinParent(parentDir, worktreePath)
 
     // Clean up stale worktree refs
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'prune-worktrees',
+      message: 'Cleaning stale worktree references...',
+    })
     await git(['worktree', 'prune'], repoPath).catch(() => {})
 
+    const hasOrigin = await GitService.hasRemote(repoPath, 'origin')
+
     // Fetch remote refs so worktree branches from latest state
-    await git(['fetch', '--prune', 'origin'], repoPath)
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'fetch-origin',
+      message: hasOrigin ? 'Syncing remote...' : 'No origin remote found; using local refs...',
+    })
+    if (hasOrigin) {
+      // Best effort: local repos (or temporary network failures) should still work.
+      await git(['fetch', '--prune', 'origin'], repoPath).catch(() => {})
+    }
 
     // Auto-detect base branch when creating a new branch without explicit base
     if (newBranch && !baseBranch) {
+      reportCreateWorktreeProgress(onProgress, {
+        stage: 'resolve-default-branch',
+        message: 'Resolving default base branch...',
+      })
       baseBranch = await GitService.getDefaultBranch(repoPath)
     }
 
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'prepare-worktree-dir',
+      message: 'Preparing worktree directory...',
+    })
     if (existsSync(worktreePath)) {
       if (!force) {
         throw new Error('WORKTREE_PATH_EXISTS')
@@ -164,8 +256,48 @@ export class GitService {
     }
 
     // Pre-check if branch exists so we never need -b retry
-    const branchExists = await git(['rev-parse', '--verify', `refs/heads/${branch}`], repoPath)
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'inspect-branch',
+      message: 'Checking branch state...',
+    })
+    let branchExists = await git(['rev-parse', '--verify', `refs/heads/${branch}`], repoPath)
       .then(() => true, () => false)
+
+    // If checking out an existing branch that doesn't exist locally or on origin,
+    // try fetching it as a GitHub PR branch (fork PRs aren't included in normal fetch)
+    if (!newBranch && !branchExists) {
+      const remoteExists = hasOrigin
+        ? await git(['rev-parse', '--verify', `refs/remotes/origin/${branch}`], repoPath)
+            .then(() => true, () => false)
+        : false
+      if (!remoteExists) {
+        try {
+          const headCandidates = [requestedBranch]
+          if (requestedBranch.includes(':')) {
+            const prBranch = requestedBranch.split(':')[1]
+            if (prBranch && !headCandidates.includes(prBranch)) headCandidates.push(prBranch)
+          }
+          if (!headCandidates.includes(branch)) headCandidates.push(branch)
+
+          let prNumber = ''
+          for (const headCandidate of headCandidates) {
+            const { stdout } = await execFileAsync('gh', [
+              // Resolve repo from cwd for broad gh CLI compatibility.
+              'pr', 'list', '--head', headCandidate, '--json', 'number',
+              '--jq', '.[0].number',
+            ], { cwd: repoPath })
+            prNumber = stdout.trim()
+            if (prNumber) break
+          }
+          if (prNumber) {
+            await git(['fetch', 'origin', `pull/${prNumber}/head:${branch}`], repoPath)
+            branchExists = true
+          }
+        } catch {
+          // gh not available or no matching PR — fall through to normal error
+        }
+      }
+    }
 
     const args = ['worktree', 'add']
     if (force) args.push('--force')
@@ -177,6 +309,10 @@ export class GitService {
     }
 
     try {
+      reportCreateWorktreeProgress(onProgress, {
+        stage: 'create-worktree',
+        message: 'Creating worktree...',
+      })
       await git(args, repoPath)
     } catch (err) {
       const msg = friendlyGitError(err, 'Failed to create worktree')
@@ -186,13 +322,112 @@ export class GitService {
 
     // Fast-forward existing branches to match upstream
     if (!newBranch || branchExists) {
+      reportCreateWorktreeProgress(onProgress, {
+        stage: 'sync-branch',
+        message: 'Fast-forwarding branch...',
+      })
       await git(['pull', '--ff-only'], worktreePath).catch(() => {})
     }
 
     // Copy .env files that are missing from the worktree (gitignored) from the main repo
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'copy-env-files',
+      message: 'Copying env files...',
+    })
     await copyEnvFiles(repoPath, worktreePath, repoPath)
 
     return worktreePath
+  }
+
+  static async createWorktreeFromPr(
+    repoPath: string,
+    name: string,
+    prNumber: number,
+    localBranch: string,
+    force = false,
+    onProgress?: CreateWorktreeProgressReporter
+  ): Promise<PrWorktreeResult> {
+    const parsedPrNumber = Number(prNumber)
+    if (!Number.isInteger(parsedPrNumber) || parsedPrNumber <= 0) {
+      throw new Error('Invalid pull request number')
+    }
+
+    const requestedBranch = localBranch.trim()
+    const branch = GitService.sanitizeBranchName(requestedBranch)
+    if (!branch) throw new Error('Branch name is empty after sanitization')
+
+    const parentDir = dirname(repoPath)
+    const repoName = basename(repoPath)
+    const safeWorktreeName = sanitizeWorktreeName(name)
+    const worktreePath = resolve(parentDir, `${repoName}-ws-${safeWorktreeName}`)
+    ensureWithinParent(parentDir, worktreePath)
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'prune-worktrees',
+      message: 'Cleaning stale worktree references...',
+    })
+    await git(['worktree', 'prune'], repoPath).catch(() => {})
+
+    const hasOrigin = await GitService.hasRemote(repoPath, 'origin')
+    if (!hasOrigin) {
+      throw new Error('No origin remote found')
+    }
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'fetch-origin',
+      message: `Fetching PR #${parsedPrNumber}...`,
+    })
+    try {
+      await git(['fetch', '--prune', 'origin'], repoPath).catch(() => {})
+      await git(['fetch', 'origin', `+pull/${parsedPrNumber}/head:${branch}`], repoPath)
+    } catch (err) {
+      const msg = friendlyGitError(err, `Failed to fetch PR #${parsedPrNumber}`)
+      if (msg.includes('couldn\'t find remote ref') || msg.includes('no such remote ref')) {
+        throw new Error(`Pull request #${parsedPrNumber} not found`)
+      }
+      throw new Error(msg)
+    }
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'prepare-worktree-dir',
+      message: 'Preparing worktree directory...',
+    })
+    if (existsSync(worktreePath)) {
+      if (!force) {
+        throw new Error('WORKTREE_PATH_EXISTS')
+      }
+      await rm(worktreePath, { recursive: true, force: true })
+    }
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'create-worktree',
+      message: 'Creating worktree...',
+    })
+    const args = ['worktree', 'add']
+    if (force) args.push('--force')
+    args.push(worktreePath, branch)
+
+    try {
+      await git(args, repoPath)
+    } catch (err) {
+      const msg = friendlyGitError(err, 'Failed to create worktree')
+      if (msg === 'BRANCH_CHECKED_OUT' && !force) throw new Error(msg)
+      throw new Error(msg)
+    }
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'sync-branch',
+      message: 'Fast-forwarding branch...',
+    })
+    await git(['pull', '--ff-only'], worktreePath).catch(() => {})
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'copy-env-files',
+      message: 'Copying env files...',
+    })
+    await copyEnvFiles(repoPath, worktreePath, repoPath)
+
+    return { worktreePath, branch }
   }
 
   static async removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
@@ -208,7 +443,12 @@ export class GitService {
   }
 
   static async getCurrentBranch(worktreePath: string): Promise<string> {
-    return git(['rev-parse', '--abbrev-ref', 'HEAD'], worktreePath)
+    if (!existsSync(worktreePath)) return ''
+    try {
+      return await git(['rev-parse', '--abbrev-ref', 'HEAD'], worktreePath)
+    } catch {
+      return ''
+    }
   }
 
   static async getStatus(worktreePath: string): Promise<FileStatus[]> {

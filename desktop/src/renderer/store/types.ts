@@ -39,6 +39,7 @@ export interface Project {
   name: string
   repoPath: string
   startupCommands?: StartupCommand[]
+  prLinkProvider?: PrLinkProvider
 }
 
 export interface Workspace {
@@ -173,7 +174,7 @@ export interface AppState {
   markWorkspaceUnread: (workspaceId: string) => void
   clearWorkspaceUnread: (workspaceId: string) => void
 
-  // Claude activity actions
+  // Agent activity actions (Claude + Codex)
   setActiveClaudeWorkspaces: (workspaceIds: string[]) => void
 
   // PR status actions
