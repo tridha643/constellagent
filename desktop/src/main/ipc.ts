@@ -248,6 +248,10 @@ export function registerIpcHandlers(): void {
     return GithubService.listOpenPrs(repoPath)
   })
 
+  ipcMain.handle(IPC.GITHUB_RESOLVE_PR, async (_e, repoPath: string, prNumber: number) => {
+    return GithubService.resolvePr(repoPath, prNumber)
+  })
+
   // ── PTY handlers ──
   ipcMain.handle(IPC.PTY_CREATE, async (_e, workingDir: string, shell?: string, extraEnv?: Record<string, string>) => {
     const win = BrowserWindow.fromWebContents(_e.sender)

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { AppState, PersistedState, Tab, SplitNode } from './types'
 import { DEFAULT_SETTINGS } from './types'
-import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, firstLeaf, firstTerminalLeaf, normalizeSplitTree } from './split-helpers'
+import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, firstLeaf, firstTerminalLeaf, collectLeaves, normalizeSplitTree } from './split-helpers'
 
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
@@ -473,6 +473,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
       activeTabId: tabId,
     }))
+  },
+
+  cycleFocusedPane: () => {
+    const s = get()
+    if (!s.activeTabId) return
+    const tab = s.tabs.find((t) => t.id === s.activeTabId)
+    if (!tab || tab.type !== 'terminal' || !tab.splitRoot) return
+    const leaves = collectLeaves(tab.splitRoot)
+    if (leaves.length <= 1) return
+    const idx = leaves.findIndex((l) => l.id === tab.focusedPaneId)
+    const next = leaves[(idx + 1) % leaves.length]
+    get().setFocusedPane(tab.id, next.id)
   },
 
   setFocusedPane: (tabId, paneId) =>

@@ -52,6 +52,14 @@ export function useShortcuts() {
         }
       }
 
+      // Ctrl+Tab — cycle focus between split panes
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'Tab') {
+        e.preventDefault()
+        e.stopPropagation()
+        useAppStore.getState().cycleFocusedPane()
+        return
+      }
+
       const meta = e.metaKey || e.ctrlKey
       const shift = e.shiftKey
       const alt = e.altKey
@@ -281,7 +289,7 @@ export function useShortcuts() {
         const project = store.activeProject()
         if (project) {
           store.openWorkspaceDialog(project.id)
-        } else if (store.projects.length === 1) {
+        } else if (store.projects.length > 0) {
           store.openWorkspaceDialog(store.projects[0].id)
         }
         return

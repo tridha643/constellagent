@@ -224,6 +224,13 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
     termRef.current.focus()
   }, [active])
 
+  // Focus terminal when this pane becomes the focused pane in a split (e.g. Ctrl+Tab)
+  useEffect(() => {
+    if (inSplit && isFocusedPane && termRef.current) {
+      termRef.current.focus()
+    }
+  }, [inSplit, isFocusedPane])
+
   const handleMouseDown = () => {
     if (paneId && onFocus) onFocus(paneId)
   }

@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react'
 import { FileEditor } from '../Editor/FileEditor'
+import type { FileEditorHandle } from '../Editor/FileEditor'
 import styles from './FileEditorPane.module.css'
 
 interface Props {
@@ -14,9 +16,18 @@ interface Props {
  * Adds focus tracking and split-specific styling without cluttering the standalone editor.
  */
 export function FileEditorPane({ filePath, paneId, onFocus, isFocusedPane, worktreePath }: Props) {
+  const editorRef = useRef<FileEditorHandle>(null)
+
   const handleMouseDown = () => {
     if (onFocus) onFocus(paneId)
   }
+
+  // Focus the Monaco editor when this pane becomes focused (e.g. Ctrl+Tab)
+  useEffect(() => {
+    if (isFocusedPane) {
+      editorRef.current?.focus()
+    }
+  }, [isFocusedPane])
 
   // Use the paneId as a stable tabId for save/unsaved tracking within the split
   return (
@@ -25,6 +36,7 @@ export function FileEditorPane({ filePath, paneId, onFocus, isFocusedPane, workt
       onMouseDown={handleMouseDown}
     >
       <FileEditor
+        ref={editorRef}
         tabId={paneId}
         filePath={filePath}
         active={true}

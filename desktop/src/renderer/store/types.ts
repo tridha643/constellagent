@@ -167,6 +167,7 @@ export interface AppState {
   focusOrCreateTerminal: () => Promise<void>
   splitTerminalPane: (direction: 'horizontal' | 'vertical') => Promise<void>
   openFileInSplit: (filePath: string, direction?: 'horizontal' | 'vertical') => Promise<void>
+  cycleFocusedPane: () => void
   setFocusedPane: (tabId: string, paneId: string) => void
   closeSplitPane: (paneId: string) => void
   openWorkspaceDialog: (projectId: string | null) => void

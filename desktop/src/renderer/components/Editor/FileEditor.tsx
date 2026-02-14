@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useImperativeHandle, forwardRef } from 'react'
 import Editor, { loader } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { useAppStore } from '../../store/app-store'
@@ -50,7 +50,11 @@ function getLanguage(path: string): string {
   return map[ext || ''] || 'plaintext'
 }
 
-export function FileEditor({ tabId, filePath, active, worktreePath }: Props) {
+export interface FileEditorHandle {
+  focus(): void
+}
+
+export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEditor({ tabId, filePath, active, worktreePath }, ref) {
   const [content, setContent] = useState<string | null>(null)
   const [unsaved, setUnsaved] = useState(false)
   const [editorInstance, setEditorInstance] = useState<editor.IStandaloneCodeEditor | null>(null)
@@ -64,6 +68,12 @@ export function FileEditor({ tabId, filePath, active, worktreePath }: Props) {
 
   // Git gutter decorations (no-op when worktreePath is undefined or editor not mounted)
   useGitGutter(editorInstance, filePath, worktreePath)
+
+  useImperativeHandle(ref, () => ({
+    focus() {
+      editorRef.current?.focus()
+    },
+  }), [])
 
   // Load file content
   useEffect(() => {
@@ -224,4 +234,4 @@ export function FileEditor({ tabId, filePath, active, worktreePath }: Props) {
       />
     </div>
   )
-}
+})

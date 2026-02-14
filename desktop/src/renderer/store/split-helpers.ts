@@ -86,6 +86,12 @@ export function removeLeaf(root: SplitNode, leafId: string): SplitNode | null {
   return { ...root, children: newChildren as [SplitNode, SplitNode] }
 }
 
+/** Collect all leaf nodes in depth-first order. */
+export function collectLeaves(node: SplitNode): SplitLeaf[] {
+  if (node.type === 'leaf') return [node]
+  return node.children.flatMap(collectLeaves)
+}
+
 /** Get the first leaf in the tree (depth-first, left-to-right). */
 export function firstLeaf(root: SplitNode): SplitLeaf {
   if (root.type === 'leaf') return root

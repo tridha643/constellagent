@@ -21,6 +21,18 @@ interface Props {
   showSlowCreateMessage?: boolean
 }
 
+/** Check if a string looks like a PR reference (URL or #number) */
+function isPrRef(value: string): boolean {
+  return parsePrUrl(value) !== null || parsePrNumber(value) !== null
+}
+
+/** Extract PR number from a PR reference string */
+function extractPrNumber(value: string): number | null {
+  const parsed = parsePrUrl(value)
+  if (parsed) return parsed.number
+  return parsePrNumber(value)
+}
+
 export function WorkspaceDialog({
   project,
   onConfirm,
@@ -68,11 +80,37 @@ export function WorkspaceDialog({
     loadBranches()
   }, [project.repoPath])
 
+  /** Resolve a PR reference to its branch name via gh CLI */
+  const resolvePr = useCallback(async (value: string, target: 'branch' | 'baseBranch') => {
+    const prNumber = extractPrNumber(value)
+    if (prNumber === null) return false
+
+    setPrResolving(true)
+    setPrError('')
+    try {
+      const result = await window.api.github.resolvePr(project.repoPath, prNumber)
+      if (target === 'branch') {
+        setSelectedBranch(result.branch)
+        setName(`pr-${result.number}`)
+      } else {
+        setBaseBranch(result.branch)
+      }
+      setPrError('')
+      return true
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to resolve PR'
+      setPrError(msg)
+      return false
+    } finally {
+      setPrResolving(false)
+    }
+  }, [project.repoPath])
+
   const handleSubmit = useCallback(() => {
-    if (isCreating) return
+    if (isCreating || prResolving) return
     const branch = isNewBranch ? (newBranchName || name) : selectedBranch
     onConfirm(name, branch, isNewBranch, isNewBranch ? baseBranch : undefined)
-  }, [name, isNewBranch, newBranchName, selectedBranch, baseBranch, onConfirm, isCreating])
+  }, [name, isNewBranch, newBranchName, selectedBranch, baseBranch, onConfirm, isCreating, prResolving])
 
   // Close pickers on click outside
   useEffect(() => {
@@ -91,9 +129,30 @@ export function WorkspaceDialog({
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (isCreating) return
-    if (e.key === 'Enter') handleSubmit()
-    if (e.key === 'Escape') onCancel()
-  }, [handleSubmit, onCancel, isCreating])
+    if (e.key === 'Escape') { onCancel(); return }
+
+    if (e.key === 'Enter') {
+      // If the focused input has a PR reference, resolve it instead of submitting
+      const target = e.target as HTMLInputElement
+      if (target.tagName === 'INPUT') {
+        const value = target.value.trim()
+        if (isPrRef(value)) {
+          e.preventDefault()
+          e.stopPropagation()
+          // Determine which field is focused
+          if (isNewBranch) {
+            // In new-branch mode, only the base branch input can have a PR ref
+            resolvePr(value, 'baseBranch')
+          } else {
+            // In existing-branch mode, the branch input can have a PR ref
+            resolvePr(value, 'branch')
+          }
+          return
+        }
+      }
+      handleSubmit()
+    }
+  }, [handleSubmit, onCancel, isCreating, isNewBranch, resolvePr])
 
   return (
     <div className={styles.overlay} onClick={() => { if (!isCreating) onCancel() }}>
@@ -142,14 +201,15 @@ export function WorkspaceDialog({
               <input
                 className={styles.input}
                 value={baseBranch}
-                onChange={(e) => setBaseBranch(e.target.value)}
-                disabled={loading || isCreating}
-                placeholder="Base branch"
+                onChange={(e) => { setBaseBranch(e.target.value); setPrError('') }}
+                disabled={loading || isCreating || prResolving}
+                placeholder="Branch name, PR URL, or #123 (press Enter to resolve)"
               />
+              {prResolving && <span className={styles.prSpinner} />}
               <button
                 className={styles.pickerBtn}
                 onClick={() => setBasePickerOpen((v) => !v)}
-                disabled={loading || isCreating}
+                disabled={loading || isCreating || prResolving}
                 type="button"
               >
                 &#9662;
@@ -168,6 +228,7 @@ export function WorkspaceDialog({
                 </div>
               )}
             </div>
+            {prError && <div className={styles.prError}>{prError}</div>}
           </>
         ) : (
           <>
@@ -175,37 +236,9 @@ export function WorkspaceDialog({
               <input
                 className={styles.input}
                 value={selectedBranch}
-                onChange={(e) => {
-                  const value = e.target.value
-                  setSelectedBranch(value)
-                  setPrError('')
-
-                  // Detect PR URL or #number shorthand
-                  const parsed = parsePrUrl(value)
-                  const prNum = parsed ? null : parsePrNumber(value)
-
-                  if (parsed || prNum !== null) {
-                    setPrResolving(true)
-                    setPrError('')
-                    const number = parsed ? parsed.number : prNum!
-                    const owner = parsed?.owner
-                    const repo = parsed?.repo
-                    window.api.github.resolvePr(project.repoPath, number, owner, repo)
-                      .then((result) => {
-                        setSelectedBranch(result.branch)
-                        setName(`pr-${result.number}`)
-                        setPrError('')
-                      })
-                      .catch((err: Error) => {
-                        setPrError(err.message || 'Failed to resolve PR')
-                      })
-                      .finally(() => {
-                        setPrResolving(false)
-                      })
-                  }
-                }}
+                onChange={(e) => { setSelectedBranch(e.target.value); setPrError('') }}
                 disabled={loading || isCreating || prResolving}
-                placeholder="Branch name, PR URL, or #123"
+                placeholder="Branch name, PR URL, or #123 (press Enter to resolve)"
               />
               {prResolving && <span className={styles.prSpinner} />}
               <button
