@@ -4,6 +4,7 @@ export const IPC = {
   // Git operations
   GIT_LIST_WORKTREES: 'git:list-worktrees',
   GIT_CREATE_WORKTREE: 'git:create-worktree',
+  GIT_CREATE_WORKTREE_FROM_PR: 'git:create-worktree-from-pr',
   GIT_CREATE_WORKTREE_PROGRESS: 'git:create-worktree-progress',
   GIT_REMOVE_WORKTREE: 'git:remove-worktree',
   GIT_GET_STATUS: 'git:get-status',
@@ -16,6 +17,9 @@ export const IPC = {
   GIT_COMMIT: 'git:commit',
   GIT_GET_CURRENT_BRANCH: 'git:get-current-branch',
   GIT_GET_DEFAULT_BRANCH: 'git:get-default-branch',
+  GIT_SHOW_FILE_AT_HEAD: 'git:show-file-at-head',
+  GIT_GET_LOG: 'git:get-log',
+  GIT_GET_COMMIT_DIFF: 'git:get-commit-diff',
 
   // PTY operations
   PTY_CREATE: 'pty:create',
@@ -31,6 +35,7 @@ export const IPC = {
   FS_GET_TREE_WITH_STATUS: 'fs:get-tree-with-status',
   FS_READ_FILE: 'fs:read-file',
   FS_WRITE_FILE: 'fs:write-file',
+  FS_DELETE_FILE: 'fs:delete-file',
   FS_WATCH_START: 'fs:watch-start',
   FS_WATCH_STOP: 'fs:watch-stop',
   FS_WATCH_CHANGED: 'fs:watch-changed',
@@ -38,6 +43,7 @@ export const IPC = {
   // App operations
   APP_SELECT_DIRECTORY: 'app:select-directory',
   APP_ADD_PROJECT_PATH: 'app:add-project-path',
+  APP_OPEN_IN_EDITOR: 'app:open-in-editor',
 
   // Claude Code integration
   CLAUDE_TRUST_PATH: 'claude:trust-path',
@@ -62,9 +68,42 @@ export const IPC = {
 
   // GitHub operations
   GITHUB_GET_PR_STATUSES: 'github:get-pr-statuses',
+  GITHUB_LIST_OPEN_PRS: 'github:list-open-prs',
+  GITHUB_RESOLVE_PR: 'github:resolve-pr',
+
+  // LSP operations
+  LSP_GET_PORT: 'lsp:get-port',
+  LSP_GET_AVAILABLE_LANGUAGES: 'lsp:get-available-languages',
 
   // Clipboard operations
   CLIPBOARD_SAVE_IMAGE: 'clipboard:save-image',
+
+  // MCP operations
+  MCP_SYNC_CONFIGS: 'mcp:sync-configs',
+  MCP_LOAD_SERVERS: 'mcp:load-servers',
+  MCP_REMOVE_SERVER: 'mcp:remove-server',
+  MCP_GET_CONFIG_PATHS: 'mcp:get-config-paths',
+
+  // Context repository
+  CONTEXT_REPO_INIT: 'context:repo-init',
+  CONTEXT_SEARCH: 'context:search',
+  CONTEXT_GET_RECENT: 'context:get-recent',
+  CONTEXT_INSERT: 'context:insert',
+  CONTEXT_RESTORE_CHECKPOINT: 'context:restore-checkpoint',
+
+  // Session
+  SESSION_GET_LAST: 'session:get-last',
+
+  // Skills & Subagents
+  SKILLS_SCAN: 'skills:scan',
+  SKILLS_SYNC: 'skills:sync',
+  SKILLS_REMOVE: 'skills:remove',
+  SUBAGENTS_SCAN: 'subagents:scan',
+  SUBAGENTS_SYNC: 'subagents:sync',
+  SUBAGENTS_REMOVE: 'subagents:remove',
+
+  // App file picker
+  APP_SELECT_FILE: 'app:select-file',
 
   // State persistence
   STATE_SAVE: 'state:save',

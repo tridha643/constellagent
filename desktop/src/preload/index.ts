@@ -9,6 +9,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_LIST_WORKTREES, repoPath),
     createWorktree: (repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean, requestId?: string) =>
       ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE, repoPath, name, branch, newBranch, baseBranch, force, requestId),
+    createWorktreeFromPr: (repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string) =>
+      ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE_FROM_PR, repoPath, name, prNumber, localBranch, force, requestId) as Promise<{ worktreePath: string; branch: string }>,
     onCreateWorktreeProgress: (callback: (progress: CreateWorktreeProgressEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, progress: CreateWorktreeProgressEvent) => callback(progress)
       ipcRenderer.on(IPC.GIT_CREATE_WORKTREE_PROGRESS, listener)
@@ -38,6 +40,12 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_GET_CURRENT_BRANCH, worktreePath) as Promise<string>,
     getDefaultBranch: (repoPath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_DEFAULT_BRANCH, repoPath) as Promise<string>,
+    showFileAtHead: (worktreePath: string, filePath: string) =>
+      ipcRenderer.invoke(IPC.GIT_SHOW_FILE_AT_HEAD, worktreePath, filePath) as Promise<string | null>,
+    getLog: (worktreePath: string, maxCount?: number) =>
+      ipcRenderer.invoke(IPC.GIT_GET_LOG, worktreePath, maxCount) as Promise<import('../shared/git-types').GitLogEntry[]>,
+    getCommitDiff: (worktreePath: string, hash: string) =>
+      ipcRenderer.invoke(IPC.GIT_GET_COMMIT_DIFF, worktreePath, hash) as Promise<string>,
   },
 
   pty: {
@@ -72,6 +80,8 @@ const api = {
       ipcRenderer.invoke(IPC.FS_READ_FILE, filePath),
     writeFile: (filePath: string, content: string) =>
       ipcRenderer.invoke(IPC.FS_WRITE_FILE, filePath, content),
+    deleteFile: (filePath: string) =>
+      ipcRenderer.invoke(IPC.FS_DELETE_FILE, filePath),
     watchDir: (dirPath: string) =>
       ipcRenderer.invoke(IPC.FS_WATCH_START, dirPath),
     unwatchDir: (dirPath: string) =>
@@ -88,15 +98,37 @@ const api = {
   app: {
     selectDirectory: () =>
       ipcRenderer.invoke(IPC.APP_SELECT_DIRECTORY),
+    selectFile: (filters?: { name: string; extensions: string[] }[]) =>
+      ipcRenderer.invoke(IPC.APP_SELECT_FILE, filters) as Promise<string | null>,
     addProjectPath: (dirPath: string) =>
       ipcRenderer.invoke(IPC.APP_ADD_PROJECT_PATH, dirPath),
+    openInEditor: (dirPath: string, cliCommand: string) =>
+      ipcRenderer.invoke(IPC.APP_OPEN_IN_EDITOR, dirPath, cliCommand) as Promise<{ success: boolean; error?: string }>,
+  },
+
+  skills: {
+    scan: (skillPath: string) =>
+      ipcRenderer.invoke(IPC.SKILLS_SCAN, skillPath) as Promise<{ name: string; description: string } | null>,
+    sync: (skillPath: string, projectPath: string) =>
+      ipcRenderer.invoke(IPC.SKILLS_SYNC, skillPath, projectPath),
+    remove: (skillName: string, projectPath: string) =>
+      ipcRenderer.invoke(IPC.SKILLS_REMOVE, skillName, projectPath),
+  },
+
+  subagents: {
+    scan: (filePath: string) =>
+      ipcRenderer.invoke(IPC.SUBAGENTS_SCAN, filePath) as Promise<{ name: string; description: string; tools?: string } | null>,
+    sync: (subagentPath: string, projectPath: string) =>
+      ipcRenderer.invoke(IPC.SUBAGENTS_SYNC, subagentPath, projectPath),
+    remove: (subagentName: string, projectPath: string) =>
+      ipcRenderer.invoke(IPC.SUBAGENTS_REMOVE, subagentName, projectPath),
   },
 
   claude: {
     trustPath: (dirPath: string) =>
       ipcRenderer.invoke(IPC.CLAUDE_TRUST_PATH, dirPath),
-    installHooks: () =>
-      ipcRenderer.invoke(IPC.CLAUDE_INSTALL_HOOKS),
+    installHooks: (contextEnabled: boolean) =>
+      ipcRenderer.invoke(IPC.CLAUDE_INSTALL_HOOKS, contextEnabled),
     uninstallHooks: () =>
       ipcRenderer.invoke(IPC.CLAUDE_UNINSTALL_HOOKS),
     checkHooks: () =>
@@ -118,8 +150,8 @@ const api = {
   },
 
   codex: {
-    installNotify: () =>
-      ipcRenderer.invoke(IPC.CODEX_INSTALL_NOTIFY),
+    installNotify: (contextEnabled?: boolean) =>
+      ipcRenderer.invoke(IPC.CODEX_INSTALL_NOTIFY, contextEnabled),
     uninstallNotify: () =>
       ipcRenderer.invoke(IPC.CODEX_UNINSTALL_NOTIFY),
     checkNotify: () =>
@@ -149,6 +181,48 @@ const api = {
   github: {
     getPrStatuses: (repoPath: string, branches: string[]) =>
       ipcRenderer.invoke(IPC.GITHUB_GET_PR_STATUSES, repoPath, branches),
+    listOpenPrs: (repoPath: string) =>
+      ipcRenderer.invoke(IPC.GITHUB_LIST_OPEN_PRS, repoPath),
+    resolvePr: (repoPath: string, prNumber: number, repoSlug?: string) =>
+      ipcRenderer.invoke(IPC.GITHUB_RESOLVE_PR, repoPath, prNumber, repoSlug) as Promise<{ branch: string; title: string; number: number }>,
+  },
+
+  lsp: {
+    getPort: () =>
+      ipcRenderer.invoke(IPC.LSP_GET_PORT) as Promise<number>,
+    getAvailableLanguages: () =>
+      ipcRenderer.invoke(IPC.LSP_GET_AVAILABLE_LANGUAGES) as Promise<string[]>,
+  },
+
+  mcp: {
+    syncConfigs: (servers: unknown[], assignments: unknown) =>
+      ipcRenderer.invoke(IPC.MCP_SYNC_CONFIGS, servers, assignments),
+    loadServers: () =>
+      ipcRenderer.invoke(IPC.MCP_LOAD_SERVERS) as Promise<import('../renderer/store/types').McpServer[]>,
+    removeServer: (serverName: string) =>
+      ipcRenderer.invoke(IPC.MCP_REMOVE_SERVER, serverName),
+    getConfigPaths: () =>
+      ipcRenderer.invoke(IPC.MCP_GET_CONFIG_PATHS) as Promise<Record<string, string>>,
+  },
+
+  context: {
+    repoInit: (projectDir: string, wsId: string) =>
+      ipcRenderer.invoke(IPC.CONTEXT_REPO_INIT, projectDir, wsId) as Promise<{ success: boolean }>,
+    search: (projectDir: string, query: string, limit?: number) =>
+      ipcRenderer.invoke(IPC.CONTEXT_SEARCH, projectDir, query, limit),
+    getRecent: (projectDir: string, workspaceId: string, limit?: number) =>
+      ipcRenderer.invoke(IPC.CONTEXT_GET_RECENT, projectDir, workspaceId, limit),
+    insert: (projectDir: string, entry: {
+      workspaceId: string; sessionId?: string; toolName: string;
+      toolInput?: string; filePath?: string; timestamp: string;
+    }) => ipcRenderer.invoke(IPC.CONTEXT_INSERT, projectDir, entry),
+    restoreCheckpoint: (projectDir: string, commitHash: string) =>
+      ipcRenderer.invoke(IPC.CONTEXT_RESTORE_CHECKPOINT, projectDir, commitHash) as Promise<{ success: boolean }>,
+  },
+
+  session: {
+    getLast: (workspaceId: string, agentType: string) =>
+      ipcRenderer.invoke(IPC.SESSION_GET_LAST, workspaceId, agentType) as Promise<string | null>,
   },
 
   clipboard: {

@@ -1,29 +1,11 @@
 import { useEffect } from 'react'
 import { useAppStore } from '../store/app-store'
+import { resolveEditor } from '../store/types'
 import { getFocusedPtyId, isFocusedPaneTerminal } from '../store/split-helpers'
 
 export function useShortcuts() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Tab handling when terminal is focused
-      if (e.key === 'Tab' && (e.target as HTMLElement)?.closest?.('[class*="terminalInner"]')) {
-        if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-          // Shift+Tab: ghostty-web sends \t for both Tab and Shift+Tab
-          e.preventDefault()
-          e.stopPropagation()
-          const s = useAppStore.getState()
-          const tab = s.tabs.find((t) => t.id === s.activeTabId)
-          if (tab?.type === 'terminal' && isFocusedPaneTerminal(tab.splitRoot, tab.focusedPaneId)) {
-            const pty = getFocusedPtyId(tab.splitRoot, tab.focusedPaneId, tab.ptyId)
-            if (pty) window.api.pty.write(pty, '\x1b[Z')
-          }
-        } else {
-          // Regular Tab: prevent browser focus navigation, let ghostty-web handle it
-          e.preventDefault()
-        }
-        return
-      }
-
       // Shift+Enter handling when terminal is focused
       if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey
         && (e.target as HTMLElement)?.closest?.('[class*="terminalInner"]')) {
@@ -42,8 +24,7 @@ export function useShortcuts() {
       }
 
       // Cmd+Left/Right/Backspace: macOS line-editing conventions.
-      // Only Cmd (not Ctrl) — Ctrl+arrow is word movement handled by ghostty.
-      // Skip when focused pane is a file editor — let Monaco handle these natively.
+      // Only Cmd (not Ctrl) — Ctrl+arrow is word movement handled by shells/TUIs.
       if (e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey
         && (e.target as HTMLElement)?.closest?.('[class*="terminalInner"]')) {
         const s = useAppStore.getState()
@@ -69,6 +50,14 @@ export function useShortcuts() {
             return
           }
         }
+      }
+
+      // Ctrl+Tab — cycle focus between split panes
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'Tab') {
+        e.preventDefault()
+        e.stopPropagation()
+        useAppStore.getState().cycleFocusedPane()
+        return
       }
 
       const meta = e.metaKey || e.ctrlKey
@@ -196,6 +185,22 @@ export function useShortcuts() {
         if (!store.rightPanelOpen) store.toggleRightPanel()
         return
       }
+      // Cmd+Option+G — git panel + open latest commit diff
+      if (!shift && alt && e.code === 'KeyG') {
+        consume()
+        store.setRightPanelMode('graph')
+        if (!store.rightPanelOpen) store.toggleRightPanel()
+        // Fetch and open latest commit diff
+        const ws = store.workspaces.find((w) => w.id === store.activeWorkspaceId)
+        if (ws) {
+          window.api.git.getLog(ws.worktreePath).then((log) => {
+            if (log.length > 0) {
+              store.openCommitDiffTab(ws.id, log[0].hash, log[0].message)
+            }
+          })
+        }
+        return
+      }
 
       // ── Focus ──
       // Cmd+J — focus terminal (or create one)
@@ -221,11 +226,67 @@ export function useShortcuts() {
         return
       }
 
+      // ── Context History ──
+      // Cmd+Shift+K — toggle context history
+      if (shift && !alt && e.code === 'KeyK') {
+        consume()
+        store.toggleContextHistory()
+        return
+      }
+
       // ── Settings ──
       // Cmd+, — toggle settings
       if (!shift && !alt && e.key === ',') {
         consume()
         store.toggleSettings()
+        return
+      }
+
+      // ── Open in editor: Cmd+Shift+O ──
+      if (shift && !alt && e.code === 'KeyO') {
+        consume()
+        const ws = store.workspaces.find((w) => w.id === store.activeWorkspaceId)
+        if (ws) {
+          const { cli, name } = resolveEditor(store.settings)
+          window.api.app.openInEditor(ws.worktreePath, cli).then((result) => {
+            if (!result.success) {
+              store.addToast({
+                id: `editor-err-${Date.now()}`,
+                message: result.error || `Failed to open ${name}`,
+                type: 'error',
+              })
+            }
+          })
+        }
+        return
+      }
+
+      // ── Delete file: Cmd+Backspace ──
+      // Only when a file tab is active (not terminal/diff) and target is not a text input
+      if (!shift && !alt && e.key === 'Backspace') {
+        const target = e.target as HTMLElement
+        // Don't intercept when focused inside Monaco editor or terminal
+        if (target?.closest?.('[class*="monaco-editor"]') || target?.closest?.('[class*="terminalInner"]')) {
+          return
+        }
+        const tab = store.tabs.find((t) => t.id === store.activeTabId)
+        if (tab?.type === 'file') {
+          consume()
+          const fileName = tab.filePath.split('/').pop() || tab.filePath
+          store.showConfirmDialog({
+            title: 'Delete File',
+            message: `Permanently delete "${fileName}"? This cannot be undone.`,
+            confirmLabel: 'Delete',
+            destructive: true,
+            onConfirm: () => {
+              store.dismissConfirmDialog()
+              window.api.fs.deleteFile(tab.filePath).catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : 'Failed to delete'
+                store.addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
+              })
+            },
+          })
+        }
         return
       }
 
@@ -236,19 +297,19 @@ export function useShortcuts() {
         const project = store.activeProject()
         if (project) {
           store.openWorkspaceDialog(project.id)
-        } else if (store.projects.length === 1) {
+        } else if (store.projects.length > 0) {
           store.openWorkspaceDialog(store.projects[0].id)
         }
         return
       }
     }
 
-    // Capture phase: runs before ghostty-web's stopPropagation() on the terminal element
+    // Capture phase: runs before terminal handlers on the focused textarea.
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
   }, [])
 
-  // Image paste: ghostty-web ignores clipboard images, so intercept and save to temp file
+  // Image paste: terminal textareas ignore clipboard images, so intercept and save to temp file.
   useEffect(() => {
     const handlePaste = async (e: ClipboardEvent) => {
       const target = e.target as HTMLElement

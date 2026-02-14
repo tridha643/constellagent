@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAppStore } from "../../store/app-store";
-import type { Project } from "../../store/types";
+import type { Project, PrLinkProvider } from "../../store/types";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
+import type { OpenPrInfo, GithubLookupError } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -12,6 +13,77 @@ const PR_ICON_SIZE = 10;
 const PR_REVIEW_ICON_SIZE = 10;
 const START_TERMINAL_MESSAGE = "Starting terminal...";
 const MAX_COMMENT_COUNT_DISPLAY = 9;
+const PR_PROVIDER_DOMAINS: Record<PrLinkProvider, string> = {
+  github: "github.com",
+  graphite: "graphite.dev",
+  devinreview: "devinreview.com",
+};
+
+function providerUrl(url: string, provider: PrLinkProvider): string {
+  return url.replace("github.com", PR_PROVIDER_DOMAINS[provider]);
+}
+
+function sanitizeBranchName(name: string): string {
+  return name
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/\.{2,}/g, "-")
+    .replace(/[\x00-\x1f\x7f~^:?*[\]\\]/g, "-")
+    .replace(/\/{2,}/g, "/")
+    .replace(/\/\./g, "/-")
+    .replace(/@\{/g, "-")
+    .replace(/\.lock(\/|$)/g, "-lock$1")
+    .replace(/^[.\-/]+/, "")
+    .replace(/[.\-/]+$/, "");
+}
+
+function slugifyWorkspaceName(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function buildPrWorkspaceName(pr: OpenPrInfo): string {
+  const slug = slugifyWorkspaceName(pr.title);
+  return slug || `pr-${pr.number}`;
+}
+
+function buildPrLocalBranch(pr: OpenPrInfo): string {
+  const head = sanitizeBranchName(pr.headRefName) || `pr-${pr.number}`;
+  const branch = sanitizeBranchName(`pr/${pr.number}-${head}`);
+  return branch || `pr/${pr.number}`;
+}
+
+function uniqueWorkspaceName(
+  baseName: string,
+  projectId: string,
+  workspaces: Array<{ projectId: string; name: string }>,
+): string {
+  const normalized = baseName.trim() || "workspace";
+  const used = new Set(
+    workspaces
+      .filter((ws) => ws.projectId === projectId)
+      .map((ws) => ws.name.toLowerCase()),
+  );
+  if (!used.has(normalized.toLowerCase())) return normalized;
+
+  let suffix = 2;
+  while (used.has(`${normalized}-${suffix}`.toLowerCase())) {
+    suffix += 1;
+  }
+  return `${normalized}-${suffix}`;
+}
+
+function githubErrorMessage(error?: GithubLookupError): string {
+  if (error === "gh_not_installed") return "GitHub CLI is not installed.";
+  if (error === "not_authenticated") return "GitHub CLI is not authenticated.";
+  if (error === "not_github_repo") return "Origin remote is not a GitHub repo.";
+  return "Failed to load open pull requests.";
+}
 
 interface WorkspaceCreationState {
   requestId: string;
@@ -97,7 +169,9 @@ function WorkspaceMeta({
     s.prStatusMap.get(`${projectId}:${branch}`),
   );
   const ghAvailable = useAppStore((s) => s.ghAvailability.get(projectId));
-  const prLinkProvider = useAppStore((s) => s.settings.prLinkProvider);
+  const prLinkProvider = useAppStore(
+    (s) => s.projects.find((p) => p.id === projectId)?.prLinkProvider ?? "github",
+  );
   const hasPr = !!(ghAvailable && prInfo !== undefined && prInfo !== null);
 
   if (!hasPr && !showBranch) return null;
@@ -106,15 +180,16 @@ function WorkspaceMeta({
   const openPr = hasPr && prInfo!.state === "open";
   const pendingCommentCount = openPr ? Math.max(0, prInfo!.pendingCommentCount || 0) : 0;
   const hasPendingComments = pendingCommentCount > 0;
-  const isBlockedByCi = openPr && !!prInfo!.isBlockedByCi;
+  const isCiPending = openPr && prInfo!.checkStatus === "pending";
+  const isBlockedByCi = openPr && prInfo!.checkStatus === "failing";
   const isApproved = openPr && !!prInfo!.isApproved;
+  const isCiPassing = openPr && prInfo!.checkStatus === "passing";
   const isChangesRequested = openPr && !!prInfo!.isChangesRequested;
   const reviewDecision: "approved" | "changes_requested" | null = isChangesRequested
     ? "changes_requested"
     : isApproved
       ? "approved"
       : null;
-  const isCiPassing = openPr && prInfo!.checkStatus === "passing" && !isBlockedByCi;
 
   return (
     <span className={styles.workspaceMeta}>
@@ -124,13 +199,7 @@ function WorkspaceMeta({
           title={`PR #${prInfo!.number}: ${prInfo!.title}`}
           onClick={(e) => {
             e.stopPropagation();
-            const domains: Record<string, string> = {
-              github: 'github.com',
-              graphite: 'graphite.dev',
-              devinreview: 'devinreview.com',
-            };
-            const url = prInfo!.url.replace('github.com', domains[prLinkProvider] || 'github.com');
-            window.open(url);
+            window.open(providerUrl(prInfo!.url, prLinkProvider));
           }}
         >
           <PrStateIcon state={prInfo!.state} />
@@ -155,10 +224,18 @@ function WorkspaceMeta({
                   <CommentCountIcon count={pendingCommentCount} />
                 </span>
               )}
+              {isCiPending && (
+                <span
+                  className={`${styles.prBadge} ${styles.prCiPending}`}
+                  title="CI checks running"
+                >
+                  CI
+                </span>
+              )}
               {isBlockedByCi && (
                 <span
                   className={`${styles.prBadge} ${styles.prBlockedCi}`}
-                  title="Blocked by CI checks"
+                  title="CI checks failing"
                 >
                   CI
                 </span>
@@ -200,13 +277,19 @@ export function Sidebar() {
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog);
   const toggleSettings = useAppStore((s) => s.toggleSettings);
   const toggleAutomations = useAppStore((s) => s.toggleAutomations);
+  const toggleContextHistory = useAppStore((s) => s.toggleContextHistory);
   const unreadWorkspaceIds = useAppStore((s) => s.unreadWorkspaceIds);
   const activeClaudeWorkspaceIds = useAppStore((s) => s.activeClaudeWorkspaceIds);
   const renameWorkspace = useAppStore((s) => s.renameWorkspace);
+  const setActiveTab = useAppStore((s) => s.setActiveTab);
+  const setPrStatuses = useAppStore((s) => s.setPrStatuses);
+  const settings = useAppStore((s) => s.settings);
+  const setGhAvailability = useAppStore((s) => s.setGhAvailability);
 
   const [manualCollapsed, setManualCollapsed] = useState<Set<string>>(
     new Set(),
   );
+  const [contextMenu, setContextMenu] = useState<{ wsId: string; x: number; y: number } | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(
     null,
@@ -214,6 +297,20 @@ export function Sidebar() {
   const [workspaceCreation, setWorkspaceCreation] =
     useState<WorkspaceCreationState | null>(null);
   const [showSlowCreateMessage, setShowSlowCreateMessage] = useState(false);
+  const [openProjectPrPopoverId, setOpenProjectPrPopoverId] = useState<
+    string | null
+  >(null);
+  const [projectOpenPrs, setProjectOpenPrs] = useState<
+    Record<string, OpenPrInfo[]>
+  >({});
+  const [projectPrLoading, setProjectPrLoading] = useState<
+    Record<string, boolean>
+  >({});
+  const [projectPrError, setProjectPrError] = useState<
+    Record<string, string | null>
+  >({});
+  const [pullingPrKey, setPullingPrKey] = useState<string | null>(null);
+  const [projectPrSearch, setProjectPrSearch] = useState("");
   const editRef = useRef<string>("");
   const dialogProject = workspaceDialogProjectId
     ? (projects.find((p) => p.id === workspaceDialogProjectId) ?? null)
@@ -244,6 +341,35 @@ export function Sidebar() {
     return () => clearTimeout(timer);
   }, [workspaceCreation?.requestId]);
 
+  useEffect(() => {
+    if (!openProjectPrPopoverId) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenProjectPrPopoverId(null);
+        setProjectPrSearch("");
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [openProjectPrPopoverId]);
+
+  useEffect(() => {
+    if (!openProjectPrPopoverId) return;
+    if (!projects.some((p) => p.id === openProjectPrPopoverId)) {
+      setOpenProjectPrPopoverId(null);
+      setProjectPrSearch("");
+    }
+  }, [openProjectPrPopoverId, projects]);
+
+  const closeProjectPrModal = useCallback(() => {
+    setOpenProjectPrPopoverId(null);
+    setProjectPrSearch("");
+  }, []);
+
   const isProjectExpanded = useCallback(
     (id: string) => {
       return !manualCollapsed.has(id);
@@ -258,7 +384,8 @@ export function Sidebar() {
       else next.add(id);
       return next;
     });
-  }, []);
+    if (openProjectPrPopoverId === id) closeProjectPrModal();
+  }, [openProjectPrPopoverId, closeProjectPrModal]);
 
   const handleAddProject = useCallback(async () => {
     const dirPath = await window.api.app.selectDirectory();
@@ -292,10 +419,16 @@ export function Sidebar() {
         await window.api.claude.trustPath(worktreePath).catch(() => {});
       }
 
+      // Initialize context repo if enabled
+      if (settings.contextCaptureEnabled) {
+        window.api.context.repoInit(worktreePath, wsId).catch(() => {});
+      }
+
       if (commands.length === 0) {
         // Default: one blank terminal
         const ptyId = await window.api.pty.create(worktreePath, undefined, {
           AGENT_ORCH_WS_ID: wsId,
+          AGENT_ORCH_AGENT_TYPE: "unknown",
         });
         addTab({
           id: crypto.randomUUID(),
@@ -307,8 +440,16 @@ export function Sidebar() {
       } else {
         let firstTabId: string | null = null;
         for (const cmd of commands) {
+          const agentType = cmd.command.startsWith("codex")
+            ? "codex"
+            : cmd.command.startsWith("gemini")
+              ? "gemini"
+              : cmd.command.startsWith("claude")
+                ? "claude-code"
+                : "unknown";
           const ptyId = await window.api.pty.create(worktreePath, undefined, {
             AGENT_ORCH_WS_ID: wsId,
+            AGENT_ORCH_AGENT_TYPE: agentType,
           });
           const tabId = crypto.randomUUID();
           if (!firstTabId) firstTabId = tabId;
@@ -320,15 +461,30 @@ export function Sidebar() {
             ptyId,
           });
           // Delay to let shell initialize before writing command
-          setTimeout(() => {
-            window.api.pty.write(ptyId, cmd.command + "\n");
+          setTimeout(async () => {
+            let finalCmd = cmd.command;
+
+            if (settings.sessionResumeEnabled) {
+              if (finalCmd.startsWith('claude')) {
+                const sessionId = await window.api.session.getLast(wsId, 'claude-code');
+                if (sessionId) {
+                  finalCmd = finalCmd.replace(/^claude\b/, `claude --resume ${sessionId}`);
+                }
+              } else if (finalCmd.startsWith('codex')) {
+                finalCmd = finalCmd.replace(/^codex\b/, 'codex resume --last');
+              } else if (finalCmd.startsWith('gemini')) {
+                finalCmd = finalCmd.replace(/^gemini\b/, 'gemini --resume');
+              }
+            }
+
+            window.api.pty.write(ptyId, finalCmd + "\n");
           }, 500);
         }
         // Activate the first terminal tab
-        if (firstTabId) useAppStore.getState().setActiveTab(firstTabId);
+        if (firstTabId) setActiveTab(firstTabId);
       }
     },
-    [addWorkspace, addTab],
+    [addWorkspace, addTab, setActiveTab],
   );
 
   const handleCreateWorkspace = useCallback(
@@ -409,6 +565,170 @@ export function Sidebar() {
     ],
   );
 
+  const loadProjectOpenPrs = useCallback(
+    async (project: Project) => {
+      setProjectPrLoading((prev) => ({ ...prev, [project.id]: true }));
+      setProjectPrError((prev) => ({ ...prev, [project.id]: null }));
+
+      try {
+        const result = await window.api.github.listOpenPrs(project.repoPath);
+        setGhAvailability(project.id, result.available);
+        if (!result.available) {
+          setProjectOpenPrs((prev) => ({ ...prev, [project.id]: [] }));
+          setProjectPrError((prev) => ({
+            ...prev,
+            [project.id]: githubErrorMessage(result.error),
+          }));
+          return;
+        }
+
+        setProjectOpenPrs((prev) => ({ ...prev, [project.id]: result.data }));
+        const branchStatuses: Record<string, OpenPrInfo | null> = {};
+        for (const pr of result.data) {
+          if (!pr.headRefName) continue;
+          branchStatuses[pr.headRefName] = pr;
+        }
+        if (Object.keys(branchStatuses).length > 0) {
+          setPrStatuses(project.id, branchStatuses);
+        }
+      } catch {
+        setProjectPrError((prev) => ({
+          ...prev,
+          [project.id]: "Failed to load open pull requests.",
+        }));
+      } finally {
+        setProjectPrLoading((prev) => ({ ...prev, [project.id]: false }));
+      }
+    },
+    [setGhAvailability, setPrStatuses],
+  );
+
+  const handleToggleProjectPrPopover = useCallback(
+    (project: Project) => {
+      setOpenProjectPrPopoverId((prev) => {
+        const next = prev === project.id ? null : project.id;
+        if (next === project.id) {
+          setProjectPrSearch("");
+          void loadProjectOpenPrs(project);
+        } else {
+          setProjectPrSearch("");
+        }
+        return next;
+      });
+    },
+    [loadProjectOpenPrs],
+  );
+
+  const handlePullPrLocally = useCallback(
+    async (project: Project, pr: OpenPrInfo, force = false) => {
+      const localBranch = buildPrLocalBranch(pr);
+      const existing = workspaces.find(
+        (ws) => ws.projectId === project.id && ws.branch === localBranch,
+      );
+      if (existing) {
+        setActiveWorkspace(existing.id);
+        closeProjectPrModal();
+        return;
+      }
+      if (workspaceCreation) return;
+
+      const workspaceName = uniqueWorkspaceName(
+        buildPrWorkspaceName(pr),
+        project.id,
+        workspaces,
+      );
+      const requestId = crypto.randomUUID();
+      const prKey = `${project.id}:${pr.number}`;
+      setPullingPrKey(prKey);
+      setWorkspaceCreation({
+        requestId,
+        message: `Fetching PR #${pr.number}...`,
+      });
+
+      try {
+        const { worktreePath, branch } =
+          await window.api.git.createWorktreeFromPr(
+            project.repoPath,
+            workspaceName,
+            pr.number,
+            localBranch,
+            force,
+            requestId,
+          );
+        setWorkspaceCreation((prev) => {
+          if (!prev || prev.requestId !== requestId) return prev;
+          return { ...prev, message: START_TERMINAL_MESSAGE };
+        });
+        await finishCreateWorkspace(project, workspaceName, branch, worktreePath);
+        closeProjectPrModal();
+      } catch (err) {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : `Failed to pull PR #${pr.number} locally`;
+        if (msg.includes("WORKTREE_PATH_EXISTS") && !force) {
+          showConfirmDialog({
+            title: "Workspace path exists",
+            message: `A workspace directory for "${workspaceName}" already exists. Replace it?`,
+            confirmLabel: "Replace",
+            destructive: true,
+            onConfirm: () => {
+              dismissConfirmDialog();
+              void handlePullPrLocally(project, pr, true);
+            },
+          });
+          return;
+        }
+        addToast({ id: crypto.randomUUID(), message: msg, type: "error" });
+      } finally {
+        setPullingPrKey((prev) => (prev === prKey ? null : prev));
+        setWorkspaceCreation((prev) => {
+          if (!prev || prev.requestId !== requestId) return prev;
+          return null;
+        });
+      }
+    },
+    [
+      workspaceCreation,
+      workspaces,
+      setActiveWorkspace,
+      closeProjectPrModal,
+      finishCreateWorkspace,
+      showConfirmDialog,
+      dismissConfirmDialog,
+      addToast,
+    ],
+  );
+
+  const handleResumeAgent = useCallback(
+    async (wsId: string, agent: 'claude' | 'codex' | 'gemini') => {
+      setContextMenu(null);
+      // Find an active terminal tab for this workspace
+      const tabs = useAppStore.getState().tabs;
+      const termTab = tabs.find(
+        (t) => t.workspaceId === wsId && t.type === 'terminal',
+      );
+      if (!termTab || termTab.type !== 'terminal') {
+        addToast({ id: crypto.randomUUID(), message: 'No terminal tab in workspace', type: 'error' });
+        return;
+      }
+
+      if (agent === 'claude') {
+        const sessionId = await window.api.session.getLast(wsId, 'claude-code');
+        if (!sessionId) {
+          addToast({ id: crypto.randomUUID(), message: 'No previous Claude session found', type: 'info' });
+          return;
+        }
+        window.api.pty.write(termTab.ptyId, `claude --resume ${sessionId}\n`);
+      } else if (agent === 'codex') {
+        window.api.pty.write(termTab.ptyId, 'codex resume --last\n');
+      } else {
+        window.api.pty.write(termTab.ptyId, 'gemini --resume\n');
+      }
+    },
+    [addToast],
+  );
+
   const handleSelectWorkspace = useCallback(
     (wsId: string) => {
       setActiveWorkspace(wsId);
@@ -456,6 +776,44 @@ export function Sidebar() {
     },
     [workspaces, showConfirmDialog, deleteProject, dismissConfirmDialog],
   );
+
+  const openPrUrl = useCallback(
+    (projectId: string, url: string) => {
+      const provider =
+        projects.find((project) => project.id === projectId)?.prLinkProvider ??
+        "github";
+      window.open(providerUrl(url, provider));
+    },
+    [projects],
+  );
+
+  const projectPrModalProject = openProjectPrPopoverId
+    ? (projects.find((p) => p.id === openProjectPrPopoverId) ?? null)
+    : null;
+  const modalOpenPrs = projectPrModalProject
+    ? (projectOpenPrs[projectPrModalProject.id] ?? [])
+    : [];
+  const modalPrLoading = projectPrModalProject
+    ? !!projectPrLoading[projectPrModalProject.id]
+    : false;
+  const modalPrError = projectPrModalProject
+    ? projectPrError[projectPrModalProject.id] ?? null
+    : null;
+  const searchNeedle = projectPrSearch.trim().toLowerCase();
+  const filteredModalPrs =
+    searchNeedle.length === 0
+      ? modalOpenPrs
+      : modalOpenPrs.filter((pr) => {
+          const haystack = [
+            pr.title,
+            pr.authorLogin ?? "",
+            pr.headRefName,
+            `#${pr.number}`,
+          ]
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(searchNeedle);
+        });
 
   return (
     <div className={styles.sidebar}>
@@ -505,6 +863,18 @@ export function Sidebar() {
                     ⚙
                   </button>
                 </Tooltip>
+                <Tooltip label="Open pull requests">
+                  <button
+                    className={styles.prListBtn}
+                    aria-expanded={openProjectPrPopoverId === project.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleProjectPrPopover(project);
+                    }}
+                  >
+                    PR
+                  </button>
+                </Tooltip>
                 <Tooltip label="Delete project">
                   <button
                     className={styles.deleteBtn}
@@ -533,6 +903,10 @@ export function Sidebar() {
                         onClick={() =>
                           !isEditing && handleSelectWorkspace(ws.id)
                         }
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setContextMenu({ wsId: ws.id, x: e.clientX, y: e.clientY });
+                        }}
                         onDoubleClick={() => {
                           editRef.current = displayName;
                           setEditingWorkspaceId(ws.id);
@@ -622,6 +996,12 @@ export function Sidebar() {
             <span>Automations</span>
           </button>
         </Tooltip>
+        <Tooltip label="Context history" shortcut="⇧⌘K">
+          <button className={styles.actionButton} onClick={toggleContextHistory}>
+            <span className={styles.actionIcon}>↻</span>
+            <span>Context</span>
+          </button>
+        </Tooltip>
         <Tooltip label="Settings" shortcut="⌘,">
           <button className={styles.actionButton} onClick={toggleSettings}>
             <span className={styles.actionIcon}>⚙</span>
@@ -629,6 +1009,202 @@ export function Sidebar() {
           </button>
         </Tooltip>
       </div>
+
+      {projectPrModalProject && (
+        <div
+          className={styles.projectPrModalOverlay}
+          onClick={closeProjectPrModal}
+        >
+          <div
+            className={styles.projectPrModal}
+            data-project-pr-modal
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={styles.projectPrModalHeader}>
+              <div className={styles.projectPrModalHeaderText}>
+                <span className={styles.projectPrModalTitle}>Open Pull Requests</span>
+                <span className={styles.projectPrModalSubtitle}>
+                  {projectPrModalProject.name}
+                </span>
+              </div>
+              <div className={styles.projectPrModalHeaderActions}>
+                <button
+                  className={styles.projectPrModalGhostBtn}
+                  onClick={() => {
+                    void loadProjectOpenPrs(projectPrModalProject);
+                  }}
+                  disabled={modalPrLoading}
+                >
+                  Refresh
+                </button>
+                <button
+                  className={styles.projectPrModalCloseBtn}
+                  onClick={closeProjectPrModal}
+                  aria-label="Close pull requests modal"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className={styles.projectPrModalToolbar}>
+              <input
+                className={styles.projectPrSearchInput}
+                placeholder="Filter by title, author, branch, #"
+                value={projectPrSearch}
+                onChange={(e) => setProjectPrSearch(e.target.value)}
+              />
+              <span className={styles.projectPrModalSummary}>
+                {filteredModalPrs.length}
+                {filteredModalPrs.length !== modalOpenPrs.length
+                  ? ` of ${modalOpenPrs.length}`
+                  : ""}{" "}
+                open
+              </span>
+            </div>
+
+            {modalPrLoading && (
+              <div
+                className={styles.projectPrLoadingRow}
+                role="status"
+                aria-live="polite"
+              >
+                <span
+                  className={styles.projectPrLoadingSpinner}
+                  aria-hidden="true"
+                />
+                <span>Loading open pull requests...</span>
+              </div>
+            )}
+
+            {!modalPrLoading && modalPrError && (
+              <div className={`${styles.projectPrStatus} ${styles.projectPrStatusError}`}>
+                {modalPrError}
+              </div>
+            )}
+            {!modalPrLoading && !modalPrError && modalOpenPrs.length === 0 && (
+              <div className={styles.projectPrStatus}>No open pull requests.</div>
+            )}
+            {!modalPrLoading &&
+              !modalPrError &&
+              modalOpenPrs.length > 0 &&
+              filteredModalPrs.length === 0 && (
+                <div className={styles.projectPrStatus}>
+                  No pull requests match "{projectPrSearch}".
+                </div>
+              )}
+            {!modalPrError && filteredModalPrs.length > 0 && (
+              <div className={styles.projectPrModalList}>
+                {filteredModalPrs.map((pr) => {
+                  const prKey = `${projectPrModalProject.id}:${pr.number}`;
+                  const openPr = pr.state === "open";
+                  const pendingCommentCount = openPr
+                    ? Math.max(0, pr.pendingCommentCount || 0)
+                    : 0;
+                  const hasPendingComments = pendingCommentCount > 0;
+                  const isBlockedByCi = openPr && !!pr.isBlockedByCi;
+                  const isApproved = openPr && !!pr.isApproved;
+                  const isCiPassing =
+                    openPr && pr.checkStatus === "passing" && !isBlockedByCi;
+                  const ciChipLabel = openPr
+                    ? isBlockedByCi
+                      ? "CI blocked"
+                      : pr.checkStatus === "failing"
+                        ? "CI failing"
+                        : pr.checkStatus === "pending"
+                          ? "CI pending"
+                          : isCiPassing
+                            ? "CI passing"
+                            : null
+                    : null;
+                  const commentChipLabel = hasPendingComments
+                    ? `${pendingCommentCount} comment${pendingCommentCount === 1 ? "" : "s"}`
+                    : null;
+                  const localBranch = buildPrLocalBranch(pr);
+                  const existingWorkspace = workspaces.find(
+                    (ws) =>
+                      ws.projectId === projectPrModalProject.id &&
+                      ws.branch === localBranch,
+                  );
+                  const isPulling = pullingPrKey === prKey;
+                  const disablePull = !!workspaceCreation || !!pullingPrKey;
+
+                  return (
+                    <div key={pr.number} className={styles.projectPrRow}>
+                      <div className={styles.projectPrRowMain}>
+                        <button
+                          className={styles.projectPrLink}
+                          onClick={() => openPrUrl(projectPrModalProject.id, pr.url)}
+                          title={`PR #${pr.number}: ${pr.title}`}
+                        >
+                          <span className={`${styles.prInline} ${styles.pr_open}`}>
+                            <PrStateIcon state={pr.state} />
+                            <span className={styles.prNumber}>#{pr.number}</span>
+                          </span>
+                          <span className={styles.projectPrItemTitle}>{pr.title}</span>
+                        </button>
+                        <div className={styles.projectPrMetaRow}>
+                          {pr.authorLogin && (
+                            <span className={styles.projectPrAuthor}>@{pr.authorLogin}</span>
+                          )}
+                          <span className={styles.projectPrBranch}>{localBranch}</span>
+                        </div>
+                      </div>
+                      <div className={styles.projectPrRowSide}>
+                        <div className={styles.projectPrStatusGroup}>
+                          {ciChipLabel && (
+                            <span
+                              className={`${styles.projectPrStatusChip} ${
+                                isBlockedByCi || pr.checkStatus === "failing"
+                                  ? styles.projectPrStatusChipDanger
+                                  : pr.checkStatus === "pending"
+                                    ? styles.projectPrStatusChipNeutral
+                                    : styles.projectPrStatusChipSuccess
+                              }`}
+                              title={ciChipLabel}
+                            >
+                              {ciChipLabel}
+                            </span>
+                          )}
+                          {isApproved && (
+                            <span
+                              className={`${styles.projectPrStatusChip} ${styles.projectPrStatusChipSuccess}`}
+                              title="Approved"
+                            >
+                              Approved
+                            </span>
+                          )}
+                          {commentChipLabel && (
+                            <span
+                              className={`${styles.projectPrStatusChip} ${styles.projectPrStatusChipWarning}`}
+                              title={`${pendingCommentCount} unresolved review comment${pendingCommentCount === 1 ? "" : "s"}`}
+                            >
+                              {commentChipLabel}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          className={styles.projectPrPullBtn}
+                          onClick={() => {
+                            void handlePullPrLocally(projectPrModalProject, pr);
+                          }}
+                          disabled={disablePull}
+                        >
+                          {existingWorkspace
+                            ? "Focus workspace"
+                            : isPulling
+                              ? "Pulling..."
+                              : "Pull locally"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {dialogProject && (
         <WorkspaceDialog
@@ -655,12 +1231,64 @@ export function Sidebar() {
       {editingProject && (
         <ProjectSettingsDialog
           project={editingProject}
-          onSave={(cmds) => {
-            updateProject(editingProject.id, { startupCommands: cmds });
+          onSave={({ startupCommands, prLinkProvider }) => {
+            updateProject(editingProject.id, {
+              startupCommands,
+              prLinkProvider,
+            });
             setEditingProject(null);
           }}
           onCancel={() => setEditingProject(null)}
         />
+      )}
+
+      {contextMenu && (
+        <div
+          className={styles.projectPrModalOverlay}
+          onClick={() => setContextMenu(null)}
+          style={{ background: 'transparent' }}
+        >
+          <div
+            style={{
+              position: 'fixed',
+              left: contextMenu.x,
+              top: contextMenu.y,
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: '4px 0',
+              zIndex: 9999,
+              minWidth: 180,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '4px 12px', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+              Resume last session
+            </div>
+            <button
+              className={styles.actionButton}
+              style={{ width: '100%', textAlign: 'left', borderRadius: 0 }}
+              onClick={() => handleResumeAgent(contextMenu.wsId, 'claude')}
+            >
+              Claude Code
+            </button>
+            <button
+              className={styles.actionButton}
+              style={{ width: '100%', textAlign: 'left', borderRadius: 0 }}
+              onClick={() => handleResumeAgent(contextMenu.wsId, 'codex')}
+            >
+              Codex
+            </button>
+            <button
+              className={styles.actionButton}
+              style={{ width: '100%', textAlign: 'left', borderRadius: 0 }}
+              onClick={() => handleResumeAgent(contextMenu.wsId, 'gemini')}
+            >
+              Gemini
+            </button>
+          </div>
+        </div>
       )}
 
       {confirmDialog && (

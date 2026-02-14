@@ -1,7 +1,9 @@
 import { create } from 'zustand'
 import type { AppState, PersistedState, Tab, SplitNode } from './types'
 import { DEFAULT_SETTINGS } from './types'
-import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, firstLeaf, firstTerminalLeaf, normalizeSplitTree } from './split-helpers'
+import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, firstLeaf, firstTerminalLeaf, collectLeaves, normalizeSplitTree } from './split-helpers'
+
+const DEFAULT_PR_LINK_PROVIDER = 'github' as const
 
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
@@ -19,6 +21,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: { ...DEFAULT_SETTINGS },
   settingsOpen: false,
   automationsOpen: false,
+  contextHistoryOpen: false,
   confirmDialog: null,
   toasts: [],
   quickOpenVisible: false,
@@ -26,9 +29,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeClaudeWorkspaceIds: new Set<string>(),
   prStatusMap: new Map(),
   ghAvailability: new Map(),
+  gitFileStatuses: new Map(),
 
   addProject: (project) =>
-    set((s) => ({ projects: [...s.projects, project] })),
+    set((s) => ({
+      projects: [
+        ...s.projects,
+        {
+          ...project,
+          prLinkProvider: project.prLinkProvider ?? DEFAULT_PR_LINK_PROVIDER,
+        },
+      ],
+    })),
 
   removeProject: (id) =>
     set((s) => {
@@ -326,11 +338,54 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get()
     if (!s.activeTabId) return
     const tab = s.tabs.find((t) => t.id === s.activeTabId)
-    if (!tab || tab.type !== 'terminal') return
+    if (!tab) return
+
     const ws = s.workspaces.find((w) => w.id === tab.workspaceId)
     if (!ws) return
 
     const shell = s.settings.defaultShell || undefined
+
+    // Active tab is a file tab — convert to a split container with file + terminal panes
+    if (tab.type === 'file') {
+      const backingPtyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
+      const newPtyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
+
+      const originalLeafId = crypto.randomUUID()
+      const newLeafId = crypto.randomUUID()
+
+      const splitRoot: SplitNode = {
+        type: 'split' as const,
+        id: crypto.randomUUID(),
+        direction,
+        children: [
+          { type: 'leaf' as const, id: originalLeafId, contentType: 'file' as const, filePath: tab.filePath },
+          { type: 'leaf' as const, id: newLeafId, contentType: 'terminal' as const, ptyId: newPtyId },
+        ] as [SplitNode, SplitNode],
+      }
+
+      const fileName = tab.filePath.split('/').pop() || 'Split'
+      const tabId = tab.id
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === tabId
+            ? {
+                id: tabId,
+                workspaceId: t.workspaceId,
+                type: 'terminal' as const,
+                title: fileName,
+                ptyId: backingPtyId,
+                splitRoot,
+                focusedPaneId: newLeafId,
+              }
+            : t
+        ),
+        activeTabId: tabId,
+      }))
+      return
+    }
+
+    if (tab.type !== 'terminal') return
+
     const newPtyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
     const newLeafId = crypto.randomUUID()
 
@@ -429,6 +484,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
       activeTabId: tabId,
     }))
+  },
+
+  cycleFocusedPane: () => {
+    const s = get()
+    if (!s.activeTabId) return
+    const tab = s.tabs.find((t) => t.id === s.activeTabId)
+    if (!tab || tab.type !== 'terminal' || !tab.splitRoot) return
+    const leaves = collectLeaves(tab.splitRoot)
+    if (leaves.length <= 1) return
+    const idx = leaves.findIndex((l) => l.id === tab.focusedPaneId)
+    const next = leaves[(idx + 1) % leaves.length]
+    get().setFocusedPane(tab.id, next.id)
   },
 
   setFocusedPane: (tabId, paneId) =>
@@ -593,8 +660,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSettings: (partial) =>
     set((s) => ({ settings: { ...s.settings, ...partial } })),
 
-  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen, automationsOpen: false })),
-  toggleAutomations: () => set((s) => ({ automationsOpen: !s.automationsOpen, settingsOpen: false })),
+  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen, automationsOpen: false, contextHistoryOpen: false })),
+  toggleAutomations: () => set((s) => ({ automationsOpen: !s.automationsOpen, settingsOpen: false, contextHistoryOpen: false })),
+  toggleContextHistory: () => set((s) => ({ contextHistoryOpen: !s.contextHistoryOpen, settingsOpen: false, automationsOpen: false })),
 
   showConfirmDialog: (dialog) => set({ confirmDialog: dialog }),
 
@@ -628,6 +696,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveClaudeWorkspaces: (workspaceIds) =>
     set(() => ({ activeClaudeWorkspaceIds: new Set(workspaceIds) })),
 
+  setGitFileStatuses: (worktreePath, statuses) =>
+    set((s) => {
+      const m = new Map(s.gitFileStatuses)
+      m.set(worktreePath, statuses)
+      return { gitFileStatuses: m }
+    }),
+
+  setTabDeleted: (tabId, deleted) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === tabId && t.type === 'file' ? { ...t, deleted } : t
+      ),
+    })),
+
   setPrStatuses: (projectId, statuses) =>
     set((s) => {
       const newMap = new Map(s.prStatusMap)
@@ -655,6 +737,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeAutomation: (id) =>
     set((s) => ({ automations: s.automations.filter((a) => a.id !== id) })),
 
+  addSkill: (skill) =>
+    set((s) => ({ settings: { ...s.settings, skills: [...s.settings.skills, skill] } })),
+  removeSkill: (id) =>
+    set((s) => ({ settings: { ...s.settings, skills: s.settings.skills.filter((sk) => sk.id !== id) } })),
+  updateSkill: (id, partial) =>
+    set((s) => ({ settings: { ...s.settings, skills: s.settings.skills.map((sk) => sk.id === id ? { ...sk, ...partial } : sk) } })),
+  addSubagent: (subagent) =>
+    set((s) => ({ settings: { ...s.settings, subagents: [...s.settings.subagents, subagent] } })),
+  removeSubagent: (id) =>
+    set((s) => ({ settings: { ...s.settings, subagents: s.settings.subagents.filter((sa) => sa.id !== id) } })),
+  updateSubagent: (id, partial) =>
+    set((s) => ({ settings: { ...s.settings, subagents: s.settings.subagents.map((sa) => sa.id === id ? { ...sa, ...partial } : sa) } })),
+
   openDiffTab: (workspaceId) => {
     const s = get()
     const existing = s.tabs.find(
@@ -671,7 +766,37 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
+  openCommitDiffTab: (workspaceId, hash, message) => {
+    const s = get()
+    // Reuse existing commit-diff tab for this workspace (one with commitHash set)
+    const existing = s.tabs.find(
+      (t) => t.workspaceId === workspaceId && t.type === 'diff' && t.commitHash
+    )
+    if (existing) {
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === existing.id && t.type === 'diff'
+            ? { ...t, commitHash: hash, commitMessage: message }
+            : t
+        ),
+        activeTabId: existing.id,
+      }))
+      return
+    }
+    get().addTab({
+      id: crypto.randomUUID(),
+      workspaceId,
+      type: 'diff',
+      commitHash: hash,
+      commitMessage: message,
+    })
+  },
+
   hydrateState: (data) => {
+    const projects = (data.projects ?? []).map((project) => ({
+      ...project,
+      prLinkProvider: project.prLinkProvider ?? DEFAULT_PR_LINK_PROVIDER,
+    }))
     const workspaces = data.workspaces ?? []
     const saved = data.activeWorkspaceId
     const settings = data.settings ? { ...DEFAULT_SETTINGS, ...data.settings } : { ...DEFAULT_SETTINGS }
@@ -689,7 +814,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
     const activeTabId = data.activeTabId ?? null
     set({
-      projects: data.projects ?? [],
+      projects,
       workspaces,
       tabs,
       automations: data.automations ?? [],
@@ -748,6 +873,15 @@ useAppStore.subscribe((state, prevState) => {
     state.settings !== prevState.settings
   ) {
     debouncedSave(state)
+  }
+
+  // Sync MCP configs when MCP-related settings change
+  if (
+    state.settings !== prevState.settings &&
+    (state.settings.mcpServers !== prevState.settings.mcpServers ||
+      state.settings.agentMcpAssignments !== prevState.settings.agentMcpAssignments)
+  ) {
+    window.api.mcp.syncConfigs(state.settings.mcpServers, state.settings.agentMcpAssignments)
   }
 })
 

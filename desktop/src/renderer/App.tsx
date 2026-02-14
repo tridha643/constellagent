@@ -10,10 +10,12 @@ import { DiffViewer } from './components/Editor/DiffEditor'
 import { RightPanel } from './components/RightPanel/RightPanel'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
 import { AutomationsPanel } from './components/Automations/AutomationsPanel'
+import { ContextHistoryPanel } from './components/ContextHistory/ContextHistoryPanel'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
 import { ToastContainer } from './components/Toast/Toast'
 import { useShortcuts } from './hooks/useShortcuts'
 import { usePrStatusPoller } from './hooks/usePrStatusPoller'
+import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary'
 import styles from './App.module.css'
 
 export function App() {
@@ -61,6 +63,7 @@ export function App() {
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const automationsOpen = useAppStore((s) => s.automationsOpen)
+  const contextHistoryOpen = useAppStore((s) => s.contextHistoryOpen)
   const quickOpenVisible = useAppStore((s) => s.quickOpenVisible)
 
   const wsTabs = activeWorkspaceTabs()
@@ -77,7 +80,16 @@ export function App() {
           <SettingsPanel />
         ) : automationsOpen ? (
           <AutomationsPanel />
+        ) : contextHistoryOpen ? (
+          <ContextHistoryPanel />
         ) : (
+          <ErrorBoundary
+            fallback={
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#888', fontSize: 14 }}>
+                Something went wrong. Try reloading the window (⌘R).
+              </div>
+            }
+          >
           <Allotment>
             {/* Sidebar */}
             {!sidebarCollapsed && (
@@ -93,13 +105,17 @@ export function App() {
                 <div className={styles.contentArea}>
                   {/* Keep ALL terminal panels alive across workspaces so PTY
                       state (scrollback, TUI layout) is never lost */}
-                  {allTerminals.map((t) => (
-                    <TerminalSplitContainer
-                      key={t.id}
-                      tab={t}
-                      active={t.id === activeTabId}
-                    />
-                  ))}
+                  {allTerminals.map((t) => {
+                    const ws = workspaces.find((w) => w.id === t.workspaceId)
+                    return (
+                      <TerminalSplitContainer
+                        key={t.id}
+                        tab={t}
+                        active={t.id === activeTabId}
+                        worktreePath={ws?.worktreePath}
+                      />
+                    )
+                  })}
 
                   {!activeTab ? (
                     <div className={styles.welcome}>
@@ -119,15 +135,18 @@ export function App() {
                           tabId={activeTab.id}
                           filePath={activeTab.filePath}
                           active={true}
+                          worktreePath={workspace?.worktreePath}
                         />
                       )}
 
                       {/* Render active diff viewer */}
                       {activeTab?.type === 'diff' && workspace && (
                         <DiffViewer
-                          key={activeTab.id}
+                          key={activeTab.commitHash || activeTab.id}
                           worktreePath={workspace.worktreePath}
                           active={true}
+                          commitHash={activeTab.commitHash}
+                          commitMessage={activeTab.commitMessage}
                         />
                       )}
                     </>
@@ -143,6 +162,7 @@ export function App() {
               </Allotment.Pane>
             )}
           </Allotment>
+          </ErrorBoundary>
         )}
       </div>
       {quickOpenVisible && workspace && (

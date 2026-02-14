@@ -17,11 +17,29 @@ export interface Automation {
   lastRunStatus?: 'success' | 'failed' | 'timeout'
 }
 
+export interface SkillEntry {
+  id: string
+  name: string
+  description: string
+  sourcePath: string
+  enabled: boolean
+}
+
+export interface SubagentEntry {
+  id: string
+  name: string
+  description: string
+  sourcePath: string
+  tools?: string
+  enabled: boolean
+}
+
 export interface Project {
   id: string
   name: string
   repoPath: string
   startupCommands?: StartupCommand[]
+  prLinkProvider?: PrLinkProvider
 }
 
 export interface Workspace {
@@ -46,13 +64,44 @@ export type Tab = {
   workspaceId: string
 } & (
   | { type: 'terminal'; title: string; ptyId: string; splitRoot?: SplitNode; focusedPaneId?: string }
-  | { type: 'file'; filePath: string; unsaved?: boolean }
-  | { type: 'diff' }
+  | { type: 'file'; filePath: string; unsaved?: boolean; deleted?: boolean }
+  | { type: 'diff'; commitHash?: string; commitMessage?: string }
 )
 
-export type RightPanelMode = 'files' | 'changes'
+export type RightPanelMode = 'files' | 'changes' | 'graph'
 
 export type PrLinkProvider = 'github' | 'graphite' | 'devinreview'
+
+export type FavoriteEditor = 'cursor' | 'vscode' | 'zed' | 'sublime' | 'webstorm' | 'custom'
+
+export const EDITOR_PRESETS: Record<Exclude<FavoriteEditor, 'custom'>, { name: string; cli: string }> = {
+  cursor: { name: 'Cursor', cli: 'cursor' },
+  vscode: { name: 'VS Code', cli: 'code' },
+  zed: { name: 'Zed', cli: 'zed' },
+  sublime: { name: 'Sublime Text', cli: 'subl' },
+  webstorm: { name: 'WebStorm', cli: 'webstorm' },
+} as const
+
+/** Resolve the CLI command and display name for the current favorite editor setting */
+export function resolveEditor(settings: Settings): { name: string; cli: string } {
+  if (settings.favoriteEditor === 'custom') {
+    const cli = settings.favoriteEditorCustom || 'code'
+    return { name: cli, cli }
+  }
+  return EDITOR_PRESETS[settings.favoriteEditor]
+}
+
+export interface McpServer {
+  id: string
+  name: string
+  command: string
+  args: string[]
+  env?: Record<string, string>
+}
+
+export type AgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor'
+
+export type AgentMcpAssignments = Record<AgentType, string[]>
 
 export interface Settings {
   confirmOnClose: boolean
@@ -62,7 +111,14 @@ export interface Settings {
   diffInline: boolean
   terminalFontSize: number
   editorFontSize: number
-  prLinkProvider: PrLinkProvider
+  favoriteEditor: FavoriteEditor
+  favoriteEditorCustom: string
+  mcpServers: McpServer[]
+  agentMcpAssignments: AgentMcpAssignments
+  contextCaptureEnabled: boolean
+  sessionResumeEnabled: boolean
+  skills: SkillEntry[]
+  subagents: SubagentEntry[]
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -73,7 +129,14 @@ export const DEFAULT_SETTINGS: Settings = {
   diffInline: false,
   terminalFontSize: 14,
   editorFontSize: 13,
-  prLinkProvider: 'github',
+  favoriteEditor: 'cursor',
+  favoriteEditorCustom: '',
+  mcpServers: [],
+  agentMcpAssignments: { 'claude-code': [], 'codex': [], 'gemini': [], 'cursor': [] },
+  contextCaptureEnabled: false,
+  sessionResumeEnabled: true,
+  skills: [],
+  subagents: [],
 }
 
 export interface Toast {
@@ -107,6 +170,7 @@ export interface AppState {
   settings: Settings
   settingsOpen: boolean
   automationsOpen: boolean
+  contextHistoryOpen: boolean
   confirmDialog: ConfirmDialogState | null
   toasts: Toast[]
   quickOpenVisible: boolean
@@ -114,6 +178,7 @@ export interface AppState {
   activeClaudeWorkspaceIds: Set<string>
   prStatusMap: Map<string, PrInfo | null>
   ghAvailability: Map<string, boolean>
+  gitFileStatuses: Map<string, Map<string, string>>
 
   // Actions
   addProject: (project: Project) => void
@@ -135,6 +200,7 @@ export interface AppState {
   notifyTabSaved: (tabId: string) => void
   openFileTab: (filePath: string) => void
   openDiffTab: (workspaceId: string) => void
+  openCommitDiffTab: (workspaceId: string, hash: string, message: string) => void
   nextWorkspace: () => void
   prevWorkspace: () => void
   switchToTabByIndex: (index: number) => void
@@ -142,6 +208,7 @@ export interface AppState {
   focusOrCreateTerminal: () => Promise<void>
   splitTerminalPane: (direction: 'horizontal' | 'vertical') => Promise<void>
   openFileInSplit: (filePath: string, direction?: 'horizontal' | 'vertical') => Promise<void>
+  cycleFocusedPane: () => void
   setFocusedPane: (tabId: string, paneId: string) => void
   closeSplitPane: (paneId: string) => void
   openWorkspaceDialog: (projectId: string | null) => void
@@ -153,6 +220,7 @@ export interface AppState {
   updateSettings: (partial: Partial<Settings>) => void
   toggleSettings: () => void
   toggleAutomations: () => void
+  toggleContextHistory: () => void
   showConfirmDialog: (dialog: ConfirmDialogState) => void
   dismissConfirmDialog: () => void
   addToast: (toast: Toast) => void
@@ -167,6 +235,10 @@ export interface AppState {
   // Agent activity actions (Claude + Codex)
   setActiveClaudeWorkspaces: (workspaceIds: string[]) => void
 
+  // Git file status actions
+  setGitFileStatuses: (worktreePath: string, statuses: Map<string, string>) => void
+  setTabDeleted: (tabId: string, deleted: boolean) => void
+
   // PR status actions
   setPrStatuses: (projectId: string, statuses: Record<string, PrInfo | null>) => void
   setGhAvailability: (projectId: string, available: boolean) => void
@@ -175,6 +247,14 @@ export interface AppState {
   addAutomation: (automation: Automation) => void
   updateAutomation: (id: string, partial: Partial<Omit<Automation, 'id'>>) => void
   removeAutomation: (id: string) => void
+
+  // Skills & Subagents actions
+  addSkill: (skill: SkillEntry) => void
+  removeSkill: (id: string) => void
+  updateSkill: (id: string, partial: Partial<Omit<SkillEntry, 'id'>>) => void
+  addSubagent: (subagent: SubagentEntry) => void
+  removeSubagent: (id: string) => void
+  updateSubagent: (id: string, partial: Partial<Omit<SubagentEntry, 'id'>>) => void
 
   // Hydration
   hydrateState: (data: PersistedState) => void

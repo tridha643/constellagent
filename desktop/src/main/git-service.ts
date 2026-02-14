@@ -4,6 +4,7 @@ import { copyFile, mkdir, readdir, rm } from 'fs/promises'
 import { promisify } from 'util'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import type { CreateWorktreeProgress } from '../shared/workspace-creation'
+import type { GitLogEntry } from '../shared/git-types'
 
 const execFileAsync = promisify(execFile)
 
@@ -25,6 +26,11 @@ export interface FileStatus {
 export interface FileDiff {
   path: string
   hunks: string // raw unified diff text
+}
+
+export interface PrWorktreeResult {
+  worktreePath: string
+  branch: string
 }
 
 async function git(args: string[], cwd: string): Promise<string> {
@@ -334,6 +340,97 @@ export class GitService {
     return worktreePath
   }
 
+  static async createWorktreeFromPr(
+    repoPath: string,
+    name: string,
+    prNumber: number,
+    localBranch: string,
+    force = false,
+    onProgress?: CreateWorktreeProgressReporter
+  ): Promise<PrWorktreeResult> {
+    const parsedPrNumber = Number(prNumber)
+    if (!Number.isInteger(parsedPrNumber) || parsedPrNumber <= 0) {
+      throw new Error('Invalid pull request number')
+    }
+
+    const requestedBranch = localBranch.trim()
+    const branch = GitService.sanitizeBranchName(requestedBranch)
+    if (!branch) throw new Error('Branch name is empty after sanitization')
+
+    const parentDir = dirname(repoPath)
+    const repoName = basename(repoPath)
+    const safeWorktreeName = sanitizeWorktreeName(name)
+    const worktreePath = resolve(parentDir, `${repoName}-ws-${safeWorktreeName}`)
+    ensureWithinParent(parentDir, worktreePath)
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'prune-worktrees',
+      message: 'Cleaning stale worktree references...',
+    })
+    await git(['worktree', 'prune'], repoPath).catch(() => {})
+
+    const hasOrigin = await GitService.hasRemote(repoPath, 'origin')
+    if (!hasOrigin) {
+      throw new Error('No origin remote found')
+    }
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'fetch-origin',
+      message: `Fetching PR #${parsedPrNumber}...`,
+    })
+    try {
+      await git(['fetch', '--prune', 'origin'], repoPath).catch(() => {})
+      await git(['fetch', 'origin', `+pull/${parsedPrNumber}/head:${branch}`], repoPath)
+    } catch (err) {
+      const msg = friendlyGitError(err, `Failed to fetch PR #${parsedPrNumber}`)
+      if (msg.includes('couldn\'t find remote ref') || msg.includes('no such remote ref')) {
+        throw new Error(`Pull request #${parsedPrNumber} not found`)
+      }
+      throw new Error(msg)
+    }
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'prepare-worktree-dir',
+      message: 'Preparing worktree directory...',
+    })
+    if (existsSync(worktreePath)) {
+      if (!force) {
+        throw new Error('WORKTREE_PATH_EXISTS')
+      }
+      await rm(worktreePath, { recursive: true, force: true })
+    }
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'create-worktree',
+      message: 'Creating worktree...',
+    })
+    const args = ['worktree', 'add']
+    if (force) args.push('--force')
+    args.push(worktreePath, branch)
+
+    try {
+      await git(args, repoPath)
+    } catch (err) {
+      const msg = friendlyGitError(err, 'Failed to create worktree')
+      if (msg === 'BRANCH_CHECKED_OUT' && !force) throw new Error(msg)
+      throw new Error(msg)
+    }
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'sync-branch',
+      message: 'Fast-forwarding branch...',
+    })
+    await git(['pull', '--ff-only'], worktreePath).catch(() => {})
+
+    reportCreateWorktreeProgress(onProgress, {
+      stage: 'copy-env-files',
+      message: 'Copying env files...',
+    })
+    await copyEnvFiles(repoPath, worktreePath, repoPath)
+
+    return { worktreePath, branch }
+  }
+
   static async removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
     try {
       await git(['worktree', 'remove', worktreePath, '--force'], repoPath)
@@ -347,7 +444,12 @@ export class GitService {
   }
 
   static async getCurrentBranch(worktreePath: string): Promise<string> {
-    return git(['rev-parse', '--abbrev-ref', 'HEAD'], worktreePath)
+    if (!existsSync(worktreePath)) return ''
+    try {
+      return await git(['rev-parse', '--abbrev-ref', 'HEAD'], worktreePath)
+    } catch {
+      return ''
+    }
   }
 
   static async getStatus(worktreePath: string): Promise<FileStatus[]> {
@@ -475,5 +577,56 @@ export class GitService {
 
   static async commit(worktreePath: string, message: string): Promise<void> {
     await git(['commit', '-m', message], worktreePath)
+  }
+
+  static async showFileAtHead(worktreePath: string, filePath: string): Promise<string | null> {
+    try {
+      return await git(['show', 'HEAD:' + filePath], worktreePath)
+    } catch {
+      return null // File is new/untracked
+    }
+  }
+
+  static async getLog(worktreePath: string, maxCount = 80): Promise<GitLogEntry[]> {
+    // Use git's %x00 escape so no literal null bytes appear in the argument string
+    // (Node.js execFile rejects strings containing \x00)
+    const format = '%H%x00%P%x00%s%x00%D%x00%an%x00%ar'
+    const output = await git(
+      ['log', '--all', '--topo-order', `--format=${format}`, '-n', String(maxCount)],
+      worktreePath,
+    )
+    if (!output) return []
+
+    const SEP = '\x00' // git outputs actual null bytes
+    const entries: GitLogEntry[] = []
+    for (const line of output.split('\n')) {
+      if (!line) continue
+      const parts = line.split(SEP)
+      if (parts.length < 6) continue
+      entries.push({
+        hash: parts[0],
+        parents: parts[1] ? parts[1].split(' ') : [],
+        message: parts[2],
+        refs: parts[3] ? parts[3].split(', ').map((r) => r.trim()).filter(Boolean) : [],
+        author: parts[4],
+        relativeDate: parts[5],
+      })
+    }
+    return entries
+  }
+
+  static async getCommitDiff(worktreePath: string, hash: string): Promise<string> {
+    try {
+      return await git(['show', '--format=', '--patch', hash], worktreePath)
+    } catch {
+      // Object may not be available locally (e.g. remote-only ref in a worktree).
+      // Try fetching the object first, then retry.
+      try {
+        await git(['fetch', '--depth=1', 'origin', hash], worktreePath)
+        return await git(['show', '--format=', '--patch', hash], worktreePath)
+      } catch {
+        return '' // Object is unreachable — return empty diff
+      }
+    }
   }
 }
