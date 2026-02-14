@@ -15,6 +15,7 @@ import { QuickOpen } from './components/QuickOpen/QuickOpen'
 import { ToastContainer } from './components/Toast/Toast'
 import { useShortcuts } from './hooks/useShortcuts'
 import { usePrStatusPoller } from './hooks/usePrStatusPoller'
+import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary'
 import styles from './App.module.css'
 
 export function App() {
@@ -82,6 +83,13 @@ export function App() {
         ) : contextHistoryOpen ? (
           <ContextHistoryPanel />
         ) : (
+          <ErrorBoundary
+            fallback={
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#888', fontSize: 14 }}>
+                Something went wrong. Try reloading the window (⌘R).
+              </div>
+            }
+          >
           <Allotment>
             {/* Sidebar */}
             {!sidebarCollapsed && (
@@ -154,6 +162,7 @@ export function App() {
               </Allotment.Pane>
             )}
           </Allotment>
+          </ErrorBoundary>
         )}
       </div>
       {quickOpenVisible && workspace && (

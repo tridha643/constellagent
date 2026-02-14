@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, memo } from 'react'
 import { PatchDiff } from '@pierre/diffs/react'
 import { useAppStore } from '../../store/app-store'
+import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
 import styles from './Editor.module.css'
 
 interface FileStatus {
@@ -67,19 +68,31 @@ const DiffFileSection = memo(function DiffFileSection({
           {fileName}
         </span>
       </div>
-      <PatchDiff
-        patch={data.patch}
-        options={{
-          theme: 'tokyo-night',
-          themeType: 'dark',
-          diffStyle: inline ? 'unified' : 'split',
-          diffIndicators: 'bars',
-          lineDiffType: 'word-alt',
-          overflow: 'scroll',
-          expandUnchanged: false,
-          disableFileHeader: true,
-        }}
-      />
+      {data.patch ? (
+        <ErrorBoundary
+          fallback={
+            <div style={{ padding: 12, color: '#888', fontSize: 13 }}>
+              Failed to render diff for this file.
+            </div>
+          }
+        >
+          <PatchDiff
+            patch={data.patch}
+            options={{
+              theme: 'tokyo-night',
+              themeType: 'dark',
+              diffStyle: inline ? 'unified' : 'split',
+              diffIndicators: 'bars',
+              lineDiffType: 'word-alt',
+              overflow: 'scroll',
+              expandUnchanged: false,
+              disableFileHeader: true,
+            }}
+          />
+        </ErrorBoundary>
+      ) : (
+        <div style={{ padding: 12, color: '#888', fontSize: 13 }}>No diff available</div>
+      )}
     </div>
   )
 })
