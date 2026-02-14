@@ -49,112 +49,212 @@ interface GraphData {
   maxLanes: number
 }
 
+function laneX(lane: number): number {
+  return lane * LANE_WIDTH + LANE_WIDTH / 2 + 8
+}
+
+/**
+ * Compute the git graph layout — GitLens-style.
+ *
+ * Algorithm overview:
+ *   - `lanes` is an ordered array where lanes[i] = the commit hash that lane i
+ *     is "waiting for" (i.e. the next commit that should appear on that lane).
+ *   - When a commit appears, it occupies the LOWEST lane waiting for it.
+ *   - Any OTHER lanes also waiting for the same hash are converged into the
+ *     commit's lane with a diagonal curve (from the extra lane down into the
+ *     commit's lane) and then freed.
+ *   - The commit's first parent inherits the commit's lane (straight line down).
+ *   - Additional parents (merge) either connect to an existing lane with a
+ *     curve, or allocate a new lane with a fork-out curve.
+ *   - Each active lane gets a vertical continuation point every row to keep the
+ *     line continuous.
+ */
 function computeGraph(entries: GitLogEntry[]): GraphData {
+  // lanes[i] = hash that lane i is waiting for, or null if free
   const lanes: (string | null)[] = []
-  // Track which BranchLine index each lane belongs to
+  // laneBranch[i] = index into `branches` for the running vertical line on lane i
   const laneBranch: (number | null)[] = []
+  // Stable color per lane (index into LANE_COLORS)
+  const laneColorIdx: number[] = []
+  let nextColorIdx = 0
+
   const branches: BranchLine[] = []
   const dots: CommitDot[] = []
   let maxLanes = 1
 
+  // ── Helpers ──
+
+  function allocLane(hash: string): number {
+    // Prefer reusing the lowest free lane (but not lane 0 unless it's the only option)
+    for (let l = 0; l < lanes.length; l++) {
+      if (lanes[l] === null) {
+        lanes[l] = hash
+        if (laneColorIdx[l] === undefined) laneColorIdx[l] = nextColorIdx++
+        if (laneBranch[l] === undefined) laneBranch[l] = null
+        return l
+      }
+    }
+    const l = lanes.length
+    lanes.push(hash)
+    laneBranch.push(null)
+    laneColorIdx.push(nextColorIdx++)
+    return l
+  }
+
+  function ensureBranch(lane: number): number {
+    if (laneBranch[lane] != null) return laneBranch[lane]!
+    while (laneColorIdx.length <= lane) laneColorIdx.push(nextColorIdx++)
+    while (laneBranch.length <= lane) laneBranch.push(null)
+    const idx = branches.length
+    branches.push({ points: [], color: laneColor(laneColorIdx[lane]) })
+    laneBranch[lane] = idx
+    return idx
+  }
+
+  function closeLane(lane: number): void {
+    lanes[lane] = null
+    laneBranch[lane] = null
+  }
+
+  // ── Main loop ──
+
   for (let i = 0; i < entries.length; i++) {
     const { hash, parents } = entries[i]
     const y = i * ROW_HEIGHT + ROW_HEIGHT / 2
+    const nextY = y + ROW_HEIGHT
+    const prevY = y - ROW_HEIGHT
 
-    // Find which lane this commit lands on
-    let commitLane = lanes.indexOf(hash)
+    // ── 1. Find or allocate the commit's lane ──
+    let commitLane = -1
+    let wasTracked = true
+    for (let l = 0; l < lanes.length; l++) {
+      if (lanes[l] === hash) { commitLane = l; break }
+    }
     if (commitLane === -1) {
-      commitLane = lanes.indexOf(null)
-      if (commitLane === -1) {
-        commitLane = lanes.length
-        lanes.push(hash)
-        laneBranch.push(null)
-      } else {
-        lanes[commitLane] = hash
+      commitLane = allocLane(hash)
+      wasTracked = false
+    }
+
+    const cx = laneX(commitLane)
+
+    // ── 1b. Fork-in curve for untracked commits ──
+    // If this commit wasn't previously tracked (it appeared fresh, e.g. a
+    // branch tip from --all), and its first parent is already tracked on a
+    // different lane, draw a fork-in curve from the parent's lane to this
+    // commit's lane. This shows where the branch originates.
+    if (!wasTracked && parents.length > 0) {
+      const firstParent = parents[0]
+      let parentLane = -1
+      for (let l = 0; l < lanes.length; l++) {
+        if (l === commitLane) continue
+        if (lanes[l] === firstParent) { parentLane = l; break }
+      }
+      if (parentLane !== -1) {
+        // Start the branch line with a curve from the parent's lane
+        const bIdx = ensureBranch(commitLane)
+        branches[bIdx].points.push({ x: laneX(parentLane), y: prevY })
       }
     }
 
-    // If this lane has no branch yet, start one
-    if (laneBranch[commitLane] == null) {
-      const idx = branches.length
-      branches.push({ points: [], color: laneColor(commitLane) })
-      laneBranch[commitLane] = idx
+    // ── 2. Converge OTHER lanes waiting for this hash ──
+    // These are branches that were forked and now merge back into this commit.
+    // Append the commit position to the existing branch line so the path
+    // naturally curves from the lane's vertical run into the commit dot.
+    const closedLanes = new Set<number>()
+    for (let l = 0; l < lanes.length; l++) {
+      if (l === commitLane) continue
+      if (lanes[l] !== hash) continue
+
+      const brIdx = laneBranch[l]
+      if (brIdx != null) {
+        // Append the commit position — buildPathD will draw an S-curve
+        // from the last vertical point on this lane into (cx, y).
+        branches[brIdx].points.push({ x: cx, y })
+      } else {
+        // No existing branch line — create a short convergence curve
+        branches.push({
+          points: [{ x: laneX(l), y: prevY }, { x: cx, y }],
+          color: laneColor(laneColorIdx[l]),
+        })
+      }
+      closeLane(l)
+      closedLanes.add(l)
     }
 
-    const cx = commitLane * LANE_WIDTH + LANE_WIDTH / 2 + 8
-    const dotPoint = { x: cx, y }
-
-    // Add point to this lane's branch
-    branches[laneBranch[commitLane]!].points.push(dotPoint)
+    // ── 3. Add commit dot to its lane's branch line ──
+    const brIdx = ensureBranch(commitLane)
+    branches[brIdx].points.push({ x: cx, y })
 
     dots.push({
       cx,
       cy: y,
-      color: laneColor(commitLane),
+      color: laneColor(laneColorIdx[commitLane]),
       hash,
       isCurrent: i === 0,
       isMerge: parents.length > 1,
     })
 
-    const newMergeLanes = new Set<number>()
+    // ── 4. Assign parents to lanes ──
+    const newLanes = new Set<number>()
 
     if (parents.length === 0) {
       // Root commit — close lane
-      lanes[commitLane] = null
-      laneBranch[commitLane] = null
+      closeLane(commitLane)
+      closedLanes.add(commitLane)
     } else {
-      // First parent continues in the same lane
+      // First parent inherits the commit's lane (straight line continues)
       lanes[commitLane] = parents[0]
 
-      // Additional parents (merge) — find or create lanes
+      // Additional parents (merge parents) — fork out
       for (let p = 1; p < parents.length; p++) {
-        const parentHash = parents[p]
-        let parentLane = lanes.indexOf(parentHash)
-        if (parentLane === -1) {
-          parentLane = lanes.indexOf(null)
-          if (parentLane === -1) {
-            parentLane = lanes.length
-            lanes.push(parentHash)
-            laneBranch.push(null)
-          } else {
-            lanes[parentLane] = parentHash
-          }
+        const ph = parents[p]
+
+        // Check if this parent is already being tracked in some lane
+        let pLane = -1
+        for (let l = 0; l < lanes.length; l++) {
+          if (lanes[l] === ph) { pLane = l; break }
         }
 
-        const parentX = parentLane * LANE_WIDTH + LANE_WIDTH / 2 + 8
+        if (pLane !== -1) {
+          // Parent already tracked — draw a curve from commit to that lane
+          branches.push({
+            points: [{ x: cx, y }, { x: laneX(pLane), y: nextY }],
+            color: laneColor(laneColorIdx[pLane]),
+          })
+        } else {
+          // Allocate a new lane and start a branch with a fork-out curve
+          pLane = allocLane(ph)
+          while (laneColorIdx.length <= pLane) laneColorIdx.push(nextColorIdx++)
+          while (laneBranch.length <= pLane) laneBranch.push(null)
+          newLanes.add(pLane)
 
-        // Standalone merge curve (short 2-point path)
-        branches.push({
-          points: [
-            { x: cx, y },
-            { x: parentX, y: y + ROW_HEIGHT },
-          ],
-          color: laneColor(parentLane),
-        })
-
-        // Start a separate continuation branch for this lane if needed
-        if (laneBranch[parentLane] == null) {
-          const contIdx = branches.length
-          branches.push({ points: [], color: laneColor(parentLane) })
-          laneBranch[parentLane] = contIdx
-          newMergeLanes.add(parentLane)
+          // Start the new lane's branch with a curve from commit to new lane
+          const bIdx = branches.length
+          branches.push({
+            points: [{ x: cx, y }, { x: laneX(pLane), y: nextY }],
+            color: laneColor(laneColorIdx[pLane]),
+          })
+          laneBranch[pLane] = bIdx
         }
       }
     }
 
-    // Add vertical continuation points for all active lanes (except the commit lane, already added)
-    // Skip lanes just created for merges — they start on the next row
+    // ── 5. Vertical continuation for all active lanes ──
     for (let l = 0; l < lanes.length; l++) {
-      if (lanes[l] != null && l !== commitLane && laneBranch[l] != null && !newMergeLanes.has(l)) {
-        const lx = l * LANE_WIDTH + LANE_WIDTH / 2 + 8
-        branches[laneBranch[l]!].points.push({ x: lx, y })
-      }
+      if (lanes[l] == null) continue
+      if (laneBranch[l] == null) continue
+      if (newLanes.has(l)) continue
+      if (closedLanes.has(l)) continue
+      // Don't double-add the commit lane (already added in step 3)
+      if (l === commitLane) continue
+      branches[laneBranch[l]!].points.push({ x: laneX(l), y })
     }
 
-    // Collapse trailing null lanes
+    // ── 6. Trim trailing empty lanes ──
     while (lanes.length > 0 && lanes[lanes.length - 1] === null) {
       lanes.pop()
       laneBranch.pop()
+      laneColorIdx.pop()
     }
 
     maxLanes = Math.max(maxLanes, lanes.length, commitLane + 1)
@@ -174,13 +274,17 @@ function buildPathD(points: { x: number; y: number }[]): string {
     const cur = points[i]
 
     if (prev.x === cur.x) {
-      // Vertical segment
+      // Vertical segment — straight line
       parts.push(`L ${cur.x},${cur.y}`)
     } else {
-      // S-curve: horizontal departure, vertical arrival
-      const midY = (prev.y + cur.y) / 2
+      // Diagonal transition — smooth S-curve using cubic Bezier.
+      // Control points: depart vertically from prev, arrive vertically at cur.
+      const dy = cur.y - prev.y
+      const cpOffset = Math.min(Math.abs(dy) * 0.5, ROW_HEIGHT * 0.8)
+      const cp1y = prev.y + cpOffset * Math.sign(dy)
+      const cp2y = cur.y - cpOffset * Math.sign(dy)
       parts.push(
-        `C ${cur.x},${prev.y} ${cur.x},${midY} ${cur.x},${cur.y}`,
+        `C ${prev.x},${cp1y} ${cur.x},${cp2y} ${cur.x},${cur.y}`,
       )
     }
   }

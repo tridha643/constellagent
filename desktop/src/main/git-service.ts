@@ -616,6 +616,17 @@ export class GitService {
   }
 
   static async getCommitDiff(worktreePath: string, hash: string): Promise<string> {
-    return git(['show', '--format=', '--patch', hash], worktreePath)
+    try {
+      return await git(['show', '--format=', '--patch', hash], worktreePath)
+    } catch {
+      // Object may not be available locally (e.g. remote-only ref in a worktree).
+      // Try fetching the object first, then retry.
+      try {
+        await git(['fetch', '--depth=1', 'origin', hash], worktreePath)
+        return await git(['show', '--format=', '--patch', hash], worktreePath)
+      } catch {
+        return '' // Object is unreachable — return empty diff
+      }
+    }
   }
 }
