@@ -443,7 +443,12 @@ export class GitService {
   }
 
   static async getCurrentBranch(worktreePath: string): Promise<string> {
-    return git(['rev-parse', '--abbrev-ref', 'HEAD'], worktreePath)
+    if (!existsSync(worktreePath)) return ''
+    try {
+      return await git(['rev-parse', '--abbrev-ref', 'HEAD'], worktreePath)
+    } catch {
+      return ''
+    }
   }
 
   static async getStatus(worktreePath: string): Promise<FileStatus[]> {
