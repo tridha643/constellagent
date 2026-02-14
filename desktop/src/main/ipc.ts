@@ -1,7 +1,7 @@
 import { ipcMain, dialog, app, BrowserWindow, clipboard, type WebContents } from 'electron'
 import { join, relative } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
-import { mkdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { watch, type FSWatcher } from 'fs'
 import { IPC } from '../shared/ipc-channels'
@@ -34,6 +34,117 @@ interface FsWatcherEntry {
 // Each renderer subscription increments a ref count so one panel unmounting
 // does not tear down a shared watcher used by another panel.
 const fsWatchers = new Map<string, FsWatcherEntry>()
+
+interface StateSanitizeResult {
+  data: unknown
+  changed: boolean
+  removedWorkspaceCount: number
+}
+
+interface WorkspaceLike {
+  id: string
+  worktreePath: string
+}
+
+interface TabLike {
+  id: string
+  workspaceId: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isWorkspaceLike(value: unknown): value is WorkspaceLike {
+  return isRecord(value) && typeof value.id === 'string' && typeof value.worktreePath === 'string'
+}
+
+function isTabLike(value: unknown): value is TabLike {
+  return isRecord(value) && typeof value.id === 'string' && typeof value.workspaceId === 'string'
+}
+
+function sanitizeLoadedState(data: unknown): StateSanitizeResult {
+  if (!isRecord(data)) return { data, changed: false, removedWorkspaceCount: 0 }
+  const rawWorkspaces = Array.isArray(data.workspaces) ? data.workspaces : null
+  if (!rawWorkspaces) return { data, changed: false, removedWorkspaceCount: 0 }
+
+  const keptWorkspaces: unknown[] = []
+  const keptWorkspaceIds = new Set<string>()
+  let removedWorkspaceCount = 0
+
+  for (const workspace of rawWorkspaces) {
+    if (!isWorkspaceLike(workspace) || !existsSync(workspace.worktreePath)) {
+      removedWorkspaceCount += 1
+      continue
+    }
+    keptWorkspaces.push(workspace)
+    keptWorkspaceIds.add(workspace.id)
+  }
+
+  if (removedWorkspaceCount === 0) {
+    return { data, changed: false, removedWorkspaceCount: 0 }
+  }
+
+  const next: Record<string, unknown> = { ...data, workspaces: keptWorkspaces }
+  let changed = true
+
+  const rawTabs = Array.isArray(data.tabs) ? data.tabs : null
+  const keptTabs = rawTabs
+    ? rawTabs.filter((tab) => isTabLike(tab) && keptWorkspaceIds.has(tab.workspaceId))
+    : []
+  if (rawTabs) next.tabs = keptTabs
+
+  const rawActiveWorkspaceId = typeof data.activeWorkspaceId === 'string' ? data.activeWorkspaceId : null
+  let nextActiveWorkspaceId: string | null = null
+  if (rawActiveWorkspaceId && keptWorkspaceIds.has(rawActiveWorkspaceId)) {
+    nextActiveWorkspaceId = rawActiveWorkspaceId
+  } else {
+    const firstWorkspace = keptWorkspaces.find(isWorkspaceLike)
+    nextActiveWorkspaceId = firstWorkspace?.id ?? null
+  }
+  if ((data.activeWorkspaceId ?? null) !== nextActiveWorkspaceId) {
+    changed = true
+  }
+  next.activeWorkspaceId = nextActiveWorkspaceId
+
+  const rawActiveTabId = typeof data.activeTabId === 'string' ? data.activeTabId : null
+  let nextActiveTabId: string | null = null
+  if (rawTabs) {
+    const tabIds = new Set<string>()
+    for (const tab of keptTabs) {
+      if (isTabLike(tab)) tabIds.add(tab.id)
+    }
+    if (rawActiveTabId && tabIds.has(rawActiveTabId)) {
+      nextActiveTabId = rawActiveTabId
+    } else if (nextActiveWorkspaceId) {
+      const fallback = keptTabs.find(
+        (tab) => isTabLike(tab) && tab.workspaceId === nextActiveWorkspaceId
+      )
+      if (isTabLike(fallback)) nextActiveTabId = fallback.id
+    }
+  }
+  if ((data.activeTabId ?? null) !== nextActiveTabId) {
+    changed = true
+  }
+  next.activeTabId = nextActiveTabId
+
+  if (isRecord(data.lastActiveTabByWorkspace)) {
+    const filtered = Object.fromEntries(
+      Object.entries(data.lastActiveTabByWorkspace).filter(([workspaceId]) =>
+        keptWorkspaceIds.has(workspaceId)
+      )
+    )
+    if (
+      Object.keys(filtered).length !==
+      Object.keys(data.lastActiveTabByWorkspace).length
+    ) {
+      changed = true
+    }
+    next.lastActiveTabByWorkspace = filtered
+  }
+
+  return { data: next, changed, removedWorkspaceCount }
+}
 
 export function registerIpcHandlers(): void {
   // ── Git handlers ──
@@ -574,6 +685,15 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.STATE_LOAD, async () => {
-    return loadJsonFile(stateFilePath(), null)
+    const loaded = await loadJsonFile(stateFilePath(), null)
+    const sanitized = sanitizeLoadedState(loaded)
+    if (sanitized.changed) {
+      await saveJsonFile(stateFilePath(), sanitized.data).catch(() => {})
+      const count = sanitized.removedWorkspaceCount
+      if (count > 0) {
+        console.info(`[state] removed ${count} stale workspace${count === 1 ? '' : 's'}`)
+      }
+    }
+    return sanitized.data
   })
 }
