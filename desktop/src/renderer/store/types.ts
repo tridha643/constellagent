@@ -47,12 +47,31 @@ export type Tab = {
 } & (
   | { type: 'terminal'; title: string; ptyId: string; splitRoot?: SplitNode; focusedPaneId?: string }
   | { type: 'file'; filePath: string; unsaved?: boolean; deleted?: boolean }
-  | { type: 'diff' }
+  | { type: 'diff'; commitHash?: string; commitMessage?: string }
 )
 
-export type RightPanelMode = 'files' | 'changes'
+export type RightPanelMode = 'files' | 'changes' | 'graph'
 
 export type PrLinkProvider = 'github' | 'graphite' | 'devinreview'
+
+export type FavoriteEditor = 'cursor' | 'vscode' | 'zed' | 'sublime' | 'webstorm' | 'custom'
+
+export const EDITOR_PRESETS: Record<Exclude<FavoriteEditor, 'custom'>, { name: string; cli: string }> = {
+  cursor: { name: 'Cursor', cli: 'cursor' },
+  vscode: { name: 'VS Code', cli: 'code' },
+  zed: { name: 'Zed', cli: 'zed' },
+  sublime: { name: 'Sublime Text', cli: 'subl' },
+  webstorm: { name: 'WebStorm', cli: 'webstorm' },
+} as const
+
+/** Resolve the CLI command and display name for the current favorite editor setting */
+export function resolveEditor(settings: Settings): { name: string; cli: string } {
+  if (settings.favoriteEditor === 'custom') {
+    const cli = settings.favoriteEditorCustom || 'code'
+    return { name: cli, cli }
+  }
+  return EDITOR_PRESETS[settings.favoriteEditor]
+}
 
 export interface Settings {
   confirmOnClose: boolean
@@ -63,6 +82,8 @@ export interface Settings {
   terminalFontSize: number
   editorFontSize: number
   prLinkProvider: PrLinkProvider
+  favoriteEditor: FavoriteEditor
+  favoriteEditorCustom: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -74,6 +95,8 @@ export const DEFAULT_SETTINGS: Settings = {
   terminalFontSize: 14,
   editorFontSize: 13,
   prLinkProvider: 'github',
+  favoriteEditor: 'cursor',
+  favoriteEditorCustom: '',
 }
 
 export interface Toast {
@@ -136,6 +159,7 @@ export interface AppState {
   notifyTabSaved: (tabId: string) => void
   openFileTab: (filePath: string) => void
   openDiffTab: (workspaceId: string) => void
+  openCommitDiffTab: (workspaceId: string, hash: string, message: string) => void
   nextWorkspace: () => void
   prevWorkspace: () => void
   switchToTabByIndex: (index: number) => void

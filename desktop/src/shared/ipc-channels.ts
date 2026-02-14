@@ -17,6 +17,8 @@ export const IPC = {
   GIT_GET_CURRENT_BRANCH: 'git:get-current-branch',
   GIT_GET_DEFAULT_BRANCH: 'git:get-default-branch',
   GIT_SHOW_FILE_AT_HEAD: 'git:show-file-at-head',
+  GIT_GET_LOG: 'git:get-log',
+  GIT_GET_COMMIT_DIFF: 'git:get-commit-diff',
 
   // PTY operations
   PTY_CREATE: 'pty:create',
@@ -40,6 +42,7 @@ export const IPC = {
   // App operations
   APP_SELECT_DIRECTORY: 'app:select-directory',
   APP_ADD_PROJECT_PATH: 'app:add-project-path',
+  APP_OPEN_IN_EDITOR: 'app:open-in-editor',
 
   // Claude Code integration
   CLAUDE_TRUST_PATH: 'claude:trust-path',
@@ -64,6 +67,7 @@ export const IPC = {
 
   // GitHub operations
   GITHUB_GET_PR_STATUSES: 'github:get-pr-statuses',
+  GITHUB_RESOLVE_PR: 'github:resolve-pr',
 
   // Clipboard operations
   CLIPBOARD_SAVE_IMAGE: 'clipboard:save-image',

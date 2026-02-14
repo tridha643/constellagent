@@ -159,6 +159,80 @@ export class GithubService {
     }
   }
 
+  /**
+   * Resolve a PR number to its head branch name and title.
+   * If owner/repo are provided (from a full URL), uses them directly.
+   * Otherwise, infers owner/repo from the project's git remote.
+   */
+  static async resolvePr(
+    repoPath: string,
+    prNumber: number,
+    owner?: string,
+    repo?: string,
+  ): Promise<{ branch: string; title: string; number: number }> {
+    if (!(await this.isGhAvailable())) {
+      throw new Error('GitHub CLI (gh) is not installed')
+    }
+
+    const token = await this.getAuthToken()
+    if (!token) {
+      throw new Error('GitHub CLI not authenticated. Run `gh auth login` first.')
+    }
+
+    let resolvedOwner = owner
+    let resolvedRepo = repo
+    if (!resolvedOwner || !resolvedRepo) {
+      const repoInfo = await this.getGithubRepoInfo(repoPath)
+      if (!repoInfo) {
+        throw new Error('Could not determine GitHub repo from git remote')
+      }
+      resolvedOwner = repoInfo.owner
+      resolvedRepo = repoInfo.name
+    }
+
+    const query = `
+      query ResolvePr($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            number
+            title
+            headRefName
+          }
+        }
+      }
+    `
+
+    interface ResolvePrResponse {
+      data?: {
+        repository?: {
+          pullRequest?: {
+            number: number
+            title: string
+            headRefName: string
+          } | null
+        }
+      }
+      errors?: Array<{ message?: string }>
+    }
+
+    const payload = await this.fetchGraphqlJson<ResolvePrResponse>(
+      query,
+      { owner: resolvedOwner, name: resolvedRepo, number: prNumber },
+      token,
+    )
+
+    const pr = payload.data?.repository?.pullRequest
+    if (!pr) {
+      throw new Error(`PR #${prNumber} not found in ${resolvedOwner}/${resolvedRepo}`)
+    }
+
+    return {
+      branch: pr.headRefName,
+      title: pr.title,
+      number: pr.number,
+    }
+  }
+
   private static async getAuthToken(): Promise<string | null> {
     const now = Date.now()
     if (

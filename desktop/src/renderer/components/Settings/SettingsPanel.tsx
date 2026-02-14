@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
-import type { Settings } from '../../store/types'
+import type { Settings, FavoriteEditor } from '../../store/types'
 import { Tooltip } from '../Tooltip/Tooltip'
 import styles from './SettingsPanel.module.css'
 
@@ -27,6 +27,7 @@ const SHORTCUTS = [
   { action: 'Increase font size', keys: '⌘+' },
   { action: 'Decrease font size', keys: '⌘−' },
   { action: 'Reset font size', keys: '⌘0' },
+  { action: 'Open in editor', keys: '⇧⌘O' },
   { action: 'Settings', keys: '⌘,' },
 ]
 
@@ -362,6 +363,31 @@ export function SettingsPanel() {
               { value: 'devinreview', label: 'Devin Review' },
             ]}
           />
+
+          <SelectRow
+            label="Favorite editor"
+            description="External editor to open workspaces in (⇧⌘O)"
+            value={settings.favoriteEditor}
+            onChange={(v) => update('favoriteEditor', v as FavoriteEditor)}
+            options={[
+              { value: 'cursor', label: 'Cursor' },
+              { value: 'vscode', label: 'VS Code' },
+              { value: 'zed', label: 'Zed' },
+              { value: 'sublime', label: 'Sublime Text' },
+              { value: 'webstorm', label: 'WebStorm' },
+              { value: 'custom', label: 'Custom...' },
+            ]}
+          />
+
+          {settings.favoriteEditor === 'custom' && (
+            <TextRow
+              label="Custom editor command"
+              description="CLI command used to open a directory (e.g. nvim, emacs)"
+              value={settings.favoriteEditorCustom}
+              onChange={(v) => update('favoriteEditorCustom', v)}
+              placeholder="code"
+            />
+          )}
         </div>
 
         <div className={styles.section}>

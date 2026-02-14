@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Project } from '../../store/types'
+import { parsePrUrl, parsePrNumber } from '../../../shared/pr-url'
 import styles from './WorkspaceDialog.module.css'
 
 /** Live-sanitize a string into a valid git branch name as the user types */
@@ -35,6 +36,8 @@ export function WorkspaceDialog({
   const [newBranchName, setNewBranchName] = useState('')
   const [baseBranch, setBaseBranch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [prResolving, setPrResolving] = useState(false)
+  const [prError, setPrError] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [basePickerOpen, setBasePickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -167,36 +170,68 @@ export function WorkspaceDialog({
             </div>
           </>
         ) : (
-          <div className={styles.branchInputRow} ref={pickerRef}>
-            <input
-              className={styles.input}
-              value={selectedBranch}
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              disabled={loading || isCreating}
-              placeholder="Branch name"
-            />
-            <button
-              className={styles.pickerBtn}
-              onClick={() => setPickerOpen((v) => !v)}
-              disabled={loading || isCreating}
-              type="button"
-            >
-              &#9662;
-            </button>
-            {pickerOpen && (
-              <div className={styles.pickerDropdown}>
-                {branches.map((b) => (
-                  <div
-                    key={b}
-                    className={`${styles.pickerOption} ${b === selectedBranch ? styles.pickerOptionActive : ''}`}
-                    onClick={() => { setSelectedBranch(b); setPickerOpen(false) }}
-                  >
-                    {b}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <>
+            <div className={styles.branchInputRow} ref={pickerRef}>
+              <input
+                className={styles.input}
+                value={selectedBranch}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setSelectedBranch(value)
+                  setPrError('')
+
+                  // Detect PR URL or #number shorthand
+                  const parsed = parsePrUrl(value)
+                  const prNum = parsed ? null : parsePrNumber(value)
+
+                  if (parsed || prNum !== null) {
+                    setPrResolving(true)
+                    setPrError('')
+                    const number = parsed ? parsed.number : prNum!
+                    const owner = parsed?.owner
+                    const repo = parsed?.repo
+                    window.api.github.resolvePr(project.repoPath, number, owner, repo)
+                      .then((result) => {
+                        setSelectedBranch(result.branch)
+                        setName(`pr-${result.number}`)
+                        setPrError('')
+                      })
+                      .catch((err: Error) => {
+                        setPrError(err.message || 'Failed to resolve PR')
+                      })
+                      .finally(() => {
+                        setPrResolving(false)
+                      })
+                  }
+                }}
+                disabled={loading || isCreating || prResolving}
+                placeholder="Branch name, PR URL, or #123"
+              />
+              {prResolving && <span className={styles.prSpinner} />}
+              <button
+                className={styles.pickerBtn}
+                onClick={() => setPickerOpen((v) => !v)}
+                disabled={loading || isCreating || prResolving}
+                type="button"
+              >
+                &#9662;
+              </button>
+              {pickerOpen && (
+                <div className={styles.pickerDropdown}>
+                  {branches.map((b) => (
+                    <div
+                      key={b}
+                      className={`${styles.pickerOption} ${b === selectedBranch ? styles.pickerOptionActive : ''}`}
+                      onClick={() => { setSelectedBranch(b); setPickerOpen(false); setPrError('') }}
+                    >
+                      {b}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {prError && <div className={styles.prError}>{prError}</div>}
+          </>
         )}
 
         {isCreating && (
@@ -213,7 +248,7 @@ export function WorkspaceDialog({
 
         <div className={styles.actions}>
           <button className={styles.cancelBtn} onClick={onCancel} disabled={isCreating}>Cancel</button>
-          <button className={styles.createBtn} onClick={handleSubmit} disabled={!name.trim() || isCreating}>
+          <button className={styles.createBtn} onClick={handleSubmit} disabled={!name.trim() || isCreating || prResolving}>
             {isCreating ? 'Creating...' : 'Create'}
           </button>
         </div>

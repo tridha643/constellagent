@@ -729,6 +729,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
+  openCommitDiffTab: (workspaceId, hash, message) => {
+    const s = get()
+    // Reuse existing commit-diff tab for this workspace (one with commitHash set)
+    const existing = s.tabs.find(
+      (t) => t.workspaceId === workspaceId && t.type === 'diff' && t.commitHash
+    )
+    if (existing) {
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === existing.id && t.type === 'diff'
+            ? { ...t, commitHash: hash, commitMessage: message }
+            : t
+        ),
+        activeTabId: existing.id,
+      }))
+      return
+    }
+    get().addTab({
+      id: crypto.randomUUID(),
+      workspaceId,
+      type: 'diff',
+      commitHash: hash,
+      commitMessage: message,
+    })
+  },
+
   hydrateState: (data) => {
     const workspaces = data.workspaces ?? []
     const saved = data.activeWorkspaceId

@@ -206,3 +206,33 @@
   flex: 1;
   -webkit-app-region: drag;
 }
+
+/* ── Open in Cursor button ── */
+
+.cursorButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tab-height);
+  height: var(--tab-height);
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  opacity: 0.5;
+}
+
+.cursorButton:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  opacity: 1;
+}
+
+.cursorIcon {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}

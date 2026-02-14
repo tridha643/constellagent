@@ -130,9 +130,11 @@ export function App() {
                       {/* Render active diff viewer */}
                       {activeTab?.type === 'diff' && workspace && (
                         <DiffViewer
-                          key={activeTab.id}
+                          key={activeTab.commitHash || activeTab.id}
                           worktreePath={workspace.worktreePath}
                           active={true}
+                          commitHash={activeTab.commitHash}
+                          commitMessage={activeTab.commitMessage}
                         />
                       )}
                     </>
