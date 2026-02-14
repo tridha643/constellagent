@@ -226,6 +226,14 @@ export function useShortcuts() {
         return
       }
 
+      // ── Context History ──
+      // Cmd+Shift+K — toggle context history
+      if (shift && !alt && e.code === 'KeyK') {
+        consume()
+        store.toggleContextHistory()
+        return
+      }
+
       // ── Settings ──
       // Cmd+, — toggle settings
       if (!shift && !alt && e.key === ',') {

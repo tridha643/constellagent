@@ -21,6 +21,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: { ...DEFAULT_SETTINGS },
   settingsOpen: false,
   automationsOpen: false,
+  contextHistoryOpen: false,
   confirmDialog: null,
   toasts: [],
   quickOpenVisible: false,
@@ -659,8 +660,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSettings: (partial) =>
     set((s) => ({ settings: { ...s.settings, ...partial } })),
 
-  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen, automationsOpen: false })),
-  toggleAutomations: () => set((s) => ({ automationsOpen: !s.automationsOpen, settingsOpen: false })),
+  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen, automationsOpen: false, contextHistoryOpen: false })),
+  toggleAutomations: () => set((s) => ({ automationsOpen: !s.automationsOpen, settingsOpen: false, contextHistoryOpen: false })),
+  toggleContextHistory: () => set((s) => ({ contextHistoryOpen: !s.contextHistoryOpen, settingsOpen: false, automationsOpen: false })),
 
   showConfirmDialog: (dialog) => set({ confirmDialog: dialog }),
 
@@ -858,6 +860,15 @@ useAppStore.subscribe((state, prevState) => {
     state.settings !== prevState.settings
   ) {
     debouncedSave(state)
+  }
+
+  // Sync MCP configs when MCP-related settings change
+  if (
+    state.settings !== prevState.settings &&
+    (state.settings.mcpServers !== prevState.settings.mcpServers ||
+      state.settings.agentMcpAssignments !== prevState.settings.agentMcpAssignments)
+  ) {
+    window.api.mcp.syncConfigs(state.settings.mcpServers, state.settings.agentMcpAssignments)
   }
 })
 

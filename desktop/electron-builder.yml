@@ -17,6 +17,10 @@ extraResources:
     to: codex-hooks
     filter:
       - '**/*'
+  - from: agent-hooks
+    to: agent-hooks
+    filter:
+      - '**/*'
   - from: bin
     to: bin
     filter:

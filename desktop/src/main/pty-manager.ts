@@ -1,6 +1,7 @@
 import * as pty from 'node-pty'
 import { execFileSync } from 'child_process'
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import { WebContents } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 
@@ -11,6 +12,8 @@ interface PtyInstance {
   cols: number
   rows: number
   workspaceId?: string
+  agentType?: string
+  workingDir: string
   codexPromptBuffer: string
   codexAwaitingAnswer: boolean
 }
@@ -57,6 +60,31 @@ function isLikelyCodexCommand(command: string): boolean {
   if (nodeOrBun && isCodexPathToken(second)) return true
 
   return first.includes('/codex/') && first.endsWith('/codex')
+}
+
+function isLikelyGeminiCommand(command: string): boolean {
+  const tokens = command.trim().split(/\s+/)
+  const first = (tokens[0] ?? '').split('/').pop()?.toLowerCase() ?? ''
+  const second = (tokens[1] ?? '').split('/').pop()?.toLowerCase() ?? ''
+
+  if (first === 'gemini') return true
+  // Gemini CLI runs as `node /path/to/gemini`
+  const nodeOrBun = first === 'node' || first === 'bun'
+  if (nodeOrBun && second === 'gemini') return true
+  // Also match full path in second arg like `node /opt/homebrew/bin/gemini`
+  if (nodeOrBun && (tokens[1] ?? '').includes('/gemini')) return true
+  return false
+}
+
+function isLikelyCursorCommand(command: string): boolean {
+  const tokens = command.trim().split(/\s+/)
+  const first = (tokens[0] ?? '').split('/').pop()?.toLowerCase() ?? ''
+  const second = (tokens[1] ?? '').split('/').pop()?.toLowerCase() ?? ''
+
+  if (first === 'cursor-agent' || first === 'cursor') return true
+  const nodeOrBun = first === 'node' || first === 'bun'
+  if (nodeOrBun && (second === 'cursor-agent' || second === 'cursor')) return true
+  return false
 }
 
 const DEFAULT_ACTIVITY_DIR = '/tmp/constellagent-activity'
@@ -127,6 +155,8 @@ export class PtyManager {
       cols: 80,
       rows: 24,
       workspaceId: extraEnv?.AGENT_ORCH_WS_ID,
+      agentType: extraEnv?.AGENT_ORCH_AGENT_TYPE,
+      workingDir: workingDir,
       codexPromptBuffer: '',
       codexAwaitingAnswer: false,
     }
@@ -158,6 +188,14 @@ export class PtyManager {
       this.markCodexWorkspaceActive(instance.workspaceId, instance.process.pid)
     }
 
+    // Lazily detect agent type
+    if (instance.workspaceId && /[\r\n]/.test(data)) {
+      if (!instance.agentType || instance.agentType === 'unknown') {
+        const detected = this.detectAgentUnder(instance.process.pid)
+        if (detected) instance.agentType = detected
+      }
+    }
+
     instance.process.write(data)
   }
 
@@ -182,6 +220,45 @@ export class PtyManager {
   /** Return IDs of all live PTY processes */
   list(): string[] {
     return Array.from(this.ptys.keys())
+  }
+
+  /** Detect which non-Claude agent (if any) is running under this PTY */
+  private detectAgentUnder(rootPid: number): string | null {
+    let processTable = ''
+    try {
+      processTable = execFileSync('ps', ['-axo', 'pid=,ppid=,args='], { encoding: 'utf-8' })
+    } catch {
+      return null
+    }
+
+    const entries = parseProcessTable(processTable)
+    if (entries.length === 0) return null
+
+    const childrenByParent = new Map<number, ProcessEntry[]>()
+    for (const entry of entries) {
+      const children = childrenByParent.get(entry.ppid)
+      if (children) children.push(entry)
+      else childrenByParent.set(entry.ppid, [entry])
+    }
+
+    const stack = [rootPid]
+    const seen = new Set<number>()
+    while (stack.length > 0) {
+      const pid = stack.pop()!
+      if (seen.has(pid)) continue
+      seen.add(pid)
+
+      const children = childrenByParent.get(pid)
+      if (!children) continue
+
+      for (const child of children) {
+        if (isLikelyCodexCommand(child.command)) return 'codex'
+        if (isLikelyGeminiCommand(child.command)) return 'gemini'
+        if (isLikelyCursorCommand(child.command)) return 'cursor'
+        stack.push(child.pid)
+      }
+    }
+    return null
   }
 
   private isCodexRunningUnder(rootPid: number): boolean {
@@ -262,6 +339,7 @@ export class PtyManager {
     instance.codexAwaitingAnswer = true
     instance.codexPromptBuffer = ''
     this.clearCodexWorkspaceActivity(instance.workspaceId, instance.process.pid)
+
     if (!instance.webContents.isDestroyed()) {
       instance.webContents.send(IPC.CLAUDE_NOTIFY_WORKSPACE, instance.workspaceId)
     }

@@ -107,8 +107,8 @@ const api = {
   claude: {
     trustPath: (dirPath: string) =>
       ipcRenderer.invoke(IPC.CLAUDE_TRUST_PATH, dirPath),
-    installHooks: () =>
-      ipcRenderer.invoke(IPC.CLAUDE_INSTALL_HOOKS),
+    installHooks: (contextEnabled: boolean) =>
+      ipcRenderer.invoke(IPC.CLAUDE_INSTALL_HOOKS, contextEnabled),
     uninstallHooks: () =>
       ipcRenderer.invoke(IPC.CLAUDE_UNINSTALL_HOOKS),
     checkHooks: () =>
@@ -130,8 +130,8 @@ const api = {
   },
 
   codex: {
-    installNotify: () =>
-      ipcRenderer.invoke(IPC.CODEX_INSTALL_NOTIFY),
+    installNotify: (contextEnabled?: boolean) =>
+      ipcRenderer.invoke(IPC.CODEX_INSTALL_NOTIFY, contextEnabled),
     uninstallNotify: () =>
       ipcRenderer.invoke(IPC.CODEX_UNINSTALL_NOTIFY),
     checkNotify: () =>
@@ -165,6 +165,44 @@ const api = {
       ipcRenderer.invoke(IPC.GITHUB_LIST_OPEN_PRS, repoPath),
     resolvePr: (repoPath: string, prNumber: number) =>
       ipcRenderer.invoke(IPC.GITHUB_RESOLVE_PR, repoPath, prNumber) as Promise<{ branch: string; title: string; number: number }>,
+  },
+
+  lsp: {
+    getPort: () =>
+      ipcRenderer.invoke(IPC.LSP_GET_PORT) as Promise<number>,
+    getAvailableLanguages: () =>
+      ipcRenderer.invoke(IPC.LSP_GET_AVAILABLE_LANGUAGES) as Promise<string[]>,
+  },
+
+  mcp: {
+    syncConfigs: (servers: unknown[], assignments: unknown) =>
+      ipcRenderer.invoke(IPC.MCP_SYNC_CONFIGS, servers, assignments),
+    loadServers: () =>
+      ipcRenderer.invoke(IPC.MCP_LOAD_SERVERS) as Promise<import('../renderer/store/types').McpServer[]>,
+    removeServer: (serverName: string) =>
+      ipcRenderer.invoke(IPC.MCP_REMOVE_SERVER, serverName),
+    getConfigPaths: () =>
+      ipcRenderer.invoke(IPC.MCP_GET_CONFIG_PATHS) as Promise<Record<string, string>>,
+  },
+
+  context: {
+    repoInit: (projectDir: string, wsId: string) =>
+      ipcRenderer.invoke(IPC.CONTEXT_REPO_INIT, projectDir, wsId) as Promise<{ success: boolean }>,
+    search: (projectDir: string, query: string, limit?: number) =>
+      ipcRenderer.invoke(IPC.CONTEXT_SEARCH, projectDir, query, limit),
+    getRecent: (projectDir: string, workspaceId: string, limit?: number) =>
+      ipcRenderer.invoke(IPC.CONTEXT_GET_RECENT, projectDir, workspaceId, limit),
+    insert: (projectDir: string, entry: {
+      workspaceId: string; sessionId?: string; toolName: string;
+      toolInput?: string; filePath?: string; timestamp: string;
+    }) => ipcRenderer.invoke(IPC.CONTEXT_INSERT, projectDir, entry),
+    restoreCheckpoint: (projectDir: string, commitHash: string) =>
+      ipcRenderer.invoke(IPC.CONTEXT_RESTORE_CHECKPOINT, projectDir, commitHash) as Promise<{ success: boolean }>,
+  },
+
+  session: {
+    getLast: (workspaceId: string, agentType: string) =>
+      ipcRenderer.invoke(IPC.SESSION_GET_LAST, workspaceId, agentType) as Promise<string | null>,
   },
 
   clipboard: {

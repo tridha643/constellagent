@@ -277,16 +277,19 @@ export function Sidebar() {
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog);
   const toggleSettings = useAppStore((s) => s.toggleSettings);
   const toggleAutomations = useAppStore((s) => s.toggleAutomations);
+  const toggleContextHistory = useAppStore((s) => s.toggleContextHistory);
   const unreadWorkspaceIds = useAppStore((s) => s.unreadWorkspaceIds);
   const activeClaudeWorkspaceIds = useAppStore((s) => s.activeClaudeWorkspaceIds);
   const renameWorkspace = useAppStore((s) => s.renameWorkspace);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setPrStatuses = useAppStore((s) => s.setPrStatuses);
+  const settings = useAppStore((s) => s.settings);
   const setGhAvailability = useAppStore((s) => s.setGhAvailability);
 
   const [manualCollapsed, setManualCollapsed] = useState<Set<string>>(
     new Set(),
   );
+  const [contextMenu, setContextMenu] = useState<{ wsId: string; x: number; y: number } | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(
     null,
@@ -416,10 +419,16 @@ export function Sidebar() {
         await window.api.claude.trustPath(worktreePath).catch(() => {});
       }
 
+      // Initialize context repo if enabled
+      if (settings.contextCaptureEnabled) {
+        window.api.context.repoInit(worktreePath, wsId).catch(() => {});
+      }
+
       if (commands.length === 0) {
         // Default: one blank terminal
         const ptyId = await window.api.pty.create(worktreePath, undefined, {
           AGENT_ORCH_WS_ID: wsId,
+          AGENT_ORCH_AGENT_TYPE: "unknown",
         });
         addTab({
           id: crypto.randomUUID(),
@@ -431,8 +440,16 @@ export function Sidebar() {
       } else {
         let firstTabId: string | null = null;
         for (const cmd of commands) {
+          const agentType = cmd.command.startsWith("codex")
+            ? "codex"
+            : cmd.command.startsWith("gemini")
+              ? "gemini"
+              : cmd.command.startsWith("claude")
+                ? "claude-code"
+                : "unknown";
           const ptyId = await window.api.pty.create(worktreePath, undefined, {
             AGENT_ORCH_WS_ID: wsId,
+            AGENT_ORCH_AGENT_TYPE: agentType,
           });
           const tabId = crypto.randomUUID();
           if (!firstTabId) firstTabId = tabId;
@@ -444,8 +461,23 @@ export function Sidebar() {
             ptyId,
           });
           // Delay to let shell initialize before writing command
-          setTimeout(() => {
-            window.api.pty.write(ptyId, cmd.command + "\n");
+          setTimeout(async () => {
+            let finalCmd = cmd.command;
+
+            if (settings.sessionResumeEnabled) {
+              if (finalCmd.startsWith('claude')) {
+                const sessionId = await window.api.session.getLast(wsId, 'claude-code');
+                if (sessionId) {
+                  finalCmd = finalCmd.replace(/^claude\b/, `claude --resume ${sessionId}`);
+                }
+              } else if (finalCmd.startsWith('codex')) {
+                finalCmd = finalCmd.replace(/^codex\b/, 'codex resume --last');
+              } else if (finalCmd.startsWith('gemini')) {
+                finalCmd = finalCmd.replace(/^gemini\b/, 'gemini --resume');
+              }
+            }
+
+            window.api.pty.write(ptyId, finalCmd + "\n");
           }, 500);
         }
         // Activate the first terminal tab
@@ -668,6 +700,35 @@ export function Sidebar() {
     ],
   );
 
+  const handleResumeAgent = useCallback(
+    async (wsId: string, agent: 'claude' | 'codex' | 'gemini') => {
+      setContextMenu(null);
+      // Find an active terminal tab for this workspace
+      const tabs = useAppStore.getState().tabs;
+      const termTab = tabs.find(
+        (t) => t.workspaceId === wsId && t.type === 'terminal',
+      );
+      if (!termTab || termTab.type !== 'terminal') {
+        addToast({ id: crypto.randomUUID(), message: 'No terminal tab in workspace', type: 'error' });
+        return;
+      }
+
+      if (agent === 'claude') {
+        const sessionId = await window.api.session.getLast(wsId, 'claude-code');
+        if (!sessionId) {
+          addToast({ id: crypto.randomUUID(), message: 'No previous Claude session found', type: 'info' });
+          return;
+        }
+        window.api.pty.write(termTab.ptyId, `claude --resume ${sessionId}\n`);
+      } else if (agent === 'codex') {
+        window.api.pty.write(termTab.ptyId, 'codex resume --last\n');
+      } else {
+        window.api.pty.write(termTab.ptyId, 'gemini --resume\n');
+      }
+    },
+    [addToast],
+  );
+
   const handleSelectWorkspace = useCallback(
     (wsId: string) => {
       setActiveWorkspace(wsId);
@@ -842,6 +903,10 @@ export function Sidebar() {
                         onClick={() =>
                           !isEditing && handleSelectWorkspace(ws.id)
                         }
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setContextMenu({ wsId: ws.id, x: e.clientX, y: e.clientY });
+                        }}
                         onDoubleClick={() => {
                           editRef.current = displayName;
                           setEditingWorkspaceId(ws.id);
@@ -929,6 +994,12 @@ export function Sidebar() {
           <button className={styles.actionButton} onClick={toggleAutomations}>
             <span className={styles.actionIcon}>⏱</span>
             <span>Automations</span>
+          </button>
+        </Tooltip>
+        <Tooltip label="Context history" shortcut="⇧⌘K">
+          <button className={styles.actionButton} onClick={toggleContextHistory}>
+            <span className={styles.actionIcon}>↻</span>
+            <span>Context</span>
           </button>
         </Tooltip>
         <Tooltip label="Settings" shortcut="⌘,">
@@ -1169,6 +1240,55 @@ export function Sidebar() {
           }}
           onCancel={() => setEditingProject(null)}
         />
+      )}
+
+      {contextMenu && (
+        <div
+          className={styles.projectPrModalOverlay}
+          onClick={() => setContextMenu(null)}
+          style={{ background: 'transparent' }}
+        >
+          <div
+            style={{
+              position: 'fixed',
+              left: contextMenu.x,
+              top: contextMenu.y,
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: '4px 0',
+              zIndex: 9999,
+              minWidth: 180,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '4px 12px', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+              Resume last session
+            </div>
+            <button
+              className={styles.actionButton}
+              style={{ width: '100%', textAlign: 'left', borderRadius: 0 }}
+              onClick={() => handleResumeAgent(contextMenu.wsId, 'claude')}
+            >
+              Claude Code
+            </button>
+            <button
+              className={styles.actionButton}
+              style={{ width: '100%', textAlign: 'left', borderRadius: 0 }}
+              onClick={() => handleResumeAgent(contextMenu.wsId, 'codex')}
+            >
+              Codex
+            </button>
+            <button
+              className={styles.actionButton}
+              style={{ width: '100%', textAlign: 'left', borderRadius: 0 }}
+              onClick={() => handleResumeAgent(contextMenu.wsId, 'gemini')}
+            >
+              Gemini
+            </button>
+          </div>
+        </div>
       )}
 
       {confirmDialog && (

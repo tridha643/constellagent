@@ -71,8 +71,28 @@ export const IPC = {
   GITHUB_LIST_OPEN_PRS: 'github:list-open-prs',
   GITHUB_RESOLVE_PR: 'github:resolve-pr',
 
+  // LSP operations
+  LSP_GET_PORT: 'lsp:get-port',
+  LSP_GET_AVAILABLE_LANGUAGES: 'lsp:get-available-languages',
+
   // Clipboard operations
   CLIPBOARD_SAVE_IMAGE: 'clipboard:save-image',
+
+  // MCP operations
+  MCP_SYNC_CONFIGS: 'mcp:sync-configs',
+  MCP_LOAD_SERVERS: 'mcp:load-servers',
+  MCP_REMOVE_SERVER: 'mcp:remove-server',
+  MCP_GET_CONFIG_PATHS: 'mcp:get-config-paths',
+
+  // Context repository
+  CONTEXT_REPO_INIT: 'context:repo-init',
+  CONTEXT_SEARCH: 'context:search',
+  CONTEXT_GET_RECENT: 'context:get-recent',
+  CONTEXT_INSERT: 'context:insert',
+  CONTEXT_RESTORE_CHECKPOINT: 'context:restore-checkpoint',
+
+  // Session
+  SESSION_GET_LAST: 'session:get-last',
 
   // State persistence
   STATE_SAVE: 'state:save',

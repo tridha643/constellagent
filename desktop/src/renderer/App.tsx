@@ -10,6 +10,7 @@ import { DiffViewer } from './components/Editor/DiffEditor'
 import { RightPanel } from './components/RightPanel/RightPanel'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
 import { AutomationsPanel } from './components/Automations/AutomationsPanel'
+import { ContextHistoryPanel } from './components/ContextHistory/ContextHistoryPanel'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
 import { ToastContainer } from './components/Toast/Toast'
 import { useShortcuts } from './hooks/useShortcuts'
@@ -61,6 +62,7 @@ export function App() {
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const automationsOpen = useAppStore((s) => s.automationsOpen)
+  const contextHistoryOpen = useAppStore((s) => s.contextHistoryOpen)
   const quickOpenVisible = useAppStore((s) => s.quickOpenVisible)
 
   const wsTabs = activeWorkspaceTabs()
@@ -77,6 +79,8 @@ export function App() {
           <SettingsPanel />
         ) : automationsOpen ? (
           <AutomationsPanel />
+        ) : contextHistoryOpen ? (
+          <ContextHistoryPanel />
         ) : (
           <Allotment>
             {/* Sidebar */}

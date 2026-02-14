@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
-import type { Settings, FavoriteEditor } from '../../store/types'
+import type { Settings, FavoriteEditor, McpServer, AgentType } from '../../store/types'
 import { Tooltip } from '../Tooltip/Tooltip'
 import styles from './SettingsPanel.module.css'
 
@@ -138,6 +138,7 @@ function SelectRow({ label, description, value, onChange, options }: {
 }
 
 function ClaudeHooksSection() {
+  const settings = useAppStore((s) => s.settings)
   const [installed, setInstalled] = useState<boolean | null>(null)
   const [installing, setInstalling] = useState(false)
 
@@ -150,7 +151,7 @@ function ClaudeHooksSection() {
   const handleInstall = async () => {
     setInstalling(true)
     try {
-      await window.api.claude.installHooks()
+      await window.api.claude.installHooks(settings.contextCaptureEnabled)
       setInstalled(true)
     } catch {
       setInstalled(false)
@@ -200,7 +201,8 @@ function ClaudeHooksSection() {
   )
 }
 
-function CodexNotifySection() {
+function CodexHooksSection() {
+  const settings = useAppStore((s) => s.settings)
   const [installed, setInstalled] = useState<boolean | null>(null)
   const [installing, setInstalling] = useState(false)
 
@@ -213,7 +215,7 @@ function CodexNotifySection() {
   const handleInstall = async () => {
     setInstalling(true)
     try {
-      await window.api.codex.installNotify()
+      await window.api.codex.installNotify(settings.contextCaptureEnabled)
       setInstalled(true)
     } catch {
       setInstalled(false)
@@ -237,9 +239,9 @@ function CodexNotifySection() {
   return (
     <div className={styles.row}>
       <div className={styles.rowText}>
-        <div className={styles.rowLabel}>Codex notify hook</div>
+        <div className={styles.rowLabel}>Codex hooks</div>
         <div className={styles.rowDescription}>
-          Show done/unread state for Codex turns and clear active state when a turn completes
+          Notify on Codex turn completion and capture context when context capture is enabled
         </div>
       </div>
       {installed === true ? (
@@ -259,6 +261,209 @@ function CodexNotifySection() {
           {installing ? 'Installing...' : 'Install'}
         </button>
       )}
+    </div>
+  )
+}
+
+const AGENT_LABELS: Record<AgentType, string> = {
+  'claude-code': 'Claude Code',
+  'codex': 'Codex',
+  'gemini': 'Gemini CLI',
+  'cursor': 'Cursor',
+}
+
+function McpServerCard({ server, onDelete, onOpenConfig }: {
+  server: McpServer
+  onDelete: (name: string) => void
+  onOpenConfig: () => void
+}) {
+  const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+  const [expanded, setExpanded] = useState(false)
+
+  const enabledAgents = (Object.keys(AGENT_LABELS) as AgentType[]).filter(
+    (agent) => (settings.agentMcpAssignments[agent] ?? []).includes(server.id),
+  )
+  const allEnabled = enabledAgents.length === Object.keys(AGENT_LABELS).length
+  const anyEnabled = enabledAgents.length > 0
+
+  const toggleServer = () => {
+    const newAssignments = { ...settings.agentMcpAssignments }
+    const allAgents = Object.keys(AGENT_LABELS) as AgentType[]
+    if (anyEnabled) {
+      for (const agent of allAgents) {
+        newAssignments[agent] = (newAssignments[agent] ?? []).filter((id) => id !== server.id)
+      }
+    } else {
+      for (const agent of allAgents) {
+        if (!(newAssignments[agent] ?? []).includes(server.id)) {
+          newAssignments[agent] = [...(newAssignments[agent] ?? []), server.id]
+        }
+      }
+    }
+    updateSettings({ agentMcpAssignments: newAssignments })
+  }
+
+  const toggleAgent = (agent: AgentType) => {
+    const current = settings.agentMcpAssignments[agent] ?? []
+    const newAssignments = { ...settings.agentMcpAssignments }
+    if (current.includes(server.id)) {
+      newAssignments[agent] = current.filter((id) => id !== server.id)
+    } else {
+      newAssignments[agent] = [...current, server.id]
+    }
+    updateSettings({ agentMcpAssignments: newAssignments })
+  }
+
+  const letter = server.name.charAt(0).toUpperCase()
+
+  return (
+    <div className={styles.mcpCard}>
+      <div className={styles.mcpCardMain} onClick={() => setExpanded(!expanded)}>
+        <div className={styles.mcpAvatar}>{letter}</div>
+        <div className={styles.mcpCardText}>
+          <div className={styles.rowLabel}>{server.name}</div>
+          <div className={styles.mcpCardSub}>
+            <span className={`${styles.mcpDot} ${anyEnabled ? styles.mcpDotOn : ''}`} />
+            {anyEnabled
+              ? allEnabled
+                ? 'All agents'
+                : enabledAgents.map((a) => AGENT_LABELS[a]).join(', ')
+              : 'Disabled'}
+          </div>
+        </div>
+        <div className={styles.mcpCardActions}>
+          <button
+            className={styles.mcpIconBtn}
+            title="Edit in config file"
+            onClick={(e) => { e.stopPropagation(); onOpenConfig() }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
+          <button
+            className={styles.mcpIconBtn}
+            title="Delete server"
+            onClick={(e) => { e.stopPropagation(); onDelete(server.name) }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4m2 0v9.33a1.33 1.33 0 01-1.34 1.34H4.67a1.33 1.33 0 01-1.34-1.34V4h9.34z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
+        </div>
+        <button
+          className={`${styles.toggle} ${anyEnabled ? styles.toggleOn : ''}`}
+          onClick={(e) => { e.stopPropagation(); toggleServer() }}
+        >
+          <span className={styles.toggleKnob} />
+        </button>
+      </div>
+
+      {expanded && (
+        <div className={styles.mcpCardExpanded}>
+          <div className={styles.mcpCardDetail}>
+            <span className={styles.mcpDetailLabel}>Command</span>
+            <span className={styles.mcpDetailValue}>{server.command} {server.args.join(' ')}</span>
+          </div>
+
+          <div className={styles.mcpAgentToggles}>
+            <span className={styles.mcpDetailLabel}>Agents</span>
+            {(Object.keys(AGENT_LABELS) as AgentType[]).map((agent) => (
+              <label key={agent} className={styles.mcpCheckboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={(settings.agentMcpAssignments[agent] ?? []).includes(server.id)}
+                  onChange={() => toggleAgent(agent)}
+                />
+                {AGENT_LABELS[agent]}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function McpServersSection() {
+  const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+  const openFileTab = useAppStore((s) => s.openFileTab)
+  const toggleSettings = useAppStore((s) => s.toggleSettings)
+  const [servers, setServers] = useState<McpServer[]>([])
+  const [configPaths, setConfigPaths] = useState<Record<string, string>>({})
+  const [selectedAgent, setSelectedAgent] = useState<AgentType>('claude-code')
+
+  const loadServers = () => {
+    window.api.mcp.loadServers().then(setServers).catch(() => {})
+  }
+
+  useEffect(() => {
+    loadServers()
+    window.api.mcp.getConfigPaths().then(setConfigPaths).catch(() => {})
+  }, [])
+
+  // Refresh when window regains focus (user may have edited the file)
+  useEffect(() => {
+    const onFocus = () => loadServers()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
+  const openConfig = () => {
+    const path = configPaths[selectedAgent]
+    if (path) {
+      openFileTab(path)
+      toggleSettings()
+    }
+  }
+
+  const handleDelete = async (serverName: string) => {
+    await window.api.mcp.removeServer(serverName)
+    // Also remove from assignments
+    const newAssignments = { ...settings.agentMcpAssignments }
+    for (const agent of Object.keys(newAssignments) as AgentType[]) {
+      newAssignments[agent] = newAssignments[agent].filter((id) => id !== serverName)
+    }
+    updateSettings({ agentMcpAssignments: newAssignments })
+    loadServers()
+  }
+
+  const configFileNames: Record<AgentType, string> = {
+    'claude-code': '~/.claude.json',
+    'codex': '~/.codex/config.toml',
+    'gemini': '~/.gemini/settings.json',
+    'cursor': '~/.cursor/mcp.json',
+  }
+  const configFileName = configFileNames[selectedAgent]
+
+  return (
+    <div className={styles.mcpList}>
+      <div className={styles.mcpAgentSelect}>
+        <select
+          className={styles.textInput}
+          value={selectedAgent}
+          onChange={(e) => setSelectedAgent(e.target.value as AgentType)}
+        >
+          {(Object.keys(AGENT_LABELS) as AgentType[]).map((agent) => (
+            <option key={agent} value={agent}>{AGENT_LABELS[agent]}</option>
+          ))}
+        </select>
+      </div>
+
+      {servers.map((server) => (
+        <McpServerCard
+          key={server.id}
+          server={server}
+          onDelete={handleDelete}
+          onOpenConfig={openConfig}
+        />
+      ))}
+
+      <div className={styles.mcpCardMain} onClick={openConfig} style={{ cursor: 'pointer' }}>
+        <div className={styles.mcpAvatarAdd}>+</div>
+        <div className={styles.mcpCardText}>
+          <div className={styles.rowLabel}>New MCP Server</div>
+          <div className={styles.mcpCardSub}>Open {configFileName} to add a server</div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -388,9 +593,33 @@ export function SettingsPanel() {
         </div>
 
         <div className={styles.section}>
+          <div className={styles.sectionTitle}>MCP Servers</div>
+          <McpServersSection />
+        </div>
+
+        <div className={styles.section}>
           <div className={styles.sectionTitle}>Agent Integrations</div>
           <ClaudeHooksSection />
-          <CodexNotifySection />
+          <CodexHooksSection />
+
+          <ToggleRow
+            label="Context capture"
+            description="Auto-capture agent tool usage and inject context into new sessions"
+            value={settings.contextCaptureEnabled}
+            onChange={(v) => {
+              update('contextCaptureEnabled', v)
+              // Re-install hooks with updated context capture setting
+              window.api.claude.installHooks(v).catch(() => {})
+              window.api.codex.installNotify(v).catch(() => {})
+            }}
+          />
+
+          <ToggleRow
+            label="Auto-resume sessions"
+            description="Offer to resume the last agent session when reopening a workspace"
+            value={settings.sessionResumeEnabled}
+            onChange={(v) => update('sessionResumeEnabled', v)}
+          />
         </div>
 
         <div className={styles.section}>

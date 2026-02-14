@@ -5,18 +5,35 @@ import { useAppStore } from '../../store/app-store'
 import { useGitGutter } from '../../hooks/useGitGutter'
 import styles from './Editor.module.css'
 
-// Disable TS/JS semantic diagnostics globally once — Monaco can't resolve project modules
+import { isLspLanguage, getOrCreateClient, notifyDidOpen, notifyDidClose } from '../../services/lsp-client-manager'
+
+// Configure TS/JS built-in language features
 let diagnosticsConfigured = false
 loader.init().then((monaco) => {
   if (diagnosticsConfigured) return
   diagnosticsConfigured = true
-  const diagnosticsOff = {
-    noSemanticValidation: true,
+
+  const diagnosticsOptions = {
+    noSemanticValidation: false,
     noSyntaxValidation: false,
-    noSuggestionDiagnostics: true,
+    noSuggestionDiagnostics: false,
   }
-  monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(diagnosticsOff)
-  monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(diagnosticsOff)
+  monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(diagnosticsOptions)
+  monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(diagnosticsOptions)
+
+  const compilerOptions: import('monaco-editor').languages.typescript.CompilerOptions = {
+    target: monaco.languages.typescript.ScriptTarget.ESNext,
+    module: monaco.languages.typescript.ModuleKind.ESNext,
+    moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+    jsx: monaco.languages.typescript.JsxEmit.ReactJSX,
+    allowJs: true,
+    strict: true,
+    esModuleInterop: true,
+    skipLibCheck: true,
+    allowNonTsExtensions: true,
+  }
+  monaco.languages.typescript.typescriptDefaults.setCompilerOptions(compilerOptions)
+  monaco.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions)
 })
 
 interface Props {
@@ -178,6 +195,32 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
     }
     prevActiveRef.current = active
   }, [active, unsaved, settings.autoSaveOnBlur, handleSave])
+
+  // LSP lifecycle: connect on mount, notify didClose on unmount
+  const lspLanguageRef = useRef<string | null>(null)
+  const lspWorkspaceRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const language = getLanguage(filePath)
+    if (!isLspLanguage(language) || !worktreePath) return
+
+    lspLanguageRef.current = language
+    lspWorkspaceRef.current = worktreePath
+    const fileUri = `file://${filePath}`
+
+    // Fire-and-forget: never blocks editor rendering
+    getOrCreateClient(language, worktreePath).then((client) => {
+      if (client && content !== null) {
+        notifyDidOpen(language, worktreePath!, fileUri, content, language)
+      }
+    }).catch(() => {})
+
+    return () => {
+      if (lspLanguageRef.current && lspWorkspaceRef.current) {
+        notifyDidClose(lspLanguageRef.current, lspWorkspaceRef.current, fileUri)
+      }
+    }
+  }, [filePath, worktreePath]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cmd+S handler
   const handleEditorMount = useCallback((ed: editor.IStandaloneCodeEditor) => {

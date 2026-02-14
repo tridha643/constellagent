@@ -74,6 +74,18 @@ export function resolveEditor(settings: Settings): { name: string; cli: string }
   return EDITOR_PRESETS[settings.favoriteEditor]
 }
 
+export interface McpServer {
+  id: string
+  name: string
+  command: string
+  args: string[]
+  env?: Record<string, string>
+}
+
+export type AgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor'
+
+export type AgentMcpAssignments = Record<AgentType, string[]>
+
 export interface Settings {
   confirmOnClose: boolean
   autoSaveOnBlur: boolean
@@ -84,6 +96,10 @@ export interface Settings {
   editorFontSize: number
   favoriteEditor: FavoriteEditor
   favoriteEditorCustom: string
+  mcpServers: McpServer[]
+  agentMcpAssignments: AgentMcpAssignments
+  contextCaptureEnabled: boolean
+  sessionResumeEnabled: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -96,6 +112,10 @@ export const DEFAULT_SETTINGS: Settings = {
   editorFontSize: 13,
   favoriteEditor: 'cursor',
   favoriteEditorCustom: '',
+  mcpServers: [],
+  agentMcpAssignments: { 'claude-code': [], 'codex': [], 'gemini': [], 'cursor': [] },
+  contextCaptureEnabled: false,
+  sessionResumeEnabled: true,
 }
 
 export interface Toast {
@@ -129,6 +149,7 @@ export interface AppState {
   settings: Settings
   settingsOpen: boolean
   automationsOpen: boolean
+  contextHistoryOpen: boolean
   confirmDialog: ConfirmDialogState | null
   toasts: Toast[]
   quickOpenVisible: boolean
@@ -178,6 +199,7 @@ export interface AppState {
   updateSettings: (partial: Partial<Settings>) => void
   toggleSettings: () => void
   toggleAutomations: () => void
+  toggleContextHistory: () => void
   showConfirmDialog: (dialog: ConfirmDialogState) => void
   dismissConfirmDialog: () => void
   addToast: (toast: Toast) => void
