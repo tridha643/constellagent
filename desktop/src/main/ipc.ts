@@ -254,7 +254,9 @@ async function processPendingFile(projectDir: string, pendingDir: string, fileNa
       // Schedule rich agent context file generation (debounced)
       scheduleContextFileWrite(projectDir, data.ws)
     }
-  } catch (err) {
+  } catch (err: any) {
+    // ENOENT = file already processed & deleted by a previous indexer tick (race condition) — skip silently
+    if (err?.code === 'ENOENT') return
     console.error(`agentfs: failed to process pending file ${fileName}`, err)
     // If the file is corrupt (parse error), delete it so it doesn't retry endlessly
     if (err instanceof SyntaxError) {
