@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAppStore } from "../../store/app-store";
-import type { Project, PrLinkProvider } from "../../store/types";
+import type { AgentType, Project, PrLinkProvider } from "../../store/types";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
 import type { OpenPrInfo, GithubLookupError } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
-import { ConfirmDialog } from "./ConfirmDialog";
+
 import { Tooltip } from "../Tooltip/Tooltip";
 import styles from "./Sidebar.module.css";
 
@@ -272,12 +272,12 @@ export function Sidebar() {
   const deleteWorkspace = useAppStore((s) => s.deleteWorkspace);
   const updateProject = useAppStore((s) => s.updateProject);
   const deleteProject = useAppStore((s) => s.deleteProject);
-  const confirmDialog = useAppStore((s) => s.confirmDialog);
   const showConfirmDialog = useAppStore((s) => s.showConfirmDialog);
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog);
   const toggleSettings = useAppStore((s) => s.toggleSettings);
   const toggleAutomations = useAppStore((s) => s.toggleAutomations);
   const toggleContextHistory = useAppStore((s) => s.toggleContextHistory);
+  const openLatestAgentPlan = useAppStore((s) => s.openLatestAgentPlan);
   const unreadWorkspaceIds = useAppStore((s) => s.unreadWorkspaceIds);
   const activeClaudeWorkspaceIds = useAppStore((s) => s.activeClaudeWorkspaceIds);
   const renameWorkspace = useAppStore((s) => s.renameWorkspace);
@@ -459,6 +459,9 @@ export function Sidebar() {
             type: "terminal",
             title: cmd.name || cmd.command,
             ptyId,
+            ...(agentType !== "unknown"
+              ? { agentType: agentType as AgentType }
+              : {}),
           });
           // Delay to let shell initialize before writing command
           setTimeout(async () => {
@@ -748,6 +751,7 @@ export function Sidebar() {
         message: `Delete workspace "${ws.name}"? This will remove the git worktree from disk.`,
         confirmLabel: "Delete",
         destructive: true,
+        tip: "Tip: Hold \u21e7 Shift while deleting to skip this dialog",
         onConfirm: () => {
           deleteWorkspace(ws.id);
           dismissConfirmDialog();
@@ -768,6 +772,7 @@ export function Sidebar() {
         message: `Delete project "${project.name}"${wsCount > 0 ? ` and its ${wsCount} workspace${wsCount > 1 ? "s" : ""}` : ""}? This will remove all git worktrees from disk.`,
         confirmLabel: "Delete",
         destructive: true,
+        tip: "Tip: Hold \u21e7 Shift while deleting to skip this dialog",
         onConfirm: () => {
           deleteProject(project.id);
           dismissConfirmDialog();
@@ -1000,6 +1005,17 @@ export function Sidebar() {
           <button className={styles.actionButton} onClick={toggleContextHistory}>
             <span className={styles.actionIcon}>↻</span>
             <span>Context</span>
+          </button>
+        </Tooltip>
+        <Tooltip label="Open newest agent plan across all agents">
+          <button
+            className={styles.actionButton}
+            onClick={() => {
+              void openLatestAgentPlan();
+            }}
+          >
+            <span className={styles.actionIcon}>≡</span>
+            <span>Plans</span>
           </button>
         </Tooltip>
         <Tooltip label="Settings" shortcut="⌘,">
@@ -1291,16 +1307,6 @@ export function Sidebar() {
         </div>
       )}
 
-      {confirmDialog && (
-        <ConfirmDialog
-          title={confirmDialog.title}
-          message={confirmDialog.message}
-          confirmLabel={confirmDialog.confirmLabel}
-          destructive={confirmDialog.destructive}
-          onConfirm={confirmDialog.onConfirm}
-          onCancel={dismissConfirmDialog}
-        />
-      )}
     </div>
   );
 }

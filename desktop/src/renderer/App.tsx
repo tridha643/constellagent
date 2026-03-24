@@ -7,11 +7,14 @@ import { TabBar } from './components/TabBar/TabBar'
 import { TerminalSplitContainer } from './components/Terminal/TerminalSplitContainer'
 import { FileEditor } from './components/Editor/FileEditor'
 import { DiffViewer } from './components/Editor/DiffEditor'
+import { MarkdownPreview } from './components/MarkdownPreview/MarkdownPreview'
 import { RightPanel } from './components/RightPanel/RightPanel'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
 import { AutomationsPanel } from './components/Automations/AutomationsPanel'
 import { ContextHistoryPanel } from './components/ContextHistory/ContextHistoryPanel'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
+import { PlanPalette } from './components/PlanPalette/PlanPalette'
+import { ConfirmDialog } from './components/Sidebar/ConfirmDialog'
 import { ToastContainer } from './components/Toast/Toast'
 import { useShortcuts } from './hooks/useShortcuts'
 import { usePrStatusPoller } from './hooks/usePrStatusPoller'
@@ -36,22 +39,46 @@ export function App() {
   // Listen for agent activity updates (Claude hooks + Codex submit/notify markers)
   useEffect(() => {
     let prevActive = new Set<string>()
-    const unsub = window.api.claude.onActivityUpdate((workspaceIds: string[]) => {
-      const nextActive = new Set(workspaceIds)
+    const unsub = window.api.claude.onActivityUpdate((entries) => {
+      const nextActive = new Set(entries.map((e) => e.wsId))
       const state = useAppStore.getState()
 
-      // Fallback unread signal on activity completion:
-      // if a workspace was active and is now inactive, mark unread unless it's open.
       for (const wsId of prevActive) {
         if (!nextActive.has(wsId) && wsId !== state.activeWorkspaceId && state.workspaces.some((w) => w.id === wsId)) {
           state.markWorkspaceUnread(wsId)
         }
       }
 
-      state.setActiveClaudeWorkspaces(workspaceIds)
+      state.setActiveAgentWorkspaces(entries)
       prevActive = nextActive
     })
     return unsub
+  }, [])
+
+  // Listen for agent type detection from PTY (claude, codex, gemini, cursor)
+  useEffect(() => {
+    return window.api.pty.onAgentDetected(({ ptyId, agentType }) => {
+      useAppStore.getState().setTerminalAgentType(ptyId, agentType as import('./store/types').AgentType)
+    })
+  }, [])
+
+  // Listen for OSC title changes from PTY (agent session topics)
+  useEffect(() => {
+    return window.api.pty.onTitleChanged(({ ptyId, title }) => {
+      console.log('[constellagent:tab-title] renderer IPC PTY_TITLE_CHANGED', { ptyId, title: title.slice(0, 80) })
+      useAppStore.getState().updateTerminalTitle(ptyId, title)
+    })
+  }, [])
+
+  // Codex: tab title from context DB (first UserPrompt in session) when OSC/user-write did not set one
+  useEffect(() => {
+    return window.api.context.onCodexTabTitleHint(({ workspaceId, title }) => {
+      console.log('[constellagent:tab-title] renderer IPC CONTEXT_CODEX_TAB_TITLE_HINT', {
+        workspaceId,
+        title: title.slice(0, 80),
+      })
+      useAppStore.getState().applyCodexContextTitleHint(workspaceId, title)
+    })
   }, [])
 
   const allTabs = useAppStore((s) => s.tabs)
@@ -65,10 +92,16 @@ export function App() {
   const automationsOpen = useAppStore((s) => s.automationsOpen)
   const contextHistoryOpen = useAppStore((s) => s.contextHistoryOpen)
   const quickOpenVisible = useAppStore((s) => s.quickOpenVisible)
+  const planPaletteVisible = useAppStore((s) => s.planPaletteVisible)
+  const confirmDialog = useAppStore((s) => s.confirmDialog)
+  const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
 
   const wsTabs = activeWorkspaceTabs()
   const activeTab = wsTabs.find((t) => t.id === activeTabId)
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId)
+  const tabWorkspace = activeTab
+    ? workspaces.find((w) => w.id === activeTab.workspaceId)
+    : undefined
 
   // All terminal tabs across every workspace — kept alive to preserve PTY state
   const allTerminals = allTabs.filter((t): t is Extract<typeof t, { type: 'terminal' }> => t.type === 'terminal')
@@ -135,7 +168,7 @@ export function App() {
                           tabId={activeTab.id}
                           filePath={activeTab.filePath}
                           active={true}
-                          worktreePath={workspace?.worktreePath}
+                          worktreePath={tabWorkspace?.worktreePath}
                         />
                       )}
 
@@ -147,6 +180,15 @@ export function App() {
                           active={true}
                           commitHash={activeTab.commitHash}
                           commitMessage={activeTab.commitMessage}
+                        />
+                      )}
+
+                      {/* Render markdown preview */}
+                      {activeTab?.type === 'markdownPreview' && (
+                        <MarkdownPreview
+                          key={activeTab.id}
+                          filePath={activeTab.filePath}
+                          worktreePath={tabWorkspace?.worktreePath}
                         />
                       )}
                     </>
@@ -167,6 +209,23 @@ export function App() {
       </div>
       {quickOpenVisible && workspace && (
         <QuickOpen worktreePath={workspace.worktreePath} />
+      )}
+      {planPaletteVisible && workspace && (
+        <PlanPalette worktreePath={workspace.worktreePath} />
+      )}
+      {confirmDialog && (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmLabel={confirmDialog.confirmLabel}
+          destructive={confirmDialog.destructive}
+          tip={confirmDialog.tip}
+          loading={confirmDialog.loading}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={dismissConfirmDialog}
+          secondaryConfirmLabel={confirmDialog.secondaryConfirmLabel}
+          onSecondaryConfirm={confirmDialog.onSecondaryConfirm}
+        />
       )}
       <ToastContainer />
     </div>

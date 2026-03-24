@@ -55,9 +55,9 @@ case "$EVENT" in
       fi
 
       # Write the assistant turn
-      TOOL_INPUT=$(jq -nc --arg msg "${ASST_MSG:-}" '{summary: (if $msg == "" then null else ($msg | .[:800]) end)}')
+      TOOL_INPUT=$(jq -nc --arg msg "${ASST_MSG:-}" '{summary: (if $msg == "" then null else ($msg | .[:8000]) end)}')
     else
-      TOOL_INPUT=$(jq -nc --arg msg "$INPUT" '{summary: ($msg | .[:800])}')
+      TOOL_INPUT=$(jq -nc --arg msg "$INPUT" '{summary: ($msg | .[:8000])}')
     fi
     write_pending "$CWD" "$AGENT_TYPE" "$SESSION_ID" "AssistantTurn" "$TOOL_INPUT" "" "$TIMESTAMP"
 

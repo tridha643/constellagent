@@ -1,7 +1,18 @@
-import { readdir, readFile as fsReadFile, writeFile as fsWriteFile, stat, rm } from 'fs/promises'
-import { join, relative } from 'path'
+import { readdir, readFile as fsReadFile, writeFile as fsWriteFile, stat, rm, copyFile, mkdir } from 'fs/promises'
+import { homedir } from 'os'
+import { join, basename, relative } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import {
+  AGENT_PLAN_RELATIVE_DIRS,
+  PLAN_DIR_TO_AGENT,
+  AGENT_TO_PLAN_DIR,
+  relativePathInWorktree,
+} from '../shared/agent-plan-path'
+import type { AgentPlanEntry, PlanAgent, PlanMeta } from '../shared/agent-plan-path'
+import { readPlanMetaPrefix, readPlanMeta, writePlanMeta } from './plan-meta'
+
+export { AGENT_PLAN_RELATIVE_DIRS, readPlanMeta, writePlanMeta }
 
 const execFileAsync = promisify(execFile)
 
@@ -133,5 +144,146 @@ export class FileService {
   static async deleteFile(filePath: string): Promise<void> {
     const info = await stat(filePath)
     await rm(filePath, { recursive: info.isDirectory(), force: false })
+  }
+
+  /** Collect `.md`/`.mdx` under `root/.cursor/plans`, `root/.claude/plans`, etc. */
+  private static async collectPlanFilesUnderRoot(root: string): Promise<AgentPlanEntry[]> {
+    const results: AgentPlanEntry[] = []
+
+    const scanDir = async (dir: string, agent: string, depth: number) => {
+      if (depth > 8) return
+      let entries: Awaited<ReturnType<typeof readdir>>
+      try {
+        entries = await readdir(dir, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const ent of entries) {
+        const full = join(dir, ent.name)
+        if (ent.isDirectory()) {
+          await scanDir(full, agent, depth + 1)
+        } else if (ent.isFile()) {
+          const lower = full.toLowerCase()
+          if (!lower.endsWith('.md') && !lower.endsWith('.mdx')) continue
+          try {
+            const fst = await stat(full)
+            if (!fst.isFile()) continue
+            const meta = await readPlanMetaPrefix(full)
+            results.push({
+              path: full,
+              mtimeMs: fst.mtimeMs,
+              agent,
+              built: meta.built || undefined,
+              codingAgent: meta.codingAgent,
+            })
+          } catch { /* race: deleted */ }
+        }
+      }
+    }
+
+    for (const rel of AGENT_PLAN_RELATIVE_DIRS) {
+      const agent = PLAN_DIR_TO_AGENT[rel] ?? rel
+      const dir = join(root, rel)
+      try {
+        const st = await stat(dir)
+        if (!st.isDirectory()) continue
+        await scanDir(dir, agent, 0)
+      } catch { /* missing */ }
+    }
+
+    return results
+  }
+
+  /**
+   * Workspace agent plan dirs plus the same relative dirs under the user home directory
+   * (Claude Code default: ~/.claude/plans).
+   */
+  private static async collectPlanFiles(worktreePath: string): Promise<AgentPlanEntry[]> {
+    const fromWt = await this.collectPlanFilesUnderRoot(worktreePath)
+    let fromHome: AgentPlanEntry[] = []
+    try {
+      fromHome = await this.collectPlanFilesUnderRoot(homedir())
+    } catch {
+      /* ignore */
+    }
+    const seen = new Set<string>()
+    const merged: AgentPlanEntry[] = []
+    for (const e of [...fromWt, ...fromHome]) {
+      if (seen.has(e.path)) continue
+      seen.add(e.path)
+      merged.push(e)
+    }
+    return merged
+  }
+
+  /**
+   * Find the most recently modified `.md` / `.mdx` under known agent plan folders
+   * in the workspace worktree (e.g. `.cursor/plans/*.plan.md`).
+   */
+  static async findNewestPlanMarkdown(worktreePath: string): Promise<string | null> {
+    const all = await this.collectPlanFiles(worktreePath)
+    if (all.length === 0) return null
+    let best = all[0]
+    for (let i = 1; i < all.length; i++) {
+      if (all[i].mtimeMs > best.mtimeMs) best = all[i]
+    }
+    return best.path
+  }
+
+  /** All plan markdowns sorted newest-first, capped at 200. */
+  static async listAgentPlanMarkdowns(worktreePath: string): Promise<AgentPlanEntry[]> {
+    const all = await this.collectPlanFiles(worktreePath)
+    all.sort((a, b) => b.mtimeMs - a.mtimeMs)
+    return all.slice(0, 200)
+  }
+
+  /** Update constellagent-namespaced frontmatter on a plan file. */
+  static async updatePlanMeta(filePath: string, patch: Partial<PlanMeta>): Promise<PlanMeta> {
+    return writePlanMeta(filePath, patch)
+  }
+
+  /** Copy or move a plan to another agent's plan directory. Returns the new path. */
+  static async relocateAgentPlan(
+    worktreePath: string,
+    filePath: string,
+    targetAgent: PlanAgent,
+    mode: 'copy' | 'move',
+  ): Promise<string> {
+    if (relativePathInWorktree(worktreePath, filePath) === null) {
+      throw new Error('Plan file is not inside the workspace')
+    }
+
+    const targetRelDir = AGENT_TO_PLAN_DIR[targetAgent]
+    if (!targetRelDir) throw new Error(`Unknown agent: ${targetAgent}`)
+
+    const targetDir = join(worktreePath, targetRelDir)
+    await mkdir(targetDir, { recursive: true })
+
+    const name = basename(filePath)
+    let dest = join(targetDir, name)
+
+    // Handle name collision with incrementing suffix
+    let attempt = 0
+    while (true) {
+      try {
+        await stat(dest)
+        attempt++
+        const ext = name.lastIndexOf('.')
+        const base = ext > 0 ? name.slice(0, ext) : name
+        const suffix = ext > 0 ? name.slice(ext) : ''
+        dest = join(targetDir, `${base}-${attempt}${suffix}`)
+      } catch {
+        break // doesn't exist — use this name
+      }
+    }
+
+    if (mode === 'copy') {
+      await copyFile(filePath, dest)
+    } else {
+      await copyFile(filePath, dest)
+      await rm(filePath)
+    }
+
+    return dest
   }
 }

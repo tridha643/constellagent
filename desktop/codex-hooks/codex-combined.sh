@@ -76,15 +76,21 @@ if [ -f "$AGENT_HOOKS_DIR/shared.sh" ]; then
 
           # Write the user prompt as a separate entry if present
           if [ -n "$USER_MSG" ]; then
-            USER_INPUT=$(jq -nc --arg msg "$USER_MSG" '$msg' | head -c 500)
+            USER_INPUT=$(jq -nc --arg msg "$USER_MSG" '
+              $msg | if length > 500 then .[0:500] else . end')
             write_pending "$CWD" "$AGENT_TYPE" "$SESSION_ID" "UserPrompt" "$USER_INPUT" "" "$TIMESTAMP"
           fi
 
           # Write the assistant turn
-          TOOL_INPUT=$(jq -nc --arg msg "${ASST_MSG:-}" '{summary: (if $msg == "" then null else $msg end)}' | head -c 1000)
+          TOOL_INPUT=$(jq -nc --arg msg "${ASST_MSG:-}" '{
+            summary: (if $msg == "" then null
+              elif ($msg | length) > 800 then $msg[0:800] else $msg end)
+          }')
         else
           # Plain text message from Codex — wrap it as JSON
-          TOOL_INPUT=$(jq -nc --arg msg "$PAYLOAD" '{summary: $msg}' | head -c 1000)
+          TOOL_INPUT=$(jq -nc --arg msg "$PAYLOAD" '{
+            summary: (if ($msg | length) > 800 then $msg[0:800] else $msg end)
+          }')
         fi
         write_pending "$CWD" "$AGENT_TYPE" "$SESSION_ID" "AssistantTurn" "$TOOL_INPUT" "" "$TIMESTAMP"
 
@@ -96,9 +102,11 @@ if [ -f "$AGENT_HOOKS_DIR/shared.sh" ]; then
         ;;
       *)
         if [ "$IS_JSON" = true ]; then
-          TOOL_INPUT=$(echo "$PAYLOAD" | jq -c '.' 2>/dev/null | head -c 500)
+          TOOL_INPUT=$(echo "$PAYLOAD" | jq -c 'walk(if type == "string" and length > 400 then .[0:400] else . end)' 2>/dev/null)
         else
-          TOOL_INPUT=$(jq -nc --arg msg "$PAYLOAD" '{message: $msg}' | head -c 500)
+          TOOL_INPUT=$(jq -nc --arg msg "$PAYLOAD" '{
+            message: (if ($msg | length) > 400 then $msg[0:400] else $msg end)
+          }')
         fi
         write_pending "$CWD" "$AGENT_TYPE" "$SESSION_ID" "$EVENT" "$TOOL_INPUT" "" "$TIMESTAMP"
         ;;

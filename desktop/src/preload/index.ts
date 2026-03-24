@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type { AutomationConfig, AutomationRunStartedEvent } from '../shared/automation-types'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
+import type { PlanAgent } from '../shared/agent-plan-path'
 
 const api = {
   git: {
@@ -51,8 +52,10 @@ const api = {
   pty: {
     create: (workingDir: string, shell?: string, extraEnv?: Record<string, string>) =>
       ipcRenderer.invoke(IPC.PTY_CREATE, workingDir, shell, extraEnv),
-    write: (ptyId: string, data: string) =>
-      ipcRenderer.send(IPC.PTY_WRITE, ptyId, data),
+    write: (ptyId: string, data: string, opts?: { submittedLine?: string }) =>
+      ipcRenderer.send(IPC.PTY_WRITE, ptyId, data, opts),
+    suggestTabTitle: (ptyId: string, line: string) =>
+      ipcRenderer.send(IPC.PTY_SUGGEST_TAB_TITLE, ptyId, line),
     resize: (ptyId: string, cols: number, rows: number) =>
       ipcRenderer.send(IPC.PTY_RESIZE, ptyId, cols, rows),
     destroy: (ptyId: string) =>
@@ -67,6 +70,20 @@ const api = {
       ipcRenderer.on(channel, listener)
       return () => {
         ipcRenderer.removeListener(channel, listener)
+      }
+    },
+    onTitleChanged: (callback: (data: { ptyId: string; title: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { ptyId: string; title: string }) => callback(data)
+      ipcRenderer.on(IPC.PTY_TITLE_CHANGED, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.PTY_TITLE_CHANGED, listener)
+      }
+    },
+    onAgentDetected: (callback: (data: { ptyId: string; agentType: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { ptyId: string; agentType: string }) => callback(data)
+      ipcRenderer.on(IPC.PTY_AGENT_DETECTED, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.PTY_AGENT_DETECTED, listener)
       }
     },
   },
@@ -93,9 +110,20 @@ const api = {
         ipcRenderer.removeListener(IPC.FS_WATCH_CHANGED, listener)
       }
     },
+    findNewestPlanMarkdown: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.FS_FIND_NEWEST_PLAN, worktreePath) as Promise<string | null>,
+    listAgentPlanMarkdowns: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.FS_LIST_AGENT_PLANS, worktreePath) as Promise<{ path: string; mtimeMs: number; agent: string; built?: boolean; codingAgent?: string | null }[]>,
+    readPlanMeta: (filePath: string) =>
+      ipcRenderer.invoke(IPC.FS_READ_PLAN_META, filePath) as Promise<{ built: boolean; codingAgent: string | null; buildHarness: PlanAgent | null }>,
+    updatePlanMeta: (filePath: string, patch: { built?: boolean; codingAgent?: string | null; buildHarness?: PlanAgent | null }) =>
+      ipcRenderer.invoke(IPC.FS_UPDATE_PLAN_META, filePath, patch) as Promise<{ built: boolean; codingAgent: string | null; buildHarness: PlanAgent | null }>,
+    relocateAgentPlan: (worktreePath: string, filePath: string, targetAgent: string, mode: 'copy' | 'move') =>
+      ipcRenderer.invoke(IPC.FS_RELOCATE_AGENT_PLAN, worktreePath, filePath, targetAgent, mode) as Promise<string>,
   },
 
   app: {
+    getHomeDir: () => ipcRenderer.invoke(IPC.APP_GET_HOME_DIR) as Promise<string>,
     selectDirectory: () =>
       ipcRenderer.invoke(IPC.APP_SELECT_DIRECTORY),
     selectFile: (filters?: { name: string; extensions: string[] }[]) =>
@@ -152,8 +180,8 @@ const api = {
         ipcRenderer.removeListener(IPC.CLAUDE_NOTIFY_WORKSPACE, listener)
       }
     },
-    onActivityUpdate: (callback: (workspaceIds: string[]) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, wsIds: string[]) => callback(wsIds)
+    onActivityUpdate: (callback: (entries: { wsId: string; agentType: string }[]) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, entries: { wsId: string; agentType: string }[]) => callback(entries)
       ipcRenderer.on(IPC.CLAUDE_ACTIVITY_UPDATE, listener)
       return () => {
         ipcRenderer.removeListener(IPC.CLAUDE_ACTIVITY_UPDATE, listener)
@@ -207,8 +235,6 @@ const api = {
   },
 
   mcp: {
-    syncConfigs: (servers: unknown[], assignments: unknown) =>
-      ipcRenderer.invoke(IPC.MCP_SYNC_CONFIGS, servers, assignments),
     loadServers: () =>
       ipcRenderer.invoke(IPC.MCP_LOAD_SERVERS) as Promise<import('../renderer/store/types').McpServer[]>,
     removeServer: (serverName: string) =>
@@ -228,8 +254,8 @@ const api = {
       workspaceId: string; sessionId?: string; toolName: string;
       toolInput?: string; filePath?: string; timestamp: string;
     }) => ipcRenderer.invoke(IPC.CONTEXT_INSERT, projectDir, entry),
-    restoreCheckpoint: (projectDir: string, commitHash: string) =>
-      ipcRenderer.invoke(IPC.CONTEXT_RESTORE_CHECKPOINT, projectDir, commitHash) as Promise<{ success: boolean }>,
+    restoreCheckpoint: (projectDir: string, commitHash: string, relativePaths?: string[]) =>
+      ipcRenderer.invoke(IPC.CONTEXT_RESTORE_CHECKPOINT, projectDir, commitHash, relativePaths) as Promise<{ success: boolean; verified: boolean }>,
     buildSummary: (projectDir: string, workspaceId: string) =>
       ipcRenderer.invoke(IPC.CONTEXT_BUILD_SUMMARY, projectDir, workspaceId) as Promise<{ success: boolean; wsContext: string; globalContext: string }>,
     walCheckpoint: (projectDir?: string) =>
@@ -240,6 +266,20 @@ const api = {
       ipcRenderer.invoke(IPC.CONTEXT_SESSION_META_SAVE, projectDir, wsId, meta) as Promise<{ success: boolean }>,
     getSessionMeta: (projectDir: string, wsId: string, agentType?: string) =>
       ipcRenderer.invoke(IPC.CONTEXT_SESSION_META_GET, projectDir, wsId, agentType) as Promise<{ sessionId: string; agentType: string; startedAt: string; summary?: string } | null>,
+    onCodexTabTitleHint: (callback: (data: { workspaceId: string; title: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { workspaceId: string; title: string }) => callback(data)
+      ipcRenderer.on(IPC.CONTEXT_CODEX_TAB_TITLE_HINT, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.CONTEXT_CODEX_TAB_TITLE_HINT, listener)
+      }
+    },
+    onEntriesUpdated: (callback: (data: { projectDir: string; workspaceId: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { projectDir: string; workspaceId: string }) => callback(data)
+      ipcRenderer.on(IPC.CONTEXT_ENTRIES_UPDATED, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.CONTEXT_ENTRIES_UPDATED, listener)
+      }
+    },
   },
 
   session: {

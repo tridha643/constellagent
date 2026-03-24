@@ -3,6 +3,7 @@ import Editor, { loader } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { useAppStore } from '../../store/app-store'
 import { useGitGutter } from '../../hooks/useGitGutter'
+import { MarkdownRenderer } from '../MarkdownRenderer/MarkdownRenderer'
 import styles from './Editor.module.css'
 
 import { isLspLanguage, getOrCreateClient, notifyDidOpen, notifyDidClose } from '../../services/lsp-client-manager'
@@ -72,6 +73,11 @@ export interface FileEditorHandle {
 }
 
 export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEditor({ tabId, filePath, active, worktreePath }, ref) {
+  const isMarkdown = filePath.endsWith('.md') || filePath.endsWith('.mdx')
+  /** Prefer rendered view for agent-written plans when opening a markdown file tab. */
+  const [previewMode, setPreviewMode] = useState(() =>
+    filePath.endsWith('.md') || filePath.endsWith('.mdx'),
+  )
   const [content, setContent] = useState<string | null>(null)
   const [unsaved, setUnsaved] = useState(false)
   const [editorInstance, setEditorInstance] = useState<editor.IStandaloneCodeEditor | null>(null)
@@ -253,28 +259,55 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
 
   return (
     <div className={styles.editorContainer}>
-      <Editor
-        height="100%"
-        language={getLanguage(filePath)}
-        value={content}
-        theme="vs-dark"
-        onChange={handleChange}
-        onMount={handleEditorMount}
-        options={{
-          fontFamily: "'SF Mono', Menlo, 'Cascadia Code', monospace",
-          fontSize: settings.editorFontSize,
-          lineHeight: 20,
-          minimap: { enabled: false },
-          scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
-          padding: { top: 8, bottom: 8 },
-          renderLineHighlight: 'line',
-          cursorBlinking: 'smooth',
-          smoothScrolling: true,
-          tabSize: 2,
-          wordWrap: 'off',
-          automaticLayout: true,
-        }}
-      />
+      {isMarkdown && (
+        <div className={styles.diffToolbar}>
+          <span className={styles.diffLabel}>{filePath.split('/').pop()}</span>
+          <div className={styles.diffToggle}>
+            <button
+              className={`${styles.diffToggleOption} ${!previewMode ? styles.active : ''}`}
+              onClick={() => setPreviewMode(false)}
+            >
+              Source
+            </button>
+            <button
+              className={`${styles.diffToggleOption} ${previewMode ? styles.active : ''}`}
+              onClick={() => setPreviewMode(true)}
+            >
+              Preview
+            </button>
+          </div>
+        </div>
+      )}
+      {previewMode && isMarkdown ? (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
+          <div style={{ maxWidth: 760, margin: '0 auto' }}>
+            <MarkdownRenderer>{content}</MarkdownRenderer>
+          </div>
+        </div>
+      ) : (
+        <Editor
+          height="100%"
+          language={getLanguage(filePath)}
+          value={content}
+          theme="vs-dark"
+          onChange={handleChange}
+          onMount={handleEditorMount}
+          options={{
+            fontFamily: "'SF Mono', Menlo, 'Cascadia Code', monospace",
+            fontSize: settings.editorFontSize,
+            lineHeight: 20,
+            minimap: { enabled: false },
+            scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
+            padding: { top: 8, bottom: 8 },
+            renderLineHighlight: 'line',
+            cursorBlinking: 'smooth',
+            smoothScrolling: true,
+            tabSize: 2,
+            wordWrap: 'off',
+            automaticLayout: true,
+          }}
+        />
+      )}
     </div>
   )
 })

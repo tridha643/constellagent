@@ -1,6 +1,10 @@
 #!/bin/bash
 # Hook: captures agent context into git-based context repo + pending SQLite index
 # Handles PostToolUse, UserPromptSubmit, and Stop events
+_HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "${_HOOK_DIR}/../agent-hooks/shared.sh"
+
 WS_ID="${AGENT_ORCH_WS_ID:-}"
 [ -z "$WS_ID" ] && exit 0
 
@@ -18,17 +22,20 @@ EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // "PostToolUse"')
 case "$EVENT" in
   UserPromptSubmit)
     TOOL_NAME="UserPrompt"
-    TOOL_INPUT=$(echo "$INPUT" | jq -c '.prompt' | head -c 500)
+    TOOL_INPUT=$(echo "$INPUT" | jq -c '.prompt
+      | if . == null then null else walk(if type == "string" and length > 500 then .[0:500] else . end) end')
     FILE_PATH=""
     ;;
   Stop)
     TOOL_NAME="AssistantTurn"
-    TOOL_INPUT='""'
+    TOOL_INPUT='null'
     FILE_PATH=""
     ;;
   PostToolUse)
     TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
-    TOOL_INPUT=$(echo "$INPUT" | jq -c '{i: .tool_input, o: (.tool_response // null)}' | head -c 1000)
+    TOOL_INPUT=$(echo "$INPUT" | jq -c '
+      def tw(m): walk(if type == "string" and length > m then .[0:m] else . end);
+      { i: (.tool_input | tw(400)), o: ((.tool_response // null) | if . == null then null else tw(400) end) }')
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty')
     ;;
   *)
@@ -36,8 +43,8 @@ case "$EVENT" in
     ;;
 esac
 
-# Capture project git HEAD
-PROJECT_HEAD=$(git -C "$CWD" rev-parse HEAD 2>/dev/null || echo "")
+# Capture project working tree (commit object + anchored ref); fallback matches legacy hooks
+PROJECT_HEAD=$(get_head "$CWD")
 
 # Append to activity log
 AGENT_TYPE="${AGENT_ORCH_AGENT_TYPE:-claude-code}"
@@ -67,13 +74,9 @@ git -C "$REPO" -c user.name=Constellagent -c user.email=noreply@constellagent \
   commit -q --no-gpg-sign -m "capture: $TOOL_NAME" 2>/dev/null
 
 # Write pending index entry for Electron to pick up (SQLite indexing)
-PENDING_DIR="$REPO/.pending"
-mkdir -p "$PENDING_DIR"
 [ -z "$TOOL_INPUT" ] && TOOL_INPUT="null"
-printf '{"ws":"%s","agent":"%s","sid":"%s","tool":"%s","input":%s,"file":"%s","ts":"%s","head":"%s"}\n' \
-  "$WS_ID" "$AGENT_TYPE" "$SESSION_ID" "$TOOL_NAME" "$TOOL_INPUT" \
-  "${FILE_PATH:-}" "$TIMESTAMP" "$PROJECT_HEAD" \
-  > "$PENDING_DIR/$(date +%s%N).json"
+write_pending "$CWD" "$AGENT_TYPE" "$SESSION_ID" "$TOOL_NAME" "$TOOL_INPUT" \
+  "${FILE_PATH:-}" "$TIMESTAMP" "$PROJECT_HEAD"
 
 # On UserPromptSubmit, inject the sliding window as additional context
 # so the agent has fresh cross-agent awareness on every turn

@@ -52,6 +52,22 @@ export function useShortcuts() {
         }
       }
 
+      // ── Tab switching: Cmd+Left / Cmd+Right (non-terminal context) ──
+      if (e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault()
+          e.stopPropagation()
+          useAppStore.getState().prevTab()
+          return
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault()
+          e.stopPropagation()
+          useAppStore.getState().nextTab()
+          return
+        }
+      }
+
       // Ctrl+Tab — cycle focus between split panes
       if (e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'Tab') {
         e.preventDefault()
@@ -80,13 +96,6 @@ export function useShortcuts() {
         return
       }
 
-      // ── Tab switching: Cmd+1-9 ──
-      if (!shift && !alt && e.key >= '1' && e.key <= '9') {
-        consume()
-        store.switchToTabByIndex(parseInt(e.key) - 1)
-        return
-      }
-
       // ── Workspace switching: Cmd+Shift+Up / Cmd+Shift+Down ──
       if (shift && !alt && e.key === 'ArrowUp') {
         consume()
@@ -96,6 +105,30 @@ export function useShortcuts() {
       if (shift && !alt && e.key === 'ArrowDown') {
         consume()
         store.nextWorkspace()
+        return
+      }
+
+      // ── Workspace switching: Cmd+Option+Up / Cmd+Option+Down ──
+      if (!shift && alt && e.key === 'ArrowUp') {
+        consume()
+        store.prevWorkspace()
+        return
+      }
+      if (!shift && alt && e.key === 'ArrowDown') {
+        consume()
+        store.nextWorkspace()
+        return
+      }
+
+      // ── Tab switching: Cmd+Option+Left / Cmd+Option+Right ──
+      if (!shift && alt && e.key === 'ArrowLeft') {
+        consume()
+        store.prevTab()
+        return
+      }
+      if (!shift && alt && e.key === 'ArrowRight') {
+        consume()
+        store.nextTab()
         return
       }
 
@@ -234,6 +267,13 @@ export function useShortcuts() {
         return
       }
 
+      // Cmd+Shift+M — open plan palette (search + filter by agent)
+      if (shift && !alt && e.code === 'KeyM') {
+        consume()
+        store.togglePlanPalette()
+        return
+      }
+
       // ── Settings ──
       // Cmd+, — toggle settings
       if (!shift && !alt && e.key === ',') {
@@ -278,6 +318,7 @@ export function useShortcuts() {
             message: `Permanently delete "${fileName}"? This cannot be undone.`,
             confirmLabel: 'Delete',
             destructive: true,
+            tip: 'Tip: Hold \u21e7 Shift while deleting to skip this dialog',
             onConfirm: () => {
               store.dismissConfirmDialog()
               window.api.fs.deleteFile(tab.filePath).catch((err: unknown) => {

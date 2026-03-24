@@ -5,6 +5,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useAppStore } from '../../store/app-store'
 import styles from './TerminalPanel.module.css'
 
+const TAB_TITLE_LOG = '[constellagent:tab-title]'
+
 const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
 const PR_POLL_HINT_COMMAND_RE =
   /^(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+)*(?:sudo\s+)?(?:(?:git\s+push)|(?:gh\s+pr\s+(?:create|ready|reopen|merge)))(?:\s|$)/
@@ -40,16 +42,22 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
     )
   }
 
-  const detectPrPollHint = (chunk: string) => {
+  const detectPrPollHint = (chunk: string): string | undefined => {
     // Remove cursor-control escape sequences so arrow keys do not pollute the command buffer.
     const cleaned = chunk
       .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
       .replace(/\x1bO./g, '')
       .replace(/\x1b./g, '')
 
+    let codexTabLine: string | undefined
+
     for (const char of cleaned) {
       if (char === '\r' || char === '\n') {
         const command = inputLineRef.current.trim()
+        // Codex TUI: PTY write is often newline-only — bundle the local line on PTY_WRITE so main can derive the tab title with the same IPC as write().
+        if (command.length >= 3 && !/^(y|n|p|yes|no)$/i.test(command)) {
+          codexTabLine = command
+        }
         if (command && PR_POLL_HINT_COMMAND_RE.test(command)) {
           emitPrPollHint(command)
         }
@@ -73,6 +81,8 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
         inputLineRef.current = inputLineRef.current.slice(-512)
       }
     }
+
+    return codexTabLine
   }
 
   useEffect(() => {
@@ -165,8 +175,25 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
         }, 200)
 
         const onDataDisposable = term.onData((data: string) => {
-          detectPrPollHint(data)
-          window.api.pty.write(ptyId, data)
+          const codexTabLine = detectPrPollHint(data)
+          const newlineOnlyChunk = /^[\r\n]+$/.test(data)
+          if (newlineOnlyChunk) {
+            if (codexTabLine !== undefined) {
+              console.log(TAB_TITLE_LOG, 'renderer: newline-only PTY write, bundling local line for main codex title path', {
+                ptyId,
+                preview: codexTabLine.slice(0, 72),
+              })
+            } else {
+              console.log(TAB_TITLE_LOG, 'renderer: newline-only PTY write, no bundled line (short/empty/y-n prompt buffer)', {
+                ptyId,
+              })
+            }
+          }
+          window.api.pty.write(
+            ptyId,
+            data,
+            codexTabLine !== undefined ? { submittedLine: codexTabLine } : undefined,
+          )
         })
 
         const onResizeDisposable = term.onResize(({ cols, rows }: { cols: number; rows: number }) => {

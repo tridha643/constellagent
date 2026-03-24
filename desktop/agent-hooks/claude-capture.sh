@@ -19,7 +19,8 @@ EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // "PostToolUse"')
 case "$EVENT" in
   UserPromptSubmit)
     TOOL="UserPrompt"
-    TOOL_INPUT=$(echo "$INPUT" | jq -c '.prompt' | head -c 500)
+    TOOL_INPUT=$(echo "$INPUT" | jq -c '.prompt
+      | if . == null then null else walk(if type == "string" and length > 500 then .[0:500] else . end) end')
     write_pending "$CWD" "$AGENT_TYPE" "$SESSION_ID" "$TOOL" "$TOOL_INPUT" "" "$TIMESTAMP"
     ;;
   Stop)
@@ -29,20 +30,28 @@ case "$EVENT" in
     ;;
   PostToolUse)
     TOOL=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
-    TOOL_INPUT=$(echo "$INPUT" | jq -c '{i: .tool_input}' | head -c 1000)
-    TOOL_RESPONSE=$(echo "$INPUT" | jq -c '.tool_response // null' | head -c 1000)
+    TOOL_INPUT=$(echo "$INPUT" | jq -c '
+      def tw(m): walk(if type == "string" and length > m then .[0:m] else . end);
+      { i: (.tool_input | tw(500)) }')
+    TOOL_RESPONSE=$(echo "$INPUT" | jq -c '
+      def tw(m): walk(if type == "string" and length > m then .[0:m] else . end);
+      (.tool_response // null) | if . == null then null else tw(8000) end')
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty')
     write_pending_full "$CWD" "$AGENT_TYPE" "$SESSION_ID" "$TOOL" "$TOOL_INPUT" "$FILE_PATH" "$TIMESTAMP" "PostToolUse" "$TOOL_RESPONSE"
     ;;
   PreToolUse)
     TOOL=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
-    TOOL_INPUT=$(echo "$INPUT" | jq -c '{i: .tool_input}' | head -c 1000)
+    TOOL_INPUT=$(echo "$INPUT" | jq -c '
+      def tw(m): walk(if type == "string" and length > m then .[0:m] else . end);
+      { i: (.tool_input | tw(500)) }')
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty')
     write_pending_full "$CWD" "$AGENT_TYPE" "$SESSION_ID" "PreToolUse:$TOOL" "$TOOL_INPUT" "$FILE_PATH" "$TIMESTAMP" "PreToolUse" "null"
     ;;
   PostToolUseFailure)
     TOOL=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
-    TOOL_INPUT=$(echo "$INPUT" | jq -c '{i: .tool_input, error: .error}' | head -c 1000)
+    TOOL_INPUT=$(echo "$INPUT" | jq -c '
+      def tw(m): walk(if type == "string" and length > m then .[0:m] else . end);
+      { i: (.tool_input | tw(500)), error: ((.error // null) | if . == null then null else tw(500) end) }')
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty')
     write_pending_full "$CWD" "$AGENT_TYPE" "$SESSION_ID" "PostToolUseFailure:$TOOL" "$TOOL_INPUT" "$FILE_PATH" "$TIMESTAMP" "PostToolUseFailure" "null"
     ;;

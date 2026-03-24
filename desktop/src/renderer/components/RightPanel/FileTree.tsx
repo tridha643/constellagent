@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { Tree, NodeRendererProps, NodeApi } from 'react-arborist'
 import { useAppStore } from '../../store/app-store'
+import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import styles from './RightPanel.module.css'
 
 interface FileNode {
@@ -105,6 +106,7 @@ function Node({ node, style }: NodeRendererProps<FileNode>) {
   const activeTabId = useAppStore((s) => s.activeTabId)
   const tabs = useAppStore((s) => s.tabs)
   const openFileTab = useAppStore((s) => s.openFileTab)
+  const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
   const openFileInSplit = useAppStore((s) => s.openFileInSplit)
   const showConfirmDialog = useAppStore((s) => s.showConfirmDialog)
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
@@ -113,8 +115,8 @@ function Node({ node, style }: NodeRendererProps<FileNode>) {
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const isActiveFile =
     node.isLeaf &&
-    activeTab?.type === 'file' &&
-    activeTab.filePath === node.data.path
+    ((activeTab?.type === 'file' && activeTab.filePath === node.data.path) ||
+      (activeTab?.type === 'markdownPreview' && activeTab.filePath === node.data.path))
 
   const gitClass = node.data.gitStatus
     ? GIT_STATUS_CLASS[node.data.gitStatus] || ''
@@ -128,6 +130,7 @@ function Node({ node, style }: NodeRendererProps<FileNode>) {
       message: `Permanently delete "${name}"${isDir ? ' and all its contents' : ''}? This cannot be undone.`,
       confirmLabel: 'Delete',
       destructive: true,
+      tip: 'Tip: Hold \u21e7 Shift while deleting to skip this dialog',
       onConfirm: () => {
         dismissConfirmDialog()
         window.api.fs.deleteFile(node.data.path).catch((err: unknown) => {
@@ -148,6 +151,9 @@ function Node({ node, style }: NodeRendererProps<FileNode>) {
     } else if (e.metaKey || e.ctrlKey) {
       // Cmd+click (macOS) / Ctrl+click (other) — open in split pane
       openFileInSplit(node.data.path)
+    } else if (isMarkdownDocumentPath(node.data.path)) {
+      // Agent plans and docs: rendered preview first (live reload while agents edit)
+      openMarkdownPreview(node.data.path)
     } else {
       openFileTab(node.data.path)
     }
@@ -192,6 +198,22 @@ function Node({ node, style }: NodeRendererProps<FileNode>) {
     }
 
     if (node.isLeaf) {
+      if (isMarkdownDocumentPath(node.data.path)) {
+        const previewItem = createMenuItem('Open preview')
+        previewItem.onclick = () => {
+          openMarkdownPreview(node.data.path)
+          closeMenu()
+        }
+        menu.appendChild(previewItem)
+
+        const editorItem = createMenuItem('Open in editor')
+        editorItem.onclick = () => {
+          openFileTab(node.data.path)
+          closeMenu()
+        }
+        menu.appendChild(editorItem)
+      }
+
       const openInSplitItem = createMenuItem('Open in Split Pane')
       openInSplitItem.onclick = () => {
         openFileInSplit(node.data.path)
@@ -199,12 +221,14 @@ function Node({ node, style }: NodeRendererProps<FileNode>) {
       }
       menu.appendChild(openInSplitItem)
 
-      const openInTabItem = createMenuItem('Open in New Tab')
-      openInTabItem.onclick = () => {
-        openFileTab(node.data.path)
-        closeMenu()
+      if (!isMarkdownDocumentPath(node.data.path)) {
+        const openInTabItem = createMenuItem('Open in New Tab')
+        openInTabItem.onclick = () => {
+          openFileTab(node.data.path)
+          closeMenu()
+        }
+        menu.appendChild(openInTabItem)
       }
-      menu.appendChild(openInTabItem)
 
       menu.appendChild(createMenuSeparator())
     }
@@ -276,6 +300,15 @@ export function FileTree({ worktreePath, isActive }: Props) {
       unsub()
       window.api.fs.unwatchDir(worktreePath)
     }
+  }, [worktreePath, fetchTree])
+
+  useEffect(() => {
+    const onGitFilesChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ worktreePath?: string }>).detail
+      if (detail?.worktreePath === worktreePath) fetchTree()
+    }
+    window.addEventListener('git:files-changed', onGitFilesChanged)
+    return () => window.removeEventListener('git:files-changed', onGitFilesChanged)
   }, [worktreePath, fetchTree])
 
   // Re-fetch when tab becomes visible (git ops only touch .git/ which the watcher ignores)

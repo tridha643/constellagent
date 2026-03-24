@@ -63,9 +63,10 @@ export type Tab = {
   id: string
   workspaceId: string
 } & (
-  | { type: 'terminal'; title: string; ptyId: string; splitRoot?: SplitNode; focusedPaneId?: string }
+  | { type: 'terminal'; title: string; ptyId: string; agentType?: AgentType; splitRoot?: SplitNode; focusedPaneId?: string }
   | { type: 'file'; filePath: string; unsaved?: boolean; deleted?: boolean }
   | { type: 'diff'; commitHash?: string; commitMessage?: string }
+  | { type: 'markdownPreview'; filePath: string; title: string }
 )
 
 export type RightPanelMode = 'files' | 'changes' | 'graph'
@@ -150,7 +151,11 @@ export interface ConfirmDialogState {
   message: string
   confirmLabel?: string
   destructive?: boolean
+  tip?: string
+  loading?: boolean
   onConfirm: () => void
+  secondaryConfirmLabel?: string
+  onSecondaryConfirm?: () => void
 }
 
 export interface AppState {
@@ -174,6 +179,7 @@ export interface AppState {
   confirmDialog: ConfirmDialogState | null
   toasts: Toast[]
   quickOpenVisible: boolean
+  planPaletteVisible: boolean
   unreadWorkspaceIds: Set<string>
   activeClaudeWorkspaceIds: Set<string>
   prStatusMap: Map<string, PrInfo | null>
@@ -195,10 +201,23 @@ export interface AppState {
   nextTab: () => void
   prevTab: () => void
   createTerminalForActiveWorkspace: () => Promise<void>
+  /** Launch a new terminal tab with a pre-written command (plan builds, no session resume). */
+  launchAgentTerminalWithCommand: (opts: {
+    workspaceId: string
+    worktreePath: string
+    title: string
+    command: string
+    agentType: AgentType
+  }) => Promise<string>
   closeActiveTab: () => void
   setTabUnsaved: (tabId: string, unsaved: boolean) => void
   notifyTabSaved: (tabId: string) => void
   openFileTab: (filePath: string) => void
+  openMarkdownPreview: (filePath: string) => void
+  /** Point an existing markdown preview tab at a new path (e.g. after plan relocate). */
+  retargetMarkdownPreviewTab: (tabId: string, newFilePath: string) => void
+  /** Open newest .md/.mdx across agent plan dirs (.cursor/plans, etc.) in the active workspace */
+  openLatestAgentPlan: () => Promise<void>
   openDiffTab: (workspaceId: string) => void
   openCommitDiffTab: (workspaceId: string, hash: string, message: string) => void
   nextWorkspace: () => void
@@ -221,19 +240,27 @@ export interface AppState {
   toggleSettings: () => void
   toggleAutomations: () => void
   toggleContextHistory: () => void
+  closeContextHistory: () => void
   showConfirmDialog: (dialog: ConfirmDialogState) => void
+  updateConfirmDialog: (partial: Partial<ConfirmDialogState>) => void
   dismissConfirmDialog: () => void
   addToast: (toast: Toast) => void
   dismissToast: (id: string) => void
   toggleQuickOpen: () => void
   closeQuickOpen: () => void
+  togglePlanPalette: () => void
+  closePlanPalette: () => void
 
   // Unread indicator actions
   markWorkspaceUnread: (workspaceId: string) => void
   clearWorkspaceUnread: (workspaceId: string) => void
 
-  // Agent activity actions (Claude + Codex)
-  setActiveClaudeWorkspaces: (workspaceIds: string[]) => void
+  // Agent activity actions (Claude + Codex + Gemini + Cursor)
+  setActiveAgentWorkspaces: (entries: { wsId: string; agentType: string }[]) => void
+  setTerminalAgentType: (ptyId: string, agentType: AgentType) => void
+  updateTerminalTitle: (ptyId: string, title: string) => void
+  /** Apply context-derived title to Codex tabs that still use a generic label */
+  applyCodexContextTitleHint: (workspaceId: string, title: string) => void
 
   // Git file status actions
   setGitFileStatuses: (worktreePath: string, statuses: Map<string, string>) => void

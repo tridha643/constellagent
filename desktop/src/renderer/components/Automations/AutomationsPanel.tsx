@@ -66,6 +66,7 @@ function AutomationList({
       message: `Delete automation "${automation.name}"? This will remove it and all its run workspaces.`,
       confirmLabel: 'Delete',
       destructive: true,
+      tip: 'Tip: Hold \u21e7 Shift while deleting to skip this dialog',
       onConfirm: () => {
         const runWs = workspaces.filter((w) => w.automationId === automation.id)
         for (const ws of runWs) deleteWorkspace(ws.id)

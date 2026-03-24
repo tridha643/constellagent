@@ -1,5 +1,7 @@
 import { getAgentFS, closeAgentFS } from './agentfs-service'
 
+const TAB_TITLE_LOG = '[constellagent:tab-title]'
+
 export class ContextDb {
   private projectDir: string
 
@@ -154,7 +156,7 @@ export class ContextDb {
    */
   async buildAgentContext(workspaceId: string, opts?: { limit?: number; maxChars?: number }): Promise<string> {
     const limit = opts?.limit ?? 30
-    const maxChars = opts?.maxChars ?? 6000
+    const maxChars = opts?.maxChars ?? 12000
     const entries = await this.getRecent(workspaceId, limit)
 
     if (entries.length === 0) {
@@ -288,9 +290,69 @@ export class ContextDb {
   }
 
   /**
-   * Get context entries filtered by session ID.
-   * Useful for resuming a specific agent session or reviewing session-scoped activity.
+   * Tab title fallback when Codex does not set OSC titles: prefer the first UserPrompt in the
+   * latest Codex session (by session_id), else the most recent UserPrompt for the workspace.
    */
+  async getCodexTabTitleHint(workspaceId: string): Promise<string | null> {
+    const agent = await this.agent()
+    const db = agent.getDatabase()
+
+    const sidStmt = db.prepare(`
+      SELECT session_id as sid FROM entries
+      WHERE workspace_id = ? AND agent_type = 'codex'
+        AND session_id IS NOT NULL AND length(trim(session_id)) > 0
+      ORDER BY id DESC LIMIT 1
+    `)
+    const sidRow = (await sidStmt.get(workspaceId)) as { sid: string } | undefined
+
+    if (sidRow?.sid) {
+      const firstStmt = db.prepare(`
+        SELECT tool_name as toolName, tool_input as toolInput FROM entries
+        WHERE workspace_id = ? AND agent_type = 'codex' AND session_id = ?
+        ORDER BY id ASC LIMIT 40
+      `)
+      const rows = (await firstStmt.all(workspaceId, sidRow.sid)) as Array<{ toolName: string; toolInput: string | null }>
+      for (const row of rows) {
+        if (row.toolName === 'UserPrompt') {
+          const t = formatContextTabTitle(row.toolInput)
+          if (t) {
+            console.log(TAB_TITLE_LOG, 'context DB hint: first UserPrompt in latest session_id', {
+              workspaceId,
+              sessionIdPreview: `${sidRow.sid.slice(0, 12)}…`,
+              title: t.slice(0, 80),
+            })
+            return t
+          }
+        }
+      }
+      console.log(TAB_TITLE_LOG, 'context DB hint: session_id found but no UserPrompt title', {
+        workspaceId,
+        sessionIdPreview: `${sidRow.sid.slice(0, 12)}…`,
+        rowsScanned: rows.length,
+      })
+    } else {
+      console.log(TAB_TITLE_LOG, 'context DB hint: no codex session_id in entries, using recent UserPrompt', {
+        workspaceId,
+      })
+    }
+
+    const recentStmt = db.prepare(`
+      SELECT tool_input as toolInput FROM entries
+      WHERE workspace_id = ? AND agent_type = 'codex' AND tool_name = 'UserPrompt'
+        AND tool_input IS NOT NULL AND length(trim(tool_input)) > 0
+      ORDER BY id DESC LIMIT 1
+    `)
+    const recent = (await recentStmt.get(workspaceId)) as { toolInput: string } | undefined
+    const fallback = formatContextTabTitle(recent?.toolInput ?? null)
+    if (fallback) {
+      console.log(TAB_TITLE_LOG, 'context DB hint: recent UserPrompt fallback', { workspaceId, title: fallback.slice(0, 80) })
+    } else {
+      console.log(TAB_TITLE_LOG, 'context DB hint: no codex UserPrompt rows', { workspaceId })
+    }
+    return fallback
+  }
+
+  /** Context rows for one AgentFS session_id (chronological slice). */
   async getSessionContext(sessionId: string, limit = 50): Promise<Array<{
     id: number
     workspaceId: string
@@ -367,6 +429,16 @@ export class ContextDb {
 }
 
 // ── Helpers ──
+
+const CONTEXT_TAB_TITLE_MAX = 72
+
+function formatContextTabTitle(toolInput: string | null | undefined): string | null {
+  if (toolInput == null || !String(toolInput).trim()) return null
+  const raw = summarizeInput(String(toolInput), 500).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+/g, ' ').trim()
+  if (raw.length < 3) return null
+  if (/^(y|n|p|yes|no)$/i.test(raw)) return null
+  return raw.length > CONTEXT_TAB_TITLE_MAX ? `${raw.slice(0, CONTEXT_TAB_TITLE_MAX)}…` : raw
+}
 
 function summarizeInput(toolInput: string, maxLen = 80): string {
   try {
