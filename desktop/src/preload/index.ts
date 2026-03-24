@@ -3,6 +3,7 @@ import { IPC } from '../shared/ipc-channels'
 import type { AutomationConfig, AutomationRunStartedEvent } from '../shared/automation-types'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import type { PlanAgent } from '../shared/agent-plan-path'
+import type { Annotation } from '../shared/diff-annotation-types'
 
 const api = {
   git: {
@@ -290,6 +291,24 @@ const api = {
   clipboard: {
     saveImage: () =>
       ipcRenderer.invoke(IPC.CLIPBOARD_SAVE_IMAGE) as Promise<string | null>,
+  },
+
+  annotations: {
+    load: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.ANNOTATION_LOAD, worktreePath) as Promise<Annotation[]>,
+    add: (worktreePath: string, annotation: Annotation) =>
+      ipcRenderer.invoke(IPC.ANNOTATION_ADD, worktreePath, annotation) as Promise<Annotation[]>,
+    resolve: (worktreePath: string, id: string) =>
+      ipcRenderer.invoke(IPC.ANNOTATION_RESOLVE, worktreePath, id) as Promise<Annotation[]>,
+    delete: (worktreePath: string, id: string) =>
+      ipcRenderer.invoke(IPC.ANNOTATION_DELETE, worktreePath, id) as Promise<Annotation[]>,
+    onChanged: (callback: (data: { worktreePath: string; annotations: Annotation[] }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { worktreePath: string; annotations: Annotation[] }) => callback(data)
+      ipcRenderer.on(IPC.ANNOTATION_CHANGED, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.ANNOTATION_CHANGED, listener)
+      }
+    },
   },
 
   state: {
