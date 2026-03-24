@@ -29,7 +29,7 @@ case "$EVENT" in
     fi
     ;;
   AfterAgent)
-    TOOL_INPUT=$(echo "$INPUT" | jq -c '(.response // .output) | if type == "string" then .[:1000] else . end')
+    TOOL_INPUT=$(echo "$INPUT" | jq -c '(.response // .output) | if type == "string" then .[:8000] else . end')
     write_pending "$CWD" "$AGENT_TYPE" "$SESSION_ID" "AssistantTurn" "$TOOL_INPUT" "" "$TIMESTAMP"
     ;;
   AfterTool)

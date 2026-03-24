@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { Tooltip } from '../Tooltip/Tooltip'
+import { MarkdownRenderer } from '../MarkdownRenderer/MarkdownRenderer'
 import styles from './ContextHistoryPanel.module.css'
 
 interface ContextEntry {
@@ -66,6 +67,19 @@ const TOOL_DISPLAY: Record<string, { label: string; icon: string }> = {
   SubagentStop: { label: 'Subagent Stop', icon: '▪' },
 }
 
+/**
+ * Only post-turn rows get Restore. `UserPrompt` is captured *before* the assistant runs for
+ * Claude / Gemini / Cursor, so its checkpoint is pre-turn — restoring it wipes that turn's
+ * file changes (users expect "undo later work", not "before I asked"). Codex logs UserPrompt
+ * after the turn, but AssistantTurn is the canonical post-turn snapshot for every agent.
+ */
+const TURN_BOUNDARY_TOOLS = new Set(['AssistantTurn', 'Stop'])
+
+function shouldShowRestore(entry: ContextEntry): boolean {
+  if (!entry.projectHead) return false
+  return TURN_BOUNDARY_TOOLS.has(entry.toolName)
+}
+
 const EVENT_TYPE_LABELS: Record<string, string> = {
   PreToolUse: 'pre',
   PostToolUse: 'post',
@@ -96,18 +110,42 @@ function formatToolInput(raw: string | null): string | null {
   return raw.length > 100 ? raw.slice(0, 100) + '...' : raw
 }
 
+function looksLikeMarkdown(text: string): boolean {
+  if (!text || text.length < 10) return false
+  return /^#{1,6}\s/m.test(text) || /```/.test(text) || /\|---/.test(text) || /^\*\*/.test(text) || /^\- /m.test(text)
+}
+
+function extractMarkdownContent(raw: string): string | null {
+  try {
+    const parsed = JSON.parse(raw)
+    if (typeof parsed === 'string') return parsed
+    if (typeof parsed === 'object' && parsed !== null) {
+      const candidate = parsed.summary ?? parsed.content ?? parsed.message ?? parsed.response ?? parsed.output
+      if (typeof candidate === 'string' && candidate.length > 20) return candidate
+    }
+  } catch { /* not JSON */ }
+  return raw
+}
+
 function EntryRow({
   entry,
   onRestore,
 }: {
   entry: ContextEntry
-  onRestore?: (head: string) => void
+  onRestore?: (entry: ContextEntry) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [showRaw, setShowRaw] = useState(false)
   const dotClass = AGENT_DOT_CLASS[entry.agentType] ?? styles.dotGray
   const display = TOOL_DISPLAY[entry.toolName]
   const eventLabel = entry.eventType ? EVENT_TYPE_LABELS[entry.eventType] ?? entry.eventType : null
   const formattedInput = formatToolInput(entry.toolInput)
+
+  const isAssistantTurn = entry.toolName === 'AssistantTurn'
+  const inputMarkdown = entry.toolInput ? extractMarkdownContent(entry.toolInput) : null
+  const responseMarkdown = entry.toolResponse ? extractMarkdownContent(entry.toolResponse) : null
+  const canRenderInput = isAssistantTurn && inputMarkdown && looksLikeMarkdown(inputMarkdown)
+  const canRenderResponse = responseMarkdown && looksLikeMarkdown(responseMarkdown)
 
   return (
     <div
@@ -148,28 +186,58 @@ function EntryRow({
         </div>
         {expanded && (
           <div className={styles.expandedContent}>
+            {(canRenderInput || canRenderResponse) && (
+              <button
+                className={styles.viewToggle}
+                onClick={(e) => { e.stopPropagation(); setShowRaw(!showRaw) }}
+              >
+                {showRaw ? '◈ Rendered' : '{ } Raw'}
+              </button>
+            )}
             {entry.toolInput && (
               <div className={styles.expandedSection}>
                 <span className={styles.expandedLabel}>Input</span>
-                <pre className={styles.expandedPre}>{entry.toolInput}</pre>
+                {canRenderInput && !showRaw ? (
+                  <div className={styles.renderedContent} onClick={(e) => e.stopPropagation()}>
+                    <MarkdownRenderer>{inputMarkdown!}</MarkdownRenderer>
+                  </div>
+                ) : (
+                  <pre className={styles.expandedPre}>{entry.toolInput}</pre>
+                )}
               </div>
             )}
             {entry.toolResponse && (
               <div className={styles.expandedSection}>
                 <span className={styles.expandedLabel}>Response</span>
-                <pre className={styles.expandedPre}>{entry.toolResponse}</pre>
+                {canRenderResponse && !showRaw ? (
+                  <div className={styles.renderedContent} onClick={(e) => e.stopPropagation()}>
+                    <MarkdownRenderer>{responseMarkdown!}</MarkdownRenderer>
+                  </div>
+                ) : (
+                  <pre className={styles.expandedPre}>{entry.toolResponse}</pre>
+                )}
               </div>
             )}
           </div>
         )}
       </div>
-      {entry.projectHead && onRestore && (
+      {entry.projectHead && onRestore && shouldShowRestore(entry) && (
         <div className={styles.entryActions}>
+          <button
+            className={styles.checkpointHash}
+            onClick={(e) => {
+              e.stopPropagation()
+              navigator.clipboard.writeText(entry.projectHead!)
+            }}
+            title="Copy checkpoint hash"
+          >
+            {entry.projectHead!.slice(0, 7)}
+          </button>
           <button
             className={styles.restoreBtn}
             onClick={(e) => {
               e.stopPropagation()
-              onRestore(entry.projectHead!)
+              onRestore(entry)
             }}
           >
             Restore
@@ -182,16 +250,19 @@ function EntryRow({
 
 export function ContextHistoryPanel() {
   const toggleContextHistory = useAppStore((s) => s.toggleContextHistory)
+  const closeContextHistory = useAppStore((s) => s.closeContextHistory)
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
   const workspace = useAppStore((s) =>
     s.workspaces.find((w) => w.id === s.activeWorkspaceId),
   )
   const showConfirmDialog = useAppStore((s) => s.showConfirmDialog)
+  const updateConfirmDialog = useAppStore((s) => s.updateConfirmDialog)
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
   const addToast = useAppStore((s) => s.addToast)
+  const confirmDialogOpen = useAppStore((s) => s.confirmDialog !== null)
   const contextEnabled = useAppStore((s) => s.settings.contextCaptureEnabled)
 
-  const [mode, setMode] = useState<'recent' | 'search'>('recent')
+  const [mode, setMode] = useState<'recent' | 'checkpoints' | 'search'>('recent')
   const [searchQuery, setSearchQuery] = useState('')
   const [entries, setEntries] = useState<ContextEntry[]>([])
   const [loading, setLoading] = useState(false)
@@ -244,10 +315,20 @@ export function ContextHistoryPanel() {
     [workspace?.worktreePath],
   )
 
-  // Load recent on mount / workspace change
+  // Load recent on mount / workspace change (checkpoints mode reuses the same data)
   useEffect(() => {
-    if (mode === 'recent') loadRecent()
+    if (mode === 'recent' || mode === 'checkpoints') loadRecent()
   }, [mode, loadRecent])
+
+  // Refresh when main process ingests new pending hook files (open panel stays current)
+  useEffect(() => {
+    return window.api.context.onEntriesUpdated((data) => {
+      if (mode !== 'recent' && mode !== 'checkpoints') return
+      if (data.workspaceId !== activeWorkspaceId) return
+      if (!workspace?.worktreePath || data.projectDir !== workspace.worktreePath) return
+      loadRecent()
+    })
+  }, [mode, activeWorkspaceId, workspace?.worktreePath, loadRecent])
 
   // Debounced search
   useEffect(() => {
@@ -263,42 +344,58 @@ export function ContextHistoryPanel() {
     }
   }, [mode, searchQuery, doSearch])
 
-  // Escape to close
+  // Escape to close (skip when a confirm dialog is open so Escape only dismisses the dialog)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') toggleContextHistory()
+      if (e.key === 'Escape' && !confirmDialogOpen) toggleContextHistory()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [toggleContextHistory])
+  }, [toggleContextHistory, confirmDialogOpen])
 
-  const handleRestore = (projectHead: string) => {
-    if (!workspace?.worktreePath) return
+  const executeRestore = async (worktreePath: string, projectHead: string) => {
+    updateConfirmDialog({ loading: true, confirmLabel: 'Restoring\u2026' })
+    try {
+      const result = await window.api.context.restoreCheckpoint(
+        worktreePath,
+        projectHead,
+      )
+      dismissConfirmDialog()
+      closeContextHistory()
+      addToast({
+        id: crypto.randomUUID(),
+        message: result.verified
+          ? 'Checkpoint restored and verified'
+          : 'Checkpoint restored (verification pending)',
+        type: 'info',
+      })
+      queueMicrotask(() => {
+        requestAnimationFrame(() => {
+          window.dispatchEvent(
+            new CustomEvent('git:files-changed', { detail: { worktreePath, paths: ['*'] } }),
+          )
+        })
+      })
+    } catch (err) {
+      updateConfirmDialog({ loading: false, confirmLabel: 'Restore' })
+      addToast({
+        id: crypto.randomUUID(),
+        message: err instanceof Error ? err.message : 'Failed to restore checkpoint',
+        type: 'error',
+      })
+    }
+  }
+
+  const handleRestore = (entry: ContextEntry) => {
+    if (!workspace?.worktreePath || !entry.projectHead) return
     const worktreePath = workspace.worktreePath
+    const shortHash = entry.projectHead!.slice(0, 7)
     showConfirmDialog({
-      title: 'Restore Checkpoint',
-      message:
-        'This will restore all project files to this point. Uncommitted changes will be overwritten.',
+      title: 'Restore to checkpoint',
+      message: `This will restore all project files to the state captured at the end of this assistant turn (${shortHash}). Any file changes from later turns will be rolled back, and files created after this checkpoint will be removed. This is not a substitute for git commit \u2014 commit before restoring if you have work to keep.`,
       confirmLabel: 'Restore',
       destructive: true,
-      onConfirm: async () => {
-        try {
-          await window.api.context.restoreCheckpoint(worktreePath, projectHead)
-          dismissConfirmDialog()
-          addToast({
-            id: crypto.randomUUID(),
-            message: 'Checkpoint restored',
-            type: 'info',
-          })
-        } catch {
-          dismissConfirmDialog()
-          addToast({
-            id: crypto.randomUUID(),
-            message: 'Failed to restore checkpoint',
-            type: 'error',
-          })
-        }
-      },
+      onConfirm: () => executeRestore(worktreePath, entry.projectHead!),
     })
   }
 
@@ -325,6 +422,12 @@ export function ContextHistoryPanel() {
               Recent
             </button>
             <button
+              onClick={() => setMode('checkpoints')}
+              className={mode === 'checkpoints' ? styles.active : ''}
+            >
+              Checkpoints
+            </button>
+            <button
               onClick={() => setMode('search')}
               className={mode === 'search' ? styles.active : ''}
             >
@@ -332,6 +435,9 @@ export function ContextHistoryPanel() {
             </button>
           </div>
         </div>
+        <p className={styles.headerCallout}>
+          Checkpoints snapshot the worktree at each assistant turn. Restore rolls back to that point&mdash;commit first to keep unsaved work.
+        </p>
         {mode === 'search' && (
           <input
             className={styles.searchInput}
@@ -352,26 +458,35 @@ export function ContextHistoryPanel() {
             </div>
           ) : loading ? (
             <div className={styles.loading}>Loading...</div>
-          ) : entries.length === 0 ? (
-            <div className={styles.emptyState}>
-              <span>
-                {mode === 'search' && searchQuery
-                  ? 'No entries match your search.'
-                  : 'No context entries yet.'}
-              </span>
-              {mode === 'recent' && (
-                <span>Run an agent with context capture enabled to see entries here.</span>
-              )}
-            </div>
-          ) : (
-            entries.map((entry) => (
-              <EntryRow
-                key={entry.id}
-                entry={entry}
-                onRestore={handleRestore}
-              />
-            ))
-          )}
+          ) : (() => {
+            const visible = mode === 'checkpoints'
+              ? entries.filter(shouldShowRestore)
+              : entries
+            return visible.length === 0 ? (
+              <div className={styles.emptyState}>
+                <span>
+                  {mode === 'search' && searchQuery
+                    ? 'No entries match your search.'
+                    : mode === 'checkpoints'
+                      ? 'No turn checkpoints yet.'
+                      : 'No context entries yet.'}
+                </span>
+                {mode === 'checkpoints' ? (
+                  <span>Checkpoints appear after an agent completes a turn with file changes.</span>
+                ) : mode === 'recent' ? (
+                  <span>Run an agent with context capture enabled to see entries here.</span>
+                ) : null}
+              </div>
+            ) : (
+              visible.map((entry) => (
+                <EntryRow
+                  key={entry.id}
+                  entry={entry}
+                  onRestore={handleRestore}
+                />
+              ))
+            )
+          })()}
         </div>
       </div>
     </div>

@@ -1,0 +1,82 @@
+.filters {
+  display: flex;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-3);
+  flex-shrink: 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full, 999px);
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+}
+
+.chip:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chipActive {
+  border-color: var(--accent-blue);
+  color: var(--text-primary);
+  background: var(--accent-blue-glow);
+}
+
+.chipIcon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.chipIcon > img,
+.chipIcon > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.builtPill {
+  font-size: 10px;
+  font-family: var(--font-ui);
+  padding: 1px 6px;
+  border-radius: var(--radius-full, 999px);
+  border: 1px solid var(--border-default);
+  color: var(--text-tertiary);
+  background: transparent;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.builtYes {
+  border-color: var(--accent-green, #3fb950);
+  color: var(--accent-green, #3fb950);
+}
+
+.agentLabel {
+  font-size: 10px;
+  font-family: var(--font-ui);
+  color: var(--text-ghost);
+  flex-shrink: 0;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-ghost);
+  font-family: var(--font-ui);
+  flex-shrink: 0;
+  padding-left: var(--space-3);
+}

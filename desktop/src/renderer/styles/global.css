@@ -1,4 +1,96 @@
+/*
+ * Tailwind v4: do NOT use `prefix(tw)` here — it emits `@media prefix(tw) { … }`, which
+ * browsers ignore, so Streamdown’s utility classes never applied (broken code blocks, tools).
+ */
+@import "tailwindcss";
 @import './design-tokens.css';
+@import "streamdown/styles.css";
+@import "katex/dist/katex.min.css";
+
+/*
+ * Constellagent is a dark UI; Streamdown/Shiki rely on `dark:*` utilities for token colors.
+ * Default Tailwind v4 `dark` = prefers-color-scheme only — on a light OS theme, code blocks lose
+ * highlighting. Drive `dark:` from a `.dark` ancestor (see index.html).
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source "../../../node_modules/streamdown/dist/*.js";
+@source "../../../node_modules/streamdown/dist/chunk-*.js";
+@source "../../../node_modules/@streamdown/code/dist/*.js";
+@source "../../../node_modules/@streamdown/mermaid/dist/*.js";
+@source "../../../node_modules/@streamdown/math/dist/*.js";
+@source "../../../node_modules/@streamdown/cjk/dist/*.js";
+
+/*
+ * Streamdown ships minified JS; Tailwind’s scanner often misses classes inside twMerge/clsx calls.
+ * Safelist Shiki token utilities + common layout chrome so syntax colors and toolbars work.
+ */
+@source inline("text-[var(--sdm-c,inherit)]");
+@source inline("dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]");
+@source inline("bg-[var(--sdm-tbg)]");
+@source inline("dark:bg-[var(--shiki-dark-bg,var(--sdm-tbg))]");
+@source inline("flex flex-col flex-row items-center justify-end justify-between gap-1 gap-2 shrink-0");
+@source inline("pointer-events-none pointer-events-auto sticky top-2 z-10 -mt-10 h-8 w-full my-4");
+@source inline("rounded-xl rounded-md rounded-lg border p-2 px-1.5 py-1 ml-1");
+@source inline("text-xs text-muted-foreground font-mono lowercase");
+@source inline("border-collapse overflow-x-auto overflow-y-auto divide-y");
+@source inline("bg-sidebar/80 supports-[backdrop-filter]:bg-sidebar/70 supports-[backdrop-filter]:backdrop-blur");
+
+/* ═══════════════════════════════════════════════════════
+   STREAMDOWN — shadcn variable bridge
+   Maps Streamdown's expected CSS vars to Constellagent design tokens.
+   ═══════════════════════════════════════════════════════ */
+
+:root {
+  --background: #111111;
+  --foreground: #eeeeee;
+  --muted: #212121;
+  --muted-foreground: #999999;
+  --border: #2e2e2e;
+  --primary: #7B93BD;
+  --primary-foreground: #eeeeee;
+  --card: #191919;
+  --card-foreground: #eeeeee;
+  --radius: 5px;
+  /* Streamdown / shadcn sidebar + chrome */
+  --sidebar: #212121;
+  --sidebar-foreground: #eeeeee;
+  --sidebar-border: #2e2e2e;
+  --sidebar-accent: #2a2a2a;
+  --sidebar-accent-foreground: #eeeeee;
+  --ring: #7b93bd;
+  --input: #2e2e2e;
+  --destructive: #bf616a;
+  --secondary: #2a2a2a;
+  --secondary-foreground: #eeeeee;
+  --accent: #2a2a2a;
+  --accent-foreground: #eeeeee;
+}
+
+/* Wire semantic colors for Tailwind utilities (bg-background, border-border, bg-sidebar, …) */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-destructive: var(--destructive);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+}
 
 /* ═══════════════════════════════════════════════════════
    RESET + BASE

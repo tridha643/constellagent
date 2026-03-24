@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, memo } from 'react'
 import { PatchDiff } from '@pierre/diffs/react'
 import { useAppStore } from '../../store/app-store'
+import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
 import styles from './Editor.module.css'
 
@@ -136,7 +137,16 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   const settings = useAppStore((s) => s.settings)
   const updateSettings = useAppStore((s) => s.updateSettings)
   const openFileTab = useAppStore((s) => s.openFileTab)
+  const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
   const inline = settings.diffInline
+
+  const openFileFromDiff = useCallback(
+    (fullPath: string) => {
+      if (isMarkdownDocumentPath(fullPath)) openMarkdownPreview(fullPath)
+      else openFileTab(fullPath)
+    },
+    [openFileTab, openMarkdownPreview],
+  )
 
   // Load commit-specific diff
   const loadCommitDiff = useCallback(async () => {
@@ -328,7 +338,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
             data={f}
             inline={inline}
             worktreePath={worktreePath}
-            onOpenFile={openFileTab}
+            onOpenFile={openFileFromDiff}
           />
         ))}
       </div>

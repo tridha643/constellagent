@@ -29,6 +29,10 @@ export const IPC = {
   PTY_LIST: 'pty:list',
   PTY_REATTACH: 'pty:reattach',
   PTY_DATA: 'pty:data', // prefix for events: `pty:data:{id}`
+  PTY_TITLE_CHANGED: 'pty:title-changed',
+  PTY_AGENT_DETECTED: 'pty:agent-detected',
+  /** Renderer → main: current input line on Enter (xterm often sends only \\r to PTY) */
+  PTY_SUGGEST_TAB_TITLE: 'pty:suggest-tab-title',
 
   // File operations
   FS_GET_TREE: 'fs:get-tree',
@@ -39,11 +43,23 @@ export const IPC = {
   FS_WATCH_START: 'fs:watch-start',
   FS_WATCH_STOP: 'fs:watch-stop',
   FS_WATCH_CHANGED: 'fs:watch-changed',
+  /** Newest .md/.mdx by mtime under agent plan dirs (e.g. .cursor/plans) */
+  FS_FIND_NEWEST_PLAN: 'fs:find-newest-plan',
+  /** All plan .md/.mdx files sorted newest-first with agent tag + meta */
+  FS_LIST_AGENT_PLANS: 'fs:list-agent-plans',
+  /** Read constellagent plan meta from YAML frontmatter (no disk write) */
+  FS_READ_PLAN_META: 'fs:read-plan-meta',
+  /** Update constellagent-namespaced YAML frontmatter on a plan .md */
+  FS_UPDATE_PLAN_META: 'fs:update-plan-meta',
+  /** Copy or move a plan file to a different agent's plan directory */
+  FS_RELOCATE_AGENT_PLAN: 'fs:relocate-agent-plan',
 
   // App operations
   APP_SELECT_DIRECTORY: 'app:select-directory',
   APP_ADD_PROJECT_PATH: 'app:add-project-path',
   APP_OPEN_IN_EDITOR: 'app:open-in-editor',
+  /** Node os.homedir() — for resolving ~/.claude/plans etc. in the renderer */
+  APP_GET_HOME_DIR: 'app:get-home-dir',
 
   // Claude Code integration
   CLAUDE_TRUST_PATH: 'claude:trust-path',
@@ -79,7 +95,6 @@ export const IPC = {
   CLIPBOARD_SAVE_IMAGE: 'clipboard:save-image',
 
   // MCP operations
-  MCP_SYNC_CONFIGS: 'mcp:sync-configs',
   MCP_LOAD_SERVERS: 'mcp:load-servers',
   MCP_REMOVE_SERVER: 'mcp:remove-server',
   MCP_GET_CONFIG_PATHS: 'mcp:get-config-paths',
@@ -95,6 +110,10 @@ export const IPC = {
   CONTEXT_SESSION_CONTEXT: 'context:session-context',
   CONTEXT_SESSION_META_SAVE: 'context:session-meta-save',
   CONTEXT_SESSION_META_GET: 'context:session-meta-get',
+  /** Main → renderer: suggest tab title from first Codex UserPrompt in context DB */
+  CONTEXT_CODEX_TAB_TITLE_HINT: 'context:codex-tab-title-hint',
+  /** Main → renderer: AgentFS ingested new context entries from shell hooks */
+  CONTEXT_ENTRIES_UPDATED: 'context:entries-updated',
 
   // Session
   SESSION_GET_LAST: 'session:get-last',

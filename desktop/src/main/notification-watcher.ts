@@ -9,6 +9,13 @@ const POLL_INTERVAL = 500
 const FILE_SETTLE_MS = 100
 const CLAUDE_MARKER_SUFFIX = '.claude'
 const CODEX_MARKER_SEGMENT = '.codex.'
+const GEMINI_MARKER_SEGMENT = '.gemini.'
+const CURSOR_MARKER_SEGMENT = '.cursor.'
+
+interface ActivityEntry {
+  wsId: string
+  agentType: string
+}
 
 export class NotificationWatcher {
   constructor(
@@ -63,18 +70,19 @@ export class NotificationWatcher {
   private pollActivity(): void {
     try {
       const files = readdirSync(this.activityDir)
-      const workspaceIds = Array.from(new Set(
-        files
-          .map((name) => {
-            const workspaceId = this.workspaceIdFromMarkerName(name)
-            if (!workspaceId) {
-              this.removeActivityMarker(name)
-              return null
-            }
-            return workspaceId
-          })
-          .filter((id): id is string => !!id)
-      ))
+      // One workspace may have Claude + Codex + others active at once; collect every wsId
+      // that has any marker (do not keep only one agent type per workspace).
+      const activeWsIds = new Set<string>()
+      for (const name of files) {
+        const entry = this.workspaceIdFromMarkerName(name)
+        if (!entry) {
+          this.removeActivityMarker(name)
+          continue
+        }
+        activeWsIds.add(entry.wsId)
+      }
+      const workspaceIds = [...activeWsIds].sort()
+      const entries: ActivityEntry[] = workspaceIds.map((wsId) => ({ wsId, agentType: 'active' }))
       const sorted = workspaceIds.sort().join(',')
       if (sorted !== this.lastActiveIds) {
         const prevIds = this.lastActiveIds ? this.lastActiveIds.split(',').filter(Boolean) : []
@@ -82,7 +90,7 @@ export class NotificationWatcher {
         const becameInactive = prevIds.filter((id) => !nextIdSet.has(id))
 
         this.lastActiveIds = sorted
-        this.sendActivity(workspaceIds)
+        this.sendActivity(entries)
 
         // Fallback completion signal: if a workspace was active and now is not,
         // emit a notify event so renderer can show unread attention dots even
@@ -117,21 +125,33 @@ export class NotificationWatcher {
     }
   }
 
-  private workspaceIdFromMarkerName(name: string): string | null {
+  private workspaceIdFromMarkerName(name: string): ActivityEntry | null {
     const marker = name.trim()
     if (!marker) return null
 
     if (marker.endsWith(CLAUDE_MARKER_SUFFIX)) {
-      return marker.slice(0, -CLAUDE_MARKER_SUFFIX.length) || null
+      const wsId = marker.slice(0, -CLAUDE_MARKER_SUFFIX.length)
+      return wsId ? { wsId, agentType: 'claude-code' } : null
     }
 
     const codexIdx = marker.indexOf(CODEX_MARKER_SEGMENT)
     if (codexIdx > 0) {
-      return marker.slice(0, codexIdx) || null
+      const wsId = marker.slice(0, codexIdx)
+      return wsId ? { wsId, agentType: 'codex' } : null
     }
 
-    // Legacy format is no longer written. Ignore and clean it up to avoid
-    // stale always-active spinners after upgrading marker formats.
+    const geminiIdx = marker.indexOf(GEMINI_MARKER_SEGMENT)
+    if (geminiIdx > 0) {
+      const wsId = marker.slice(0, geminiIdx)
+      return wsId ? { wsId, agentType: 'gemini' } : null
+    }
+
+    const cursorIdx = marker.indexOf(CURSOR_MARKER_SEGMENT)
+    if (cursorIdx > 0) {
+      const wsId = marker.slice(0, cursorIdx)
+      return wsId ? { wsId, agentType: 'cursor' } : null
+    }
+
     return null
   }
 
@@ -151,10 +171,10 @@ export class NotificationWatcher {
     }
   }
 
-  private sendActivity(workspaceIds: string[]): void {
+  private sendActivity(entries: ActivityEntry[]): void {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
-        win.webContents.send(IPC.CLAUDE_ACTIVITY_UPDATE, workspaceIds)
+        win.webContents.send(IPC.CLAUDE_ACTIVITY_UPDATE, entries)
       }
     }
   }

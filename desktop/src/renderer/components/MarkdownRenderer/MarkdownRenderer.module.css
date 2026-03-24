@@ -1,0 +1,462 @@
+/* MarkdownRenderer — dark theme overrides for Streamdown */
+
+.wrapper {
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+  /* App root uses user-select: none; allow selecting plan / markdown text */
+  user-select: text;
+  -webkit-user-select: text;
+  /* Streamdown toolbar motion tokens (ease-out, ~140ms — see emil-design-eng) */
+  --sd-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --sd-press-ms: 130ms;
+  --sd-hover-ms: 140ms;
+}
+
+/*
+ * Structural fallbacks — Streamdown relies on Tailwind; minified node_modules bundles are not
+ * always scanned, and Shiki token colors use arbitrary utilities that must exist in CSS.
+ */
+
+/*
+ * Code blocks — integrated card: language + actions share one top bar inside the same border
+ * as the `<pre>` (no sticky floater / negative margin).
+ */
+.wrapper [data-streamdown='code-block'] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, auto);
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  margin: 0.75em 0;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.wrapper [data-streamdown='code-block-header'] {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground, var(--text-secondary));
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-3) 40%, transparent);
+}
+
+.wrapper [data-streamdown='code-block'] > div:has([data-streamdown='code-block-actions']) {
+  grid-column: 2;
+  grid-row: 1;
+  position: static;
+  margin-top: 0;
+  z-index: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-3);
+  pointer-events: auto;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-3) 40%, transparent);
+}
+
+.wrapper [data-streamdown='code-block-actions'] {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  pointer-events: auto;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+}
+
+.wrapper [data-streamdown='code-block-body'] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  overflow-x: auto;
+  min-height: 0;
+}
+
+/* Mermaid — same integrated header row + diagram inside one card */
+.wrapper [data-streamdown='mermaid-block'] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, auto);
+  gap: 0;
+  width: 100%;
+  margin: 0.75em 0;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.wrapper [data-streamdown='mermaid-block'] > div:first-child {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground, var(--text-secondary));
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-3) 40%, transparent);
+}
+
+.wrapper [data-streamdown='mermaid-block']:not(:has([data-streamdown='mermaid-block-actions']))
+  > div:first-child {
+  grid-column: 1 / -1;
+}
+
+.wrapper [data-streamdown='mermaid-block'] > div:has([data-streamdown='mermaid-block-actions']) {
+  grid-column: 2;
+  grid-row: 1;
+  position: static;
+  margin-top: 0;
+  z-index: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-3);
+  pointer-events: auto;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-3) 40%, transparent);
+}
+
+.wrapper [data-streamdown='mermaid-block-actions'] {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  pointer-events: auto;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+}
+
+.wrapper [data-streamdown='mermaid-block'] > div:last-child {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--background);
+  overflow: hidden;
+  min-height: 0;
+}
+
+/*
+ * Tables — single card; inner shell reset in `streamdown-table.css`. Streamdown table
+ * controls (copy/download/fullscreen) are off in `MarkdownRenderer.tsx`.
+ */
+.wrapper [data-streamdown='table-wrapper'] {
+  display: block;
+  margin: 0.5em 0;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.wrapper [data-streamdown='table-wrapper'] > div:has([data-streamdown='table']) {
+  display: block;
+  margin: 0;
+  padding: var(--space-4);
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Shiki token colors — backup when Tailwind arbitrary `text-[var(--sdm-c)]` is missing */
+.wrapper [data-streamdown='code-block-body'] pre code span {
+  color: var(--shiki-dark, var(--sdm-c, inherit));
+}
+
+.wrapper [data-streamdown='code-block-body'] pre code span[style*='--sdm-tbg'] {
+  background-color: var(--shiki-dark-bg, var(--sdm-tbg, transparent));
+}
+
+.wrapper [data-streamdown='code-block-body'] pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  tab-size: 2;
+  /* Inner pit — outer chrome is `code-block` */
+  background: color-mix(in srgb, var(--surface-1) 35%, var(--surface-2));
+  border: none;
+  border-radius: 0;
+  padding: var(--space-4);
+}
+
+.wrapper [data-streamdown='code-block-body'] pre code > span {
+  display: block;
+  min-height: 1.15em;
+}
+
+/* Control buttons must stay clickable above selectable markdown */
+.wrapper :is([data-streamdown='code-block-copy-button'], [data-streamdown='code-block-download-button']) {
+  pointer-events: auto;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Streamdown toolbars — polish + motion (design-eng: specific
+   transitions, ease-out, press scale, hover gated to fine pointer)
+   ═══════════════════════════════════════════════════════ */
+
+@keyframes streamdownIconSettle {
+  from {
+    opacity: 0.65;
+    transform: scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Icon buttons — code / mermaid toolbars */
+.wrapper :is([data-streamdown='code-block-actions'], [data-streamdown='mermaid-block-actions']) > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color var(--sd-hover-ms) var(--sd-ease-out),
+    background-color var(--sd-hover-ms) var(--sd-ease-out),
+    transform var(--sd-press-ms) var(--sd-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .wrapper
+    :is([data-streamdown='code-block-actions'], [data-streamdown='mermaid-block-actions'])
+    > button:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.wrapper
+  :is([data-streamdown='code-block-actions'], [data-streamdown='mermaid-block-actions'])
+  > button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.wrapper
+  :is([data-streamdown='code-block-actions'], [data-streamdown='mermaid-block-actions'])
+  > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Copy → check swap: subtle settle when SVG mounts (success feedback) */
+@media (prefers-reduced-motion: no-preference) {
+  .wrapper [data-streamdown='code-block-copy-button'] svg {
+    animation: streamdownIconSettle 165ms var(--sd-ease-out);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wrapper [data-streamdown='code-block-copy-button'] svg {
+    animation: none;
+  }
+
+  .wrapper
+    :is([data-streamdown='code-block-actions'], [data-streamdown='mermaid-block-actions'])
+    > button:active {
+    transform: none;
+  }
+}
+
+/* Typography — Streamdown uses data-streamdown on many nodes, not `data-streamdown-block` */
+.wrapper :where(h1, h2, h3, h4, h5, h6) {
+  color: var(--text-primary);
+}
+
+.wrapper h1 {
+  font-size: 1.5em;
+  font-weight: var(--weight-semibold);
+  margin-top: 1.2em;
+  margin-bottom: 0.5em;
+}
+
+.wrapper h2 {
+  font-size: 1.3em;
+  font-weight: var(--weight-semibold);
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+}
+
+.wrapper h3 {
+  font-size: 1.1em;
+  font-weight: var(--weight-medium);
+  margin-top: 0.8em;
+  margin-bottom: 0.3em;
+}
+
+.wrapper p {
+  margin: 0.5em 0;
+}
+
+.wrapper a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.wrapper a:hover {
+  text-decoration: underline;
+}
+
+.wrapper code[data-streamdown='inline-code'] {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface-3);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+}
+
+/* KaTeX — readable on dark surfaces (default stylesheet targets light bg) */
+.wrapper :global(.katex) {
+  color: var(--text-primary);
+}
+
+.wrapper :global(.katex-display) {
+  margin: 0.75em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Table styling */
+.wrapper table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+  font-size: var(--text-sm);
+}
+
+.wrapper [data-streamdown='table-wrapper'] table {
+  margin: 0;
+}
+
+/* Full grid — Streamdown’s `divide-y` utilities fight explicit borders in the cascade */
+.wrapper [data-streamdown='table-wrapper'] [data-streamdown='table'] {
+  border-collapse: collapse !important;
+  border: 1px solid var(--border-strong);
+}
+
+.wrapper [data-streamdown='table-wrapper'] [data-streamdown='table'] th,
+.wrapper [data-streamdown='table-wrapper'] [data-streamdown='table'] td {
+  border: 1px solid var(--border-strong) !important;
+}
+
+/* One continuous band: header matches floating toolbar row */
+.wrapper [data-streamdown='table-wrapper'] th {
+  background: color-mix(in srgb, var(--surface-3) 40%, transparent);
+}
+
+.wrapper [data-streamdown='table-wrapper'] td {
+  background: color-mix(in srgb, var(--surface-1) 55%, var(--surface-2));
+}
+
+.wrapper [data-streamdown='table-wrapper'] tr {
+  background: transparent;
+}
+
+/* Zebra only in `<tbody>` — global `tr:nth-child(even)` counts `<thead>` rows */
+.wrapper [data-streamdown='table-wrapper'] tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--surface-1) 32%, var(--surface-2));
+}
+
+.wrapper th,
+.wrapper td {
+  border: 1px solid var(--border-default);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+}
+
+.wrapper th {
+  background: var(--surface-2);
+  font-weight: var(--weight-medium);
+}
+
+.wrapper tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Blockquote */
+.wrapper blockquote {
+  border-left: 3px solid var(--accent-blue);
+  padding-left: var(--space-4);
+  color: var(--text-secondary);
+  margin: 0.5em 0;
+}
+
+/* Lists */
+.wrapper ul,
+.wrapper ol {
+  padding-left: 1.5em;
+  margin: 0.4em 0;
+}
+
+.wrapper li {
+  margin: 0.15em 0;
+}
+
+/* Task list checkboxes */
+.wrapper input[type='checkbox'] {
+  margin-right: var(--space-2);
+}
+
+/* Inner mermaid canvas (outer chrome is `mermaid-block`) */
+.wrapper [data-streamdown='mermaid'] {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+/* Horizontal rule */
+.wrapper hr {
+  border: none;
+  border-top: 1px solid var(--border-default);
+  margin: 1em 0;
+}

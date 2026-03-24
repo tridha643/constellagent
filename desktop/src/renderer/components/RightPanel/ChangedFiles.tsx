@@ -65,6 +65,16 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     }
   }, [worktreePath, refresh])
 
+  // Explicit refresh after checkpoint restore / git ops that bypass FS watcher timing
+  useEffect(() => {
+    const onGitFilesChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ worktreePath?: string }>).detail
+      if (detail?.worktreePath === worktreePath) refresh()
+    }
+    window.addEventListener('git:files-changed', onGitFilesChanged)
+    return () => window.removeEventListener('git:files-changed', onGitFilesChanged)
+  }, [worktreePath, refresh])
+
   // Re-fetch when tab becomes visible (git ops only touch .git/ which the watcher ignores)
   useEffect(() => {
     if (isActive) refresh()

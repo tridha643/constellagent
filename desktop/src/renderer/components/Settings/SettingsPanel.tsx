@@ -11,7 +11,8 @@ const SHORTCUTS = [
   { action: 'Close all tabs', keys: '⇧⌘W' },
   { action: 'Next tab', keys: '⇧⌘]' },
   { action: 'Previous tab', keys: '⇧⌘[' },
-  { action: 'Tab 1–9', keys: '⌘1 – ⌘9' },
+  { action: 'Previous tab', keys: '⌘←' },
+  { action: 'Next tab', keys: '⌘→' },
   { action: 'Split terminal right', keys: '⌘D' },
   { action: 'Split terminal down', keys: '⇧⌘D' },
   { action: 'Open file in split', keys: '⌘\\' },
@@ -28,6 +29,8 @@ const SHORTCUTS = [
   { action: 'Decrease font size', keys: '⌘−' },
   { action: 'Reset font size', keys: '⌘0' },
   { action: 'Open in editor', keys: '⇧⌘O' },
+  { action: 'Context history', keys: '⇧⌘K' },
+  { action: 'Plan picker (search + filter by agent)', keys: '⇧⌘M' },
   { action: 'Settings', keys: '⌘,' },
 ]
 
@@ -421,43 +424,7 @@ function McpServerCard({ server, onDelete, onOpenConfig }: {
   onDelete: (name: string) => void
   onOpenConfig: () => void
 }) {
-  const settings = useAppStore((s) => s.settings)
-  const updateSettings = useAppStore((s) => s.updateSettings)
   const [expanded, setExpanded] = useState(false)
-
-  const enabledAgents = (Object.keys(AGENT_LABELS) as AgentType[]).filter(
-    (agent) => (settings.agentMcpAssignments[agent] ?? []).includes(server.id),
-  )
-  const allEnabled = enabledAgents.length === Object.keys(AGENT_LABELS).length
-  const anyEnabled = enabledAgents.length > 0
-
-  const toggleServer = () => {
-    const newAssignments = { ...settings.agentMcpAssignments }
-    const allAgents = Object.keys(AGENT_LABELS) as AgentType[]
-    if (anyEnabled) {
-      for (const agent of allAgents) {
-        newAssignments[agent] = (newAssignments[agent] ?? []).filter((id) => id !== server.id)
-      }
-    } else {
-      for (const agent of allAgents) {
-        if (!(newAssignments[agent] ?? []).includes(server.id)) {
-          newAssignments[agent] = [...(newAssignments[agent] ?? []), server.id]
-        }
-      }
-    }
-    updateSettings({ agentMcpAssignments: newAssignments })
-  }
-
-  const toggleAgent = (agent: AgentType) => {
-    const current = settings.agentMcpAssignments[agent] ?? []
-    const newAssignments = { ...settings.agentMcpAssignments }
-    if (current.includes(server.id)) {
-      newAssignments[agent] = current.filter((id) => id !== server.id)
-    } else {
-      newAssignments[agent] = [...current, server.id]
-    }
-    updateSettings({ agentMcpAssignments: newAssignments })
-  }
 
   const letter = server.name.charAt(0).toUpperCase()
 
@@ -468,12 +435,7 @@ function McpServerCard({ server, onDelete, onOpenConfig }: {
         <div className={styles.mcpCardText}>
           <div className={styles.rowLabel}>{server.name}</div>
           <div className={styles.mcpCardSub}>
-            <span className={`${styles.mcpDot} ${anyEnabled ? styles.mcpDotOn : ''}`} />
-            {anyEnabled
-              ? allEnabled
-                ? 'All agents'
-                : enabledAgents.map((a) => AGENT_LABELS[a]).join(', ')
-              : 'Disabled'}
+            {server.command} {server.args.length > 0 ? server.args[0] : ''}
           </div>
         </div>
         <div className={styles.mcpCardActions}>
@@ -492,12 +454,6 @@ function McpServerCard({ server, onDelete, onOpenConfig }: {
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4m2 0v9.33a1.33 1.33 0 01-1.34 1.34H4.67a1.33 1.33 0 01-1.34-1.34V4h9.34z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </button>
         </div>
-        <button
-          className={`${styles.toggle} ${anyEnabled ? styles.toggleOn : ''}`}
-          onClick={(e) => { e.stopPropagation(); toggleServer() }}
-        >
-          <span className={styles.toggleKnob} />
-        </button>
       </div>
 
       {expanded && (
@@ -506,20 +462,6 @@ function McpServerCard({ server, onDelete, onOpenConfig }: {
             <span className={styles.mcpDetailLabel}>Command</span>
             <span className={styles.mcpDetailValue}>{server.command} {server.args.join(' ')}</span>
           </div>
-
-          <div className={styles.mcpAgentToggles}>
-            <span className={styles.mcpDetailLabel}>Agents</span>
-            {(Object.keys(AGENT_LABELS) as AgentType[]).map((agent) => (
-              <label key={agent} className={styles.mcpCheckboxLabel}>
-                <input
-                  type="checkbox"
-                  checked={(settings.agentMcpAssignments[agent] ?? []).includes(server.id)}
-                  onChange={() => toggleAgent(agent)}
-                />
-                {AGENT_LABELS[agent]}
-              </label>
-            ))}
-          </div>
         </div>
       )}
     </div>
@@ -527,8 +469,6 @@ function McpServerCard({ server, onDelete, onOpenConfig }: {
 }
 
 function McpServersSection() {
-  const settings = useAppStore((s) => s.settings)
-  const updateSettings = useAppStore((s) => s.updateSettings)
   const openFileTab = useAppStore((s) => s.openFileTab)
   const toggleSettings = useAppStore((s) => s.toggleSettings)
   const [servers, setServers] = useState<McpServer[]>([])
@@ -561,12 +501,6 @@ function McpServersSection() {
 
   const handleDelete = async (serverName: string) => {
     await window.api.mcp.removeServer(serverName)
-    // Also remove from assignments
-    const newAssignments = { ...settings.agentMcpAssignments }
-    for (const agent of Object.keys(newAssignments) as AgentType[]) {
-      newAssignments[agent] = newAssignments[agent].filter((id) => id !== serverName)
-    }
-    updateSettings({ agentMcpAssignments: newAssignments })
     loadServers()
   }
 

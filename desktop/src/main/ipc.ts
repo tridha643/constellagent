@@ -1,37 +1,78 @@
 import { ipcMain, dialog, app, BrowserWindow, clipboard, type WebContents } from 'electron'
-import { join, relative } from 'path'
+import { join, relative, resolve } from 'path'
 import { mkdir, writeFile, readFile, readdir, unlink } from 'fs/promises'
-import { existsSync, mkdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, realpathSync } from 'fs'
 import { tmpdir, homedir } from 'os'
 import { watch, type FSWatcher } from 'fs'
 import { execFile, type ExecFileException } from 'child_process'
 import { promisify } from 'util'
 import { IPC } from '../shared/ipc-channels'
+import type { PlanAgent } from '../shared/agent-plan-path'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
-import { PtyManager } from './pty-manager'
+import { PtyManager, type PtyWriteOpts } from './pty-manager'
 import { GitService } from './git-service'
 import { GithubService } from './github-service'
 import { FileService, type FileNode } from './file-service'
+import { readPlanMeta } from './plan-meta'
 import { AutomationScheduler } from './automation-scheduler'
 import type { AutomationConfig } from '../shared/automation-types'
 import { trustPathForClaude, loadClaudeSettings, saveClaudeSettings, loadJsonFile, saveJsonFile } from './claude-config'
 import { loadCodexConfigText, saveCodexConfigText, CODEX_CONFIG_PATH, CODEX_DIR } from './codex-config'
-import { syncMcpConfigs, loadMcpServersFromConfig, removeServerFromConfig } from './mcp-config'
+import { loadMcpServersFromConfig, removeServerFromConfig } from './mcp-config'
 import { CLAUDE_CONFIG_PATH } from './claude-config'
 import { LspService } from './lsp/lsp-service'
-import type { McpServer, AgentMcpAssignments } from '../renderer/store/types'
 import { SkillsService } from './skills-service'
 
 import { ContextDb } from './context-db'
 import { getAgentFS, closeAllAgentFS, checkpoint, checkpointAll } from './agentfs-service'
 
 const ptyManager = new PtyManager()
+
+// Wire up OSC title changes to persist session meta in AgentFS
+ptyManager.onTitleChanged = (ptyId, title, workspaceId, workingDir) => {
+  if (!workspaceId) {
+    console.log('[constellagent:tab-title] saveSessionMeta skipped (no workspaceId)', { ptyId, title: title.slice(0, 60) })
+    return
+  }
+  console.log('[constellagent:tab-title] saveSessionMeta', { ptyId, workspaceId, title: title.slice(0, 80) })
+  // Find the project dir for this workspace's working dir to access the correct ContextDb
+  // The workingDir is the worktree path; the project's repoPath is the root.
+  // We need a heuristic: walk up from workingDir to find .constellagent/ or use
+  // workingDir directly as projectDir (context-db lazily inits under it).
+  // ContextDb keys by projectDir; for worktrees the project root is the ancestor.
+  // Since we don't have the project mapping here, use workingDir — saveSessionMeta
+  // only needs the AgentFS KV which initializes under any dir.
+  const db = getContextDb(workingDir)
+  db.saveSessionMeta(workspaceId, {
+    sessionId: `pty-${ptyId}`,
+    agentType: 'terminal',
+    startedAt: new Date().toISOString(),
+    summary: title,
+  }).catch(() => {})
+}
+
 const automationScheduler = new AutomationScheduler(ptyManager)
 const lspService = new LspService()
 
 // Cache of open context databases keyed by projectDir
 const contextDbs = new Map<string, ContextDb>()
 const pendingIndexerWatchers = new Map<string, FSWatcher>()
+/** Debounce bursts of pending files so the renderer refreshes context history once per tick */
+const contextEntriesUpdatedTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function scheduleContextEntriesUpdated(projectDir: string, workspaceId: string): void {
+  if (!workspaceId) return
+  const key = `${projectDir}\0${workspaceId}`
+  const prev = contextEntriesUpdatedTimers.get(key)
+  if (prev) clearTimeout(prev)
+  contextEntriesUpdatedTimers.set(key, setTimeout(() => {
+    contextEntriesUpdatedTimers.delete(key)
+    const payload = { projectDir, workspaceId }
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.CONTEXT_ENTRIES_UPDATED, payload)
+    }
+  }, 150))
+}
 
 function getContextDb(projectDir: string): ContextDb {
   let db = contextDbs.get(projectDir)
@@ -234,6 +275,34 @@ async function processPendingFile(projectDir: string, pendingDir: string, fileNa
     })
     await unlink(filePath)
 
+    scheduleContextEntriesUpdated(projectDir, data.ws)
+
+    // Codex tab titles: suggest from first UserPrompt in context when capture lands (OSC often absent).
+    if (data.agent === 'codex' && data.ws && data.tool === 'UserPrompt') {
+      try {
+        console.log('[constellagent:tab-title] pending ingest: codex UserPrompt', {
+          workspaceId: data.ws,
+          sessionId: data.sid ? `${String(data.sid).slice(0, 16)}…` : null,
+        })
+        const titleHint = await db.getCodexTabTitleHint(data.ws)
+        if (titleHint) {
+          const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())
+          console.log('[constellagent:tab-title] → CONTEXT_CODEX_TAB_TITLE_HINT', {
+            workspaceId: data.ws,
+            title: titleHint.slice(0, 80),
+            windows: wins.length,
+          })
+          for (const win of wins) {
+            win.webContents.send(IPC.CONTEXT_CODEX_TAB_TITLE_HINT, { workspaceId: data.ws, title: titleHint })
+          }
+        } else {
+          console.log('[constellagent:tab-title] context hint empty after UserPrompt ingest', { workspaceId: data.ws })
+        }
+      } catch (err) {
+        console.warn('[constellagent:tab-title] context hint broadcast failed', err)
+      }
+    }
+
     // Append to per-workspace and global sliding windows
     const line = formatSlidingWindowLine({
       timestamp: data.ts,
@@ -316,6 +385,40 @@ interface FsWatcherEntry {
 // Each renderer subscription increments a ref count so one panel unmounting
 // does not tear down a shared watcher used by another panel.
 const fsWatchers = new Map<string, FsWatcherEntry>()
+
+function sameWorktreePath(a: string, b: string): boolean {
+  if (a === b) return true
+  try {
+    return realpathSync(a) === realpathSync(b)
+  } catch {
+    return false
+  }
+}
+
+/** Repo-relative paths safe for `git restore -- <pathspecs>` (no traversal outside worktree). */
+function safeGitRestorePathspecs(projectDir: string, rawPaths: string[]): string[] {
+  const root = resolve(projectDir)
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of rawPaths) {
+    if (!raw?.trim()) continue
+    let s = raw.trim().replaceAll('\\', '/')
+    const rootNorm = root.replaceAll('\\', '/')
+    if (s.startsWith(rootNorm)) {
+      s = s.slice(rootNorm.length).replace(/^\/+/, '')
+    }
+    const norm = s.replace(/^\/+/, '')
+    if (!norm || norm.split('/').includes('..')) continue
+    const abs = resolve(root, norm)
+    const relToRoot = relative(root, abs).replaceAll('\\', '/')
+    if (!relToRoot || relToRoot.startsWith('..')) continue
+    if (!seen.has(relToRoot)) {
+      seen.add(relToRoot)
+      out.push(relToRoot)
+    }
+  }
+  return out
+}
 
 interface StateSanitizeResult {
   data: unknown
@@ -539,8 +642,19 @@ export function registerIpcHandlers(): void {
     return ptyManager.create(workingDir, win.webContents, shell, undefined, undefined, extraEnv)
   })
 
-  ipcMain.on(IPC.PTY_WRITE, (_e, ptyId: string, data: string) => {
-    ptyManager.write(ptyId, data)
+  ipcMain.on(IPC.PTY_WRITE, (_e, ptyId: string, data: string, opts?: PtyWriteOpts) => {
+    ptyManager.write(ptyId, data, opts)
+  })
+
+  ipcMain.on(IPC.PTY_SUGGEST_TAB_TITLE, (_e, ptyId: string, line: string) => {
+    if (typeof ptyId === 'string' && typeof line === 'string') {
+      console.log('[constellagent:tab-title] IPC PTY_SUGGEST_TAB_TITLE', {
+        ptyId,
+        lineByteLength: Buffer.byteLength(line, 'utf8'),
+        linePreview: line.replace(/\r/g, '\\r').replace(/\n/g, '\\n').slice(0, 72),
+      })
+      ptyManager.suggestTabTitle(ptyId, line)
+    }
   })
 
   ipcMain.on(IPC.PTY_RESIZE, (_e, ptyId: string, cols: number, rows: number) => {
@@ -643,6 +757,26 @@ export function registerIpcHandlers(): void {
     return FileService.deleteFile(filePath)
   })
 
+  ipcMain.handle(IPC.FS_FIND_NEWEST_PLAN, async (_e, worktreePath: string) => {
+    return FileService.findNewestPlanMarkdown(worktreePath)
+  })
+
+  ipcMain.handle(IPC.FS_LIST_AGENT_PLANS, async (_e, worktreePath: string) => {
+    return FileService.listAgentPlanMarkdowns(worktreePath)
+  })
+
+  ipcMain.handle(IPC.FS_READ_PLAN_META, async (_e, filePath: string) => {
+    return readPlanMeta(filePath)
+  })
+
+  ipcMain.handle(IPC.FS_UPDATE_PLAN_META, async (_e, filePath: string, patch: { built?: boolean; codingAgent?: string | null; buildHarness?: PlanAgent | null }) => {
+    return FileService.updatePlanMeta(filePath, patch)
+  })
+
+  ipcMain.handle(IPC.FS_RELOCATE_AGENT_PLAN, async (_e, worktreePath: string, filePath: string, targetAgent: string, mode: string) => {
+    return FileService.relocateAgentPlan(worktreePath, filePath, targetAgent as any, mode as any)
+  })
+
   // ── Filesystem watcher handlers ──
   ipcMain.handle(IPC.FS_WATCH_START, (_e, dirPath: string) => {
     const senderId = _e.sender.id
@@ -735,6 +869,8 @@ export function registerIpcHandlers(): void {
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
   })
+
+  ipcMain.handle(IPC.APP_GET_HOME_DIR, () => homedir())
 
   // Accepts a path directly (for testing — avoids dialog.showOpenDialog)
   ipcMain.handle(IPC.APP_ADD_PROJECT_PATH, async (_e, dirPath: string) => {
@@ -919,6 +1055,24 @@ export function registerIpcHandlers(): void {
   // ── Context repository handlers ──
   const execFileAsyncCtx = promisify(execFile)
 
+  /** Remove refs/constellagent-cp/* older than 7 days (ref name starts with unix ts). */
+  async function pruneCheckpointRefs(projectDir: string): Promise<void> {
+    const cutoff = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60
+    const gitOpts = { cwd: projectDir, encoding: 'utf8' as const }
+    try {
+      const { stdout } = await execFileAsyncCtx('git', ['for-each-ref', '--format=%(refname)', 'refs/constellagent-cp/'], gitOpts)
+      for (const ref of stdout.trim().split('\n').filter(Boolean)) {
+        const base = ref.replace(/^refs\/constellagent-cp\//, '')
+        const tsStr = base.split('-')[0] ?? ''
+        const ts = parseInt(tsStr, 10)
+        if (!Number.isFinite(ts) || ts >= cutoff) continue
+        await execFileAsyncCtx('git', ['update-ref', '-d', ref], gitOpts).catch(() => {})
+      }
+    } catch {
+      /* not a git repo or no refs namespace */
+    }
+  }
+
   ipcMain.handle(IPC.CONTEXT_REPO_INIT, async (_e, projectDir: string, wsId: string) => {
     const repoDir = join(projectDir, '.constellagent')
     const gitExists = existsSync(join(repoDir, '.git'))
@@ -949,16 +1103,8 @@ export function registerIpcHandlers(): void {
     getContextDb(projectDir)
     startPendingIndexer(projectDir)
 
-    // Auto-configure cachebro MCP server for all agents via `npx cachebro init`
-    // This auto-detects and writes config for Claude Code, Cursor, OpenCode, etc.
-    try {
-      await execFileAsyncCtx('npx', ['cachebro', 'init'], {
-        cwd: projectDir,
-        env: { ...process.env, CACHEBRO_DIR: repoDir },
-        timeout: 15_000,
-      })
-    } catch (err) {
-      console.error('agentfs: cachebro init failed', err)
+    if (existsSync(join(projectDir, '.git'))) {
+      await pruneCheckpointRefs(projectDir)
     }
 
     // Auto-configure agent hooks for context capture
@@ -1135,9 +1281,152 @@ Cachebro is pre-configured via \`npx cachebro init\`. Use the cachebro MCP tools
     return await getContextDb(projectDir).getRecent(workspaceId, limit)
   })
 
-  ipcMain.handle(IPC.CONTEXT_RESTORE_CHECKPOINT, async (_e, projectDir: string, commitHash: string) => {
-    await execFileAsyncCtx('git', ['checkout', commitHash, '--', '.'], { cwd: projectDir })
-    return { success: true }
+  ipcMain.handle(
+    IPC.CONTEXT_RESTORE_CHECKPOINT,
+    async (_e, projectDir: string, commitHash: string, relativePaths?: string[]) => {
+    const logPrefix = '[constellagent:restore-checkpoint]'
+    const short = (h: string) => (h.length > 14 ? `${h.slice(0, 7)}…${h.slice(-6)}` : h)
+    const gitOpts = { cwd: projectDir, encoding: 'utf8' as const }
+    let verified = false
+    const requestedScoped = Array.isArray(relativePaths) && relativePaths.length > 0
+    const pathspecs = requestedScoped ? safeGitRestorePathspecs(projectDir, relativePaths) : []
+    if (requestedScoped && pathspecs.length === 0) {
+      throw new Error('Could not resolve any valid file paths to restore')
+    }
+    const scoped = pathspecs.length > 0
+    console.log(logPrefix, 'start', {
+      projectDir,
+      object: short(commitHash),
+      mode: scoped ? 'scoped' : 'full',
+      pathspecs: scoped ? pathspecs : undefined,
+    })
+    try {
+      const { stdout: objTypeRaw } = await execFileAsyncCtx('git', ['cat-file', '-t', commitHash], gitOpts)
+      const objType = objTypeRaw.trim()
+      if (objType === 'blob') {
+        throw new Error('Checkpoint object is a blob, not a tree or commit')
+      }
+
+      let treeHash: string
+      if (objType === 'tree') {
+        treeHash = commitHash
+      } else if (objType === 'commit' || objType === 'tag') {
+        const { stdout } = await execFileAsyncCtx('git', ['rev-parse', `${commitHash}^{tree}`], gitOpts)
+        treeHash = stdout.trim()
+      } else {
+        throw new Error(`Unsupported git object type: ${objType}`)
+      }
+
+      console.log(logPrefix, 'resolved', { objType, tree: short(treeHash) })
+
+      if (scoped) {
+        // Determine which paths exist in the checkpoint tree vs which are absent.
+        const { stdout: lsOut } = await execFileAsyncCtx(
+          'git',
+          ['ls-tree', '-r', '--name-only', treeHash, '--', ...pathspecs],
+          gitOpts,
+        )
+        const inTree = new Set(lsOut.split('\n').map((l) => l.trim()).filter(Boolean))
+        const restorePaths = pathspecs.filter((p) => inTree.has(p))
+        const removePaths = pathspecs.filter((p) => !inTree.has(p))
+
+        if (restorePaths.length > 0) {
+          await execFileAsyncCtx(
+            'git',
+            ['restore', '--source', treeHash, '--staged', '--worktree', '--', ...restorePaths],
+            gitOpts,
+          )
+          console.log(logPrefix, 'restore fromTree', { paths: restorePaths })
+        }
+
+        for (const p of removePaths) {
+          const absPath = join(projectDir, p)
+          // Remove from index if staged/tracked (ignore errors if not in index)
+          await execFileAsyncCtx('git', ['rm', '--cached', '-f', '--ignore-unmatch', '--', p], gitOpts)
+            .catch(() => {})
+          // Remove from worktree
+          await unlink(absPath).catch(() => {})
+          console.log(logPrefix, 'removedAbsentFromTree', { path: p })
+        }
+
+        // Verify: in-tree paths match tree; absent paths gone from disk and index
+        let scopeOk = true
+        if (restorePaths.length > 0) {
+          const { stdout: diffOut } = await execFileAsyncCtx(
+            'git',
+            ['diff', '--no-ext-diff', treeHash, '--', ...restorePaths],
+            gitOpts,
+          )
+          if (diffOut.trim() !== '') scopeOk = false
+        }
+        for (const p of removePaths) {
+          if (existsSync(join(projectDir, p))) { scopeOk = false; break }
+          const { stdout: lsStaged } = await execFileAsyncCtx(
+            'git', ['ls-files', '--stage', '--', p], gitOpts,
+          )
+          if (lsStaged.trim() !== '') { scopeOk = false; break }
+        }
+        verified = scopeOk
+      } else {
+        // Full tree: `git restore` matches the checkpoint; `git clean` drops other untracked files.
+        await execFileAsyncCtx(
+          'git',
+          ['restore', '--source', treeHash, '--staged', '--worktree', '.'],
+          gitOpts,
+        )
+        console.log(logPrefix, 'restore --staged --worktree . done')
+        await execFileAsyncCtx('git', ['clean', '-fd', '-e', '.constellagent'], gitOpts)
+        console.log(logPrefix, 'clean -fd done (excluded .constellagent)')
+
+        const tmpVerify = join(tmpdir(), `csg-verify-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+        let currentTreeTrimmed = ''
+        try {
+          await execFileAsyncCtx('git', ['add', '-A'], {
+            ...gitOpts,
+            env: { ...process.env, GIT_INDEX_FILE: tmpVerify },
+          })
+          const { stdout: currentTree } = await execFileAsyncCtx('git', ['write-tree'], {
+            ...gitOpts,
+            env: { ...process.env, GIT_INDEX_FILE: tmpVerify },
+          })
+          currentTreeTrimmed = currentTree.trim()
+          verified = currentTreeTrimmed === treeHash
+        } finally {
+          await unlink(tmpVerify).catch(() => {})
+        }
+
+        console.log(logPrefix, 'verify', {
+          verified,
+          expectedTree: short(treeHash),
+          worktreeTree: short(currentTreeTrimmed),
+        })
+      }
+
+      if (scoped) {
+        console.log(logPrefix, 'verify', { verified, scopedPaths: pathspecs })
+      }
+
+      let notifyCount = 0
+      for (const [dir, entry] of fsWatchers.entries()) {
+        if (!sameWorktreePath(dir, projectDir)) continue
+        for (const [, sub] of entry.subscribers) {
+          if (!sub.webContents.isDestroyed()) {
+            // Use watcher key so renderer `changedDir === worktreePath` matches what watchDir used
+            sub.webContents.send(IPC.FS_WATCH_CHANGED, dir)
+            notifyCount += 1
+          }
+        }
+      }
+      console.log(logPrefix, 'fs-watch notify', { projectDir, subscriberSends: notifyCount })
+
+      console.log(logPrefix, 'ok', { verified })
+      return { success: true, verified }
+    } catch (err: unknown) {
+      const ex = err as ExecFileException & { stderr?: string }
+      const msg = (typeof ex.stderr === 'string' ? ex.stderr.trim() : '') || ex?.message || 'Unknown git error'
+      console.error(logPrefix, 'failed', { projectDir, object: short(commitHash), message: msg })
+      throw new Error(`Failed to restore checkpoint: ${msg}`)
+    }
   })
 
   ipcMain.handle(IPC.CONTEXT_BUILD_SUMMARY, async (_e, projectDir: string, workspaceId: string) => {
@@ -1310,12 +1599,7 @@ Cachebro is pre-configured via \`npx cachebro init\`. Use the cachebro MCP tools
     return { success: true }
   })
 
-  // ── MCP config sync ──
-  ipcMain.handle(IPC.MCP_SYNC_CONFIGS, async (_e, servers: McpServer[], assignments: AgentMcpAssignments) => {
-    await syncMcpConfigs(servers, assignments)
-    return { success: true }
-  })
-
+  // ── MCP config ──
   ipcMain.handle(IPC.MCP_LOAD_SERVERS, async () => {
     return loadMcpServersFromConfig()
   })

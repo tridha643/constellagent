@@ -1,9 +1,34 @@
 import { create } from 'zustand'
 import type { AppState, PersistedState, Tab, SplitNode } from './types'
 import { DEFAULT_SETTINGS } from './types'
-import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, firstLeaf, firstTerminalLeaf, collectLeaves, normalizeSplitTree } from './split-helpers'
+import { AGENT_PLAN_DIRS_LABEL } from '../utils/agent-plan-dirs'
+import { GEMINI_TAB_LABEL, isGeminiIdleOscTitle } from '../../shared/gemini-tab-title'
+import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, findLeafByPtyId, firstLeaf, firstTerminalLeaf, collectLeaves, normalizeSplitTree } from './split-helpers'
 
 const DEFAULT_PR_LINK_PROVIDER = 'github' as const
+
+const TAB_TITLE_LOG = '[constellagent:tab-title]'
+
+const AGENT_NAMES: Record<string, string> = {
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  gemini: 'Gemini',
+  cursor: 'Cursor Agent',
+}
+
+const GENERIC_AGENT_TITLES = new Set(Object.values(AGENT_NAMES))
+
+function terminalTabHasPtyId(tab: Tab, ptyId: string): tab is Extract<Tab, { type: 'terminal' }> {
+  if (tab.type !== 'terminal') return false
+  if (tab.ptyId === ptyId) return true
+  return tab.splitRoot ? findLeafByPtyId(tab.splitRoot, ptyId) != null : false
+}
+
+function isGenericTerminalTitle(title: string): boolean {
+  if (!title.trim()) return true
+  if (GENERIC_AGENT_TITLES.has(title)) return true
+  return /^Terminal \d+$/.test(title)
+}
 
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
@@ -25,6 +50,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   confirmDialog: null,
   toasts: [],
   quickOpenVisible: false,
+  planPaletteVisible: false,
   unreadWorkspaceIds: new Set<string>(),
   activeClaudeWorkspaceIds: new Set<string>(),
   prStatusMap: new Map(),
@@ -220,6 +246,36 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
+  launchAgentTerminalWithCommand: async (opts) => {
+    const { workspaceId, worktreePath, title, command, agentType } = opts
+
+    if (agentType === 'claude-code') {
+      await window.api.claude.trustPath(worktreePath).catch(() => {})
+    }
+
+    const shell = get().settings.defaultShell || undefined
+    const ptyId = await window.api.pty.create(worktreePath, shell, {
+      AGENT_ORCH_WS_ID: workspaceId,
+      AGENT_ORCH_AGENT_TYPE: agentType,
+    })
+
+    const tabId = crypto.randomUUID()
+    get().addTab({
+      id: tabId,
+      workspaceId,
+      type: 'terminal',
+      title,
+      ptyId,
+      agentType,
+    })
+
+    setTimeout(() => {
+      window.api.pty.write(ptyId, command + '\n')
+    }, 500)
+
+    return tabId
+  },
+
   closeActiveTab: () => {
     const s = get()
     if (!s.activeTabId) return
@@ -267,6 +323,74 @@ export const useAppStore = create<AppState>((set, get) => ({
       type: 'file',
       filePath,
     })
+  },
+
+  openMarkdownPreview: (filePath) => {
+    const s = get()
+    if (!s.activeWorkspaceId) return
+    const existing = s.tabs.find(
+      (t) => t.workspaceId === s.activeWorkspaceId && t.type === 'markdownPreview' && t.filePath === filePath
+    )
+    if (existing) {
+      set({ activeTabId: existing.id })
+      return
+    }
+    const title = filePath.split('/').pop() || 'Preview'
+    get().addTab({
+      id: crypto.randomUUID(),
+      workspaceId: s.activeWorkspaceId,
+      type: 'markdownPreview',
+      filePath,
+      title,
+    })
+  },
+
+  retargetMarkdownPreviewTab: (tabId, newFilePath) => {
+    const title = newFilePath.split('/').pop() || 'Preview'
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === tabId && t.type === 'markdownPreview'
+          ? { ...t, filePath: newFilePath, title }
+          : t
+      ),
+    }))
+  },
+
+  openLatestAgentPlan: async () => {
+    const s = get()
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+    if (!ws) {
+      s.addToast({
+        id: crypto.randomUUID(),
+        message: 'Select a workspace first',
+        type: 'info',
+      })
+      return
+    }
+    try {
+      const path = await window.api.fs.findNewestPlanMarkdown(ws.worktreePath)
+      if (!path) {
+        s.addToast({
+          id: crypto.randomUUID(),
+          message: `No plan files found. Expected .md/.mdx under ${AGENT_PLAN_DIRS_LABEL} in the workspace, or the same folders under your home directory (e.g. ~/.claude/plans).`,
+          type: 'info',
+        })
+        return
+      }
+      get().openMarkdownPreview(path)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('No handler registered')) {
+        s.addToast({
+          id: crypto.randomUUID(),
+          message:
+            'Main process is out of date. Quit Constellagent (⌘Q) and run `bun run dev` again — Reload (⌘R) only updates the UI, not IPC handlers.',
+          type: 'error',
+        })
+        return
+      }
+      s.addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
+    }
   },
 
   nextWorkspace: () => {
@@ -663,8 +787,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen, automationsOpen: false, contextHistoryOpen: false })),
   toggleAutomations: () => set((s) => ({ automationsOpen: !s.automationsOpen, settingsOpen: false, contextHistoryOpen: false })),
   toggleContextHistory: () => set((s) => ({ contextHistoryOpen: !s.contextHistoryOpen, settingsOpen: false, automationsOpen: false })),
+  closeContextHistory: () => set({ contextHistoryOpen: false }),
 
   showConfirmDialog: (dialog) => set({ confirmDialog: dialog }),
+
+  updateConfirmDialog: (partial) => set((s) => ({
+    confirmDialog: s.confirmDialog ? { ...s.confirmDialog, ...partial } : null,
+  })),
 
   dismissConfirmDialog: () => set({ confirmDialog: null }),
 
@@ -674,8 +803,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   dismissToast: (id) =>
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
-  toggleQuickOpen: () => set((s) => ({ quickOpenVisible: !s.quickOpenVisible })),
+  toggleQuickOpen: () => set((s) => ({ quickOpenVisible: !s.quickOpenVisible, planPaletteVisible: false })),
   closeQuickOpen: () => set({ quickOpenVisible: false }),
+  togglePlanPalette: () => set((s) => ({ planPaletteVisible: !s.planPaletteVisible, quickOpenVisible: false })),
+  closePlanPalette: () => set({ planPaletteVisible: false }),
 
   markWorkspaceUnread: (workspaceId) =>
     set((s) => {
@@ -693,8 +824,70 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { unreadWorkspaceIds: newUnread }
     }),
 
-  setActiveClaudeWorkspaces: (workspaceIds) =>
-    set(() => ({ activeClaudeWorkspaceIds: new Set(workspaceIds) })),
+  setActiveAgentWorkspaces: (entries) =>
+    set(() => ({
+      // Only drive sidebar "active" dots — never infer per-tab agent type from workspace-level
+      // markers (same workspace can run Claude + Codex + others; that mis-titled the wrong tab).
+      activeClaudeWorkspaceIds: new Set(entries.map((e) => e.wsId)),
+    })),
+
+  setTerminalAgentType: (ptyId, agentType) =>
+    set((s) => {
+      let changed = false
+      const tabs = s.tabs.map((tab) => {
+        if (!terminalTabHasPtyId(tab, ptyId)) return tab
+        if (tab.agentType === agentType) return tab
+        changed = true
+        const useAgentLabel =
+          isGenericTerminalTitle(tab.title)
+          || (agentType === 'gemini' && isGeminiIdleOscTitle(tab.title))
+        const nextTitle = useAgentLabel ? (AGENT_NAMES[agentType] ?? tab.title) : tab.title
+        return { ...tab, agentType, title: nextTitle }
+      })
+      if (changed) {
+        console.log(TAB_TITLE_LOG, 'renderer setTerminalAgentType', { ptyId, agentType })
+      }
+      return { tabs }
+    }),
+
+  updateTerminalTitle: (ptyId, title) =>
+    set((s) => {
+      let matched = 0
+      const tabs = s.tabs.map((tab) => {
+        if (!terminalTabHasPtyId(tab, ptyId)) return tab
+        matched++
+        const nextTitle =
+          tab.agentType === 'gemini' && isGeminiIdleOscTitle(title)
+            ? GEMINI_TAB_LABEL
+            : title
+        return { ...tab, title: nextTitle }
+      })
+      console.log(TAB_TITLE_LOG, 'renderer updateTerminalTitle', { ptyId, title: title.slice(0, 80), panesMatched: matched })
+      return { tabs }
+    }),
+
+  applyCodexContextTitleHint: (workspaceId, title) =>
+    set((s) => {
+      let updated = 0
+      let skippedNonGeneric = 0
+      const tabs = s.tabs.map((tab) => {
+        if (tab.type !== 'terminal' || tab.workspaceId !== workspaceId || tab.agentType !== 'codex') return tab
+        if (!isGenericTerminalTitle(tab.title)) {
+          skippedNonGeneric++
+          return tab
+        }
+        if (tab.title === title) return tab
+        updated++
+        return { ...tab, title }
+      })
+      console.log(TAB_TITLE_LOG, 'renderer applyCodexContextTitleHint', {
+        workspaceId,
+        title: title.slice(0, 80),
+        tabsUpdated: updated,
+        skippedNonGeneric,
+      })
+      return { tabs }
+    }),
 
   setGitFileStatuses: (worktreePath, statuses) =>
     set((s) => {
@@ -873,15 +1066,6 @@ useAppStore.subscribe((state, prevState) => {
     state.settings !== prevState.settings
   ) {
     debouncedSave(state)
-  }
-
-  // Sync MCP configs when MCP-related settings change
-  if (
-    state.settings !== prevState.settings &&
-    (state.settings.mcpServers !== prevState.settings.mcpServers ||
-      state.settings.agentMcpAssignments !== prevState.settings.agentMcpAssignments)
-  ) {
-    window.api.mcp.syncConfigs(state.settings.mcpServers, state.settings.agentMcpAssignments)
   }
 })
 

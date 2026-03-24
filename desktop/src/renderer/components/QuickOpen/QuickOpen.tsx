@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useAppStore } from '../../store/app-store'
+import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import styles from './QuickOpen.module.css'
 
 interface FileEntry {
@@ -86,7 +87,16 @@ export function QuickOpen({ worktreePath }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const openFileTab = useAppStore((s) => s.openFileTab)
+  const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
   const closeQuickOpen = useAppStore((s) => s.closeQuickOpen)
+
+  const openPath = useCallback(
+    (path: string) => {
+      if (isMarkdownDocumentPath(path)) openMarkdownPreview(path)
+      else openFileTab(path)
+    },
+    [openFileTab, openMarkdownPreview],
+  )
 
   // Load file tree on mount
   useEffect(() => {
@@ -132,10 +142,10 @@ export function QuickOpen({ worktreePath }: Props) {
     const item = filtered[selectedIndex]
     if (item) {
       const entry = 'entry' in item ? item.entry : item
-      openFileTab(entry.path)
+      openPath(entry.path)
       closeQuickOpen()
     }
-  }, [filtered, selectedIndex, openFileTab, closeQuickOpen])
+  }, [filtered, selectedIndex, openPath, closeQuickOpen])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -182,7 +192,7 @@ export function QuickOpen({ worktreePath }: Props) {
                   key={entry.path}
                   className={`${styles.resultItem} ${i === selectedIndex ? styles.selected : ''}`}
                   onClick={() => {
-                    openFileTab(entry.path)
+                    openPath(entry.path)
                     closeQuickOpen()
                   }}
                   onMouseEnter={() => setSelectedIndex(i)}
