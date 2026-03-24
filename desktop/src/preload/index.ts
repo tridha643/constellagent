@@ -113,7 +113,7 @@ const api = {
     findNewestPlanMarkdown: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.FS_FIND_NEWEST_PLAN, worktreePath) as Promise<string | null>,
     listAgentPlanMarkdowns: (worktreePath: string) =>
-      ipcRenderer.invoke(IPC.FS_LIST_AGENT_PLANS, worktreePath) as Promise<{ path: string; mtimeMs: number; agent: string; built?: boolean; codingAgent?: string | null }[]>,
+      ipcRenderer.invoke(IPC.FS_LIST_AGENT_PLANS, worktreePath) as Promise<{ path: string; mtimeMs: number; agent: string; built?: boolean; codingAgent?: string | null; source: 'worktree' | 'home' }[]>,
     readPlanMeta: (filePath: string) =>
       ipcRenderer.invoke(IPC.FS_READ_PLAN_META, filePath) as Promise<{ built: boolean; codingAgent: string | null; buildHarness: PlanAgent | null }>,
     updatePlanMeta: (filePath: string, patch: { built?: boolean; codingAgent?: string | null; buildHarness?: PlanAgent | null }) =>

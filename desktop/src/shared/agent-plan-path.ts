@@ -113,6 +113,7 @@ export interface AgentPlanEntry {
   agent: string
   built?: boolean
   codingAgent?: string | null
+  source: 'worktree' | 'home'
 }
 
 /** Constellagent-owned frontmatter metadata stored under a namespaced key. */

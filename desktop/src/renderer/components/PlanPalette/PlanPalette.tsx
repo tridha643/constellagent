@@ -12,6 +12,7 @@ interface PlanEntry {
   agent: string
   built?: boolean
   codingAgent?: string | null
+  source: 'worktree' | 'home'
 }
 
 interface Props {
@@ -19,6 +20,7 @@ interface Props {
 }
 
 type AgentFilter = 'all' | 'cursor' | 'claude-code' | 'codex' | 'gemini'
+type SourceFilter = 'all' | 'worktree' | 'home'
 
 const AGENTS: { key: AgentFilter; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -26,6 +28,12 @@ const AGENTS: { key: AgentFilter; label: string }[] = [
   { key: 'claude-code', label: 'Claude' },
   { key: 'codex', label: 'Codex' },
   { key: 'gemini', label: 'Gemini' },
+]
+
+const SOURCES: { key: SourceFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'worktree', label: 'This worktree' },
+  { key: 'home', label: 'Home (~)' },
 ]
 
 function basename(p: string): string {
@@ -111,6 +119,7 @@ export function PlanPalette({ worktreePath }: Props) {
   const [userHome, setUserHome] = useState<string | null>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [agentFilter, setAgentFilter] = useState<AgentFilter>('all')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
@@ -130,6 +139,9 @@ export function PlanPalette({ worktreePath }: Props) {
 
   const filtered = useMemo(() => {
     let list = plans
+    if (sourceFilter !== 'all') {
+      list = list.filter((p) => p.source === sourceFilter)
+    }
     if (agentFilter !== 'all') {
       list = list.filter((p) => p.agent === agentFilter)
     }
@@ -138,9 +150,9 @@ export function PlanPalette({ worktreePath }: Props) {
       list = list.filter((p) => basename(p.path).toLowerCase().startsWith(q))
     }
     return list.slice(0, 50)
-  }, [plans, query, agentFilter])
+  }, [plans, query, agentFilter, sourceFilter])
 
-  useEffect(() => { setSelectedIndex(0) }, [query, agentFilter])
+  useEffect(() => { setSelectedIndex(0) }, [query, agentFilter, sourceFilter])
 
   useEffect(() => {
     const list = listRef.current
@@ -203,6 +215,17 @@ export function PlanPalette({ worktreePath }: Props) {
                 <span className={styles.chipIcon}><AgentChipIcon agent={a.key} /></span>
               )}
               {a.label}
+            </button>
+          ))}
+          <span className={styles.filterSep} />
+          {SOURCES.map((s) => (
+            <button
+              key={s.key}
+              className={`${styles.chip} ${sourceFilter === s.key ? styles.chipActive : ''}`}
+              onClick={() => setSourceFilter(s.key)}
+              tabIndex={-1}
+            >
+              {s.label}
             </button>
           ))}
         </div>

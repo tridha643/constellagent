@@ -147,7 +147,7 @@ export class FileService {
   }
 
   /** Collect `.md`/`.mdx` under `root/.cursor/plans`, `root/.claude/plans`, etc. */
-  private static async collectPlanFilesUnderRoot(root: string): Promise<AgentPlanEntry[]> {
+  private static async collectPlanFilesUnderRoot(root: string, source: 'worktree' | 'home'): Promise<AgentPlanEntry[]> {
     const results: AgentPlanEntry[] = []
 
     const scanDir = async (dir: string, agent: string, depth: number) => {
@@ -175,6 +175,7 @@ export class FileService {
               agent,
               built: meta.built || undefined,
               codingAgent: meta.codingAgent,
+              source,
             })
           } catch { /* race: deleted */ }
         }
@@ -199,10 +200,10 @@ export class FileService {
    * (Claude Code default: ~/.claude/plans).
    */
   private static async collectPlanFiles(worktreePath: string): Promise<AgentPlanEntry[]> {
-    const fromWt = await this.collectPlanFilesUnderRoot(worktreePath)
+    const fromWt = await this.collectPlanFilesUnderRoot(worktreePath, 'worktree')
     let fromHome: AgentPlanEntry[] = []
     try {
-      fromHome = await this.collectPlanFilesUnderRoot(homedir())
+      fromHome = await this.collectPlanFilesUnderRoot(homedir(), 'home')
     } catch {
       /* ignore */
     }
