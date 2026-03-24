@@ -1,4 +1,6 @@
 import type { PrInfo } from '@shared/github-types'
+import type { editor } from 'monaco-editor'
+import type { ChatSnippet } from '../utils/chat-context-formatter'
 
 export interface StartupCommand {
   name: string
@@ -185,6 +187,7 @@ export interface AppState {
   prStatusMap: Map<string, PrInfo | null>
   ghAvailability: Map<string, boolean>
   gitFileStatuses: Map<string, Map<string, string>>
+  activeMonacoEditor: editor.IStandaloneCodeEditor | null
 
   // Actions
   addProject: (project: Project) => void
@@ -250,6 +253,11 @@ export interface AppState {
   closeQuickOpen: () => void
   togglePlanPalette: () => void
   closePlanPalette: () => void
+
+  // Add to Chat (Cmd+L)
+  setActiveMonacoEditor: (editor: editor.IStandaloneCodeEditor | null) => void
+  getFirstAgentTerminalPtyId: () => string | undefined
+  sendContextToAgent: (snippets: ChatSnippet[]) => void
 
   // Unread indicator actions
   markWorkspaceUnread: (workspaceId: string) => void

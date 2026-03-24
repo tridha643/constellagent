@@ -274,6 +274,55 @@ export function useShortcuts() {
         return
       }
 
+      // ── Add to Chat: Cmd+L ──
+      if (!shift && !alt && e.code === 'KeyL') {
+        // Try Monaco editor selection first
+        const monacoEd = store.activeMonacoEditor
+        if (monacoEd) {
+          const sel = monacoEd.getSelection()
+          const model = monacoEd.getModel()
+          if (sel && !sel.isEmpty() && model) {
+            const text = model.getValueInRange(sel)
+            if (text.trim()) {
+              consume()
+              const activeTab = store.tabs.find((t) => t.id === store.activeTabId)
+              const filePath = activeTab?.type === 'file' ? activeTab.filePath : undefined
+              store.sendContextToAgent([{
+                text,
+                filePath,
+                startLine: sel.startLineNumber,
+                endLine: sel.endLineNumber,
+              }])
+              return
+            }
+          }
+        }
+
+        // Fall back to DOM selection (MarkdownPreview)
+        const domSel = window.getSelection()
+        if (domSel && !domSel.isCollapsed && domSel.toString().trim()) {
+          const anchor = domSel.anchorNode
+          const el = anchor instanceof HTMLElement ? anchor : anchor?.parentElement
+          if (el?.closest('[class*="MarkdownPreview"], [class*="markdownPreview"], [class*="scrollArea"], [class*="editorContainer"]')) {
+            consume()
+            const activeTab = store.tabs.find((t) => t.id === store.activeTabId)
+            let filePath: string | undefined
+            if (activeTab?.type === 'markdownPreview' || activeTab?.type === 'file') {
+              filePath = activeTab.filePath
+            }
+            store.sendContextToAgent([{
+              text: domSel.toString(),
+              filePath,
+            }])
+            domSel.removeAllRanges()
+            return
+          }
+        }
+
+        // No selection — let Cmd+L pass through to terminal
+        return
+      }
+
       // ── Settings ──
       // Cmd+, — toggle settings
       if (!shift && !alt && e.key === ',') {

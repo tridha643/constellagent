@@ -4,6 +4,7 @@ import type { editor } from 'monaco-editor'
 import { useAppStore } from '../../store/app-store'
 import { useGitGutter } from '../../hooks/useGitGutter'
 import { MarkdownRenderer } from '../MarkdownRenderer/MarkdownRenderer'
+import { getLanguage } from '../../utils/language-map'
 import styles from './Editor.module.css'
 
 import { isLspLanguage, getOrCreateClient, notifyDidOpen, notifyDidClose } from '../../services/lsp-client-manager'
@@ -44,30 +45,6 @@ interface Props {
   worktreePath?: string
 }
 
-// Map file extensions to Monaco language IDs
-function getLanguage(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase()
-  const map: Record<string, string> = {
-    ts: 'typescript',
-    tsx: 'typescriptreact',
-    js: 'javascript',
-    jsx: 'javascriptreact',
-    json: 'json',
-    md: 'markdown',
-    css: 'css',
-    html: 'html',
-    py: 'python',
-    rs: 'rust',
-    go: 'go',
-    yml: 'yaml',
-    yaml: 'yaml',
-    sh: 'shell',
-    bash: 'shell',
-    toml: 'ini',
-  }
-  return map[ext || ''] || 'plaintext'
-}
-
 export interface FileEditorHandle {
   focus(): void
 }
@@ -88,6 +65,7 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   const notifyTabSaved = useAppStore((s) => s.notifyTabSaved)
   const addToast = useAppStore((s) => s.addToast)
   const settings = useAppStore((s) => s.settings)
+  const setActiveMonacoEditor = useAppStore((s) => s.setActiveMonacoEditor)
 
   // Git gutter decorations (no-op when worktreePath is undefined or editor not mounted)
   useGitGutter(editorInstance, filePath, worktreePath)
@@ -97,6 +75,26 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
       editorRef.current?.focus()
     },
   }), [])
+
+  // Track active Monaco editor in store for Cmd+L "Add to Chat"
+  useEffect(() => {
+    if (active && editorInstance) {
+      setActiveMonacoEditor(editorInstance)
+    } else if (!active) {
+      // Clear only if we are the current active editor
+      const current = useAppStore.getState().activeMonacoEditor
+      if (current === editorInstance) {
+        setActiveMonacoEditor(null)
+      }
+    }
+    return () => {
+      // On unmount, clear if we're still the active editor
+      const current = useAppStore.getState().activeMonacoEditor
+      if (current === editorInstance) {
+        setActiveMonacoEditor(null)
+      }
+    }
+  }, [active, editorInstance, setActiveMonacoEditor])
 
   // Load file content
   useEffect(() => {

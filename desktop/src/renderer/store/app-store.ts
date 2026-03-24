@@ -3,7 +3,9 @@ import type { AppState, PersistedState, Tab, SplitNode } from './types'
 import { DEFAULT_SETTINGS } from './types'
 import { AGENT_PLAN_DIRS_LABEL } from '../utils/agent-plan-dirs'
 import { GEMINI_TAB_LABEL, isGeminiIdleOscTitle } from '../../shared/gemini-tab-title'
-import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, findLeafByPtyId, firstLeaf, firstTerminalLeaf, collectLeaves, normalizeSplitTree } from './split-helpers'
+import { getAllPtyIds, splitLeaf, removeLeaf, findLeaf, findLeafByPtyId, firstLeaf, firstTerminalLeaf, collectLeaves, normalizeSplitTree, getFocusedPtyId } from './split-helpers'
+import { formatChatContext } from '../utils/chat-context-formatter'
+import type { ChatSnippet } from '../utils/chat-context-formatter'
 
 const DEFAULT_PR_LINK_PROVIDER = 'github' as const
 
@@ -56,6 +58,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   prStatusMap: new Map(),
   ghAvailability: new Map(),
   gitFileStatuses: new Map(),
+  activeMonacoEditor: null,
 
   addProject: (project) =>
     set((s) => ({
@@ -807,6 +810,52 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeQuickOpen: () => set({ quickOpenVisible: false }),
   togglePlanPalette: () => set((s) => ({ planPaletteVisible: !s.planPaletteVisible, quickOpenVisible: false })),
   closePlanPalette: () => set({ planPaletteVisible: false }),
+
+  setActiveMonacoEditor: (editor) => set({ activeMonacoEditor: editor }),
+
+  getFirstAgentTerminalPtyId: () => {
+    const s = get()
+    if (!s.activeWorkspaceId) return undefined
+    // Prefer active tab if it's an agent terminal
+    const activeTab = s.tabs.find((t) => t.id === s.activeTabId)
+    if (activeTab?.type === 'terminal' && activeTab.agentType) {
+      const pty = getFocusedPtyId(activeTab.splitRoot, activeTab.focusedPaneId, activeTab.ptyId)
+      if (pty) return pty
+    }
+    // Fall back to first agent terminal in workspace
+    const wsTabs = s.tabs.filter((t) => t.workspaceId === s.activeWorkspaceId)
+    for (const tab of wsTabs) {
+      if (tab.type === 'terminal' && tab.agentType) {
+        return tab.ptyId
+      }
+    }
+    return undefined
+  },
+
+  sendContextToAgent: (snippets) => {
+    const s = get()
+    const ptyId = s.getFirstAgentTerminalPtyId()
+    if (!ptyId) {
+      s.addToast({
+        id: crypto.randomUUID(),
+        message: 'No agent terminal found in this workspace',
+        type: 'error',
+      })
+      return
+    }
+
+    const text = formatChatContext(snippets)
+    // Bracketed paste: wrap with escape sequences so the agent sees it as pasted text
+    window.api.pty.write(ptyId, `\x1b[200~${text}\x1b[201~`)
+
+    // Switch to the terminal tab that owns this PTY
+    const termTab = s.tabs.find((t) => t.type === 'terminal' && (
+      t.ptyId === ptyId || (t.splitRoot && findLeafByPtyId(t.splitRoot, ptyId) != null)
+    ))
+    if (termTab && termTab.id !== s.activeTabId) {
+      set({ activeTabId: termTab.id })
+    }
+  },
 
   markWorkspaceUnread: (workspaceId) =>
     set((s) => {

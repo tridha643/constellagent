@@ -1,0 +1,29 @@
+.button {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
+  pointer-events: auto;
+}
+
+.button:hover {
+  background: var(--surface-4, var(--surface-3));
+  color: var(--text-primary);
+}
+
+.kbd {
+  font-size: 10px;
+  opacity: 0.6;
+}
