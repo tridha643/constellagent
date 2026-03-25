@@ -1,94 +1,149 @@
-import { useState, useRef, useEffect, type ReactNode } from 'react'
-import type { Annotation } from '../../../shared/diff-annotation-types'
-import type { DiffLineAnnotation } from '@pierre/diffs'
+import { useState, useCallback } from 'react'
+import {
+  annotationLineEnd,
+  type DiffAnnotation,
+  type DiffAnnotationSide,
+} from '../../../shared/diff-annotation-types'
 import styles from './AnnotationBubble.module.css'
 
-// ── Existing annotation display ──
+export function AnnotationBubble({
+  annotation,
+  worktreePath,
+  onChanged,
+}: {
+  annotation: DiffAnnotation
+  worktreePath: string
+  onChanged: () => void
+}) {
+  const [busy, setBusy] = useState(false)
 
-interface AnnotationBubbleProps {
-  annotation: DiffLineAnnotation<Annotation>
-  onResolve: (id: string) => void
-  onDelete: (id: string) => void
-}
+  const run = useCallback(
+    async (fn: () => Promise<void>) => {
+      setBusy(true)
+      try {
+        await fn()
+        onChanged()
+      } finally {
+        setBusy(false)
+      }
+    },
+    [onChanged],
+  )
 
-function formatTime(iso: string): string {
-  try {
-    const d = new Date(iso)
-    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-  } catch {
-    return iso
-  }
-}
+  const end = annotationLineEnd(annotation)
+  const rangeLabel =
+    end !== annotation.lineNumber ? `L${annotation.lineNumber}–L${end}` : `L${annotation.lineNumber}`
 
-export function AnnotationBubble({ annotation, onResolve, onDelete }: AnnotationBubbleProps): ReactNode {
-  const a = annotation.metadata
   return (
-    <div className={`${styles.annotationBubble} ${a.resolved ? styles.resolved : ''}`}>
-      <div className={styles.annotationHeader}>
-        <span className={styles.annotationAuthor}>{a.author}</span>
-        <span className={styles.annotationTime}>{formatTime(a.createdAt)}</span>
-      </div>
-      <div className={styles.annotationBody}>{a.body}</div>
-      <div className={styles.annotationActions}>
-        {!a.resolved && (
-          <button className={`${styles.annotationBtn} ${styles.resolveBtn}`} onClick={() => onResolve(a.id)}>
-            Resolve
+    <div
+      className={`${styles.bubble} ${annotation.resolved ? styles.bubbleResolved : ''}`}
+      data-annotation-id={annotation.id}
+    >
+      <div className={styles.meta}>
+        <span>
+          {annotation.resolved ? 'Resolved' : 'Open'} · {rangeLabel}
+        </span>
+        <div className={styles.actions}>
+          {!annotation.resolved && (
+            <button
+              type="button"
+              className={styles.actionBtn}
+              disabled={busy}
+              onClick={() => run(() => window.api.annotations.resolve(worktreePath, annotation.id))}
+            >
+              Resolve
+            </button>
+          )}
+          <button
+            type="button"
+            className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
+            disabled={busy}
+            onClick={() => run(() => window.api.annotations.delete(worktreePath, annotation.id))}
+          >
+            Delete
           </button>
-        )}
-        <button className={`${styles.annotationBtn} ${styles.deleteBtn}`} onClick={() => onDelete(a.id)}>
-          Delete
-        </button>
+        </div>
       </div>
+      <div className={styles.body}>{annotation.body}</div>
     </div>
   )
 }
 
-// ── Inline input for creating a new annotation ──
-
-interface AnnotationInputProps {
-  onSubmit: (body: string) => void
+export function AnnotationComposer({
+  worktreePath,
+  filePath,
+  side,
+  lineNumber,
+  lineEnd,
+  onCancel,
+  onSaved,
+}: {
+  worktreePath: string
+  filePath: string
+  side: DiffAnnotationSide
+  lineNumber: number
+  lineEnd: number
   onCancel: () => void
-}
-
-export function AnnotationInput({ onSubmit, onCancel }: AnnotationInputProps): ReactNode {
+  onSaved: () => void
+}) {
   const [body, setBody] = useState('')
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    textareaRef.current?.focus()
-  }, [])
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault()
-      if (body.trim()) onSubmit(body.trim())
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      onCancel()
+  const submit = async () => {
+    const trimmed = body.trim()
+    if (!trimmed || busy) return
+    setBusy(true)
+    try {
+      await window.api.annotations.add(worktreePath, {
+        filePath,
+        side,
+        lineNumber,
+        ...(lineEnd > lineNumber ? { lineEnd } : {}),
+        body: trimmed,
+      })
+      setBody('')
+      onSaved()
+    } catch (e) {
+      console.error('Failed to add annotation:', e)
+    } finally {
+      setBusy(false)
     }
   }
 
+  const sideLabel = side === 'additions' ? 'New' : 'Old'
+  const lineLabel =
+    lineEnd > lineNumber ? `lines ${lineNumber}–${lineEnd}` : `line ${lineNumber}`
+
   return (
-    <div className={styles.annotationInput}>
+    <div className={styles.composer} data-diff-annotation-composer>
+      <div className={styles.composerLabel}>
+        Comment on {sideLabel} {lineLabel}
+      </div>
       <textarea
-        ref={textareaRef}
-        className={styles.annotationTextarea}
-        placeholder="Add a review comment..."
+        className={styles.textarea}
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        onKeyDown={handleKeyDown}
+        placeholder="Review note…"
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onCancel()
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault()
+            void submit()
+          }
+        }}
       />
-      <div className={styles.annotationInputActions}>
-        <button className={styles.cancelBtn} onClick={onCancel}>
+      <div className={styles.composerActions}>
+        <button type="button" className={styles.composerBtn} disabled={busy} onClick={onCancel}>
           Cancel
         </button>
         <button
-          className={styles.submitBtn}
-          disabled={!body.trim()}
-          onClick={() => onSubmit(body.trim())}
+          type="button"
+          className={`${styles.composerBtn} ${styles.composerBtnPrimary}`}
+          disabled={busy || !body.trim()}
+          onClick={() => void submit()}
         >
-          Comment
+          Add comment
         </button>
       </div>
     </div>

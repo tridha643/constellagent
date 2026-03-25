@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, type DragEvent } from 'react'
 import { Tree, NodeRendererProps, NodeApi } from 'react-arborist'
 import { useAppStore } from '../../store/app-store'
+import { CONSTELLAGENT_PATH_MIME } from '../../utils/add-to-chat'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import styles from './RightPanel.module.css'
 
@@ -250,17 +251,19 @@ function Node({ node, style }: NodeRendererProps<FileNode>) {
     })
   }
 
-  const handleDragStart = useCallback((e: React.DragEvent) => {
-    if (node.isInternal) return
-    e.dataTransfer.setData('application/x-constellagent-file', node.data.path)
+  const handleDragStart = (e: DragEvent) => {
+    if (!node.isLeaf) return
+    e.dataTransfer.setData(CONSTELLAGENT_PATH_MIME, node.data.path)
     e.dataTransfer.setData('text/plain', node.data.path)
     e.dataTransfer.effectAllowed = 'copy'
-  }, [node])
+  }
 
   return (
     <div
       style={style}
       className={`${styles.treeNode} ${isActiveFile ? styles.treeNodeActive : ''}`}
+      draggable={node.isLeaf}
+      onDragStart={handleDragStart}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       draggable={node.isLeaf}

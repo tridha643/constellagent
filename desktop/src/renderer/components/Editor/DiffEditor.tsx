@@ -1,12 +1,11 @@
 import { useEffect, useState, useCallback, useRef, memo, useMemo } from 'react'
-import { PatchDiff } from '@pierre/diffs/react'
-import type { DiffLineAnnotation, AnnotationSide } from '@pierre/diffs'
+import { PatchDiff, type DiffLineAnnotation } from '@pierre/diffs/react'
+import type { DiffAnnotation, DiffAnnotationSide } from '@shared/diff-annotation-types'
 import { useAppStore } from '../../store/app-store'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
-import { AnnotationBubble, AnnotationInput } from './AnnotationBubble'
-import type { Annotation } from '../../../shared/diff-annotation-types'
-import { generateAnnotationId } from '../../../shared/diff-annotation-types'
+import { AnnotationBubble, AnnotationComposer } from './AnnotationBubble'
+import annotationUi from './AnnotationBubble.module.css'
 import styles from './Editor.module.css'
 
 interface FileStatus {
@@ -36,6 +35,28 @@ const STATUS_LABELS: Record<string, string> = {
   untracked: 'U',
 }
 
+/** Pierre LineSelectionManager payload (not re-exported from `@pierre/diffs/react`). */
+interface PierreSelectedRange {
+  start: number
+  end: number
+  side?: DiffAnnotationSide
+  endSide?: DiffAnnotationSide
+}
+
+function normalizeDiffSelection(range: PierreSelectedRange): {
+  side: DiffAnnotationSide
+  lineNumber: number
+  lineEnd: number
+} {
+  const side = (range.side ?? 'additions') as DiffAnnotationSide
+  if (range.endSide != null && range.endSide !== side) {
+    return { side, lineNumber: range.start, lineEnd: range.start }
+  }
+  const lo = Math.min(range.start, range.end)
+  const hi = Math.max(range.start, range.end)
+  return { side, lineNumber: lo, lineEnd: hi }
+}
+
 // ── Per-file diff section ──
 
 interface PendingAnnotation {
@@ -48,10 +69,9 @@ interface DiffFileSectionProps {
   inline: boolean
   worktreePath: string
   onOpenFile: (filePath: string) => void
-  annotations: Annotation[]
-  onAddAnnotation: (file: string, line: number, side: AnnotationSide, body: string) => void
-  onResolveAnnotation: (id: string) => void
-  onDeleteAnnotation: (id: string) => void
+  worktreeAnnotations: DiffAnnotation[]
+  onAnnotationsChanged: () => void
+  showPatchAnchorNote: boolean
 }
 
 const DiffFileSection = memo(function DiffFileSection({
@@ -59,12 +79,17 @@ const DiffFileSection = memo(function DiffFileSection({
   inline,
   worktreePath,
   onOpenFile,
-  annotations,
-  onAddAnnotation,
-  onResolveAnnotation,
-  onDeleteAnnotation,
+  worktreeAnnotations,
+  onAnnotationsChanged,
+  showPatchAnchorNote,
 }: DiffFileSectionProps) {
-  const [pending, setPending] = useState<PendingAnnotation | null>(null)
+  const [selectedLines, setSelectedLines] = useState<PierreSelectedRange | null>(null)
+  const [pendingRange, setPendingRange] = useState<{
+    side: DiffAnnotationSide
+    lineNumber: number
+    lineEnd: number
+  } | null>(null)
+
   const parts = data.filePath.split('/')
   const fileName = parts.pop()
   const dir = parts.length > 0 ? parts.join('/') + '/' : ''
@@ -73,72 +98,132 @@ const DiffFileSection = memo(function DiffFileSection({
     ? data.filePath
     : `${worktreePath}/${data.filePath}`
 
-  // Filter annotations for this file and map to Pierre's format
-  const fileAnnotations = useMemo(() => {
-    return annotations
-      .filter((a) => a.file === data.filePath)
-      .map((a): DiffLineAnnotation<Annotation> => ({
-        side: a.side,
-        lineNumber: a.line,
-        metadata: a,
-      }))
-  }, [annotations, data.filePath])
+  const fileAnnotations = useMemo(
+    () => worktreeAnnotations.filter((a) => a.filePath === data.filePath),
+    [worktreeAnnotations, data.filePath],
+  )
 
-  // Include pending annotation as a temporary annotation for input rendering
-  const allAnnotations = useMemo(() => {
-    if (!pending) return fileAnnotations
-    // Add a placeholder for the pending input
-    const placeholder: DiffLineAnnotation<Annotation> = {
-      side: pending.side,
-      lineNumber: pending.line,
-      metadata: {
-        id: '__pending__',
-        file: data.filePath,
-        line: pending.line,
-        side: pending.side,
-        body: '',
-        author: 'human',
-        resolved: false,
-        createdAt: new Date().toISOString(),
-      },
+  const lineAnnotations = useMemo((): DiffLineAnnotation<DiffAnnotation[]>[] => {
+    const map = new Map<string, DiffAnnotation[]>()
+    for (const a of fileAnnotations) {
+      const key = `${a.side}:${a.lineNumber}`
+      let arr = map.get(key)
+      if (!arr) {
+        arr = []
+        map.set(key, arr)
+      }
+      arr.push(a)
     }
-    return [...fileAnnotations, placeholder]
-  }, [fileAnnotations, pending, data.filePath])
+    for (const arr of map.values()) {
+      arr.sort((x, y) => x.createdAt.localeCompare(y.createdAt))
+    }
+    return [...map.entries()].map(([key, items]) => {
+      const [side, ln] = key.split(':')
+      return {
+        side: side as DiffAnnotationSide,
+        lineNumber: Number(ln),
+        metadata: items,
+      }
+    })
+  }, [fileAnnotations])
 
-  const handleLineNumberClick = useCallback(
-    (props: { lineNumber: number; annotationSide: AnnotationSide }) => {
-      setPending({ line: props.lineNumber, side: props.annotationSide })
-    },
-    [],
+  /** Pierre renders annotation slots per (side, lineNumber); anchor composer at the lowest selected line. */
+  const displayLineAnnotations = useMemo((): DiffLineAnnotation<DiffAnnotation[]>[] => {
+    if (!pendingRange) return lineAnnotations
+    const key = `${pendingRange.side}:${pendingRange.lineEnd}`
+    if (lineAnnotations.some((a) => `${a.side}:${a.lineNumber}` === key)) {
+      return lineAnnotations
+    }
+    return [
+      ...lineAnnotations,
+      {
+        side: pendingRange.side,
+        lineNumber: pendingRange.lineEnd,
+        metadata: [],
+      },
+    ]
+  }, [lineAnnotations, pendingRange])
+
+  const handleLineSelectionStart = useCallback(() => {
+    setPendingRange(null)
+  }, [])
+
+  const handleLineSelectionEnd = useCallback((range: PierreSelectedRange | null) => {
+    setSelectedLines(range)
+    if (!range) {
+      setPendingRange(null)
+      return
+    }
+    setPendingRange(normalizeDiffSelection(range))
+  }, [])
+
+  const patchOptions = useMemo(
+    () => ({
+      theme: 'tokyo-night' as const,
+      themeType: 'dark' as const,
+      diffStyle: (inline ? 'unified' : 'split') as const,
+      diffIndicators: 'bars' as const,
+      lineDiffType: 'word-alt' as const,
+      overflow: 'scroll' as const,
+      expandUnchanged: false,
+      disableFileHeader: true,
+      enableLineSelection: true,
+      onLineSelectionStart: handleLineSelectionStart,
+      onLineSelectionEnd: handleLineSelectionEnd,
+    }),
+    [inline, handleLineSelectionStart, handleLineSelectionEnd],
   )
 
-  const handleSubmit = useCallback(
-    (body: string) => {
-      if (!pending) return
-      onAddAnnotation(data.filePath, pending.line, pending.side, body)
-      setPending(null)
-    },
-    [pending, data.filePath, onAddAnnotation],
-  )
-
-  const handleCancel = useCallback(() => setPending(null), [])
+  const clearSelectionAndComposer = useCallback(() => {
+    setSelectedLines(null)
+    setPendingRange(null)
+  }, [])
 
   const renderAnnotation = useCallback(
-    (annotation: DiffLineAnnotation<Annotation>) => {
-      const a = annotation.metadata
-      if (a.id === '__pending__') {
-        return <AnnotationInput onSubmit={handleSubmit} onCancel={handleCancel} />
-      }
+    (ann: DiffLineAnnotation<DiffAnnotation[]>) => {
+      const items = ann.metadata ?? []
+      const showComposer =
+        pendingRange != null &&
+        ann.side === pendingRange.side &&
+        ann.lineNumber === pendingRange.lineEnd
+      if (!items.length && !showComposer) return null
       return (
-        <AnnotationBubble
-          annotation={annotation}
-          onResolve={onResolveAnnotation}
-          onDelete={onDeleteAnnotation}
-        />
+        <div className={annotationUi.annotationStack}>
+          {items.map((a) => (
+            <AnnotationBubble
+              key={a.id}
+              annotation={a}
+              worktreePath={worktreePath}
+              onChanged={onAnnotationsChanged}
+            />
+          ))}
+          {showComposer && (
+            <AnnotationComposer
+              worktreePath={worktreePath}
+              filePath={data.filePath}
+              side={pendingRange.side}
+              lineNumber={pendingRange.lineNumber}
+              lineEnd={pendingRange.lineEnd}
+              onCancel={clearSelectionAndComposer}
+              onSaved={() => {
+                clearSelectionAndComposer()
+                onAnnotationsChanged()
+              }}
+            />
+          )}
+        </div>
       )
     },
-    [handleSubmit, handleCancel, onResolveAnnotation, onDeleteAnnotation],
+    [
+      pendingRange,
+      worktreePath,
+      data.filePath,
+      onAnnotationsChanged,
+      clearSelectionAndComposer,
+    ],
   )
+
+  const hasAnnotationUi = displayLineAnnotations.length > 0
 
   return (
     <div className={styles.diffFileSection} id={`diff-${data.filePath}`}>
@@ -164,20 +249,16 @@ const DiffFileSection = memo(function DiffFileSection({
         >
           <PatchDiff<Annotation>
             patch={data.patch}
-            lineAnnotations={allAnnotations}
-            renderAnnotation={renderAnnotation}
-            options={{
-              theme: 'tokyo-night',
-              themeType: 'dark',
-              diffStyle: inline ? 'unified' : 'split',
-              diffIndicators: 'bars',
-              lineDiffType: 'word-alt',
-              overflow: 'scroll',
-              expandUnchanged: false,
-              disableFileHeader: true,
-              onLineNumberClick: handleLineNumberClick,
-            }}
+            options={patchOptions}
+            selectedLines={selectedLines}
+            lineAnnotations={hasAnnotationUi ? displayLineAnnotations : undefined}
+            renderAnnotation={hasAnnotationUi ? renderAnnotation : undefined}
           />
+          {showPatchAnchorNote && fileAnnotations.length > 0 && (
+            <p className={annotationUi.commitNote}>
+              Comments reflect this patch; line anchors may not match other revisions.
+            </p>
+          )}
         </ErrorBoundary>
       ) : (
         <div style={{ padding: 12, color: '#888', fontSize: 13 }}>No diff available</div>
@@ -220,6 +301,7 @@ function FileStrip({
 export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: Props) {
   const [files, setFiles] = useState<DiffFileData[]>([])
   const [loading, setLoading] = useState(true)
+  const [annotations, setAnnotations] = useState<DiffAnnotation[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -237,77 +319,26 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
     [openFileTab, openMarkdownPreview],
   )
 
-  // ── Annotations ──
-
   const loadAnnotations = useCallback(async () => {
     try {
-      const loaded = await window.api.annotations.load(worktreePath)
-      setAnnotations(loaded)
+      const list = await window.api.annotations.load(worktreePath)
+      setAnnotations(list)
     } catch (err) {
-      console.error('Failed to load annotations:', err)
+      console.error('Failed to load diff annotations:', err)
+      setAnnotations([])
     }
   }, [worktreePath])
 
-  // Load annotations on mount and when worktree changes
   useEffect(() => {
-    loadAnnotations()
+    void loadAnnotations()
   }, [loadAnnotations])
 
-  // Listen for annotation changes from the main process (file watcher)
   useEffect(() => {
-    const unsub = window.api.annotations.onChanged((data) => {
-      if (data.worktreePath === worktreePath) {
-        setAnnotations(data.annotations)
-      }
+    const unsub = window.api.annotations.onChanged(({ worktreePath: wp }) => {
+      if (wp === worktreePath) void loadAnnotations()
     })
     return unsub
-  }, [worktreePath])
-
-  const handleAddAnnotation = useCallback(
-    async (file: string, line: number, side: AnnotationSide, body: string) => {
-      const annotation: Annotation = {
-        id: generateAnnotationId(),
-        file,
-        line,
-        side,
-        body,
-        author: 'human',
-        resolved: false,
-        createdAt: new Date().toISOString(),
-      }
-      try {
-        const updated = await window.api.annotations.add(worktreePath, annotation)
-        setAnnotations(updated)
-      } catch (err) {
-        console.error('Failed to save annotation:', err)
-      }
-    },
-    [worktreePath],
-  )
-
-  const handleResolveAnnotation = useCallback(
-    async (id: string) => {
-      try {
-        const updated = await window.api.annotations.resolve(worktreePath, id)
-        setAnnotations(updated)
-      } catch (err) {
-        console.error('Failed to resolve annotation:', err)
-      }
-    },
-    [worktreePath],
-  )
-
-  const handleDeleteAnnotation = useCallback(
-    async (id: string) => {
-      try {
-        const updated = await window.api.annotations.delete(worktreePath, id)
-        setAnnotations(updated)
-      } catch (err) {
-        console.error('Failed to delete annotation:', err)
-      }
-    },
-    [worktreePath],
-  )
+  }, [worktreePath, loadAnnotations])
 
   // Load commit-specific diff
   const loadCommitDiff = useCallback(async () => {
@@ -488,6 +519,11 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
         </div>
       </div>
 
+      <p className={styles.diffCommentHint}>
+        Review comments: drag across the line numbers in the gutter (GitHub-style), then write your note below the
+        diff. Click the same line again to clear the selection.
+      </p>
+
       {/* File strip */}
       <FileStrip files={files} activeFile={activeFile} />
 
@@ -500,10 +536,9 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
             inline={inline}
             worktreePath={worktreePath}
             onOpenFile={openFileFromDiff}
-            annotations={annotations}
-            onAddAnnotation={handleAddAnnotation}
-            onResolveAnnotation={handleResolveAnnotation}
-            onDeleteAnnotation={handleDeleteAnnotation}
+            worktreeAnnotations={annotations}
+            onAnnotationsChanged={loadAnnotations}
+            showPatchAnchorNote={!!commitHash}
           />
         ))}
       </div>
