@@ -394,6 +394,7 @@ export function Sidebar() {
   >({});
   const [pullingPrKey, setPullingPrKey] = useState<string | null>(null);
   const [projectPrSearch, setProjectPrSearch] = useState("");
+  const draggingWorkspaceIdRef = useRef<string | null>(null);
   const editRef = useRef<string>("");
   const dialogProject = workspaceDialogProjectId
     ? (projects.find((p) => p.id === workspaceDialogProjectId) ?? null)
@@ -1079,16 +1080,19 @@ export function Sidebar() {
                           setEditingWorkspaceId(ws.id);
                         }}
                         onDragStart={(e) => {
+                          draggingWorkspaceIdRef.current = ws.id;
                           setDraggedWsId(ws.id);
                           e.dataTransfer.setData(CONSTELLAGENT_WORKSPACE_MIME, ws.id);
+                          e.dataTransfer.setData("text/plain", ws.id);
                           e.dataTransfer.effectAllowed = "move";
                         }}
                         onDragEnd={() => {
+                          draggingWorkspaceIdRef.current = null;
                           setDraggedWsId(null);
                           setDropTargetWsId(null);
                         }}
                         onDragOver={(e) => {
-                          if (!e.dataTransfer.types.includes(CONSTELLAGENT_WORKSPACE_MIME)) return;
+                          if (!draggingWorkspaceIdRef.current) return;
                           e.preventDefault();
                           e.dataTransfer.dropEffect = "move";
                           setDropTargetWsId(ws.id);
@@ -1099,8 +1103,11 @@ export function Sidebar() {
                         }}
                         onDrop={(e) => {
                           e.preventDefault();
-                          const fromId = e.dataTransfer.getData(CONSTELLAGENT_WORKSPACE_MIME);
+                          const fromId =
+                            e.dataTransfer.getData(CONSTELLAGENT_WORKSPACE_MIME)
+                            || e.dataTransfer.getData("text/plain");
                           if (fromId) reorderWorkspace(fromId, ws.id);
+                          draggingWorkspaceIdRef.current = null;
                           setDraggedWsId(null);
                           setDropTargetWsId(null);
                         }}
