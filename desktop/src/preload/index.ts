@@ -4,7 +4,8 @@ import type { AutomationConfig, AutomationRunStartedEvent } from '../shared/auto
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { PlanAgent } from '../shared/agent-plan-path'
-import type { Annotation } from '../shared/diff-annotation-types'
+import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
+import type { DiffAnnotation, DiffAnnotationAddInput } from '../shared/diff-annotation-types'
 
 const api = {
   git: {
@@ -49,15 +50,16 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_GET_LOG, worktreePath, maxCount) as Promise<import('../shared/git-types').GitLogEntry[]>,
     getCommitDiff: (worktreePath: string, hash: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_COMMIT_DIFF, worktreePath, hash) as Promise<string>,
-    syncAllWorktrees: (repoPath: string) =>
-      ipcRenderer.invoke(IPC.GIT_SYNC_ALL_WORKTREES, repoPath) as Promise<SyncResult[]>,
-    checkRemoteHead: (repoPath: string, branch: string) =>
-      ipcRenderer.invoke(IPC.GIT_CHECK_REMOTE_HEAD, repoPath, branch) as Promise<string>,
-    onSyncProgress: (callback: (progress: SyncProgress) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, progress: SyncProgress) => callback(progress)
-      ipcRenderer.on(IPC.GIT_SYNC_PROGRESS, listener)
+    syncAllWorktrees: (projectId: string) => ipcRenderer.invoke(IPC.GIT_SYNC_ALL_WORKTREES, projectId),
+    startSyncPolling: (projectId: string, repoPath: string) =>
+      ipcRenderer.invoke(IPC.GIT_START_SYNC_POLLING, projectId, repoPath),
+    stopSyncPolling: (projectId: string) => ipcRenderer.invoke(IPC.GIT_STOP_SYNC_POLLING, projectId),
+    setSyncBusy: (worktreePaths: string[]) => ipcRenderer.send(IPC.GIT_SYNC_SET_BUSY, worktreePaths),
+    onWorktreeSyncStatus: (callback: (status: WorktreeSyncEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: WorktreeSyncEvent) => callback(status)
+      ipcRenderer.on(IPC.GIT_WORKTREE_SYNC_STATUS, listener)
       return () => {
-        ipcRenderer.removeListener(IPC.GIT_SYNC_PROGRESS, listener)
+        ipcRenderer.removeListener(IPC.GIT_WORKTREE_SYNC_STATUS, listener)
       }
     },
   },
@@ -125,8 +127,10 @@ const api = {
     },
     findNewestPlanMarkdown: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.FS_FIND_NEWEST_PLAN, worktreePath) as Promise<string | null>,
-    listAgentPlanMarkdowns: (worktreePath: string) =>
-      ipcRenderer.invoke(IPC.FS_LIST_AGENT_PLANS, worktreePath) as Promise<{ path: string; mtimeMs: number; agent: string; built?: boolean; codingAgent?: string | null; source: 'worktree' | 'home' }[]>,
+    listAgentPlanMarkdowns: (worktreePath: string | string[]) =>
+      ipcRenderer.invoke(IPC.FS_LIST_AGENT_PLANS, worktreePath) as Promise<
+        { path: string; mtimeMs: number; agent: string; built?: boolean; codingAgent?: string | null; planSourceRoot?: string }[]
+      >,
     readPlanMeta: (filePath: string) =>
       ipcRenderer.invoke(IPC.FS_READ_PLAN_META, filePath) as Promise<{ built: boolean; codingAgent: string | null; buildHarness: PlanAgent | null }>,
     updatePlanMeta: (filePath: string, patch: { built?: boolean; codingAgent?: string | null; buildHarness?: PlanAgent | null }) =>
@@ -307,15 +311,15 @@ const api = {
 
   annotations: {
     load: (worktreePath: string) =>
-      ipcRenderer.invoke(IPC.ANNOTATION_LOAD, worktreePath) as Promise<Annotation[]>,
-    add: (worktreePath: string, annotation: Annotation) =>
-      ipcRenderer.invoke(IPC.ANNOTATION_ADD, worktreePath, annotation) as Promise<Annotation[]>,
+      ipcRenderer.invoke(IPC.ANNOTATION_LOAD, worktreePath) as Promise<DiffAnnotation[]>,
+    add: (worktreePath: string, input: DiffAnnotationAddInput) =>
+      ipcRenderer.invoke(IPC.ANNOTATION_ADD, worktreePath, input) as Promise<DiffAnnotation>,
     resolve: (worktreePath: string, id: string) =>
-      ipcRenderer.invoke(IPC.ANNOTATION_RESOLVE, worktreePath, id) as Promise<Annotation[]>,
+      ipcRenderer.invoke(IPC.ANNOTATION_RESOLVE, worktreePath, id),
     delete: (worktreePath: string, id: string) =>
-      ipcRenderer.invoke(IPC.ANNOTATION_DELETE, worktreePath, id) as Promise<Annotation[]>,
-    onChanged: (callback: (data: { worktreePath: string; annotations: Annotation[] }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, data: { worktreePath: string; annotations: Annotation[] }) => callback(data)
+      ipcRenderer.invoke(IPC.ANNOTATION_DELETE, worktreePath, id),
+    onChanged: (callback: (data: { worktreePath: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { worktreePath: string }) => callback(data)
       ipcRenderer.on(IPC.ANNOTATION_CHANGED, listener)
       return () => {
         ipcRenderer.removeListener(IPC.ANNOTATION_CHANGED, listener)

@@ -1,99 +1,157 @@
 import { join } from 'path'
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { existsSync } from 'fs'
 import { watch, type FSWatcher } from 'fs'
-import type { Annotation } from '../shared/diff-annotation-types'
+import { existsSync } from 'fs'
+import { mkdir } from 'fs/promises'
+import { loadJsonFile, saveJsonFile } from './claude-config'
+import {
+  ANNOTATIONS_FILE_VERSION,
+  type DiffAnnotation,
+  type DiffAnnotationAddInput,
+  type DiffAnnotationsFile,
+  generateAnnotationId,
+} from '../shared/diff-annotation-types'
 
-const ANNOTATIONS_DIR = '.constellagent'
-const ANNOTATIONS_FILE = 'annotations.json'
+function constellagentDir(worktreePath: string): string {
+  return join(worktreePath, '.constellagent')
+}
 
 function annotationsPath(worktreePath: string): string {
-  return join(worktreePath, ANNOTATIONS_DIR, ANNOTATIONS_FILE)
+  return join(constellagentDir(worktreePath), 'annotations.json')
 }
 
-export async function loadAnnotations(worktreePath: string): Promise<Annotation[]> {
-  const filePath = annotationsPath(worktreePath)
-  if (!existsSync(filePath)) return []
-  try {
-    const raw = await readFile(filePath, 'utf-8')
-    const data = JSON.parse(raw)
-    return Array.isArray(data) ? data : []
-  } catch {
-    return []
-  }
-}
+let notifyFn: ((worktreePath: string) => void) | null = null
 
-async function writeAnnotations(worktreePath: string, annotations: Annotation[]): Promise<void> {
-  const dir = join(worktreePath, ANNOTATIONS_DIR)
-  await mkdir(dir, { recursive: true })
-  await writeFile(annotationsPath(worktreePath), JSON.stringify(annotations, null, 2), 'utf-8')
-}
-
-export async function saveAnnotation(worktreePath: string, annotation: Annotation): Promise<Annotation[]> {
-  const annotations = await loadAnnotations(worktreePath)
-  annotations.push(annotation)
-  await writeAnnotations(worktreePath, annotations)
-  return annotations
-}
-
-export async function resolveAnnotation(worktreePath: string, id: string): Promise<Annotation[]> {
-  const annotations = await loadAnnotations(worktreePath)
-  const target = annotations.find((a) => a.id === id)
-  if (target) target.resolved = true
-  await writeAnnotations(worktreePath, annotations)
-  return annotations
-}
-
-export async function deleteAnnotation(worktreePath: string, id: string): Promise<Annotation[]> {
-  let annotations = await loadAnnotations(worktreePath)
-  annotations = annotations.filter((a) => a.id !== id)
-  await writeAnnotations(worktreePath, annotations)
-  return annotations
-}
-
-// File watcher for external changes (e.g. agent resolves an annotation)
+const debouncers = new Map<string, ReturnType<typeof setTimeout>>()
 const watchers = new Map<string, FSWatcher>()
 
-export function watchAnnotations(
-  worktreePath: string,
-  onChange: () => void,
-): () => void {
-  const filePath = annotationsPath(worktreePath)
-  // Ensure the directory exists so we can watch
-  const dir = join(worktreePath, ANNOTATIONS_DIR)
-  if (!existsSync(dir)) {
-    try { require('fs').mkdirSync(dir, { recursive: true }) } catch { /* ignore */ }
+export function setAnnotationNotify(fn: (worktreePath: string) => void): void {
+  notifyFn = fn
+}
+
+function scheduleNotify(worktreePath: string): void {
+  const prev = debouncers.get(worktreePath)
+  if (prev) clearTimeout(prev)
+  debouncers.set(
+    worktreePath,
+    setTimeout(() => {
+      debouncers.delete(worktreePath)
+      notifyFn?.(worktreePath)
+    }, 150),
+  )
+}
+
+function isValidAnnotation(x: unknown): x is DiffAnnotation {
+  if (!x || typeof x !== 'object') return false
+  const o = x as Record<string, unknown>
+  if (
+    typeof o.id !== 'string' ||
+    typeof o.filePath !== 'string' ||
+    (o.side !== 'additions' && o.side !== 'deletions') ||
+    typeof o.lineNumber !== 'number' ||
+    !Number.isFinite(o.lineNumber) ||
+    typeof o.body !== 'string' ||
+    typeof o.createdAt !== 'string' ||
+    typeof o.resolved !== 'boolean'
+  ) {
+    return false
   }
-
-  // Debounce to avoid duplicate events
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null
-  const key = worktreePath
-
-  if (watchers.has(key)) {
-    watchers.get(key)!.close()
+  if (o.lineEnd !== undefined) {
+    if (typeof o.lineEnd !== 'number' || !Number.isFinite(o.lineEnd)) return false
+    if (o.lineEnd < o.lineNumber) return false
   }
+  return true
+}
 
+function normalizeDoc(raw: unknown): DiffAnnotationsFile {
+  if (!raw || typeof raw !== 'object') {
+    return { version: ANNOTATIONS_FILE_VERSION, annotations: [] }
+  }
+  const r = raw as Record<string, unknown>
+  const list = Array.isArray(r.annotations) ? r.annotations.filter(isValidAnnotation) : []
+  return { version: ANNOTATIONS_FILE_VERSION, annotations: list }
+}
+
+function ensureWatch(worktreePath: string): void {
+  if (watchers.has(worktreePath)) return
+  const dir = constellagentDir(worktreePath)
+  if (!existsSync(dir)) return
   try {
-    // Watch the directory for changes to the annotations file
-    const watcher = watch(dir, (eventType, filename) => {
-      if (filename === ANNOTATIONS_FILE) {
-        if (debounceTimer) clearTimeout(debounceTimer)
-        debounceTimer = setTimeout(onChange, 200)
-      }
+    const w = watch(dir, (_event, filename) => {
+      if (filename !== 'annotations.json') return
+      scheduleNotify(worktreePath)
     })
-    watchers.set(key, watcher)
-    return () => {
-      watcher.close()
-      watchers.delete(key)
-      if (debounceTimer) clearTimeout(debounceTimer)
-    }
+    w.on('error', () => {})
+    watchers.set(worktreePath, w)
   } catch {
-    // If watch fails, return a no-op cleanup
-    return () => {}
+    // ignore
   }
 }
 
-export function closeAllAnnotationWatchers(): void {
-  for (const watcher of watchers.values()) watcher.close()
+export function cleanupAnnotationWatchers(): void {
+  for (const w of watchers.values()) {
+    w.close()
+  }
   watchers.clear()
+  for (const t of debouncers.values()) {
+    clearTimeout(t)
+  }
+  debouncers.clear()
+}
+
+export const AnnotationService = {
+  async load(worktreePath: string): Promise<DiffAnnotation[]> {
+    ensureWatch(worktreePath)
+    const path = annotationsPath(worktreePath)
+    const doc = normalizeDoc(await loadJsonFile(path, null))
+    return doc.annotations
+  },
+
+  async add(worktreePath: string, input: DiffAnnotationAddInput): Promise<DiffAnnotation> {
+    const body = input.body.trim()
+    if (!body) {
+      throw new Error('Annotation body is empty')
+    }
+    if (input.lineEnd != null) {
+      if (!Number.isFinite(input.lineEnd) || input.lineEnd < input.lineNumber) {
+        throw new Error('Invalid line range')
+      }
+    }
+    await mkdir(constellagentDir(worktreePath), { recursive: true })
+    ensureWatch(worktreePath)
+    const path = annotationsPath(worktreePath)
+    const doc = normalizeDoc(await loadJsonFile(path, null))
+    const ann: DiffAnnotation = {
+      id: generateAnnotationId(),
+      filePath: input.filePath,
+      side: input.side,
+      lineNumber: input.lineNumber,
+      ...(input.lineEnd != null && input.lineEnd > input.lineNumber ? { lineEnd: input.lineEnd } : {}),
+      body,
+      createdAt: new Date().toISOString(),
+      resolved: false,
+    }
+    doc.annotations.push(ann)
+    await saveJsonFile(path, doc)
+    scheduleNotify(worktreePath)
+    return ann
+  },
+
+  async resolve(worktreePath: string, id: string): Promise<void> {
+    const path = annotationsPath(worktreePath)
+    const doc = normalizeDoc(await loadJsonFile(path, null))
+    const ann = doc.annotations.find((a) => a.id === id)
+    if (ann) ann.resolved = true
+    await saveJsonFile(path, doc)
+    ensureWatch(worktreePath)
+    scheduleNotify(worktreePath)
+  },
+
+  async delete(worktreePath: string, id: string): Promise<void> {
+    const path = annotationsPath(worktreePath)
+    const doc = normalizeDoc(await loadJsonFile(path, null))
+    doc.annotations = doc.annotations.filter((a) => a.id !== id)
+    await saveJsonFile(path, doc)
+    ensureWatch(worktreePath)
+    scheduleNotify(worktreePath)
+  },
 }

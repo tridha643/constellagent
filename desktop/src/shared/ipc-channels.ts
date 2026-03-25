@@ -21,8 +21,13 @@ export const IPC = {
   GIT_GET_LOG: 'git:get-log',
   GIT_GET_COMMIT_DIFF: 'git:get-commit-diff',
   GIT_SYNC_ALL_WORKTREES: 'git:sync-all-worktrees',
-  GIT_SYNC_PROGRESS: 'git:sync-progress',
-  GIT_CHECK_REMOTE_HEAD: 'git:check-remote-head',
+  /** Main → renderer: per-worktree sync status */
+  GIT_WORKTREE_SYNC_STATUS: 'git:worktree-sync-status',
+  /** Register project repo for manual worktree sync (sidebar); no background polling */
+  GIT_START_SYNC_POLLING: 'git:start-sync-polling',
+  GIT_STOP_SYNC_POLLING: 'git:stop-sync-polling',
+  /** Renderer → main: worktree paths that have an active agent (busy for sync) */
+  GIT_SYNC_SET_BUSY: 'git:sync-set-busy',
 
   // PTY operations
   PTY_CREATE: 'pty:create',
@@ -151,4 +156,12 @@ export const IPC = {
   STATE_SAVE: 'state:save',
   STATE_SAVE_SYNC: 'state:save-sync',
   STATE_LOAD: 'state:load',
+
+  /** Diff review annotations (`{worktree}/.constellagent/annotations.json`) */
+  ANNOTATION_LOAD: 'annotation:load',
+  ANNOTATION_ADD: 'annotation:add',
+  ANNOTATION_RESOLVE: 'annotation:resolve',
+  ANNOTATION_DELETE: 'annotation:delete',
+  /** Main → renderer: annotations file changed for a worktree */
+  ANNOTATION_CHANGED: 'annotation:changed',
 } as const
