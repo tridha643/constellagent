@@ -91,6 +91,7 @@ export function TabBar() {
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
   /** Same pattern as Sidebar `draggingWorkspaceIdRef` — Electron needs sync ref for dragOver. */
   const draggingTabIdRef = useRef<string | null>(null)
+  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed)
   const activeTabId = useAppStore((s) => s.activeTabId)
   const setActiveTab = useAppStore((s) => s.setActiveTab)
   const removeTab = useAppStore((s) => s.removeTab)
@@ -263,7 +264,7 @@ export function TabBar() {
   )
 
   return (
-    <div className={styles.tabBar}>
+    <div className={`${styles.tabBar} ${sidebarCollapsed ? styles.tabBarCollapsed : ''}`}>
       <div className={styles.tabList}>
         {tabs.map((tab) => {
           const { icon, className } = TAB_ICONS[tab.type]
