@@ -831,6 +831,13 @@ export function SettingsPanel() {
             onChange={(v) => update('diffInline', v)}
           />
 
+          <ToggleRow
+            label="T3 Code: hide panels"
+            description="Collapse sidebar and right panel when opening T3 Code (⚡)"
+            value={settings.t3CodeCollapseSidePanels}
+            onChange={(v) => update('t3CodeCollapseSidePanels', v)}
+          />
+
           <TextRow
             label="Default shell"
             description="Path to shell executable (leave empty for system default)"

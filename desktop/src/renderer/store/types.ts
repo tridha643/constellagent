@@ -137,6 +137,7 @@ export interface Settings {
   phoneControlNotifyOnFinish: boolean
   phoneControlStreamOutput: boolean
   phoneControlStreamIntervalSec: number
+  t3CodeCollapseSidePanels: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -161,6 +162,7 @@ export const DEFAULT_SETTINGS: Settings = {
   phoneControlNotifyOnFinish: true,
   phoneControlStreamOutput: false,
   phoneControlStreamIntervalSec: 10,
+  t3CodeCollapseSidePanels: false,
 }
 
 export interface Toast {

@@ -1,25 +1,17 @@
 import { execFile } from 'child_process'
 import { existsSync } from 'fs'
-import { copyFile, mkdir, readdir, rm, writeFile } from 'fs/promises'
+import { copyFile, mkdir, readdir, realpath, rm, writeFile } from 'fs/promises'
+import { homedir } from 'os'
 import { promisify } from 'util'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import type { CreateWorktreeProgress } from '../shared/workspace-creation'
-import type { GitLogEntry } from '../shared/git-types'
+import type { GitLogEntry, WorktreeInfo } from '../shared/git-types'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import { SKIP_DIRS as FILE_SKIP_DIRS } from './file-service'
 
 const execFileAsync = promisify(execFile)
 
 type CreateWorktreeProgressReporter = (progress: CreateWorktreeProgress) => void
-
-export interface WorktreeInfo {
-  path: string
-  branch: string
-  head: string
-  isBare: boolean
-  /** Set when git porcelain includes a standalone `detached` line (not on any branch) */
-  isDetached?: boolean
-}
 
 export interface FileStatus {
   path: string
@@ -181,40 +173,118 @@ export class GitService {
     if (!cwd.length) return []
     if (!existsSync(cwd)) return []
 
-    let output: string
+    const worktrees: WorktreeInfo[] = []
     try {
-      output = await git(['worktree', 'list', '--porcelain'], cwd)
+      const output = await git(['worktree', 'list', '--porcelain'], cwd)
+      if (output) {
+        const blocks = output.split('\n\n')
+        for (const block of blocks) {
+          const lines = block.split('\n')
+          const info: Partial<WorktreeInfo> = { isBare: false, isDetached: false }
+          for (const line of lines) {
+            if (line.startsWith('worktree ')) info.path = line.slice(9)
+            else if (line.startsWith('HEAD ')) info.head = line.slice(5)
+            else if (line.startsWith('branch ')) info.branch = line.slice(7).replace('refs/heads/', '')
+            else if (line === 'bare') info.isBare = true
+            else if (line === 'detached') info.isDetached = true
+          }
+          if (info.path) {
+            worktrees.push({
+              path: info.path,
+              branch: info.branch ?? '',
+              head: info.head ?? '',
+              isBare: info.isBare ?? false,
+              isDetached: info.isDetached || undefined,
+            })
+          }
+        }
+      }
     } catch {
       // Stale/moved projects, non-repo folders, or empty IPC path — avoid throwing and
       // spamming Electron's "Error occurred in handler for 'git:list-worktrees'" log.
+    }
+
+    // t3 sandboxes: merge even when porcelain failed or omitted paths (no extra IPC).
+    try {
+      const t3 = await GitService.discoverT3Worktrees(cwd)
+      for (const w of t3) {
+        if (!worktrees.some((x) => x.path === w.path)) {
+          worktrees.push(w)
+        }
+      }
+    } catch {
+      /* best-effort */
+    }
+
+    return worktrees
+  }
+
+  /**
+   * Directories under `~/.t3/worktrees/<repoDirName>/` that share the same resolved
+   * `--git-common-dir` as `repoPath` (t3 agent sandboxes). Catches checkouts that are
+   * missing from `git worktree list` or only appear as detached.
+   */
+  static async discoverT3Worktrees(repoPath: string): Promise<WorktreeInfo[]> {
+    const cwd = (repoPath ?? '').trim()
+    if (!cwd.length || !existsSync(cwd)) return []
+
+    const mainCommon = await GitService.getResolvedGitCommonDir(cwd)
+    if (!mainCommon) return []
+
+    let repoDirName: string
+    try {
+      const realRoot = await realpath(cwd)
+      repoDirName = basename(realRoot)
+    } catch {
+      repoDirName = basename(resolve(cwd))
+    }
+
+    const t3Root = join(homedir(), '.t3', 'worktrees', repoDirName)
+    if (!existsSync(t3Root)) return []
+
+    let entries
+    try {
+      entries = await readdir(t3Root, { withFileTypes: true })
+    } catch {
       return []
     }
-    if (!output) return []
 
-    const worktrees: WorktreeInfo[] = []
-    const blocks = output.split('\n\n')
+    const out: WorktreeInfo[] = []
+    for (const ent of entries) {
+      if (!ent.isDirectory()) continue
+      const candidate = join(t3Root, ent.name)
+      const common = await GitService.getResolvedGitCommonDir(candidate)
+      if (common !== mainCommon) continue
 
-    for (const block of blocks) {
-      const lines = block.split('\n')
-      const info: Partial<WorktreeInfo> = { isBare: false, isDetached: false }
-      for (const line of lines) {
-        if (line.startsWith('worktree ')) info.path = line.slice(9)
-        else if (line.startsWith('HEAD ')) info.head = line.slice(5)
-        else if (line.startsWith('branch ')) info.branch = line.slice(7).replace('refs/heads/', '')
-        else if (line === 'bare') info.isBare = true
-        else if (line === 'detached') info.isDetached = true
+      let branch = ''
+      try {
+        branch = (await git(['rev-parse', '--abbrev-ref', 'HEAD'], candidate)).trim()
+      } catch {
+        branch = ''
       }
-      if (info.path) {
-        worktrees.push({
-          path: info.path,
-          branch: info.branch ?? '',
-          head: info.head ?? '',
-          isBare: info.isBare ?? false,
-          isDetached: info.isDetached || undefined,
-        })
-      }
+      const head = await git(['rev-parse', 'HEAD'], candidate).catch(() => '')
+      const isDetached = branch === 'HEAD' || !branch
+
+      out.push({
+        path: candidate,
+        branch: isDetached ? '' : branch,
+        head,
+        isBare: false,
+        isDetached: isDetached || undefined,
+      })
     }
-    return worktrees
+    return out
+  }
+
+  private static async getResolvedGitCommonDir(cwd: string): Promise<string | null> {
+    if (!existsSync(cwd)) return null
+    try {
+      const rel = await git(['rev-parse', '--git-common-dir'], cwd)
+      const joined = resolve(cwd, rel.trim())
+      return await realpath(joined)
+    } catch {
+      return null
+    }
   }
 
   /** Sanitize a string into a valid git branch name */

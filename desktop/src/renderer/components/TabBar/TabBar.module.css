@@ -11,6 +11,11 @@
   flex-shrink: 0;
 }
 
+/* macOS traffic-light clearance when sidebar is hidden */
+.tabBarCollapsed {
+  padding-left: 76px;
+}
+
 /* Scrollbar hidden but functional */
 .tabBar::-webkit-scrollbar {
   height: 0;

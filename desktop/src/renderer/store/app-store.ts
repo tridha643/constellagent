@@ -1371,6 +1371,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ activeTabId: existing.id })
       return
     }
+
+    // Ensure the worktree is on the correct branch before starting T3.
+    // Graphite stack branch takes priority over the stored workspace branch.
+    const project = s.projects.find((p) => p.id === ws.projectId)
+    if (project) {
+      try {
+        const stack = await window.api.graphite.getStack(project.repoPath, ws.worktreePath)
+        if (stack && stack.currentBranch !== ws.branch) {
+          await window.api.graphite.checkoutBranch(ws.worktreePath, stack.currentBranch)
+          get().updateWorkspaceBranch(ws.id, stack.currentBranch)
+        }
+      } catch { /* graphite info is best-effort */ }
+    }
+
     try {
       const serverUrl = await window.api.t3code.start(ws.worktreePath)
       get().addTab({
@@ -1488,6 +1502,11 @@ function isDetachedHeadBranchLabel(branch: string): boolean {
   return branch.trim().toUpperCase() === 'HEAD'
 }
 
+/** t3 agent sandboxes live under `~/.t3/worktrees/<repoDir>/…`. */
+function isT3WorktreePath(path: string): boolean {
+  return path.replace(/\\/g, '/').includes('/.t3/worktrees/')
+}
+
 /** Drop workspaces that only represent detached HEAD (from older reconcile / git state). */
 function pruneDetachedHeadWorkspaces(): void {
   useAppStore.setState((s) => {
@@ -1521,8 +1540,8 @@ function pruneDetachedHeadWorkspaces(): void {
 }
 
 /**
- * Merge git worktrees from `git worktree list` into the store when they are missing from persisted state.
- * The sidebar only renders app workspaces — it does not scan git by itself.
+ * Merge git worktrees from `git worktree list` (plus t3's `~/.t3/worktrees/…` scan) into the store
+ * when they are missing from persisted state. The sidebar only renders app workspaces.
  */
 async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Promise<void> {
   pruneDetachedHeadWorkspaces()
@@ -1548,9 +1567,10 @@ async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Pr
 
     for (const wt of listed) {
       if (wt.isBare) continue
-      if (wt.isDetached) continue
       const path = wt.path?.trim()
       if (!path) continue
+      const t3 = isT3WorktreePath(path)
+      if (wt.isDetached && !t3) continue
       if (currentForProject.some((w) => pathsEqualOrAlias(w.worktreePath, path))) continue
       if (additions.some((w) => w.projectId === project.id && pathsEqualOrAlias(w.worktreePath, path))) continue
 
@@ -1562,7 +1582,10 @@ async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Pr
           branch = ''
         }
       }
-      if (isDetachedHeadBranchLabel(branch)) continue
+      if (t3 && isDetachedHeadBranchLabel(branch)) {
+        branch = ''
+      }
+      if (!t3 && isDetachedHeadBranchLabel(branch)) continue
 
       const fallbackName = path.split(/[/\\]/).filter(Boolean).pop() || 'workspace'
       const name = branch || fallbackName
@@ -1627,6 +1650,16 @@ useAppStore.subscribe((state, prevState) => {
   ) {
     debouncedSave(state)
   }
+})
+
+// T3 Code: auto-collapse sidebar + right panel when the active tab is t3code
+useAppStore.subscribe((state, prevState) => {
+  if (state.activeTabId === prevState.activeTabId && state.settings === prevState.settings) return
+  if (!state.settings.t3CodeCollapseSidePanels) return
+  const activeTab = state.tabs.find((t) => t.id === state.activeTabId)
+  if (activeTab?.type !== 't3code') return
+  if (state.sidebarCollapsed && !state.rightPanelOpen) return
+  useAppStore.setState({ sidebarCollapsed: true, rightPanelOpen: false })
 })
 
 useAppStore.subscribe((state, prevState) => {
