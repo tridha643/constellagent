@@ -9,6 +9,7 @@ import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { Tooltip } from "../Tooltip/Tooltip";
 import { GraphiteStack } from "./GraphiteStack";
 import { CONSTELLAGENT_WORKSPACE_MIME } from "../../utils/add-to-chat";
+import { ContextWindowIndicator } from "./ContextWindowIndicator";
 import styles from "./Sidebar.module.css";
 
 const PR_ICON_SIZE = 10;
@@ -1295,6 +1296,7 @@ export function Sidebar() {
       </div>
 
       <div className={styles.actions}>
+        <ContextWindowIndicator />
         <Tooltip label={isInitializingRepo ? "Initializing repository…" : "Add project"}>
           <button className={styles.actionButton} onClick={handleAddProject} disabled={isInitializingRepo}>
             <span className={styles.actionIcon}>{isInitializingRepo ? "…" : "+"}</span>

@@ -174,6 +174,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastKnownRemoteHead: {},
   activeMonacoEditor: null,
   planBuildTerminalByPlanPath: {},
+  contextWindowData: null,
 
   addProject: (project) => {
     set((s) => ({
@@ -1407,6 +1408,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleGraphiteStackExpanded: () =>
     set((s) => ({ graphiteStackExpanded: !s.graphiteStackExpanded })),
+
+  setContextWindowData: (data) => set({ contextWindowData: data }),
 
   addAutomation: (automation) =>
     set((s) => ({ automations: [...s.automations, normalizeRendererAutomation(automation)] })),

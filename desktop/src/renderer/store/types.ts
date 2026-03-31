@@ -2,6 +2,7 @@ import type { editor } from 'monaco-editor'
 import type { PrInfo } from '@shared/github-types'
 import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
 import type { GraphiteStackInfo } from '@shared/graphite-types'
+import type { ContextWindowData } from '@shared/context-window-types'
 import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '../../shared/automation-types'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
@@ -232,6 +233,8 @@ export interface AppState {
   activeMonacoEditor: editor.IStandaloneCodeEditor | null
   /** Ephemeral: plan absolute path → terminal tab id from last Build (not persisted). */
   planBuildTerminalByPlanPath: Record<string, string>
+  /** Ephemeral: context window usage for the active workspace's Claude Code session. */
+  contextWindowData: ContextWindowData | null
 
   // Actions
   addProject: (project: Project) => void
@@ -335,6 +338,7 @@ export interface AppState {
   setWorktreeSyncStatus: (projectId: string, workspaces: Record<string, WorkspaceSyncInfo>) => void
   setGraphiteStack: (workspaceId: string, stack: GraphiteStackInfo | null) => void
   toggleGraphiteStackExpanded: () => void
+  setContextWindowData: (data: ContextWindowData | null) => void
 
   // Automation actions
   addAutomation: (automation: Automation) => void
