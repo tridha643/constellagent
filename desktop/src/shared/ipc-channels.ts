@@ -86,6 +86,7 @@ export const IPC = {
   CLAUDE_CHECK_HOOKS: 'claude:check-hooks',
   CLAUDE_NOTIFY_WORKSPACE: 'claude:notify-workspace',
   CLAUDE_ACTIVITY_UPDATE: 'claude:activity-update',
+  CLAUDE_CONTEXT_WINDOW: 'claude:context-window',
 
   // Codex integration
   CODEX_INSTALL_NOTIFY: 'codex:install-notify',

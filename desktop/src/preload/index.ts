@@ -8,6 +8,7 @@ import type { PlanAgent } from '../shared/agent-plan-path'
 import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
 import type { GraphiteStackInfo } from '../shared/graphite-types'
 import type { DiffAnnotation, DiffAnnotationAddInput } from '../shared/diff-annotation-types'
+import type { ContextWindowData } from '../shared/context-window-types'
 
 const api = {
   git: {
@@ -223,6 +224,8 @@ const api = {
         ipcRenderer.removeListener(IPC.CLAUDE_ACTIVITY_UPDATE, listener)
       }
     },
+    getContextWindow: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.CLAUDE_CONTEXT_WINDOW, worktreePath) as Promise<ContextWindowData | null>,
   },
 
   codex: {
