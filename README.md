@@ -11,7 +11,7 @@ A macOS desktop app for running multiple AI agents in parallel. Each agent gets 
 - Monaco code editor with syntax highlighting and diffs
 - Git staging, committing, branching, and worktree management
 - File tree navigation
-- Cron-based automation scheduling
+- Cron-based and event-driven automation scheduling
 - Keyboard-driven - Quick Open, tab switching, shortcuts
 
 ## Getting started
@@ -50,4 +50,7 @@ bun run dist      # Package as signed macOS DMG
 
 ```bash
 bun run test      # Playwright e2e tests
+bun run test:automations      # Headless automations smoke checks
+bun run test:automations:e2e  # Focused automations Electron e2e checks
+bun run verify:automations    # Build + smoke checks + manual checklist path
 ```

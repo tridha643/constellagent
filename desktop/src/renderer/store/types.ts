@@ -2,6 +2,7 @@ import type { editor } from 'monaco-editor'
 import type { PrInfo } from '@shared/github-types'
 import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
 import type { GraphiteStackInfo } from '@shared/graphite-types'
+import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '../../shared/automation-types'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
 export type WaitCondition =
@@ -23,8 +24,11 @@ export interface Automation {
   cronExpression: string
   enabled: boolean
   createdAt: number
+  trigger?: AutomationTrigger
+  action?: AutomationAction
+  cooldownMs?: number
   lastRunAt?: number
-  lastRunStatus?: 'success' | 'failed' | 'timeout'
+  lastRunStatus?: AutomationRunStatus
 }
 
 export interface SkillEntry {

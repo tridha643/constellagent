@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
-import type { AutomationConfig, AutomationRunStartedEvent } from '../shared/automation-types'
+import type {
+  AutomationConfig,
+  AutomationConfigLike,
+  AutomationRunStartedEvent,
+  AutomationStatusEvent,
+  AutomationWorkspaceEvent,
+} from '../shared/automation-types'
 import type { PhoneControlSettings, PhoneControlStatus } from '../shared/phone-control-types'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
@@ -235,21 +241,30 @@ const api = {
   },
 
   automations: {
-    create: (automation: AutomationConfig) =>
+    create: (automation: AutomationConfigLike) =>
       ipcRenderer.invoke(IPC.AUTOMATION_CREATE, automation),
-    update: (automation: AutomationConfig) =>
+    update: (automation: AutomationConfigLike) =>
       ipcRenderer.invoke(IPC.AUTOMATION_UPDATE, automation),
     delete: (automationId: string) =>
       ipcRenderer.invoke(IPC.AUTOMATION_DELETE, automationId),
-    runNow: (automation: AutomationConfig) =>
+    runNow: (automation: AutomationConfigLike) =>
       ipcRenderer.invoke(IPC.AUTOMATION_RUN_NOW, automation),
     stop: (automationId: string) =>
       ipcRenderer.invoke(IPC.AUTOMATION_STOP, automationId),
+    emitWorkspaceEvent: (payload: AutomationWorkspaceEvent) =>
+      ipcRenderer.send(IPC.AUTOMATION_WORKSPACE_EVENT, payload),
     onRunStarted: (callback: (data: AutomationRunStartedEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: AutomationRunStartedEvent) => callback(data)
       ipcRenderer.on(IPC.AUTOMATION_RUN_STARTED, listener)
       return () => {
         ipcRenderer.removeListener(IPC.AUTOMATION_RUN_STARTED, listener)
+      }
+    },
+    onStatusUpdated: (callback: (data: AutomationStatusEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: AutomationStatusEvent) => callback(data)
+      ipcRenderer.on(IPC.AUTOMATION_STATUS_UPDATED, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.AUTOMATION_STATUS_UPDATED, listener)
       }
     },
   },

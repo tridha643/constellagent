@@ -455,6 +455,15 @@ export class PtyManager {
     return Array.from(this.ptys.keys())
   }
 
+  getPtyIdsForWorkspace(workspaceId: string): string[] {
+    if (!workspaceId) return []
+    const ids: string[] = []
+    for (const [ptyId, instance] of this.ptys.entries()) {
+      if (instance.workspaceId === workspaceId) ids.push(ptyId)
+    }
+    return ids
+  }
+
   private detectAgentUnder(rootPid: number): string | null {
     let processTable = ''
     try {

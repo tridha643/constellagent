@@ -5,8 +5,9 @@ import { join, resolve } from 'path'
 import { symlink, unlink, stat, readlink } from 'fs/promises'
 import { execFile, execFileSync } from 'child_process'
 import { promisify } from 'util'
-import { registerIpcHandlers, cleanupAll, getIMessageService } from './ipc'
+import { registerIpcHandlers, cleanupAll, getGithubPollService, getIMessageService } from './ipc'
 import { NotificationWatcher } from './notification-watcher'
+import { emitAutomationEvent } from './automation-event-bus'
 
 const execFileAsync = promisify(execFile)
 
@@ -190,7 +191,11 @@ app.whenReady().then(() => {
   notificationWatcher.onNotify = (workspaceId) => {
     getIMessageService().onNotify(workspaceId)
   }
+  notificationWatcher.onAgentLifecycleEvent = (event) => {
+    emitAutomationEvent(event)
+  }
   notificationWatcher.start()
+  getGithubPollService().start()
   createWindow()
 
   // Auto-start phone control if enabled in persisted settings
