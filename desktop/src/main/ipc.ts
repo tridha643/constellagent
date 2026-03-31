@@ -27,6 +27,7 @@ import { GraphiteService } from './graphite-service'
 import { IMessageService, type ProjectInfo } from './imessage-service'
 import type { PhoneControlSettings } from '../shared/phone-control-types'
 import { t3codeService } from './t3code-service.js'
+import { ContextWindowService } from './context-window-service'
 
 import { ContextDb } from './context-db'
 import { getAgentFS, closeAllAgentFS, checkpoint, checkpointAll } from './agentfs-service'
@@ -1059,6 +1060,12 @@ export function registerIpcHandlers(): void {
       const msg = (err as ExecFileException).message || `Failed to open ${cliCommand}`
       return { success: false, error: msg }
     }
+  })
+
+  // ── Claude Code context window ──
+  const contextWindowService = new ContextWindowService()
+  ipcMain.handle(IPC.CLAUDE_CONTEXT_WINDOW, async (_e, worktreePath: string) => {
+    return contextWindowService.getUsage(worktreePath)
   })
 
   // ── Claude Code trust ──

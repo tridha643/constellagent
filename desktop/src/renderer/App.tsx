@@ -22,6 +22,7 @@ import { useShortcuts } from './hooks/useShortcuts'
 import { usePrStatusPoller } from './hooks/usePrStatusPoller'
 import { useWorktreeSyncPoller } from './hooks/useWorktreeSyncPoller'
 import { useGraphiteStackPoller } from './hooks/useGraphiteStackPoller'
+import { useContextWindowPoller } from './hooks/useContextWindowPoller'
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary'
 import styles from './App.module.css'
 
@@ -30,6 +31,7 @@ export function App() {
   usePrStatusPoller()
   useWorktreeSyncPoller()
   useGraphiteStackPoller()
+  useContextWindowPoller()
 
   // Listen for workspace notification signals from Claude Code hooks
   useEffect(() => {
