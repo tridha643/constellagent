@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type {
   AppState,
+  Automation,
   ChatSnippet,
   PersistedState,
   Project,
@@ -30,6 +31,12 @@ import {
 import { formatChatContext } from '../utils/chat-context-formatter'
 import { wrapBracketedPaste } from '../utils/bracketed-paste'
 import { pathsEqualOrAlias } from '../../shared/agent-plan-path'
+import {
+  DEFAULT_AUTOMATION_COOLDOWN_MS,
+  type AutomationAction,
+  type AutomationConfigLike,
+  type AutomationTrigger,
+} from '../../shared/automation-types'
 
 const DEFAULT_PR_LINK_PROVIDER = 'github' as const
 
@@ -74,6 +81,53 @@ function activeAgentSetsEqual(a: Set<string>, b: Set<string>): boolean {
     if (!b.has(id)) return false
   }
   return true
+}
+
+function legacyPromptForAction(action: AutomationAction | undefined): string {
+  return action?.type === 'run-prompt' ? action.prompt : ''
+}
+
+function legacyCronForTrigger(trigger: AutomationTrigger | undefined): string {
+  return trigger?.type === 'cron' ? trigger.cronExpression : ''
+}
+
+function normalizeRendererAutomation(raw: Partial<Automation> & { id: string; name: string; projectId: string }): Automation {
+  const trigger: AutomationTrigger = raw.trigger ?? {
+    type: 'cron',
+    cronExpression: raw.cronExpression ?? '',
+  }
+  const action: AutomationAction = raw.action ?? {
+    type: 'run-prompt',
+    prompt: raw.prompt ?? '',
+  }
+
+  return {
+    id: raw.id,
+    name: raw.name,
+    projectId: raw.projectId,
+    prompt: raw.prompt ?? legacyPromptForAction(action),
+    cronExpression: raw.cronExpression ?? legacyCronForTrigger(trigger),
+    enabled: raw.enabled ?? true,
+    createdAt: raw.createdAt ?? Date.now(),
+    trigger,
+    action,
+    cooldownMs: raw.cooldownMs ?? DEFAULT_AUTOMATION_COOLDOWN_MS,
+    lastRunAt: raw.lastRunAt,
+    lastRunStatus: raw.lastRunStatus,
+  }
+}
+
+function toAutomationIpcConfig(automation: Automation, repoPath: string): AutomationConfigLike {
+  return {
+    id: automation.id,
+    name: automation.name,
+    projectId: automation.projectId,
+    trigger: automation.trigger ?? { type: 'cron', cronExpression: automation.cronExpression },
+    action: automation.action ?? { type: 'run-prompt', prompt: automation.prompt },
+    enabled: automation.enabled,
+    repoPath,
+    cooldownMs: automation.cooldownMs ?? DEFAULT_AUTOMATION_COOLDOWN_MS,
+  }
 }
 
 /** Drop plan→terminal entries when the terminal tab no longer exists (e.g. bulk tab removal). */
@@ -195,13 +249,31 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  addWorkspace: (workspace) =>
+  addWorkspace: (workspace) => {
+    window.api.automations.emitWorkspaceEvent({
+      type: 'workspace:created',
+      workspaceId: workspace.id,
+      projectId: workspace.projectId,
+      branch: workspace.branch,
+      meta: workspace.automationId ? { automationOrigin: workspace.automationId } : undefined,
+    })
     set((s) => ({
       workspaces: [...s.workspaces, workspace],
       activeWorkspaceId: workspace.id,
-    })),
+    }))
+  },
 
-  removeWorkspace: (id) =>
+  removeWorkspace: (id) => {
+    const workspace = get().workspaces.find((entry) => entry.id === id)
+    if (workspace) {
+      window.api.automations.emitWorkspaceEvent({
+        type: 'workspace:deleted',
+        workspaceId: workspace.id,
+        projectId: workspace.projectId,
+        branch: workspace.branch,
+        meta: workspace.automationId ? { automationOrigin: workspace.automationId } : undefined,
+      })
+    }
     set((s) => {
       const newWorkspaces = s.workspaces.filter((w) => w.id !== id)
       const newTabs = s.tabs.filter((t) => t.workspaceId !== id)
@@ -234,7 +306,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             ? s.activeTabId
             : newTabs[0]?.id ?? null,
       }
-    }),
+    })
+  },
 
   renameWorkspace: (id, name) =>
     set((s) => ({
@@ -1339,11 +1412,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setContextWindowData: (data) => set({ contextWindowData: data }),
 
   addAutomation: (automation) =>
-    set((s) => ({ automations: [...s.automations, automation] })),
+    set((s) => ({ automations: [...s.automations, normalizeRendererAutomation(automation)] })),
 
   updateAutomation: (id, partial) =>
     set((s) => ({
-      automations: s.automations.map((a) => (a.id === id ? { ...a, ...partial } : a)),
+      automations: s.automations.map((a) => (a.id === id ? normalizeRendererAutomation({ ...a, ...partial }) : a)),
     })),
 
   removeAutomation: (id) =>
@@ -1474,7 +1547,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       projects,
       workspaces,
       tabs,
-      automations: data.automations ?? [],
+      automations: (data.automations ?? []).map((automation) => normalizeRendererAutomation(automation)),
       activeWorkspaceId,
       activeTabId,
       lastActiveTabByWorkspace: data.lastActiveTabByWorkspace ?? {},
@@ -1773,10 +1846,7 @@ export async function hydrateFromDisk(): Promise<void> {
     if (!automation.enabled) continue
     const project = state.projects.find((p) => p.id === automation.projectId)
     if (!project) continue
-    window.api.automations.create({
-      ...automation,
-      repoPath: project.repoPath,
-    })
+    window.api.automations.create(toAutomationIpcConfig(automation, project.repoPath))
   }
 
   // Listen for automation run-started events from main process
@@ -1813,6 +1883,13 @@ export async function hydrateFromDisk(): Promise<void> {
     })
 
     // Update automation lastRunAt
-    store.updateAutomation(automationId, { lastRunAt: Date.now() })
+    store.updateAutomation(automationId, { lastRunAt: Date.now(), lastRunStatus: 'success' })
+  })
+
+  window.api.automations.onStatusUpdated((data) => {
+    useAppStore.getState().updateAutomation(data.automationId, {
+      lastRunAt: data.timestamp,
+      lastRunStatus: data.status,
+    })
   })
 }

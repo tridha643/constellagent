@@ -20,6 +20,7 @@ A macOS desktop app for running multiple AI agents in parallel. Each agent gets 
 - Open-PR browser per project with filtering and one-click "Pull locally" into a new workspace
 - Graphite integration for stack detection, stack cloning, and Graphite PR links
 - Cron-based automations that create timestamped workspaces and launch agent prompts automatically
+- Event-driven hook-driven automations (GitHub activity, notifications) with cooldown, run history, and verification tooling
 - Context history backed by `.constellagent/constellagent.db`, with search, markdown summaries, and checkpoint restore
 - Diff annotations for human review comments persisted per worktree
 - Plan workflow for agent-written markdown plans, including a searchable plan palette, build status, relocation, and build launch
@@ -70,4 +71,7 @@ bun run dist      # Package as signed macOS DMG
 
 ```bash
 bun run test      # Playwright e2e tests
+bun run test:automations      # Headless automations smoke checks
+bun run test:automations:e2e  # Focused automations Electron e2e checks
+bun run verify:automations    # Build + smoke checks + manual checklist path
 ```

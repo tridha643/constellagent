@@ -15,8 +15,8 @@ import { WorktreeSyncService } from './worktree-sync-service'
 import { GithubService } from './github-service'
 import { FileService, type FileNode } from './file-service'
 import { readPlanMeta } from './plan-meta'
-import { AutomationScheduler } from './automation-scheduler'
-import type { AutomationConfig } from '../shared/automation-types'
+import { AutomationEngine } from './automation-engine'
+import type { AutomationConfigLike, AutomationWorkspaceEvent } from '../shared/automation-types'
 import { trustPathForClaude, loadClaudeSettings, saveClaudeSettings, loadJsonFile, saveJsonFile } from './claude-config'
 import { loadCodexConfigText, saveCodexConfigText, CODEX_CONFIG_PATH, CODEX_DIR } from './codex-config'
 import { loadMcpServersFromConfig, removeServerFromConfig } from './mcp-config'
@@ -33,6 +33,9 @@ import { ContextDb } from './context-db'
 import { getAgentFS, closeAllAgentFS, checkpoint, checkpointAll } from './agentfs-service'
 import { AnnotationService, cleanupAnnotationWatchers, setAnnotationNotify } from './annotation-service'
 import type { DiffAnnotationAddInput } from '../shared/diff-annotation-types'
+import { emitAutomationEvent } from './automation-event-bus'
+import { lookupPersistedProjectByRepoPath, lookupPersistedWorkspace } from './persisted-state'
+import { GithubPollService } from './github-poll-service'
 
 const ptyManager = new PtyManager()
 const worktreeSyncService = new WorktreeSyncService()
@@ -60,7 +63,8 @@ ptyManager.onTitleChanged = (ptyId, title, workspaceId, workingDir) => {
   }).catch(() => {})
 }
 
-const automationScheduler = new AutomationScheduler(ptyManager)
+const automationEngine = new AutomationEngine(ptyManager)
+const githubPollService = new GithubPollService()
 const lspService = new LspService()
 
 // Phone control via iMessage
@@ -346,6 +350,21 @@ async function processPendingFile(projectDir: string, pendingDir: string, fileNa
       toolResponse,
       timestamp: data.ts,
     })
+
+    const workspaceMeta = data.ws ? lookupPersistedWorkspace(data.ws) : {}
+    const projectMeta = lookupPersistedProjectByRepoPath(projectDir)
+    const postToolEvents = new Set(['PostToolUse', 'postToolUse', 'AfterTool', 'afterTool', 'afterMCPExecution', 'afterShellExecution'])
+    if (data.ws && data.tool && postToolEvents.has(String(data.event_type ?? ''))) {
+      emitAutomationEvent({
+        type: 'agent:tool-used',
+        timestamp: Date.now(),
+        workspaceId: data.ws,
+        projectId: workspaceMeta.projectId ?? projectMeta?.id,
+        branch: workspaceMeta.branch,
+        agentType: data.agent || 'claude-code',
+        toolName: data.tool,
+      })
+    }
     await unlink(filePath)
 
     scheduleContextEntriesUpdated(projectDir, data.ws)
@@ -1844,24 +1863,35 @@ Cachebro is pre-configured via \`npx cachebro init\`. Use the cachebro MCP tools
   })
 
   // ── Automation handlers ──
-  ipcMain.handle(IPC.AUTOMATION_CREATE, async (_e, automation: AutomationConfig) => {
-    automationScheduler.schedule(automation)
+  ipcMain.handle(IPC.AUTOMATION_CREATE, async (_e, automation: AutomationConfigLike) => {
+    automationEngine.upsert(automation)
   })
 
-  ipcMain.handle(IPC.AUTOMATION_UPDATE, async (_e, automation: AutomationConfig) => {
-    automationScheduler.schedule(automation) // reschedules
+  ipcMain.handle(IPC.AUTOMATION_UPDATE, async (_e, automation: AutomationConfigLike) => {
+    automationEngine.upsert(automation)
   })
 
   ipcMain.handle(IPC.AUTOMATION_DELETE, async (_e, automationId: string) => {
-    automationScheduler.unschedule(automationId)
+    automationEngine.remove(automationId)
   })
 
-  ipcMain.handle(IPC.AUTOMATION_RUN_NOW, async (_e, automation: AutomationConfig) => {
-    automationScheduler.runNow(automation)
+  ipcMain.handle(IPC.AUTOMATION_RUN_NOW, async (_e, automation: AutomationConfigLike) => {
+    automationEngine.runNow(automation)
   })
 
   ipcMain.handle(IPC.AUTOMATION_STOP, async (_e, automationId: string) => {
-    automationScheduler.unschedule(automationId)
+    automationEngine.remove(automationId)
+  })
+
+  ipcMain.on(IPC.AUTOMATION_WORKSPACE_EVENT, (_e, payload: AutomationWorkspaceEvent) => {
+    emitAutomationEvent({
+      type: payload.type,
+      timestamp: payload.timestamp ?? Date.now(),
+      workspaceId: payload.workspaceId,
+      projectId: payload.projectId,
+      branch: payload.branch,
+      meta: payload.meta,
+    })
   })
 
   // ── LSP handlers ──
@@ -2096,11 +2126,16 @@ export function getIMessageService(): IMessageService {
   return iMessageService
 }
 
+export function getGithubPollService(): GithubPollService {
+  return githubPollService
+}
+
 /** Kill all PTY processes and stop all automation jobs. Call on app quit. */
 export function cleanupAll(): void {
   worktreeSyncService.stopAll()
   ptyManager.destroyAll()
-  automationScheduler.destroyAll()
+  automationEngine.destroyAll()
+  githubPollService.stop()
   iMessageService.destroy()
   lspService.shutdown()
   cleanupAnnotationWatchers()

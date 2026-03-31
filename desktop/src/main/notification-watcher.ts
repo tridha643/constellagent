@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { BrowserWindow } from 'electron'
 import { IPC } from '../shared/ipc-channels'
+import type { AutomationAgentType, AutomationEvent } from '../shared/automation-types'
 import {
   DEFAULT_ACTIVITY_DIR,
   CLAUDE_MARKER_SUFFIX,
@@ -9,6 +10,7 @@ import {
   GEMINI_MARKER_SEGMENT,
   CURSOR_MARKER_SEGMENT,
 } from '../shared/agent-markers'
+import { lookupPersistedWorkspace } from './persisted-state'
 
 const DEFAULT_NOTIFY_DIR = '/tmp/constellagent-notify'
 const POLL_INTERVAL = 500
@@ -16,11 +18,12 @@ const FILE_SETTLE_MS = 100
 
 interface ActivityEntry {
   wsId: string
-  agentType: string
+  agentType: AutomationAgentType
 }
 
 export class NotificationWatcher {
   onNotify?: (workspaceId: string) => void
+  onAgentLifecycleEvent?: (event: AutomationEvent) => void
 
   constructor(
     private readonly notifyDir = process.env.CONSTELLAGENT_NOTIFY_DIR || DEFAULT_NOTIFY_DIR,
@@ -28,7 +31,7 @@ export class NotificationWatcher {
   ) {}
 
   private timer: ReturnType<typeof setInterval> | null = null
-  private lastActiveIds: string = ''
+  private lastActiveAgents = new Map<string, Set<AutomationAgentType>>()
 
   start(): void {
     mkdirSync(this.notifyDir, { recursive: true })
@@ -74,26 +77,26 @@ export class NotificationWatcher {
   private pollActivity(): void {
     try {
       const files = readdirSync(this.activityDir)
-      // One workspace may have Claude + Codex + others active at once; collect every wsId
-      // that has any marker (do not keep only one agent type per workspace).
-      const activeWsIds = new Set<string>()
+      const nextActiveAgents = new Map<string, Set<AutomationAgentType>>()
       for (const name of files) {
         const entry = this.workspaceIdFromMarkerName(name)
         if (!entry) {
           this.removeActivityMarker(name)
           continue
         }
-        activeWsIds.add(entry.wsId)
+        const set = nextActiveAgents.get(entry.wsId) ?? new Set<AutomationAgentType>()
+        set.add(entry.agentType)
+        nextActiveAgents.set(entry.wsId, set)
       }
-      const workspaceIds = [...activeWsIds].sort()
-      const entries: ActivityEntry[] = workspaceIds.map((wsId) => ({ wsId, agentType: 'active' }))
-      const sorted = workspaceIds.sort().join(',')
-      if (sorted !== this.lastActiveIds) {
-        const prevIds = this.lastActiveIds ? this.lastActiveIds.split(',').filter(Boolean) : []
-        const nextIdSet = new Set(workspaceIds)
-        const becameInactive = prevIds.filter((id) => !nextIdSet.has(id))
+      const entries: ActivityEntry[] = Array.from(nextActiveAgents.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .flatMap(([wsId, agentTypes]) => Array.from(agentTypes).sort().map((agentType) => ({ wsId, agentType })))
 
-        this.lastActiveIds = sorted
+      if (!this.activityMapsEqual(this.lastActiveAgents, nextActiveAgents)) {
+        const becameInactive = Array.from(this.lastActiveAgents.keys()).filter((id) => !nextActiveAgents.has(id))
+
+        this.emitLifecycleEvents(this.lastActiveAgents, nextActiveAgents)
+        this.lastActiveAgents = nextActiveAgents
         this.sendActivity(entries)
 
         // Fallback completion signal: if a workspace was active and now is not,
@@ -104,9 +107,10 @@ export class NotificationWatcher {
         }
       }
     } catch {
-      if (this.lastActiveIds !== '') {
-        const prevIds = this.lastActiveIds.split(',').filter(Boolean)
-        this.lastActiveIds = ''
+      if (this.lastActiveAgents.size > 0) {
+        const prevIds = Array.from(this.lastActiveAgents.keys())
+        this.emitLifecycleEvents(this.lastActiveAgents, new Map())
+        this.lastActiveAgents = new Map()
         this.sendActivity([])
         for (const wsId of prevIds) {
           this.notifyRenderer(wsId)
@@ -182,5 +186,59 @@ export class NotificationWatcher {
         win.webContents.send(IPC.CLAUDE_ACTIVITY_UPDATE, entries)
       }
     }
+  }
+
+  private activityMapsEqual(
+    left: Map<string, Set<AutomationAgentType>>,
+    right: Map<string, Set<AutomationAgentType>>,
+  ): boolean {
+    if (left.size !== right.size) return false
+    for (const [wsId, leftSet] of left.entries()) {
+      const rightSet = right.get(wsId)
+      if (!rightSet || leftSet.size !== rightSet.size) return false
+      for (const agentType of leftSet) {
+        if (!rightSet.has(agentType)) return false
+      }
+    }
+    return true
+  }
+
+  private emitLifecycleEvents(
+    previous: Map<string, Set<AutomationAgentType>>,
+    next: Map<string, Set<AutomationAgentType>>,
+  ): void {
+    for (const [wsId, nextAgentTypes] of next.entries()) {
+      const previousAgentTypes = previous.get(wsId) ?? new Set<AutomationAgentType>()
+      for (const agentType of nextAgentTypes) {
+        if (!previousAgentTypes.has(agentType)) {
+          this.emitLifecycleEvent('agent:started', wsId, agentType)
+        }
+      }
+    }
+
+    for (const [wsId, previousAgentTypes] of previous.entries()) {
+      const nextAgentTypes = next.get(wsId) ?? new Set<AutomationAgentType>()
+      for (const agentType of previousAgentTypes) {
+        if (!nextAgentTypes.has(agentType)) {
+          this.emitLifecycleEvent('agent:stopped', wsId, agentType)
+        }
+      }
+    }
+  }
+
+  private emitLifecycleEvent(
+    type: 'agent:started' | 'agent:stopped',
+    workspaceId: string,
+    agentType: AutomationAgentType,
+  ): void {
+    const metadata = lookupPersistedWorkspace(workspaceId)
+    this.onAgentLifecycleEvent?.({
+      type,
+      timestamp: Date.now(),
+      workspaceId,
+      agentType,
+      projectId: metadata.projectId,
+      branch: metadata.branch,
+    })
   }
 }

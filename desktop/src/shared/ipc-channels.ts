@@ -100,6 +100,8 @@ export const IPC = {
   AUTOMATION_RUN_NOW: 'automation:run-now',
   AUTOMATION_STOP: 'automation:stop',
   AUTOMATION_RUN_STARTED: 'automation:run-started',
+  AUTOMATION_STATUS_UPDATED: 'automation:status-updated',
+  AUTOMATION_WORKSPACE_EVENT: 'automation:workspace-event',
 
   // GitHub operations
   GITHUB_GET_PR_STATUSES: 'github:get-pr-statuses',

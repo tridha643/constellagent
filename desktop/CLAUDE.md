@@ -8,6 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 bun run dev          # Start dev server + Electron app
 bun run build        # Production build to out/
 bun run test         # Run Playwright e2e tests (all)
+bun run test:automations   # Headless automations smoke coverage
+bun run test:automations:e2e # Focused automations Electron e2e coverage
+bun run verify:automations # Build + smoke verification + manual checklist path
 bunx playwright test e2e/tabs.spec.ts              # Single test file
 bunx playwright test --grep "creates terminal"     # Single test by name
 bun run rebuild      # Rebuild native modules (node-pty) for Electron
