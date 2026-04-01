@@ -547,6 +547,107 @@ function McpServersSection() {
   )
 }
 
+function SendBlueSection() {
+  const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+  const addToast = useAppStore((s) => s.addToast)
+  const [testing, setTesting] = useState(false)
+  const [status, setStatus] = useState<{ connected: boolean; webhookUrl: string | null; phoneNumber: string | null } | null>(null)
+
+  const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+    updateSettings({ [key]: value })
+  }
+
+  useEffect(() => {
+    window.api.sendblue.getStatus().then(setStatus).catch(() => {})
+  }, [])
+
+  const handleTestConnection = async () => {
+    setTesting(true)
+    try {
+      await window.api.sendblue.test(settings)
+      addToast({ id: crypto.randomUUID(), message: 'Test message sent via SendBlue', type: 'info' })
+    } catch (e: unknown) {
+      addToast({
+        id: crypto.randomUUID(),
+        message: e instanceof Error ? e.message : 'Failed to send test message',
+        type: 'error',
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>SendBlue (SMS/iMessage Relay)</div>
+
+      <ToggleRow
+        label="Enable SendBlue"
+        description="Receive and send commands via SMS/iMessage through SendBlue"
+        value={settings.sendblueEnabled}
+        onChange={(v) => update('sendblueEnabled', v)}
+      />
+
+      <TextRow
+        label="API key"
+        description="Your SendBlue API key (from sendblue.co dashboard)"
+        value={settings.sendblueApiKey}
+        onChange={(v) => update('sendblueApiKey', v)}
+        placeholder="sb-api-..."
+      />
+
+      <TextRow
+        label="Phone number"
+        description="Your phone number for outbound notifications"
+        value={settings.sendbluePhoneNumber}
+        onChange={(v) => update('sendbluePhoneNumber', v)}
+        placeholder="+15551234567"
+      />
+
+      <NumberRow
+        label="Webhook port"
+        description="Local port for the SendBlue webhook server"
+        value={settings.sendblueWebhookPort}
+        onChange={(v) => update('sendblueWebhookPort', v)}
+        min={1024}
+        max={65535}
+      />
+
+      <TextRow
+        label="Public webhook URL"
+        description="Your tunnel URL (ngrok/cloudflared) pointing to the webhook port"
+        value={settings.sendblueWebhookUrl}
+        onChange={(v) => update('sendblueWebhookUrl', v)}
+        placeholder="https://your-tunnel.ngrok.io"
+      />
+
+      <ToggleRow
+        label="Notify on completion"
+        description="Send an SMS when orchestrator tasks complete"
+        value={settings.sendblueNotifyOnCompletion}
+        onChange={(v) => update('sendblueNotifyOnCompletion', v)}
+      />
+
+      <div className={styles.row}>
+        <div className={styles.rowText}>
+          <div className={styles.rowLabel}>Connection status</div>
+          <div className={styles.rowDescription}>
+            {status?.connected ? 'Webhook server running' : 'Not connected'}
+          </div>
+        </div>
+        <button
+          className={styles.actionBtn}
+          onClick={handleTestConnection}
+          disabled={testing || !settings.sendblueApiKey || !settings.sendbluePhoneNumber}
+        >
+          {testing ? 'Sending...' : 'Test'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function PhoneControlSection() {
   const settings = useAppStore((s) => s.settings)
   const updateSettings = useAppStore((s) => s.updateSettings)
@@ -910,6 +1011,8 @@ export function SettingsPanel() {
             onChange={(v) => update('sessionResumeEnabled', v)}
           />
         </div>
+
+        <SendBlueSection />
 
         <PhoneControlSection />
 

@@ -176,6 +176,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   planBuildTerminalByPlanPath: {},
   contextWindowData: null,
 
+  // Orchestrator
+  orchestratorOpen: false,
+  orchestratorStatus: 'idle' as const,
+  orchestratorSessions: [],
+  orchestratorMessages: [],
+
   addProject: (project) => {
     set((s) => ({
       projects: [
@@ -1157,10 +1163,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSettings: (partial) =>
     set((s) => ({ settings: { ...s.settings, ...partial } })),
 
-  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen, automationsOpen: false, contextHistoryOpen: false })),
-  toggleAutomations: () => set((s) => ({ automationsOpen: !s.automationsOpen, settingsOpen: false, contextHistoryOpen: false })),
-  toggleContextHistory: () => set((s) => ({ contextHistoryOpen: !s.contextHistoryOpen, settingsOpen: false, automationsOpen: false })),
+  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen, automationsOpen: false, contextHistoryOpen: false, orchestratorOpen: false })),
+  toggleAutomations: () => set((s) => ({ automationsOpen: !s.automationsOpen, settingsOpen: false, contextHistoryOpen: false, orchestratorOpen: false })),
+  toggleContextHistory: () => set((s) => ({ contextHistoryOpen: !s.contextHistoryOpen, settingsOpen: false, automationsOpen: false, orchestratorOpen: false })),
   closeContextHistory: () => set({ contextHistoryOpen: false }),
+
+  // Orchestrator actions
+  toggleOrchestrator: () => set((s) => ({ orchestratorOpen: !s.orchestratorOpen, settingsOpen: false, automationsOpen: false, contextHistoryOpen: false })),
+  setOrchestratorStatus: (status) => set({ orchestratorStatus: status }),
+  addOrchestratorMessage: (msg) => set((s) => ({ orchestratorMessages: [...s.orchestratorMessages, msg] })),
+  setOrchestratorSessions: (sessions) => set({ orchestratorSessions: sessions }),
+  updateOrchestratorSession: (session) => set((s) => ({
+    orchestratorSessions: s.orchestratorSessions.some((sess) => sess.id === session.id)
+      ? s.orchestratorSessions.map((sess) => (sess.id === session.id ? session : sess))
+      : [...s.orchestratorSessions, session],
+  })),
 
   showConfirmDialog: (dialog) => set({ confirmDialog: dialog }),
 

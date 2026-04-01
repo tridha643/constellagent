@@ -358,6 +358,7 @@ export function Sidebar() {
   const toggleSettings = useAppStore((s) => s.toggleSettings);
   const toggleAutomations = useAppStore((s) => s.toggleAutomations);
   const toggleContextHistory = useAppStore((s) => s.toggleContextHistory);
+  const toggleOrchestrator = useAppStore((s) => s.toggleOrchestrator);
   const openLatestAgentPlan = useAppStore((s) => s.openLatestAgentPlan);
   const unreadWorkspaceIds = useAppStore((s) => s.unreadWorkspaceIds);
   const activeClaudeWorkspaceIds = useAppStore((s) => s.activeClaudeWorkspaceIds);
@@ -1324,6 +1325,12 @@ export function Sidebar() {
           >
             <span className={styles.actionIcon}>≡</span>
             <span>Plans</span>
+          </button>
+        </Tooltip>
+        <Tooltip label="Universal Orchestrator">
+          <button className={styles.actionButton} onClick={toggleOrchestrator}>
+            <span className={styles.actionIcon}>⬡</span>
+            <span>Orchestrator</span>
           </button>
         </Tooltip>
         <Tooltip label="Settings" shortcut="⌘,">
