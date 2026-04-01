@@ -8,6 +8,12 @@ import type {
   AutomationWorkspaceEvent,
 } from '../shared/automation-types'
 import type { PhoneControlSettings, PhoneControlStatus } from '../shared/phone-control-types'
+import type {
+  OrchestratorStatus,
+  OrchestratorMessage,
+  OrchestratorSession,
+  SendBlueStatus,
+} from '../shared/orchestrator-types'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { PlanAgent } from '../shared/agent-plan-path'
@@ -362,6 +368,45 @@ const api = {
         ipcRenderer.removeListener(IPC.ANNOTATION_CHANGED, listener)
       }
     },
+  },
+
+  orchestrator: {
+    start: (settings: unknown) =>
+      ipcRenderer.invoke(IPC.ORCHESTRATOR_START, settings),
+    stop: () =>
+      ipcRenderer.invoke(IPC.ORCHESTRATOR_STOP),
+    getStatus: () =>
+      ipcRenderer.invoke(IPC.ORCHESTRATOR_STATUS) as Promise<OrchestratorStatus>,
+    sendCommand: (command: string) =>
+      ipcRenderer.invoke(IPC.ORCHESTRATOR_COMMAND, command),
+    getSessions: () =>
+      ipcRenderer.invoke(IPC.ORCHESTRATOR_SESSIONS) as Promise<OrchestratorSession[]>,
+    getMessages: () =>
+      ipcRenderer.invoke(IPC.ORCHESTRATOR_MESSAGES) as Promise<OrchestratorMessage[]>,
+    onStatusChanged: (callback: (status: OrchestratorStatus) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: OrchestratorStatus) => callback(status)
+      ipcRenderer.on(IPC.ORCHESTRATOR_STATUS_CHANGED, listener)
+      return () => { ipcRenderer.removeListener(IPC.ORCHESTRATOR_STATUS_CHANGED, listener) }
+    },
+    onSessionUpdated: (callback: (session: OrchestratorSession) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, session: OrchestratorSession) => callback(session)
+      ipcRenderer.on(IPC.ORCHESTRATOR_SESSION_UPDATED, listener)
+      return () => { ipcRenderer.removeListener(IPC.ORCHESTRATOR_SESSION_UPDATED, listener) }
+    },
+    onMessageReceived: (callback: (msg: OrchestratorMessage) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, msg: OrchestratorMessage) => callback(msg)
+      ipcRenderer.on(IPC.ORCHESTRATOR_MESSAGE_RECEIVED, listener)
+      return () => { ipcRenderer.removeListener(IPC.ORCHESTRATOR_MESSAGE_RECEIVED, listener) }
+    },
+  },
+
+  sendblue: {
+    getStatus: () =>
+      ipcRenderer.invoke(IPC.SENDBLUE_STATUS) as Promise<SendBlueStatus>,
+    send: (to: string, message: string) =>
+      ipcRenderer.invoke(IPC.SENDBLUE_SEND, to, message),
+    test: (settings: unknown) =>
+      ipcRenderer.invoke(IPC.SENDBLUE_TEST, settings),
   },
 
   phoneControl: {

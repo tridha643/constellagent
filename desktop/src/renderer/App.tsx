@@ -13,6 +13,7 @@ import { RightPanel } from './components/RightPanel/RightPanel'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
 import { AutomationsPanel } from './components/Automations/AutomationsPanel'
 import { ContextHistoryPanel } from './components/ContextHistory/ContextHistoryPanel'
+import { OrchestratorPanel } from './components/Orchestrator/OrchestratorPanel'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
 import { PlanPalette } from './components/PlanPalette/PlanPalette'
 import { ConfirmDialog } from './components/Sidebar/ConfirmDialog'
@@ -105,6 +106,7 @@ export function App() {
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const automationsOpen = useAppStore((s) => s.automationsOpen)
   const contextHistoryOpen = useAppStore((s) => s.contextHistoryOpen)
+  const orchestratorOpen = useAppStore((s) => s.orchestratorOpen)
   const quickOpenVisible = useAppStore((s) => s.quickOpenVisible)
   const planPaletteVisible = useAppStore((s) => s.planPaletteVisible)
   const confirmDialog = useAppStore((s) => s.confirmDialog)
@@ -138,6 +140,8 @@ export function App() {
           <AutomationsPanel />
         ) : contextHistoryOpen ? (
           <ContextHistoryPanel />
+        ) : orchestratorOpen ? (
+          <OrchestratorPanel />
         ) : (
           <ErrorBoundary
             fallback={

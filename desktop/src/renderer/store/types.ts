@@ -4,6 +4,7 @@ import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
 import type { GraphiteStackInfo } from '@shared/graphite-types'
 import type { ContextWindowData } from '@shared/context-window-types'
 import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '../../shared/automation-types'
+import type { OrchestratorStatus, OrchestratorSession, OrchestratorMessage } from '../../shared/orchestrator-types'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
 export type WaitCondition =
@@ -136,6 +137,12 @@ export interface Settings {
   sessionResumeEnabled: boolean
   skills: SkillEntry[]
   subagents: SubagentEntry[]
+  sendblueEnabled: boolean
+  sendblueApiKey: string
+  sendbluePhoneNumber: string
+  sendblueWebhookPort: number
+  sendblueWebhookUrl: string
+  sendblueNotifyOnCompletion: boolean
   phoneControlEnabled: boolean
   phoneControlContactId: string
   phoneControlNotifyOnStart: boolean
@@ -161,6 +168,12 @@ export const DEFAULT_SETTINGS: Settings = {
   sessionResumeEnabled: true,
   skills: [],
   subagents: [],
+  sendblueEnabled: false,
+  sendblueApiKey: '',
+  sendbluePhoneNumber: '',
+  sendblueWebhookPort: 3847,
+  sendblueWebhookUrl: '',
+  sendblueNotifyOnCompletion: true,
   phoneControlEnabled: false,
   phoneControlContactId: '',
   phoneControlNotifyOnStart: true,
@@ -235,6 +248,12 @@ export interface AppState {
   planBuildTerminalByPlanPath: Record<string, string>
   /** Ephemeral: context window usage for the active workspace's Claude Code session. */
   contextWindowData: ContextWindowData | null
+
+  // Orchestrator
+  orchestratorOpen: boolean
+  orchestratorStatus: OrchestratorStatus
+  orchestratorSessions: OrchestratorSession[]
+  orchestratorMessages: OrchestratorMessage[]
 
   // Actions
   addProject: (project: Project) => void
@@ -344,6 +363,13 @@ export interface AppState {
   addAutomation: (automation: Automation) => void
   updateAutomation: (id: string, partial: Partial<Omit<Automation, 'id'>>) => void
   removeAutomation: (id: string) => void
+
+  // Orchestrator actions
+  toggleOrchestrator: () => void
+  setOrchestratorStatus: (status: OrchestratorStatus) => void
+  addOrchestratorMessage: (msg: OrchestratorMessage) => void
+  setOrchestratorSessions: (sessions: OrchestratorSession[]) => void
+  updateOrchestratorSession: (session: OrchestratorSession) => void
 
   // Skills & Subagents actions
   addSkill: (skill: SkillEntry) => void
