@@ -1,14 +1,18 @@
 import { BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
+import { createOpenRouter } from '@openrouter/ai-sdk-provider'
+import { generateText } from 'ai'
 import { IPC } from '../shared/ipc-channels'
 import type {
   OrchestratorStatus,
   OrchestratorMessage,
   OrchestratorSession,
+  OrchestratorLlmCredentials,
 } from '../shared/orchestrator-types'
+import { DEFAULT_ORCHESTRATOR_MODEL } from '../shared/orchestrator-types'
+import type { Settings } from '../renderer/store/types'
 import type { SendBlueService } from './sendblue-service'
-import type { PtyManager } from './pty-manager'
-import type { ContextDb } from './context-db'
+import { ORCHESTRATOR_SYSTEM_PROMPT } from './orchestrator/orchestrator-system-prompt'
 
 interface TaskPlan {
   tasks: Array<{
@@ -19,28 +23,29 @@ interface TaskPlan {
   message?: string
 }
 
-const ORCHESTRATOR_SYSTEM_PROMPT = `You are a development orchestrator. Given a task description, you output a JSON plan with:
-- A list of sub-tasks, each with: title, description, suggested_branch_name
-- An optional message to send back to the user
-
-Respond only with valid JSON matching this schema:
-{
-  "tasks": [{ "title": "string", "description": "string", "suggested_branch_name": "string" }],
-  "message": "optional string"
-}`
-
 export class UniversalOrchestratorService {
   private status: OrchestratorStatus = 'idle'
   private sessions: OrchestratorSession[] = []
   private messages: OrchestratorMessage[] = []
+  /** Used for SMS/webhook commands when the renderer does not send credentials. */
+  private cachedLlm: OrchestratorLlmCredentials | null = null
 
-  constructor(
-    private ptyManager: PtyManager,
-    private sendBlueService: SendBlueService,
-  ) {}
+  constructor(private sendBlueService: SendBlueService) {}
 
-  async handleCommand(from: string, command: string): Promise<void> {
-    // Record inbound message
+  /** Call after SendBlue starts so inbound SMS can use the same OpenRouter fields as Settings. */
+  setCachedLlmFromSettings(settings: Pick<Settings, 'openRouterApiKey' | 'orchestratorModel'>): void {
+    const model = settings.orchestratorModel.trim()
+    this.cachedLlm = {
+      openRouterApiKey: settings.openRouterApiKey,
+      orchestratorModel: model || DEFAULT_ORCHESTRATOR_MODEL,
+    }
+  }
+
+  async handleCommand(
+    from: string,
+    command: string,
+    llm?: OrchestratorLlmCredentials | null,
+  ): Promise<void> {
     const inboundMsg: OrchestratorMessage = {
       id: randomUUID(),
       direction: from === 'ui' ? 'outbound' : 'inbound',
@@ -50,14 +55,31 @@ export class UniversalOrchestratorService {
     this.messages.push(inboundMsg)
     this.broadcast(IPC.ORCHESTRATOR_MESSAGE_RECEIVED, inboundMsg)
 
+    const creds = from === 'ui' ? llm : this.cachedLlm
+    const apiKey = (creds?.openRouterApiKey ?? '').trim()
+    const modelId = (creds?.orchestratorModel ?? '').trim() || DEFAULT_ORCHESTRATOR_MODEL
+
+    if (!apiKey) {
+      this.status = 'error'
+      this.broadcast(IPC.ORCHESTRATOR_STATUS_CHANGED, this.status)
+      const errMsg: OrchestratorMessage = {
+        id: randomUUID(),
+        direction: 'system',
+        content:
+          'OpenRouter API key is required for the orchestrator. Add it under Settings → Orchestrator (OpenRouter).',
+        timestamp: Date.now(),
+      }
+      this.messages.push(errMsg)
+      this.broadcast(IPC.ORCHESTRATOR_MESSAGE_RECEIVED, errMsg)
+      return
+    }
+
     this.status = 'running'
     this.broadcast(IPC.ORCHESTRATOR_STATUS_CHANGED, this.status)
 
     try {
-      // Use Claude Code SDK (query) to parse the command into a task plan
-      const plan = await this.parseCommand(command)
+      const plan = await this.parseCommand(command, apiKey, modelId)
 
-      // Send acknowledgment
       const ackMessage = plan.message || `Received: "${command}". Creating ${plan.tasks.length} task(s).`
       const ackMsg: OrchestratorMessage = {
         id: randomUUID(),
@@ -68,14 +90,12 @@ export class UniversalOrchestratorService {
       this.messages.push(ackMsg)
       this.broadcast(IPC.ORCHESTRATOR_MESSAGE_RECEIVED, ackMsg)
 
-      // Notify sender via SendBlue if the command came from SMS
       if (from !== 'ui' && this.sendBlueService.status().connected) {
         await this.sendBlueService.send(from, ackMessage).catch((err) => {
           console.error('[orchestrator] Failed to send SMS acknowledgment:', err)
         })
       }
 
-      // Create sessions for each task
       for (const task of plan.tasks) {
         const session: OrchestratorSession = {
           id: randomUUID(),
@@ -93,11 +113,10 @@ export class UniversalOrchestratorService {
       this.status = 'idle'
       this.broadcast(IPC.ORCHESTRATOR_STATUS_CHANGED, this.status)
 
-      // Notify completion via SendBlue
       if (from !== 'ui' && this.sendBlueService.status().connected) {
         await this.sendBlueService.send(
           from,
-          `Tasks queued: ${plan.tasks.map((t) => t.title).join(', ')}`
+          `Tasks queued: ${plan.tasks.map((t) => t.title).join(', ')}`,
         ).catch(() => {})
       }
     } catch (err) {
@@ -116,31 +135,16 @@ export class UniversalOrchestratorService {
     }
   }
 
-  private async parseCommand(command: string): Promise<TaskPlan> {
-    // Use Claude Code SDK to parse the command into structured tasks
+  private async parseCommand(command: string, apiKey: string, modelId: string): Promise<TaskPlan> {
     try {
-      const { query } = await import('@anthropic-ai/claude-code')
-      const result: string[] = []
-      for await (const msg of query({
+      const openrouter = createOpenRouter({ apiKey })
+      const model = openrouter(modelId)
+      const { text } = await generateText({
+        model,
+        system: ORCHESTRATOR_SYSTEM_PROMPT,
         prompt: command,
-        systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
-        options: {
-          maxTurns: 1,
-        },
-      })) {
-        if (msg.type === 'result') {
-          result.push(typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result))
-        } else if (msg.type === 'assistant' && msg.message?.content) {
-          for (const block of msg.message.content) {
-            if (block.type === 'text' && typeof block.text === 'string') {
-              result.push(block.text)
-            }
-          }
-        }
-      }
+      })
 
-      const text = result.join('')
-      // Extract JSON from the response (handle markdown code blocks)
       const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, text]
       const parsed = JSON.parse(jsonMatch[1]!.trim())
 
@@ -157,8 +161,7 @@ export class UniversalOrchestratorService {
 
       return parsed as TaskPlan
     } catch (err) {
-      console.warn('[orchestrator] Claude Code SDK unavailable, using fallback:', err)
-      // Fallback: create a single task from the command directly
+      console.warn('[orchestrator] OpenRouter planning failed, using fallback:', err)
       return {
         tasks: [{
           title: command.slice(0, 60),

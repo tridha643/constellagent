@@ -14,6 +14,17 @@ const execFileAsync = promisify(execFile)
 let mainWindow: BrowserWindow | null = null
 let notificationWatcher: NotificationWatcher | null = null
 
+function isE2eRun(): boolean {
+  if (process.env.CI_TEST === '1' || process.env.CI_TEST === 'true') return true
+  // Playwright passes extra args after the main script; app.commandLine is the reliable parser.
+  try {
+    if (app.commandLine.hasSwitch('constell-e2e')) return true
+  } catch {
+    /* app not ready — fall through */
+  }
+  return process.argv.includes('--constell-e2e')
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -34,7 +45,7 @@ function createWindow(): void {
   })
 
   // Show window when ready to avoid white flash (skip in tests)
-  if (!process.env.CI_TEST) {
+  if (!isE2eRun()) {
     mainWindow.on('ready-to-show', () => {
       mainWindow?.show()
     })
@@ -95,8 +106,11 @@ async function autoInstallCli(): Promise<void> {
 
 app.setName('Constellagent')
 
-// Isolate test data so e2e tests never touch real app state
-if (process.env.CI_TEST) {
+// Isolate test data so e2e tests never touch real app state.
+// Playwright may not always propagate env to the Electron main process; also accept --constell-e2e.
+const e2eIsolateUserData = isE2eRun()
+
+if (e2eIsolateUserData) {
   const { mkdtempSync } = require('fs')
   const { join } = require('path')
   const testData = mkdtempSync(join(require('os').tmpdir(), 'constellagent-test-'))

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type { Settings, FavoriteEditor, McpServer, AgentType, SkillEntry, SubagentEntry } from '../../store/types'
 import type { PhoneControlStatus } from '@shared/phone-control-types'
+import { DEFAULT_ORCHESTRATOR_MODEL } from '../../../shared/orchestrator-types'
 import { Tooltip } from '../Tooltip/Tooltip'
 import styles from './SettingsPanel.module.css'
 
@@ -57,12 +58,13 @@ function ToggleRow({ label, description, value, onChange }: {
   )
 }
 
-function TextRow({ label, description, value, onChange, placeholder }: {
+function TextRow({ label, description, value, onChange, placeholder, password }: {
   label: string
   description: string
   value: string
   onChange: (v: string) => void
   placeholder?: string
+  password?: boolean
 }) {
   return (
     <div className={styles.row}>
@@ -72,9 +74,11 @@ function TextRow({ label, description, value, onChange, placeholder }: {
       </div>
       <input
         className={styles.textInput}
+        type={password ? 'password' : 'text'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        autoComplete={password ? 'off' : undefined}
       />
     </div>
   )
@@ -547,6 +551,41 @@ function McpServersSection() {
   )
 }
 
+function OrchestratorOpenRouterSection() {
+  const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+
+  const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+    updateSettings({ [key]: value })
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Orchestrator (OpenRouter)</div>
+      <p className={styles.rowDescription} style={{ marginBottom: '0.75rem' }}>
+        Task planning uses OpenRouter. Add a key here for the Orchestrator Send button. The Orchestrator Start button only starts the SendBlue SMS webhook; it does not configure the LLM.
+      </p>
+
+      <TextRow
+        label="OpenRouter API key"
+        description="From openrouter.ai — used only for orchestrator JSON planning"
+        value={settings.openRouterApiKey}
+        onChange={(v) => update('openRouterApiKey', v)}
+        placeholder="sk-or-..."
+        password
+      />
+
+      <TextRow
+        label="Model (optional)"
+        description="OpenRouter model slug; leave default for Kimi K2.5"
+        value={settings.orchestratorModel}
+        onChange={(v) => update('orchestratorModel', v)}
+        placeholder={DEFAULT_ORCHESTRATOR_MODEL}
+      />
+    </div>
+  )
+}
+
 function SendBlueSection() {
   const settings = useAppStore((s) => s.settings)
   const updateSettings = useAppStore((s) => s.updateSettings)
@@ -1011,6 +1050,8 @@ export function SettingsPanel() {
             onChange={(v) => update('sessionResumeEnabled', v)}
           />
         </div>
+
+        <OrchestratorOpenRouterSection />
 
         <SendBlueSection />
 

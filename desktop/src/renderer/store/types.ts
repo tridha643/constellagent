@@ -4,7 +4,12 @@ import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
 import type { GraphiteStackInfo } from '@shared/graphite-types'
 import type { ContextWindowData } from '@shared/context-window-types'
 import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '../../shared/automation-types'
-import type { OrchestratorStatus, OrchestratorSession, OrchestratorMessage } from '../../shared/orchestrator-types'
+import {
+  DEFAULT_ORCHESTRATOR_MODEL,
+  type OrchestratorStatus,
+  type OrchestratorSession,
+  type OrchestratorMessage,
+} from '../../shared/orchestrator-types'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
 export type WaitCondition =
@@ -143,6 +148,10 @@ export interface Settings {
   sendblueWebhookPort: number
   sendblueWebhookUrl: string
   sendblueNotifyOnCompletion: boolean
+  /** OpenRouter API key for orchestrator LLM (Settings). */
+  openRouterApiKey: string
+  /** OpenRouter model slug; empty string means use default. */
+  orchestratorModel: string
   phoneControlEnabled: boolean
   phoneControlContactId: string
   phoneControlNotifyOnStart: boolean
@@ -174,6 +183,8 @@ export const DEFAULT_SETTINGS: Settings = {
   sendblueWebhookPort: 3847,
   sendblueWebhookUrl: '',
   sendblueNotifyOnCompletion: true,
+  openRouterApiKey: '',
+  orchestratorModel: DEFAULT_ORCHESTRATOR_MODEL,
   phoneControlEnabled: false,
   phoneControlContactId: '',
   phoneControlNotifyOnStart: true,

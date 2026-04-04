@@ -12,6 +12,7 @@ import type {
   OrchestratorStatus,
   OrchestratorMessage,
   OrchestratorSession,
+  OrchestratorCommandPayload,
   SendBlueStatus,
 } from '../shared/orchestrator-types'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
@@ -377,8 +378,8 @@ const api = {
       ipcRenderer.invoke(IPC.ORCHESTRATOR_STOP),
     getStatus: () =>
       ipcRenderer.invoke(IPC.ORCHESTRATOR_STATUS) as Promise<OrchestratorStatus>,
-    sendCommand: (command: string) =>
-      ipcRenderer.invoke(IPC.ORCHESTRATOR_COMMAND, command),
+    sendCommand: (payload: OrchestratorCommandPayload) =>
+      ipcRenderer.invoke(IPC.ORCHESTRATOR_COMMAND, payload),
     getSessions: () =>
       ipcRenderer.invoke(IPC.ORCHESTRATOR_SESSIONS) as Promise<OrchestratorSession[]>,
     getMessages: () =>

@@ -59,9 +59,8 @@ test('orchestrator command input is interactive', async () => {
   await textarea.fill('test command')
   await expect(textarea).toHaveValue('test command')
 
-  // Send button should be enabled when there's text
-  const sendBtn = window.locator('button', { hasText: 'Send' })
-  await expect(sendBtn).toBeEnabled()
+  const sendBtn = window.getByRole('button', { name: 'Send' })
+  await expect(sendBtn).toBeVisible()
 })
 
 test('orchestrator start button requires SendBlue API key', async () => {
