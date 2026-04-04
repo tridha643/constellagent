@@ -26,7 +26,7 @@ case "$EVENT" in
   Stop)
     TOOL="AssistantTurn"
     TOOL_INPUT=$(echo "$INPUT" | jq -c '{stop_reason: .stop_reason}')
-    write_pending "$CWD" "$AGENT_TYPE" "$SESSION_ID" "$TOOL" "$TOOL_INPUT" "" "$TIMESTAMP"
+    CHECKPOINT_MODE=full write_pending "$CWD" "$AGENT_TYPE" "$SESSION_ID" "$TOOL" "$TOOL_INPUT" "" "$TIMESTAMP"
     ;;
   PostToolUse)
     TOOL=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')

@@ -59,7 +59,7 @@ case "$EVENT" in
     else
       TOOL_INPUT=$(jq -nc --arg msg "$INPUT" '{summary: ($msg | .[:8000])}')
     fi
-    write_pending "$CWD" "$AGENT_TYPE" "$SESSION_ID" "AssistantTurn" "$TOOL_INPUT" "" "$TIMESTAMP"
+    CHECKPOINT_MODE=full write_pending "$CWD" "$AGENT_TYPE" "$SESSION_ID" "AssistantTurn" "$TOOL_INPUT" "" "$TIMESTAMP"
 
     # Output rich AgentFS context for Codex to pick up
     CTX_CONTENT=$(read_agent_context "$CWD")

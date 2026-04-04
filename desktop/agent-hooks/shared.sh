@@ -4,58 +4,80 @@
 
 WS_ID="${AGENT_ORCH_WS_ID:-}"
 
-# Legacy snapshot id (dangling stash commit or HEAD) — used only as fallback.
-get_head_legacy() {
+# ---------- Snapshot-based checkpointing (no git objects) ----------
+# Snapshots are JSON files in .constellagent/snapshots/ containing a git diff
+# patch and base64-encoded untracked file contents. A capped manifest.json
+# acts as a ring buffer (default 20 entries, oldest evicted).
+
+SNAPSHOT_CAP="${CONSTELLAGENT_SNAPSHOT_CAP:-20}"
+
+save_snapshot() {
   local dir="${1:-.}"
-  local stash_hash
-  stash_hash=$(git -C "$dir" stash create 2>/dev/null)
-  if [ -n "$stash_hash" ]; then
-    echo "$stash_hash"
-  else
-    git -C "$dir" rev-parse HEAD 2>/dev/null || echo ""
-  fi
-}
+  local repo="$dir/.constellagent"
+  local snap_dir="$repo/snapshots"
+  mkdir -p "$snap_dir"
 
-# Full working-tree snapshot: temp index + add -A + write-tree + commit-tree + anchored ref.
-# Stores commit hash in AgentFS; ref refs/constellagent-cp/<ts>-<rand> prevents GC.
-save_checkpoint() {
-  local dir="${1:-.}"
-  local tmp_index tree_hash commit_hash ts suffix ref_name
-
-  tmp_index=$(mktemp "${TMPDIR:-/tmp}/csg-cp.XXXXXX") || {
-    get_head_legacy "$dir"
-    return
-  }
-
-  if ! GIT_INDEX_FILE="$tmp_index" git -C "$dir" add -A 2>/dev/null; then
-    rm -f "$tmp_index"
-    get_head_legacy "$dir"
-    return
-  fi
-
-  tree_hash=$(GIT_INDEX_FILE="$tmp_index" git -C "$dir" write-tree 2>/dev/null)
-  rm -f "$tmp_index"
-
-  if [ -z "$tree_hash" ]; then
-    get_head_legacy "$dir"
-    return
-  fi
-
+  local ts id snap_file
   ts=$(date +%s)
-  suffix="${RANDOM}"
-  ref_name="refs/constellagent-cp/${ts}-${suffix}"
-  commit_hash=$(git -C "$dir" commit-tree -m "constellagent checkpoint ${ts}" "$tree_hash" 2>/dev/null)
-  if [ -z "$commit_hash" ]; then
-    get_head_legacy "$dir"
-    return
-  fi
+  id="${ts}-${RANDOM}"
+  snap_file="$snap_dir/${id}.json"
 
-  git -C "$dir" update-ref "$ref_name" "$commit_hash" >/dev/null 2>&1 || true
-  echo "$commit_hash"
+  # Capture diff against HEAD (tracked changes)
+  local diff_patch
+  diff_patch=$(git -C "$dir" diff HEAD 2>/dev/null || echo "")
+
+  # Capture untracked file list + contents (capped at 100 KB total)
+  local untracked_json
+  untracked_json=$(
+    git -C "$dir" ls-files --others --exclude-standard 2>/dev/null \
+      | head -50 \
+      | while IFS= read -r f; do
+          [ -z "$f" ] && continue
+          local content
+          content=$(head -c 102400 "$dir/$f" 2>/dev/null | base64)
+          printf '%s\0%s\n' "$f" "$content"
+        done \
+      | jq -Rs 'split("\n") | map(select(length>0)) |
+          map(split("\u0000") | {(.[0]): .[1]}) | add // {}'
+  )
+
+  # Write snapshot JSON
+  local tmp
+  tmp=$(mktemp "$snap_dir/.snap.XXXXXX.tmp") || return 1
+  jq -n \
+    --arg id "$id" \
+    --arg ts "$ts" \
+    --arg patch "$diff_patch" \
+    --argjson untracked "${untracked_json:-{\}}" \
+    '{id:$id, ts:$ts, patch:$patch, untracked:$untracked}' \
+    > "$tmp" && mv "$tmp" "$snap_file" || { rm -f "$tmp"; return 1; }
+
+  # Update capped manifest (ring buffer)
+  local manifest="$snap_dir/manifest.json"
+  local ids
+  ids=$(jq -r '.ids // [] | .[]' "$manifest" 2>/dev/null || true)
+  {
+    echo "$ids"
+    echo "$id"
+  } | tail -n "$SNAPSHOT_CAP" \
+    | jq -Rs 'split("\n") | map(select(length>0)) | {ids:.}' \
+    > "${manifest}.tmp" && mv "${manifest}.tmp" "$manifest"
+
+  # Evict snapshots no longer in manifest
+  local kept
+  kept=$(jq -r '.ids[]' "$manifest" 2>/dev/null || true)
+  for old in "$snap_dir"/*.json; do
+    [ "$old" = "$manifest" ] && continue
+    local name
+    name=$(basename "$old" .json)
+    echo "$kept" | grep -qxF "$name" || rm -f "$old"
+  done
+
+  echo "$id"
 }
 
-get_head() {
-  save_checkpoint "${1:-.}"
+get_head_fast() {
+  git -C "${1:-.}" rev-parse HEAD 2>/dev/null || echo ""
 }
 
 write_pending() {
@@ -68,8 +90,10 @@ write_pending() {
   local head
   if [ -n "$head_override" ]; then
     head="$head_override"
+  elif [ "$CHECKPOINT_MODE" = "full" ]; then
+    head=$(save_snapshot "$cwd")
   else
-    head=$(get_head "$cwd")
+    head=$(get_head_fast "$cwd")
   fi
   # Default empty input to null so the JSON stays valid
   [ -z "$input" ] && input="null"
@@ -104,8 +128,10 @@ write_pending_full() {
   local head
   if [ -n "$head_override" ]; then
     head="$head_override"
+  elif [ "$CHECKPOINT_MODE" = "full" ]; then
+    head=$(save_snapshot "$cwd")
   else
-    head=$(get_head "$cwd")
+    head=$(get_head_fast "$cwd")
   fi
   # Default empty input/response to null so the JSON stays valid
   [ -z "$input" ] && input="null"
