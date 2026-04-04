@@ -158,13 +158,17 @@ export const IPC = {
   // App file picker
   APP_SELECT_FILE: 'app:select-file',
 
-  // Annotations — human review on diffs (`{worktree}/.constellagent/annotations.json`)
-  ANNOTATION_LOAD: 'annotation:load',
-  ANNOTATION_ADD: 'annotation:add',
-  ANNOTATION_RESOLVE: 'annotation:resolve',
-  ANNOTATION_DELETE: 'annotation:delete',
-  /** Main → renderer: annotations file changed for a worktree */
-  ANNOTATION_CHANGED: 'annotation:changed',
+  // Hunk — review via hunk CLI sessions
+  HUNK_AVAILABLE: 'hunk:available',
+  HUNK_START_SESSION: 'hunk:start-session',
+  HUNK_STOP_SESSION: 'hunk:stop-session',
+  HUNK_GET_CONTEXT: 'hunk:get-context',
+  HUNK_COMMENT_ADD: 'hunk:comment-add',
+  HUNK_COMMENT_LIST: 'hunk:comment-list',
+  HUNK_COMMENT_REMOVE: 'hunk:comment-remove',
+  HUNK_COMMENT_CLEAR: 'hunk:comment-clear',
+  HUNK_NAVIGATE: 'hunk:navigate',
+  HUNK_RELOAD: 'hunk:reload',
 
   // Universal Orchestrator
   ORCHESTRATOR_START: 'orchestrator:start',

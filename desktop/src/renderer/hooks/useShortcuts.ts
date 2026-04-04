@@ -322,7 +322,7 @@ export function useShortcuts() {
       // Cmd+Shift+R — toggle hunk review panel
       if (shift && !alt && e.code === 'KeyR') {
         consume()
-        store.toggleHunkReview()
+        void store.toggleHunkReview()
         return
       }
 
