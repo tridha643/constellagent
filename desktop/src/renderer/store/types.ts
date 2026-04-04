@@ -92,8 +92,8 @@ export type PrLinkProvider = 'github' | 'graphite' | 'devinreview'
 
 export type FavoriteEditor = 'cursor' | 'vscode' | 'zed' | 'sublime' | 'webstorm' | 'custom'
 
-export const EDITOR_PRESETS: Record<Exclude<FavoriteEditor, 'custom'>, { name: string; cli: string }> = {
-  cursor: { name: 'Cursor', cli: 'cursor' },
+export const EDITOR_PRESETS: Record<Exclude<FavoriteEditor, 'custom'>, { name: string; cli: string; extraArgs?: string[] }> = {
+  cursor: { name: 'Cursor Agents', cli: 'cursor', extraArgs: ['--chat'] },
   vscode: { name: 'VS Code', cli: 'code' },
   zed: { name: 'Zed', cli: 'zed' },
   sublime: { name: 'Sublime Text', cli: 'subl' },
@@ -101,7 +101,7 @@ export const EDITOR_PRESETS: Record<Exclude<FavoriteEditor, 'custom'>, { name: s
 } as const
 
 /** Resolve the CLI command and display name for the current favorite editor setting */
-export function resolveEditor(settings: Settings): { name: string; cli: string } {
+export function resolveEditor(settings: Settings): { name: string; cli: string; extraArgs?: string[] } {
   if (settings.favoriteEditor === 'custom') {
     const cli = settings.favoriteEditorCustom || 'code'
     return { name: cli, cli }

@@ -179,8 +179,8 @@ const api = {
       ipcRenderer.invoke(IPC.APP_SELECT_FILE, filters) as Promise<string | null>,
     addProjectPath: (dirPath: string) =>
       ipcRenderer.invoke(IPC.APP_ADD_PROJECT_PATH, dirPath),
-    openInEditor: (dirPath: string, cliCommand: string) =>
-      ipcRenderer.invoke(IPC.APP_OPEN_IN_EDITOR, dirPath, cliCommand) as Promise<{ success: boolean; error?: string }>,
+    openInEditor: (dirPath: string, cliCommand: string, extraArgs?: string[]) =>
+      ipcRenderer.invoke(IPC.APP_OPEN_IN_EDITOR, dirPath, cliCommand, extraArgs) as Promise<{ success: boolean; error?: string }>,
   },
 
   skills: {
