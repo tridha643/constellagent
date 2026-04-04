@@ -11,6 +11,8 @@
     "test": "bunx playwright test --project=electron",
     "test:automations": "bun run scripts/automations-smoke.ts",
     "test:automations:e2e": "bunx playwright test e2e/automations.spec.ts --project=electron",
+    "test:hunk": "bun run scripts/hunk-smoke.ts && bun run scripts/hunk-formatter-smoke.ts",
+    "test:hunk:e2e": "bunx playwright test e2e/hunk-review.spec.ts --project=electron",
     "verify:automations": "bash scripts/verify-automations.sh",
     "rebuild": "bunx electron-rebuild",
     "dist": "electron-vite build && electron-builder --mac --arm64",
