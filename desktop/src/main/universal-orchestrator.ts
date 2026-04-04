@@ -71,6 +71,7 @@ export class UniversalOrchestratorService {
       }
       this.messages.push(errMsg)
       this.broadcast(IPC.ORCHESTRATOR_MESSAGE_RECEIVED, errMsg)
+      await this.sendSmsReply(from, errMsg.content, 'error')
       return
     }
 
@@ -90,11 +91,7 @@ export class UniversalOrchestratorService {
       this.messages.push(ackMsg)
       this.broadcast(IPC.ORCHESTRATOR_MESSAGE_RECEIVED, ackMsg)
 
-      if (from !== 'ui' && this.sendBlueService.status().connected) {
-        await this.sendBlueService.send(from, ackMessage).catch((err) => {
-          console.error('[orchestrator] Failed to send SMS acknowledgment:', err)
-        })
-      }
+      await this.sendSmsReply(from, ackMessage, 'acknowledgment')
 
       for (const task of plan.tasks) {
         const session: OrchestratorSession = {
@@ -113,12 +110,11 @@ export class UniversalOrchestratorService {
       this.status = 'idle'
       this.broadcast(IPC.ORCHESTRATOR_STATUS_CHANGED, this.status)
 
-      if (from !== 'ui' && this.sendBlueService.status().connected) {
-        await this.sendBlueService.send(
-          from,
-          `Tasks queued: ${plan.tasks.map((t) => t.title).join(', ')}`,
-        ).catch(() => {})
-      }
+      await this.sendSmsReply(
+        from,
+        `Tasks queued: ${plan.tasks.map((t) => t.title).join(', ')}`,
+        'queued task summary',
+      )
     } catch (err) {
       console.error('[orchestrator] Command failed:', err)
       this.status = 'error'
@@ -132,6 +128,7 @@ export class UniversalOrchestratorService {
       }
       this.messages.push(errMsg)
       this.broadcast(IPC.ORCHESTRATOR_MESSAGE_RECEIVED, errMsg)
+      await this.sendSmsReply(from, errMsg.content, 'error')
     }
   }
 
@@ -191,5 +188,15 @@ export class UniversalOrchestratorService {
         win.webContents.send(channel, data)
       }
     }
+  }
+
+  private async sendSmsReply(from: string, message: string, label: string): Promise<void> {
+    if (from === 'ui' || !this.sendBlueService.status().connected) {
+      return
+    }
+
+    await this.sendBlueService.send(from, message).catch((err) => {
+      console.error(`[orchestrator] Failed to send SMS ${label}:`, err)
+    })
   }
 }

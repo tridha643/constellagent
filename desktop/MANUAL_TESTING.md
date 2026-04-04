@@ -3,7 +3,7 @@
 ## Prerequisites
 
 1. **Claude Code logged in**: Run `claude login` and complete auth
-2. **SendBlue account**: Get API key from [sendblue.co](https://sendblue.co) dashboard
+2. **SendBlue account**: Get your key ID and secret key from the [sendblue.co](https://sendblue.co) dashboard
 3. **Tunnel URL**: Set up a public tunnel to your local webhook port
    - Option A: `npx cloudflared tunnel --url http://localhost:3847`
    - Option B: `ngrok http 3847`
@@ -29,18 +29,46 @@
 
 ### Test 2: SendBlue SMS Command (inbound)
 
-1. Configure SendBlue settings (API key, phone number, webhook URL, port)
+1. Configure SendBlue settings (key ID, optional secret key, phone number, webhook URL, port)
 2. Click "Start" in the Orchestrator panel
 3. Send an SMS to the configured SendBlue number: "fix the failing tests"
 4. **Expected**: Webhook receives the message, message appears in Orchestrator thread
 5. **Expected**: Orchestrator creates task plan and displays sessions
+6. **Expected**: You receive an SMS acknowledgment plus a queued-tasks summary
 
-### Test 3: Orchestrator Sends Completion Notification via SendBlue
+Manual inbound webhook simulation:
+
+```bash
+curl -X POST http://127.0.0.1:3847/ \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "from_number": "+15551234567",
+    "content": "fix the failing tests"
+  }'
+```
+
+### Test 3: SendBlue Outbound API Check
 
 1. Complete Test 2 setup
-2. Send a command that creates tasks
-3. **Expected**: Receive an SMS confirmation with task names
-4. **Expected**: On task completion, receive a completion SMS
+2. Send a command that creates tasks, or click "Test" in Settings
+3. **Expected**: Receive a SendBlue SMS from the configured `sendbluePhoneNumber`
+4. **Expected**: SendBlue accepts `from_number` and both auth headers
+
+Equivalent direct API call:
+
+```bash
+curl -X POST https://api.sendblue.co/api/send-message \
+  -H 'Content-Type: application/json' \
+  -H 'sb-api-key-id: YOUR_KEY_ID' \
+  -H 'sb-api-secret-key: YOUR_SECRET_KEY' \
+  -d '{
+    "number": "+15551234567",
+    "from_number": "+15557654321",
+    "content": "Constellagent connected"
+  }'
+```
+
+Note: queued-task SMS is implemented. True task-completion SMS is not wired yet because orchestrator task execution does not currently emit completion events.
 
 ### Test 4: Stop Orchestrator
 
@@ -64,14 +92,15 @@
 
 ### Test 7: Test Connection Button
 
-1. Enter a valid SendBlue API key and phone number in Settings
+1. Enter a valid SendBlue key ID, optional secret key, and phone number in Settings
 2. Click "Test" button in SendBlue section
 3. **Expected**: Receive a test SMS saying "Constellagent connected"
 4. **Expected**: Toast notification confirms "Test message sent via SendBlue"
 
 ## Troubleshooting
 
-- **"Start" button disabled**: Ensure SendBlue API key is configured in Settings
+- **"Start" button disabled**: Ensure a SendBlue key ID is configured in Settings
 - **No webhook messages**: Verify tunnel is running and URL is configured in SendBlue dashboard
+- **Outbound send fails**: Confirm the SendBlue line is entered as `sendbluePhoneNumber` and that your key ID / secret key match the SendBlue dashboard
 - **Claude Code SDK errors**: Ensure `claude login` has been completed
 - **Port conflict on 3847**: Change the webhook port in Settings

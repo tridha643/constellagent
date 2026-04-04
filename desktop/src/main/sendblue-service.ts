@@ -3,10 +3,15 @@ import type { Settings } from '../renderer/store/types'
 import type { SendBlueStatus } from '../shared/orchestrator-types'
 
 const SENDBLUE_API_URL = 'https://api.sendblue.co/api/send-message'
+type SendBlueSettingsInput = Pick<
+  Settings,
+  'sendblueApiKey' | 'sendblueApiSecretKey' | 'sendbluePhoneNumber' | 'sendblueWebhookPort' | 'sendblueWebhookUrl'
+>
 
 export class SendBlueService {
   private server: http.Server | null = null
-  private apiKey: string = ''
+  private apiKeyId: string = ''
+  private apiSecretKey: string = ''
   private phoneNumber: string = ''
   private webhookUrl: string = ''
   private webhookPort: number = 3847
@@ -15,10 +20,7 @@ export class SendBlueService {
   onMessage: ((from: string, content: string) => void) | null = null
 
   async start(settings: Settings): Promise<void> {
-    this.apiKey = settings.sendblueApiKey
-    this.phoneNumber = settings.sendbluePhoneNumber
-    this.webhookUrl = settings.sendblueWebhookUrl
-    this.webhookPort = settings.sendblueWebhookPort
+    this.applySettings(settings)
 
     if (this.server) {
       await this.stop()
@@ -73,18 +75,29 @@ export class SendBlueService {
     })
   }
 
-  async send(to: string, message: string): Promise<void> {
-    if (!this.apiKey) throw new Error('SendBlue API key not configured')
+  async send(to: string, message: string, settings?: SendBlueSettingsInput): Promise<void> {
+    if (settings) {
+      this.applySettings(settings)
+    }
+
+    const apiKeyId = this.apiKeyId.trim()
+    const apiSecretKey = (this.apiSecretKey || this.apiKeyId).trim()
+    const fromNumber = this.phoneNumber.trim()
+
+    if (!apiKeyId) throw new Error('SendBlue API key ID not configured')
+    if (!apiSecretKey) throw new Error('SendBlue API secret key not configured')
+    if (!fromNumber) throw new Error('SendBlue from number not configured')
 
     const resp = await fetch(SENDBLUE_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'sb-api-key-id': this.apiKey,
-        'sb-api-secret-key': this.apiKey,
+        'sb-api-key-id': apiKeyId,
+        'sb-api-secret-key': apiSecretKey,
       },
       body: JSON.stringify({
-        number: to,
+        number: to.trim(),
+        from_number: fromNumber,
         content: message,
       }),
     })
@@ -108,5 +121,13 @@ export class SendBlueService {
       this.server.close()
       this.server = null
     }
+  }
+
+  private applySettings(settings: SendBlueSettingsInput): void {
+    this.apiKeyId = settings.sendblueApiKey
+    this.apiSecretKey = settings.sendblueApiSecretKey
+    this.phoneNumber = settings.sendbluePhoneNumber
+    this.webhookUrl = settings.sendblueWebhookUrl
+    this.webhookPort = settings.sendblueWebhookPort
   }
 }
