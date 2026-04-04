@@ -153,6 +153,7 @@ export interface Settings {
   subagents: SubagentEntry[]
   sendblueEnabled: boolean
   sendblueApiKey: string
+  sendblueApiSecretKey: string
   sendbluePhoneNumber: string
   sendblueWebhookPort: number
   sendblueWebhookUrl: string
@@ -188,6 +189,7 @@ export const DEFAULT_SETTINGS: Settings = {
   subagents: [],
   sendblueEnabled: false,
   sendblueApiKey: '',
+  sendblueApiSecretKey: '',
   sendbluePhoneNumber: '',
   sendblueWebhookPort: 3847,
   sendblueWebhookUrl: '',

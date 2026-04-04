@@ -130,8 +130,8 @@ export function OrchestratorPanel() {
               <button
                 className={styles.actionBtn}
                 onClick={handleStart}
-                disabled={!settings.sendblueApiKey}
-                title="Starts the SendBlue webhook for SMS commands (requires SendBlue API key in Settings)"
+                disabled={!settings.sendblueApiKey || !settings.sendbluePhoneNumber}
+                title="Starts the SendBlue webhook for SMS commands (requires a SendBlue key ID and phone number in Settings)"
               >
                 Start
               </button>

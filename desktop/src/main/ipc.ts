@@ -2036,7 +2036,7 @@ Cachebro is pre-configured via \`npx cachebro init\`. Use the cachebro MCP tools
   })
 
   ipcMain.handle(IPC.SENDBLUE_TEST, async (_e, settings) => {
-    await sendBlueService.send(settings.sendbluePhoneNumber, 'Constellagent connected')
+    await sendBlueService.send(settings.sendbluePhoneNumber, 'Constellagent connected', settings)
   })
 
   // ── T3 Code server handlers ──

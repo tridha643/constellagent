@@ -629,16 +629,25 @@ function SendBlueSection() {
       />
 
       <TextRow
-        label="API key"
-        description="Your SendBlue API key (from sendblue.co dashboard)"
+        label="API key ID"
+        description="Your SendBlue key ID. If your dashboard only gives one credential, enter it here."
         value={settings.sendblueApiKey}
         onChange={(v) => update('sendblueApiKey', v)}
-        placeholder="sb-api-..."
+        placeholder="sb-key-id-..."
+      />
+
+      <TextRow
+        label="API secret key"
+        description="Optional if SendBlue gave you a separate secret. Leave blank to reuse the key ID."
+        value={settings.sendblueApiSecretKey}
+        onChange={(v) => update('sendblueApiSecretKey', v)}
+        placeholder="sb-secret-..."
+        password
       />
 
       <TextRow
         label="Phone number"
-        description="Your phone number for outbound notifications"
+        description="Your SendBlue line in E.164 format, used as from_number on outbound replies"
         value={settings.sendbluePhoneNumber}
         onChange={(v) => update('sendbluePhoneNumber', v)}
         placeholder="+15551234567"
@@ -663,7 +672,7 @@ function SendBlueSection() {
 
       <ToggleRow
         label="Notify on completion"
-        description="Send an SMS when orchestrator tasks complete"
+        description="Reserved for future task lifecycle support; completion SMS is not wired yet"
         value={settings.sendblueNotifyOnCompletion}
         onChange={(v) => update('sendblueNotifyOnCompletion', v)}
       />
