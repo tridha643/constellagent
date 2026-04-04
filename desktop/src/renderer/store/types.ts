@@ -241,6 +241,8 @@ export interface AppState {
   toasts: Toast[]
   quickOpenVisible: boolean
   planPaletteVisible: boolean
+  hunkReviewOpen: boolean
+  hunkReviewWorkspaceId: string | null
   unreadWorkspaceIds: Set<string>
   activeClaudeWorkspaceIds: Set<string>
   prStatusMap: Map<string, PrInfo | null>
@@ -338,6 +340,9 @@ export interface AppState {
   closeQuickOpen: () => void
   togglePlanPalette: () => void
   closePlanPalette: () => void
+  toggleHunkReview: () => void
+  closeHunkReview: () => void
+  submitHunkReview: () => Promise<void>
 
   // Add to Chat actions
   setActiveMonacoEditor: (editor: editor.IStandaloneCodeEditor | null) => void

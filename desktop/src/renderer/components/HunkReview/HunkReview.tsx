@@ -1,0 +1,241 @@
+import { useEffect, useState, useCallback, useRef } from 'react'
+import type { DiffAnnotation } from '@shared/diff-annotation-types'
+import { useAppStore } from '../../store/app-store'
+import { useFileWatcher } from '../../hooks/useFileWatcher'
+import { isMarkdownDocumentPath } from '../../utils/markdown-path'
+import { DiffFileSection, FileStrip, type DiffFileData } from '../Editor/DiffFileSection'
+import styles from './HunkReview.module.css'
+
+interface FileStatus {
+  path: string
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
+  staged: boolean
+}
+
+interface Props {
+  worktreePath: string
+}
+
+export function HunkReview({ worktreePath }: Props) {
+  const [files, setFiles] = useState<DiffFileData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [annotations, setAnnotations] = useState<DiffAnnotation[]>([])
+  const [activeFile, setActiveFile] = useState<string | null>(null)
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+  const openFileTab = useAppStore((s) => s.openFileTab)
+  const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
+  const closeHunkReview = useAppStore((s) => s.closeHunkReview)
+  const submitHunkReview = useAppStore((s) => s.submitHunkReview)
+  const inline = settings.diffInline
+
+  // Focus panel on mount for keyboard nav
+  useEffect(() => {
+    panelRef.current?.focus()
+  }, [])
+
+  const openFileFromDiff = useCallback(
+    (fullPath: string) => {
+      if (isMarkdownDocumentPath(fullPath)) openMarkdownPreview(fullPath)
+      else openFileTab(fullPath)
+    },
+    [openFileTab, openMarkdownPreview],
+  )
+
+  // ── Annotations ──
+
+  const loadAnnotations = useCallback(async () => {
+    try {
+      const list = await window.api.annotations.load(worktreePath)
+      setAnnotations(list)
+    } catch (err) {
+      console.error('Failed to load diff annotations:', err)
+      setAnnotations([])
+    }
+  }, [worktreePath])
+
+  useEffect(() => {
+    void loadAnnotations()
+  }, [loadAnnotations])
+
+  useEffect(() => {
+    const unsub = window.api.annotations.onChanged(({ worktreePath: wp }) => {
+      if (wp === worktreePath) void loadAnnotations()
+    })
+    return unsub
+  }, [worktreePath, loadAnnotations])
+
+  // ── Load working-tree diff ──
+
+  const loadFiles = useCallback(async () => {
+    try {
+      const statuses: FileStatus[] = await window.api.git.getStatus(worktreePath)
+      const results = await Promise.all(
+        statuses.map(async (file) => {
+          let patch = await window.api.git.getFileDiff(worktreePath, file.path)
+
+          if (!patch && (file.status === 'added' || file.status === 'untracked')) {
+            const fullPath = file.path.startsWith('/')
+              ? file.path
+              : `${worktreePath}/${file.path}`
+            let content: string | null = null
+            try {
+              content = await window.api.fs.readFile(fullPath)
+            } catch {
+              content = null
+            }
+            if (content === null) return { filePath: file.path, patch: '', status: file.status }
+            const lines = content.split('\n')
+            patch = [
+              `--- /dev/null`,
+              `+++ b/${file.path}`,
+              `@@ -0,0 +1,${lines.length} @@`,
+              ...lines.map((l: string) => `+${l}`),
+            ].join('\n')
+          }
+
+          if (!patch && file.status === 'deleted') {
+            patch = `--- a/${file.path}\n+++ /dev/null\n@@ -1,0 +0,0 @@\n`
+          }
+
+          return { filePath: file.path, patch: patch || '', status: file.status }
+        }),
+      )
+      setFiles(results)
+    } catch (err) {
+      console.error('Failed to load diffs:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [worktreePath])
+
+  useEffect(() => {
+    setLoading(true)
+    loadFiles()
+  }, [loadFiles])
+
+  // Auto-refresh on filesystem changes (500ms debounce via useFileWatcher)
+  useFileWatcher(worktreePath, loadFiles, true)
+
+  // IntersectionObserver to highlight active file in strip
+  useEffect(() => {
+    if (!scrollAreaRef.current || files.length === 0) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const id = entry.target.id
+            if (id.startsWith('diff-')) {
+              setActiveFile(id.slice(5))
+            }
+          }
+        }
+      },
+      { root: scrollAreaRef.current, threshold: 0.3 },
+    )
+
+    for (const f of files) {
+      const el = document.getElementById(`diff-${f.filePath}`)
+      if (el) observer.observe(el)
+    }
+
+    return () => observer.disconnect()
+  }, [files])
+
+  const unresolvedCount = annotations.filter((a) => !a.resolved).length
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className={styles.backdrop} onClick={closeHunkReview} />
+
+      {/* Panel */}
+      <div
+        className={styles.panel}
+        ref={panelRef}
+        tabIndex={-1}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.stopPropagation()
+            closeHunkReview()
+          }
+        }}
+      >
+        {/* Header */}
+        <div className={styles.header}>
+          <span className={styles.title}>Review Changes</span>
+          {files.length > 0 && (
+            <span className={styles.badge}>
+              {files.length} file{files.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          <div className={styles.headerSpacer} />
+          <div className={styles.toggleGroup}>
+            <button
+              className={`${styles.toggleOption} ${!inline ? styles.active : ''}`}
+              onClick={() => updateSettings({ diffInline: false })}
+            >
+              Split
+            </button>
+            <button
+              className={`${styles.toggleOption} ${inline ? styles.active : ''}`}
+              onClick={() => updateSettings({ diffInline: true })}
+            >
+              Inline
+            </button>
+          </div>
+          <button
+            className={styles.submitBtn}
+            disabled={unresolvedCount === 0}
+            onClick={() => void submitHunkReview()}
+          >
+            Submit Review{unresolvedCount > 0 ? ` (${unresolvedCount})` : ''}
+          </button>
+          <button className={styles.closeBtn} onClick={closeHunkReview}>
+            &times;
+          </button>
+        </div>
+
+        {/* Hint */}
+        <p className={styles.hint}>
+          Drag across line numbers to select a range, then leave a comment. Submit sends all
+          unresolved comments to the agent.
+        </p>
+
+        {/* File strip */}
+        {files.length > 0 && <FileStrip files={files} activeFile={activeFile} />}
+
+        {/* Content */}
+        {loading ? (
+          <div className={styles.emptyState}>
+            <span className={styles.emptyText}>Loading changes...</span>
+          </div>
+        ) : files.length === 0 ? (
+          <div className={styles.emptyState}>
+            <span className={styles.emptyIcon}>&#10003;</span>
+            <span className={styles.emptyText}>No changes</span>
+          </div>
+        ) : (
+          <div ref={scrollAreaRef} className={styles.scrollArea}>
+            {files.map((f) => (
+              <DiffFileSection
+                key={f.filePath}
+                data={f}
+                inline={inline}
+                worktreePath={worktreePath}
+                onOpenFile={openFileFromDiff}
+                worktreeAnnotations={annotations}
+                onAnnotationsChanged={loadAnnotations}
+                showPatchAnchorNote={false}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  )
+}

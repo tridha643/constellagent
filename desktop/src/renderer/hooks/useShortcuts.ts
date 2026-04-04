@@ -319,6 +319,13 @@ export function useShortcuts() {
         return
       }
 
+      // Cmd+Shift+R — toggle hunk review panel
+      if (shift && !alt && e.code === 'KeyR') {
+        consume()
+        store.toggleHunkReview()
+        return
+      }
+
       // ── Add to Chat: Cmd+L ──
       if (!shift && !alt && e.key === 'l') {
         consume()
