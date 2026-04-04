@@ -1083,9 +1083,29 @@ export function registerIpcHandlers(): void {
   // ── Open in external editor ──
   const execFileAsync = promisify(execFile)
 
-  ipcMain.handle(IPC.APP_OPEN_IN_EDITOR, async (_e, dirPath: string, cliCommand: string, extraArgs?: string[]) => {
+  ipcMain.handle(IPC.APP_OPEN_IN_EDITOR, async (_e, dirPath: string, cliCommand: string, extraArgs?: string[], openMode?: string) => {
     try {
       await execFileAsync(cliCommand, [...(extraArgs || []), dirPath])
+
+      if (openMode === 'agents-window' && process.platform === 'darwin') {
+        await new Promise(r => setTimeout(r, 800))
+        try {
+          await execFileAsync('osascript', ['-e', [
+            'tell application "Cursor" to activate',
+            'delay 0.3',
+            'tell application "System Events" to tell process "Cursor"',
+            '  keystroke "p" using {command down, shift down}',
+            '  delay 0.3',
+            '  keystroke "View: New Agents Window"',
+            '  delay 0.2',
+            '  key code 36',
+            'end tell',
+          ].join('\n')])
+        } catch {
+          // Best-effort: requires accessibility permissions
+        }
+      }
+
       return { success: true }
     } catch (err) {
       const msg = (err as ExecFileException).message || `Failed to open ${cliCommand}`

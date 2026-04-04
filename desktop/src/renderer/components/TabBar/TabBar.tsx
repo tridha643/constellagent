@@ -230,7 +230,7 @@ export function TabBar() {
 
   const handleOpenInEditor = useCallback(async () => {
     if (!workspace) return
-    const result = await window.api.app.openInEditor(workspace.worktreePath, editor.cli, editor.extraArgs)
+    const result = await window.api.app.openInEditor(workspace.worktreePath, editor.cli, editor.extraArgs, editor.openMode)
     if (!result.success) {
       addToast({
         id: `editor-err-${Date.now()}`,
