@@ -339,8 +339,8 @@ export function useShortcuts() {
         consume()
         const ws = store.workspaces.find((w) => w.id === store.activeWorkspaceId)
         if (ws) {
-          const { cli, name } = resolveEditor(store.settings)
-          window.api.app.openInEditor(ws.worktreePath, cli).then((result) => {
+          const { cli, name, extraArgs } = resolveEditor(store.settings)
+          window.api.app.openInEditor(ws.worktreePath, cli, extraArgs).then((result) => {
             if (!result.success) {
               store.addToast({
                 id: `editor-err-${Date.now()}`,

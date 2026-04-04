@@ -1082,9 +1082,9 @@ export function registerIpcHandlers(): void {
   // ── Open in external editor ──
   const execFileAsync = promisify(execFile)
 
-  ipcMain.handle(IPC.APP_OPEN_IN_EDITOR, async (_e, dirPath: string, cliCommand: string) => {
+  ipcMain.handle(IPC.APP_OPEN_IN_EDITOR, async (_e, dirPath: string, cliCommand: string, extraArgs?: string[]) => {
     try {
-      await execFileAsync(cliCommand, [dirPath])
+      await execFileAsync(cliCommand, [...(extraArgs || []), dirPath])
       return { success: true }
     } catch (err) {
       const msg = (err as ExecFileException).message || `Failed to open ${cliCommand}`
