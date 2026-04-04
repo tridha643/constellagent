@@ -416,13 +416,14 @@ export interface AppState {
   activeProject: () => Project | undefined
 }
 
-export type SidebarActionId = 'add-project' | 'automations' | 'context' | 'plans' | 'orchestrator' | 'settings'
+export type SidebarActionId = 'add-project' | 'automations' | 'context' | 'plans' | 'orchestrator' | 'settings' | 'review'
 
 export const DEFAULT_SIDEBAR_ACTION_ORDER: SidebarActionId[] = [
   'add-project',
   'automations',
   'context',
   'plans',
+  'review',
   'orchestrator',
   'settings',
 ]
