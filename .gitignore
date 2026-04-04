@@ -1,3 +1,8 @@
 node_modules/
 pnpm-lock.yaml
 .constellagent/
+.codex/
+.cursor/hooks.json
+.cursor/rules/constellagent.mdc
+.gemini/AGENTS.md
+.gemini/settings.json
