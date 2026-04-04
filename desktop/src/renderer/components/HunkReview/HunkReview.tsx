@@ -16,11 +16,30 @@ interface Props {
   worktreePath: string
 }
 
+/**
+ * Map hunk CLI comments to the DiffAnnotation shape expected by
+ * DiffFileSection / AnnotationBubble so the component tree stays unchanged.
+ */
+function hunkCommentsToAnnotations(
+  comments: Awaited<ReturnType<typeof window.api.hunk.commentList>>,
+): DiffAnnotation[] {
+  return comments.map((c) => ({
+    id: c.id,
+    filePath: c.file,
+    side: 'additions' as const,
+    lineNumber: c.newLine ?? c.oldLine ?? 1,
+    body: c.summary,
+    createdAt: new Date().toISOString(),
+    resolved: false,
+  }))
+}
+
 export function HunkReview({ worktreePath }: Props) {
   const [files, setFiles] = useState<DiffFileData[]>([])
   const [loading, setLoading] = useState(true)
   const [annotations, setAnnotations] = useState<DiffAnnotation[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
+  const [sessionReady, setSessionReady] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -32,7 +51,6 @@ export function HunkReview({ worktreePath }: Props) {
   const submitHunkReview = useAppStore((s) => s.submitHunkReview)
   const inline = settings.diffInline
 
-  // Focus panel on mount for keyboard nav
   useEffect(() => {
     panelRef.current?.focus()
   }, [])
@@ -45,28 +63,39 @@ export function HunkReview({ worktreePath }: Props) {
     [openFileTab, openMarkdownPreview],
   )
 
-  // ── Annotations ──
+  // ── Hunk session lifecycle ──
 
-  const loadAnnotations = useCallback(async () => {
-    try {
-      const list = await window.api.annotations.load(worktreePath)
-      setAnnotations(list)
-    } catch (err) {
-      console.error('Failed to load diff annotations:', err)
-      setAnnotations([])
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        await window.api.hunk.startSession(worktreePath)
+        if (!cancelled) setSessionReady(true)
+      } catch (err) {
+        console.error('Failed to start hunk session:', err)
+      }
+    })()
+    return () => {
+      cancelled = true
     }
   }, [worktreePath])
+
+  // ── Comments (via hunk session) ──
+
+  const loadAnnotations = useCallback(async () => {
+    if (!sessionReady) return
+    try {
+      const comments = await window.api.hunk.commentList(worktreePath)
+      setAnnotations(hunkCommentsToAnnotations(comments))
+    } catch (err) {
+      console.error('Failed to load hunk comments:', err)
+      setAnnotations([])
+    }
+  }, [worktreePath, sessionReady])
 
   useEffect(() => {
     void loadAnnotations()
   }, [loadAnnotations])
-
-  useEffect(() => {
-    const unsub = window.api.annotations.onChanged(({ worktreePath: wp }) => {
-      if (wp === worktreePath) void loadAnnotations()
-    })
-    return unsub
-  }, [worktreePath, loadAnnotations])
 
   // ── Load working-tree diff ──
 
@@ -117,7 +146,6 @@ export function HunkReview({ worktreePath }: Props) {
     loadFiles()
   }, [loadFiles])
 
-  // Auto-refresh on filesystem changes (500ms debounce via useFileWatcher)
   useFileWatcher(worktreePath, loadFiles, true)
 
   // IntersectionObserver to highlight active file in strip
@@ -146,7 +174,7 @@ export function HunkReview({ worktreePath }: Props) {
     return () => observer.disconnect()
   }, [files])
 
-  const unresolvedCount = annotations.filter((a) => !a.resolved).length
+  const commentCount = annotations.length
 
   return (
     <>
@@ -190,10 +218,10 @@ export function HunkReview({ worktreePath }: Props) {
           </div>
           <button
             className={styles.submitBtn}
-            disabled={unresolvedCount === 0}
+            disabled={commentCount === 0}
             onClick={() => void submitHunkReview()}
           >
-            Submit Review{unresolvedCount > 0 ? ` (${unresolvedCount})` : ''}
+            Submit Review{commentCount > 0 ? ` (${commentCount})` : ''}
           </button>
           <button className={styles.closeBtn} onClick={closeHunkReview}>
             &times;
@@ -203,7 +231,7 @@ export function HunkReview({ worktreePath }: Props) {
         {/* Hint */}
         <p className={styles.hint}>
           Drag across line numbers to select a range, then leave a comment. Submit sends all
-          unresolved comments to the agent.
+          comments to the agent.
         </p>
 
         {/* File strip */}

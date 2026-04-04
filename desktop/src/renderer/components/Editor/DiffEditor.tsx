@@ -91,10 +91,20 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
 
   const loadAnnotations = useCallback(async () => {
     try {
-      const list = await window.api.annotations.load(worktreePath)
-      setAnnotations(list)
+      const comments = await window.api.hunk.commentList(worktreePath)
+      setAnnotations(
+        comments.map((c) => ({
+          id: c.id,
+          filePath: c.file,
+          side: 'additions' as const,
+          lineNumber: c.newLine ?? c.oldLine ?? 1,
+          body: c.summary,
+          createdAt: new Date().toISOString(),
+          resolved: false,
+        })),
+      )
     } catch (err) {
-      console.error('Failed to load diff annotations:', err)
+      console.error('Failed to load hunk comments:', err)
       setAnnotations([])
     }
   }, [worktreePath])
@@ -102,13 +112,6 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   useEffect(() => {
     void loadAnnotations()
   }, [loadAnnotations])
-
-  useEffect(() => {
-    const unsub = window.api.annotations.onChanged(({ worktreePath: wp }) => {
-      if (wp === worktreePath) void loadAnnotations()
-    })
-    return unsub
-  }, [worktreePath, loadAnnotations])
 
   // Load commit-specific diff
   const loadCommitDiff = useCallback(async () => {

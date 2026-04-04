@@ -107,7 +107,7 @@ export interface EditorPreset {
 }
 
 export const EDITOR_PRESETS: Record<Exclude<FavoriteEditor, 'custom'>, EditorPreset> = {
-  cursor: { name: 'Cursor Agents', cli: 'cursor', openMode: 'agents-window' },
+  cursor: { name: 'Cursor Agents', cli: 'cursor', extraArgs: ['--new-window'], openMode: 'agents-window' },
   vscode: { name: 'VS Code', cli: 'code' },
   zed: { name: 'Zed', cli: 'zed' },
   sublime: { name: 'Sublime Text', cli: 'subl' },
@@ -349,7 +349,7 @@ export interface AppState {
   closeQuickOpen: () => void
   togglePlanPalette: () => void
   closePlanPalette: () => void
-  toggleHunkReview: () => void
+  toggleHunkReview: () => Promise<void>
   closeHunkReview: () => void
   submitHunkReview: () => Promise<void>
 

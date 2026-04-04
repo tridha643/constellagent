@@ -49,7 +49,7 @@ export function AnnotationBubble({
               type="button"
               className={styles.actionBtn}
               disabled={busy}
-              onClick={() => run(() => window.api.annotations.resolve(worktreePath, annotation.id))}
+              onClick={() => run(() => window.api.hunk.commentRemove(worktreePath, annotation.id))}
             >
               Resolve
             </button>
@@ -58,7 +58,7 @@ export function AnnotationBubble({
             type="button"
             className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
             disabled={busy}
-            onClick={() => run(() => window.api.annotations.delete(worktreePath, annotation.id))}
+            onClick={() => run(() => window.api.hunk.commentRemove(worktreePath, annotation.id))}
           >
             Delete
           </button>
@@ -94,17 +94,11 @@ export function AnnotationComposer({
     if (!trimmed || busy) return
     setBusy(true)
     try {
-      await window.api.annotations.add(worktreePath, {
-        filePath,
-        side,
-        lineNumber,
-        ...(lineEnd > lineNumber ? { lineEnd } : {}),
-        body: trimmed,
-      })
+      await window.api.hunk.commentAdd(worktreePath, filePath, lineNumber, trimmed)
       setBody('')
       onSaved()
     } catch (e) {
-      console.error('Failed to add annotation:', e)
+      console.error('Failed to add hunk comment:', e)
     } finally {
       setBusy(false)
     }

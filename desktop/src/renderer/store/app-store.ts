@@ -1202,7 +1202,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   togglePlanPalette: () => set((s) => ({ planPaletteVisible: !s.planPaletteVisible, quickOpenVisible: false })),
   closePlanPalette: () => set({ planPaletteVisible: false }),
 
-  toggleHunkReview: () => {
+  toggleHunkReview: async () => {
     const s = get()
     if (s.hunkReviewOpen) {
       set({ hunkReviewOpen: false, hunkReviewWorkspaceId: null })
@@ -1210,7 +1210,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
     if (!ws) return
-    // Check if any terminal in the active workspace has an agentType set
+
+    const available = await window.api.hunk.isAvailable()
+    if (!available) {
+      s.addToast({
+        id: `hunk-not-installed-${Date.now()}`,
+        message: 'hunk CLI not found. Install with: npm i -g hunkdiff',
+        type: 'error',
+      })
+      return
+    }
+
     const hasAgent = s.tabs.some(
       (t) => t.workspaceId === ws.id && t.type === 'terminal' && t.agentType,
     )
@@ -1226,10 +1236,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const ws = s.workspaces.find((w) => w.id === s.hunkReviewWorkspaceId)
     if (!ws) return
     try {
-      const annotations = await window.api.annotations.load(ws.worktreePath)
-      const formatted = formatReviewForAgent(annotations)
+      const comments = await window.api.hunk.commentList(ws.worktreePath)
+      const formatted = formatReviewForAgent(comments)
       if (!formatted) {
-        s.addToast({ id: `hunk-empty-${Date.now()}`, message: 'No unresolved comments to submit', type: 'info' })
+        s.addToast({ id: `hunk-empty-${Date.now()}`, message: 'No comments to submit', type: 'info' })
         return
       }
       const pty = resolveAgentPtyForContextInjection({
