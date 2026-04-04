@@ -111,7 +111,7 @@ case "$EVENT" in
     ;;
   stop)
     TOOL_INPUT=$(echo "$INPUT" | jq -c '{status: (.status // "completed")}')
-    write_pending "$CWD" "$AGENT_TYPE" "$CONVERSATION_ID" "AssistantTurn" "$TOOL_INPUT" "" "$TIMESTAMP"
+    CHECKPOINT_MODE=full write_pending "$CWD" "$AGENT_TYPE" "$CONVERSATION_ID" "AssistantTurn" "$TOOL_INPUT" "" "$TIMESTAMP"
     ;;
   *)
     exit 0

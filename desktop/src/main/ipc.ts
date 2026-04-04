@@ -1,5 +1,5 @@
 import { ipcMain, dialog, app, BrowserWindow, clipboard, webContents, type WebContents, shell } from 'electron'
-import { join, relative, resolve } from 'path'
+import { join, dirname, relative, resolve } from 'path'
 import { mkdir, writeFile, readFile, readdir, unlink } from 'fs/promises'
 import { existsSync, mkdirSync, writeFileSync, realpathSync } from 'fs'
 import { tmpdir, homedir } from 'os'
@@ -496,31 +496,6 @@ function sameWorktreePath(a: string, b: string): boolean {
   } catch {
     return false
   }
-}
-
-/** Repo-relative paths safe for `git restore -- <pathspecs>` (no traversal outside worktree). */
-function safeGitRestorePathspecs(projectDir: string, rawPaths: string[]): string[] {
-  const root = resolve(projectDir)
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const raw of rawPaths) {
-    if (!raw?.trim()) continue
-    let s = raw.trim().replaceAll('\\', '/')
-    const rootNorm = root.replaceAll('\\', '/')
-    if (s.startsWith(rootNorm)) {
-      s = s.slice(rootNorm.length).replace(/^\/+/, '')
-    }
-    const norm = s.replace(/^\/+/, '')
-    if (!norm || norm.split('/').includes('..')) continue
-    const abs = resolve(root, norm)
-    const relToRoot = relative(root, abs).replaceAll('\\', '/')
-    if (!relToRoot || relToRoot.startsWith('..')) continue
-    if (!seen.has(relToRoot)) {
-      seen.add(relToRoot)
-      out.push(relToRoot)
-    }
-  }
-  return out
 }
 
 interface StateSanitizeResult {
@@ -1526,135 +1501,78 @@ Cachebro is pre-configured via \`npx cachebro init\`. Use the cachebro MCP tools
 
   ipcMain.handle(
     IPC.CONTEXT_RESTORE_CHECKPOINT,
-    async (_e, projectDir: string, commitHash: string, relativePaths?: string[]) => {
+    async (_e, projectDir: string, snapshotIdOrHash: string, _relativePaths?: string[]) => {
     const logPrefix = '[constellagent:restore-checkpoint]'
-    const short = (h: string) => (h.length > 14 ? `${h.slice(0, 7)}…${h.slice(-6)}` : h)
     const gitOpts = { cwd: projectDir, encoding: 'utf8' as const }
     let verified = false
-    const requestedScoped = Array.isArray(relativePaths) && relativePaths.length > 0
-    const pathspecs = requestedScoped ? safeGitRestorePathspecs(projectDir, relativePaths) : []
-    if (requestedScoped && pathspecs.length === 0) {
-      throw new Error('Could not resolve any valid file paths to restore')
+
+    // Snapshot file: .constellagent/snapshots/<id>.json
+    const snapFile = join(projectDir, '.constellagent', 'snapshots', `${snapshotIdOrHash}.json`)
+    console.log(logPrefix, 'start', { projectDir, snapshotId: snapshotIdOrHash })
+
+    if (!existsSync(snapFile)) {
+      const msg = `No snapshot file found for "${snapshotIdOrHash}" — this entry may predate snapshot-based checkpoints`
+      console.error(logPrefix, 'not-found', { snapFile })
+      throw new Error(msg)
     }
-    const scoped = pathspecs.length > 0
-    console.log(logPrefix, 'start', {
-      projectDir,
-      object: short(commitHash),
-      mode: scoped ? 'scoped' : 'full',
-      pathspecs: scoped ? pathspecs : undefined,
-    })
+
     try {
-      const { stdout: objTypeRaw } = await execFileAsyncCtx('git', ['cat-file', '-t', commitHash], gitOpts)
-      const objType = objTypeRaw.trim()
-      if (objType === 'blob') {
-        throw new Error('Checkpoint object is a blob, not a tree or commit')
-      }
+      const raw = await readFile(snapFile, 'utf8')
+      const snap = JSON.parse(raw) as { id: string; ts: string; patch: string; untracked: Record<string, string> }
+      console.log(logPrefix, 'loaded', { id: snap.id, patchLen: snap.patch.length, untrackedKeys: Object.keys(snap.untracked).length })
 
-      let treeHash: string
-      if (objType === 'tree') {
-        treeHash = commitHash
-      } else if (objType === 'commit' || objType === 'tag') {
-        const { stdout } = await execFileAsyncCtx('git', ['rev-parse', `${commitHash}^{tree}`], gitOpts)
-        treeHash = stdout.trim()
-      } else {
-        throw new Error(`Unsupported git object type: ${objType}`)
-      }
+      // 1. Reset worktree to HEAD (clean slate)
+      await execFileAsyncCtx('git', ['checkout', 'HEAD', '--', '.'], gitOpts)
+      await execFileAsyncCtx('git', ['clean', '-fd', '-e', '.constellagent'], gitOpts)
+      console.log(logPrefix, 'reset to HEAD done')
 
-      console.log(logPrefix, 'resolved', { objType, tree: short(treeHash) })
-
-      if (scoped) {
-        // Determine which paths exist in the checkpoint tree vs which are absent.
-        const { stdout: lsOut } = await execFileAsyncCtx(
-          'git',
-          ['ls-tree', '-r', '--name-only', treeHash, '--', ...pathspecs],
-          gitOpts,
-        )
-        const inTree = new Set(lsOut.split('\n').map((l) => l.trim()).filter(Boolean))
-        const restorePaths = pathspecs.filter((p) => inTree.has(p))
-        const removePaths = pathspecs.filter((p) => !inTree.has(p))
-
-        if (restorePaths.length > 0) {
-          await execFileAsyncCtx(
-            'git',
-            ['restore', '--source', treeHash, '--staged', '--worktree', '--', ...restorePaths],
-            gitOpts,
-          )
-          console.log(logPrefix, 'restore fromTree', { paths: restorePaths })
-        }
-
-        for (const p of removePaths) {
-          const absPath = join(projectDir, p)
-          // Remove from index if staged/tracked (ignore errors if not in index)
-          await execFileAsyncCtx('git', ['rm', '--cached', '-f', '--ignore-unmatch', '--', p], gitOpts)
-            .catch(() => {})
-          // Remove from worktree
-          await unlink(absPath).catch(() => {})
-          console.log(logPrefix, 'removedAbsentFromTree', { path: p })
-        }
-
-        // Verify: in-tree paths match tree; absent paths gone from disk and index
-        let scopeOk = true
-        if (restorePaths.length > 0) {
-          const { stdout: diffOut } = await execFileAsyncCtx(
-            'git',
-            ['diff', '--no-ext-diff', treeHash, '--', ...restorePaths],
-            gitOpts,
-          )
-          if (diffOut.trim() !== '') scopeOk = false
-        }
-        for (const p of removePaths) {
-          if (existsSync(join(projectDir, p))) { scopeOk = false; break }
-          const { stdout: lsStaged } = await execFileAsyncCtx(
-            'git', ['ls-files', '--stage', '--', p], gitOpts,
-          )
-          if (lsStaged.trim() !== '') { scopeOk = false; break }
-        }
-        verified = scopeOk
-      } else {
-        // Full tree: `git restore` matches the checkpoint; `git clean` drops other untracked files.
-        await execFileAsyncCtx(
-          'git',
-          ['restore', '--source', treeHash, '--staged', '--worktree', '.'],
-          gitOpts,
-        )
-        console.log(logPrefix, 'restore --staged --worktree . done')
-        await execFileAsyncCtx('git', ['clean', '-fd', '-e', '.constellagent'], gitOpts)
-        console.log(logPrefix, 'clean -fd done (excluded .constellagent)')
-
-        const tmpVerify = join(tmpdir(), `csg-verify-${Date.now()}-${Math.random().toString(16).slice(2)}`)
-        let currentTreeTrimmed = ''
+      // 2. Apply the diff patch (tracked file changes relative to HEAD at snapshot time)
+      if (snap.patch && snap.patch.length > 0) {
+        const tmpPatch = join(tmpdir(), `csg-patch-${Date.now()}-${Math.random().toString(16).slice(2)}.patch`)
         try {
-          await execFileAsyncCtx('git', ['add', '-A'], {
-            ...gitOpts,
-            env: { ...process.env, GIT_INDEX_FILE: tmpVerify },
-          })
-          const { stdout: currentTree } = await execFileAsyncCtx('git', ['write-tree'], {
-            ...gitOpts,
-            env: { ...process.env, GIT_INDEX_FILE: tmpVerify },
-          })
-          currentTreeTrimmed = currentTree.trim()
-          verified = currentTreeTrimmed === treeHash
+          await writeFile(tmpPatch, snap.patch, 'utf8')
+          await execFileAsyncCtx('git', ['apply', '--whitespace=nowarn', tmpPatch], gitOpts)
+          console.log(logPrefix, 'patch applied')
         } finally {
-          await unlink(tmpVerify).catch(() => {})
+          await unlink(tmpPatch).catch(() => {})
         }
-
-        console.log(logPrefix, 'verify', {
-          verified,
-          expectedTree: short(treeHash),
-          worktreeTree: short(currentTreeTrimmed),
-        })
       }
 
-      if (scoped) {
-        console.log(logPrefix, 'verify', { verified, scopedPaths: pathspecs })
+      // 3. Write untracked files from base64 content
+      const untrackedEntries = Object.entries(snap.untracked || {})
+      for (const [relPath, b64Content] of untrackedEntries) {
+        const absPath = join(projectDir, relPath)
+        // Ensure parent directory exists
+        await mkdir(dirname(absPath), { recursive: true })
+        const buf = Buffer.from(b64Content, 'base64')
+        await writeFile(absPath, buf)
+      }
+      if (untrackedEntries.length > 0) {
+        console.log(logPrefix, 'untracked files written', { count: untrackedEntries.length })
       }
 
+      // 4. Verify: check that the current diff matches the snapshot patch
+      const { stdout: currentDiff } = await execFileAsyncCtx('git', ['diff', 'HEAD'], gitOpts)
+      const { stdout: untrackedNow } = await execFileAsyncCtx(
+        'git', ['ls-files', '--others', '--exclude-standard'], gitOpts,
+      )
+      const currentUntracked = new Set(untrackedNow.split('\n').map((l) => l.trim()).filter(Boolean))
+      const expectedUntracked = new Set(Object.keys(snap.untracked || {}))
+
+      // Patch content matches and untracked file sets match
+      const patchMatch = currentDiff.trimEnd() === snap.patch.trimEnd()
+      const untrackedMatch = currentUntracked.size === expectedUntracked.size &&
+        [...expectedUntracked].every((f) => currentUntracked.has(f))
+      verified = patchMatch && untrackedMatch
+
+      console.log(logPrefix, 'verify', { verified, patchMatch, untrackedMatch })
+
+      // 5. Notify fs watchers
       let notifyCount = 0
       for (const [dir, entry] of fsWatchers.entries()) {
         if (!sameWorktreePath(dir, projectDir)) continue
         for (const [, sub] of entry.subscribers) {
           if (!sub.webContents.isDestroyed()) {
-            // Use watcher key so renderer `changedDir === worktreePath` matches what watchDir used
             sub.webContents.send(IPC.FS_WATCH_CHANGED, dir)
             notifyCount += 1
           }
@@ -1666,9 +1584,9 @@ Cachebro is pre-configured via \`npx cachebro init\`. Use the cachebro MCP tools
       return { success: true, verified }
     } catch (err: unknown) {
       const ex = err as ExecFileException & { stderr?: string }
-      const msg = (typeof ex.stderr === 'string' ? ex.stderr.trim() : '') || ex?.message || 'Unknown git error'
-      console.error(logPrefix, 'failed', { projectDir, object: short(commitHash), message: msg })
-      throw new Error(`Failed to restore checkpoint: ${msg}`)
+      const msg = (typeof ex.stderr === 'string' ? ex.stderr.trim() : '') || ex?.message || 'Unknown error'
+      console.error(logPrefix, 'failed', { projectDir, snapshotId: snapshotIdOrHash, message: msg })
+      throw new Error(`Failed to restore snapshot: ${msg}`)
     }
   })
 
