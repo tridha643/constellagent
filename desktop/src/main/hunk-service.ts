@@ -1,5 +1,6 @@
 import { execFile, spawn, type ChildProcess } from 'child_process'
 import { promisify } from 'util'
+import { realpathSync } from 'fs'
 import type { HunkComment, HunkSessionInfo, HunkSessionContext } from '../shared/hunk-types'
 
 export type { HunkComment, HunkSessionInfo, HunkSessionContext }
@@ -9,13 +10,73 @@ const execFileAsync = promisify(execFile)
 const backgroundProcesses = new Map<string, ChildProcess>()
 let hunkAvailableCache: boolean | null = null
 
+function resolveRepo(worktreePath: string): string {
+  try {
+    return realpathSync(worktreePath)
+  } catch {
+    return worktreePath
+  }
+}
+
 async function runHunk(args: string[], cwd?: string, timeout = 15_000): Promise<string> {
   const { stdout } = await execFileAsync('hunk', args, { cwd, timeout })
   return stdout.trim()
 }
 
-function parseJsonOutput<T>(raw: string): T {
-  return JSON.parse(raw) as T
+interface RawSessionGet { session: RawSession }
+interface RawSessionList { sessions: RawSession[] }
+interface RawSession {
+  sessionId: string
+  pid: number
+  cwd: string
+  repoRoot: string
+  inputKind?: string
+  title?: string
+  sourceLabel?: string
+}
+
+interface RawContext {
+  context: {
+    sessionId?: string
+    selectedFile?: { path?: string }
+    selectedHunk?: { index?: number; oldRange?: number[]; newRange?: number[] }
+    [key: string]: unknown
+  }
+}
+
+interface RawCommentList {
+  comments: Array<{
+    commentId: string
+    filePath: string
+    hunkIndex: number
+    side: 'new' | 'old'
+    line: number
+    summary: string
+    rationale?: string
+    author?: string
+    createdAt?: string
+  }>
+}
+
+function mapSession(raw: RawSession): HunkSessionInfo {
+  return {
+    id: raw.sessionId,
+    path: raw.cwd,
+    repo: raw.repoRoot,
+    source: raw.sourceLabel,
+  }
+}
+
+function mapComment(raw: RawCommentList['comments'][number]): HunkComment {
+  return {
+    id: raw.commentId,
+    file: raw.filePath,
+    newLine: raw.side === 'new' ? raw.line : undefined,
+    oldLine: raw.side === 'old' ? raw.line : undefined,
+    summary: raw.summary,
+    rationale: raw.rationale,
+    author: raw.author,
+  }
 }
 
 export const HunkService = {
@@ -35,21 +96,22 @@ export const HunkService = {
   },
 
   async startSession(worktreePath: string): Promise<void> {
-    if (backgroundProcesses.has(worktreePath)) return
+    const repo = resolveRepo(worktreePath)
+    if (backgroundProcesses.has(repo)) return
 
-    const existing = await this.findSessionForRepo(worktreePath)
+    const existing = await this.findSessionForRepo(repo)
     if (existing) return
 
     const child = spawn('hunk', ['diff', '--watch'], {
-      cwd: worktreePath,
+      cwd: repo,
       stdio: 'ignore',
       detached: true,
     })
     child.unref()
-    backgroundProcesses.set(worktreePath, child)
+    backgroundProcesses.set(repo, child)
 
     child.on('exit', () => {
-      backgroundProcesses.delete(worktreePath)
+      backgroundProcesses.delete(repo)
     })
 
     // Give the daemon a moment to register the session
@@ -57,17 +119,20 @@ export const HunkService = {
   },
 
   async stopSession(worktreePath: string): Promise<void> {
-    const child = backgroundProcesses.get(worktreePath)
+    const repo = resolveRepo(worktreePath)
+    const child = backgroundProcesses.get(repo)
     if (child) {
       child.kill('SIGTERM')
-      backgroundProcesses.delete(worktreePath)
+      backgroundProcesses.delete(repo)
     }
   },
 
   async findSessionForRepo(worktreePath: string): Promise<HunkSessionInfo | null> {
     try {
-      const raw = await runHunk(['session', 'get', '--repo', worktreePath, '--json'])
-      return parseJsonOutput<HunkSessionInfo>(raw)
+      const repo = resolveRepo(worktreePath)
+      const raw = await runHunk(['session', 'get', '--repo', repo, '--json'])
+      const parsed = JSON.parse(raw) as RawSessionGet
+      return mapSession(parsed.session)
     } catch {
       return null
     }
@@ -76,7 +141,8 @@ export const HunkService = {
   async listSessions(): Promise<HunkSessionInfo[]> {
     try {
       const raw = await runHunk(['session', 'list', '--json'])
-      return parseJsonOutput<HunkSessionInfo[]>(raw)
+      const parsed = JSON.parse(raw) as RawSessionList
+      return parsed.sessions.map(mapSession)
     } catch {
       return []
     }
@@ -84,8 +150,14 @@ export const HunkService = {
 
   async getContext(worktreePath: string): Promise<HunkSessionContext | null> {
     try {
-      const raw = await runHunk(['session', 'context', '--repo', worktreePath, '--json'])
-      return parseJsonOutput<HunkSessionContext>(raw)
+      const repo = resolveRepo(worktreePath)
+      const raw = await runHunk(['session', 'context', '--repo', repo, '--json'])
+      const parsed = JSON.parse(raw) as RawContext
+      const ctx = parsed.context
+      return {
+        file: ctx.selectedFile?.path,
+        hunk: ctx.selectedHunk?.index,
+      }
     } catch {
       return null
     }
@@ -98,9 +170,10 @@ export const HunkService = {
     summary: string,
     opts?: { rationale?: string; author?: string; focus?: boolean },
   ): Promise<void> {
+    const repo = resolveRepo(worktreePath)
     const args = [
       'session', 'comment', 'add',
-      '--repo', worktreePath,
+      '--repo', repo,
       '--file', file,
       '--new-line', String(newLine),
       '--summary', summary,
@@ -113,21 +186,27 @@ export const HunkService = {
 
   async listComments(worktreePath: string, file?: string): Promise<HunkComment[]> {
     try {
-      const args = ['session', 'comment', 'list', '--repo', worktreePath]
+      const repo = resolveRepo(worktreePath)
+      const args = ['session', 'comment', 'list', '--repo', repo, '--json']
       if (file) args.push('--file', file)
       const raw = await runHunk(args)
-      return parseJsonOutput<HunkComment[]>(raw)
+      const parsed = JSON.parse(raw) as RawCommentList
+      return parsed.comments.map(mapComment)
     } catch {
       return []
     }
   },
 
   async removeComment(worktreePath: string, commentId: string): Promise<void> {
-    await runHunk(['session', 'comment', 'rm', '--repo', worktreePath, commentId])
+    const repo = resolveRepo(worktreePath)
+    const session = await this.findSessionForRepo(repo)
+    if (!session) throw new Error(`No hunk session for ${repo}`)
+    await runHunk(['session', 'comment', 'rm', session.id, commentId])
   },
 
   async clearComments(worktreePath: string, file?: string): Promise<void> {
-    const args = ['session', 'comment', 'clear', '--repo', worktreePath, '--yes']
+    const repo = resolveRepo(worktreePath)
+    const args = ['session', 'comment', 'clear', '--repo', repo, '--yes']
     if (file) args.push('--file', file)
     await runHunk(args)
   },
@@ -137,7 +216,8 @@ export const HunkService = {
     file: string,
     target: { hunk?: number; newLine?: number; oldLine?: number },
   ): Promise<void> {
-    const args = ['session', 'navigate', '--repo', worktreePath, '--file', file]
+    const repo = resolveRepo(worktreePath)
+    const args = ['session', 'navigate', '--repo', repo, '--file', file]
     if (target.hunk != null) args.push('--hunk', String(target.hunk))
     else if (target.newLine != null) args.push('--new-line', String(target.newLine))
     else if (target.oldLine != null) args.push('--old-line', String(target.oldLine))
@@ -145,13 +225,14 @@ export const HunkService = {
   },
 
   async reload(worktreePath: string, command: string[]): Promise<void> {
-    await runHunk(['session', 'reload', '--repo', worktreePath, '--', ...command])
+    const repo = resolveRepo(worktreePath)
+    await runHunk(['session', 'reload', '--repo', repo, '--', ...command])
   },
 
   cleanupAll(): void {
-    for (const [path, child] of backgroundProcesses) {
+    for (const [, child] of backgroundProcesses) {
       child.kill('SIGTERM')
-      backgroundProcesses.delete(path)
     }
+    backgroundProcesses.clear()
   },
 }
