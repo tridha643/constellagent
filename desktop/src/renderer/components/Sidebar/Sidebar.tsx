@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useAppStore } from "../../store/app-store";
-import type { AgentType, Project, PrLinkProvider, SidebarActionId } from "../../store/types";
+import {
+  DEFAULT_SIDEBAR_ACTION_ORDER,
+  type AgentType,
+  type Project,
+  type PrLinkProvider,
+  type SidebarActionId,
+} from "../../store/types";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
 import type { OpenPrInfo, GithubLookupError } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
@@ -21,6 +27,8 @@ const PR_PROVIDER_DOMAINS: Record<PrLinkProvider, string> = {
   graphite: "graphite.dev",
   devinreview: "devinreview.com",
 };
+
+const VALID_SIDEBAR_ACTION_IDS = new Set<SidebarActionId>(DEFAULT_SIDEBAR_ACTION_ORDER);
 
 /** Detached checkouts use branch label `HEAD` — hide from sidebar (not a named branch). */
 function isRenderableWorkspaceBranch(branch: string): boolean {
@@ -1378,6 +1386,7 @@ export function Sidebar() {
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData(CONSTELLAGENT_ACTION_MIME, action.id);
+                e.dataTransfer.setData("text/plain", action.id);
                 e.dataTransfer.effectAllowed = 'move';
                 draggingActionIdRef.current = action.id;
                 requestAnimationFrame(() => setDraggedActionId(action.id));
@@ -1394,13 +1403,21 @@ export function Sidebar() {
                 e.dataTransfer.dropEffect = 'move';
                 setDropTargetActionId(action.id);
               }}
-              onDragLeave={() => {
-                setDropTargetActionId((prev) => prev === action.id ? null : prev);
+              onDragLeave={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                setDropTargetActionId((prev) => (prev === action.id ? null : prev));
               }}
               onDrop={(e) => {
                 e.preventDefault();
-                const fromId = e.dataTransfer.getData(CONSTELLAGENT_ACTION_MIME) as SidebarActionId;
-                if (fromId && fromId !== action.id) {
+                const raw =
+                  e.dataTransfer.getData(CONSTELLAGENT_ACTION_MIME)
+                  || e.dataTransfer.getData("text/plain");
+                const fromId = raw as SidebarActionId;
+                if (
+                  fromId
+                  && VALID_SIDEBAR_ACTION_IDS.has(fromId)
+                  && fromId !== action.id
+                ) {
                   reorderSidebarAction(fromId, action.id);
                 }
                 setDropTargetActionId(null);
@@ -1408,6 +1425,8 @@ export function Sidebar() {
             >
               <Tooltip label={action.tooltipLabel} shortcut={action.shortcut}>
                 <button
+                  type="button"
+                  draggable={false}
                   className={styles.actionButton}
                   onClick={action.onClick}
                   disabled={action.disabled}
