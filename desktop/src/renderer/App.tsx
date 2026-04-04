@@ -16,6 +16,7 @@ import { ContextHistoryPanel } from './components/ContextHistory/ContextHistoryP
 import { OrchestratorPanel } from './components/Orchestrator/OrchestratorPanel'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
 import { PlanPalette } from './components/PlanPalette/PlanPalette'
+import { HunkReview } from './components/HunkReview/HunkReview'
 import { ConfirmDialog } from './components/Sidebar/ConfirmDialog'
 import { ToastContainer } from './components/Toast/Toast'
 import { AddToChatButton } from './components/AddToChatButton/AddToChatButton'
@@ -109,6 +110,8 @@ export function App() {
   const orchestratorOpen = useAppStore((s) => s.orchestratorOpen)
   const quickOpenVisible = useAppStore((s) => s.quickOpenVisible)
   const planPaletteVisible = useAppStore((s) => s.planPaletteVisible)
+  const hunkReviewOpen = useAppStore((s) => s.hunkReviewOpen)
+  const hunkReviewWorkspaceId = useAppStore((s) => s.hunkReviewWorkspaceId)
   const confirmDialog = useAppStore((s) => s.confirmDialog)
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
 
@@ -257,6 +260,10 @@ export function App() {
       {planPaletteVisible && workspace && (
         <PlanPalette worktreePath={workspace.worktreePath} projectWorktrees={planProjectWorktrees} />
       )}
+      {hunkReviewOpen && hunkReviewWorkspaceId && (() => {
+        const reviewWs = workspaces.find((w) => w.id === hunkReviewWorkspaceId)
+        return reviewWs ? <HunkReview worktreePath={reviewWs.worktreePath} /> : null
+      })()}
       {confirmDialog && (
         <ConfirmDialog
           title={confirmDialog.title}

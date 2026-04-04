@@ -27,9 +27,11 @@ import {
   resolvePtyForPlanSourceFilePath,
   graftTree,
   tabToSplitTree,
+  resolveAgentPtyForContextInjection,
 } from './split-helpers'
 import { formatChatContext } from '../utils/chat-context-formatter'
 import { wrapBracketedPaste } from '../utils/bracketed-paste'
+import { formatReviewForAgent } from '../utils/review-formatter'
 import { pathsEqualOrAlias } from '../../shared/agent-plan-path'
 import {
   DEFAULT_AUTOMATION_COOLDOWN_MS,
@@ -163,6 +165,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   toasts: [],
   quickOpenVisible: false,
   planPaletteVisible: false,
+  hunkReviewOpen: false,
+  hunkReviewWorkspaceId: null,
   unreadWorkspaceIds: new Set<string>(),
   activeClaudeWorkspaceIds: new Set<string>(),
   prStatusMap: new Map(),
@@ -1197,6 +1201,54 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeQuickOpen: () => set({ quickOpenVisible: false }),
   togglePlanPalette: () => set((s) => ({ planPaletteVisible: !s.planPaletteVisible, quickOpenVisible: false })),
   closePlanPalette: () => set({ planPaletteVisible: false }),
+
+  toggleHunkReview: () => {
+    const s = get()
+    if (s.hunkReviewOpen) {
+      set({ hunkReviewOpen: false, hunkReviewWorkspaceId: null })
+      return
+    }
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+    if (!ws) return
+    // Check if any terminal in the active workspace has an agentType set
+    const hasAgent = s.tabs.some(
+      (t) => t.workspaceId === ws.id && t.type === 'terminal' && t.agentType,
+    )
+    if (!hasAgent) {
+      s.addToast({ id: `hunk-no-agent-${Date.now()}`, message: 'No agent detected', type: 'info' })
+      return
+    }
+    set({ hunkReviewOpen: true, hunkReviewWorkspaceId: ws.id, quickOpenVisible: false, planPaletteVisible: false })
+  },
+  closeHunkReview: () => set({ hunkReviewOpen: false, hunkReviewWorkspaceId: null }),
+  submitHunkReview: async () => {
+    const s = get()
+    const ws = s.workspaces.find((w) => w.id === s.hunkReviewWorkspaceId)
+    if (!ws) return
+    try {
+      const annotations = await window.api.annotations.load(ws.worktreePath)
+      const formatted = formatReviewForAgent(annotations)
+      if (!formatted) {
+        s.addToast({ id: `hunk-empty-${Date.now()}`, message: 'No unresolved comments to submit', type: 'info' })
+        return
+      }
+      const pty = resolveAgentPtyForContextInjection({
+        tabs: s.tabs,
+        activeTabId: s.activeTabId,
+        activeWorkspaceId: s.hunkReviewWorkspaceId,
+      })
+      if (!pty) {
+        s.addToast({ id: `hunk-no-pty-${Date.now()}`, message: 'No agent terminal found', type: 'error' })
+        return
+      }
+      window.api.pty.write(pty, wrapBracketedPaste(formatted))
+      s.addToast({ id: `hunk-sent-${Date.now()}`, message: 'Review submitted to agent', type: 'info' })
+      set({ hunkReviewOpen: false, hunkReviewWorkspaceId: null })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to submit review'
+      s.addToast({ id: `hunk-err-${Date.now()}`, message: msg, type: 'error' })
+    }
+  },
 
   markWorkspaceUnread: (workspaceId) =>
     set((s) => {
