@@ -71,17 +71,21 @@ export function OrchestratorPanel() {
   }, [])
 
   const handleSendCommand = useCallback(async () => {
-    if (!command.trim()) return
+    if (!command.trim() || !settings.openRouterApiKey.trim()) return
     setSending(true)
     try {
-      await window.api.orchestrator.sendCommand(command.trim())
+      await window.api.orchestrator.sendCommand({
+        command: command.trim(),
+        openRouterApiKey: settings.openRouterApiKey,
+        orchestratorModel: settings.orchestratorModel.trim(),
+      })
       setCommand('')
     } catch (err) {
       console.error('Failed to send command:', err)
     } finally {
       setSending(false)
     }
-  }, [command])
+  }, [command, settings.openRouterApiKey, settings.orchestratorModel])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -127,6 +131,7 @@ export function OrchestratorPanel() {
                 className={styles.actionBtn}
                 onClick={handleStart}
                 disabled={!settings.sendblueApiKey}
+                title="Starts the SendBlue webhook for SMS commands (requires SendBlue API key in Settings)"
               >
                 Start
               </button>
@@ -138,6 +143,9 @@ export function OrchestratorPanel() {
       <div className={styles.content}>
         <div className={styles.contentInner}>
           <div className={styles.messageColumn}>
+            <p className={styles.llmHint}>
+              LLM planning uses OpenRouter from Settings. Start only enables the SendBlue SMS webhook.
+            </p>
             <MessageThread messages={orchestratorMessages} />
             <div className={styles.commandInput}>
               <textarea
@@ -151,7 +159,16 @@ export function OrchestratorPanel() {
               <button
                 className={styles.sendBtn}
                 onClick={handleSendCommand}
-                disabled={sending || !command.trim()}
+                disabled={
+                  sending ||
+                  !command.trim() ||
+                  !(settings.openRouterApiKey ?? '').trim()
+                }
+                title={
+                  !(settings.openRouterApiKey ?? '').trim()
+                    ? 'Add an OpenRouter API key in Settings → Orchestrator'
+                    : undefined
+                }
               >
                 {sending ? '...' : 'Send'}
               </button>

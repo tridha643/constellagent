@@ -163,6 +163,14 @@
   min-width: 0;
 }
 
+.llmHint {
+  margin: 0 0 var(--space-2);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+}
+
 .messageList {
   flex: 1;
   overflow-y: auto;

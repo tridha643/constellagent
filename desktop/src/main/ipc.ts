@@ -30,6 +30,7 @@ import { t3codeService } from './t3code-service.js'
 import { ContextWindowService } from './context-window-service'
 import { SendBlueService } from './sendblue-service'
 import { UniversalOrchestratorService } from './universal-orchestrator'
+import type { OrchestratorCommandPayload } from '../shared/orchestrator-types'
 
 import { ContextDb } from './context-db'
 import { getAgentFS, closeAllAgentFS, checkpoint, checkpointAll } from './agentfs-service'
@@ -116,7 +117,7 @@ ptyManager.onTitleChanged = (ptyId, title, workspaceId, workingDir) => {
 
 // SendBlue + Universal Orchestrator
 const sendBlueService = new SendBlueService()
-const universalOrchestrator = new UniversalOrchestratorService(ptyManager, sendBlueService)
+const universalOrchestrator = new UniversalOrchestratorService(sendBlueService)
 
 // Wire sendblue → orchestrator
 sendBlueService.onMessage = (from, content) => {
@@ -2047,6 +2048,7 @@ Cachebro is pre-configured via \`npx cachebro init\`. Use the cachebro MCP tools
   // ── Universal Orchestrator + SendBlue handlers ──
   ipcMain.handle(IPC.ORCHESTRATOR_START, async (_e, settings) => {
     await sendBlueService.start(settings)
+    universalOrchestrator.setCachedLlmFromSettings(settings)
   })
 
   ipcMain.handle(IPC.ORCHESTRATOR_STOP, async () => {
@@ -2057,8 +2059,9 @@ Cachebro is pre-configured via \`npx cachebro init\`. Use the cachebro MCP tools
     return universalOrchestrator.getStatus()
   })
 
-  ipcMain.handle(IPC.ORCHESTRATOR_COMMAND, async (_e, command: string) => {
-    await universalOrchestrator.handleCommand('ui', command)
+  ipcMain.handle(IPC.ORCHESTRATOR_COMMAND, async (_e, payload: OrchestratorCommandPayload) => {
+    const { command, openRouterApiKey, orchestratorModel } = payload
+    await universalOrchestrator.handleCommand('ui', command, { openRouterApiKey, orchestratorModel })
   })
 
   ipcMain.handle(IPC.ORCHESTRATOR_SESSIONS, async () => {
