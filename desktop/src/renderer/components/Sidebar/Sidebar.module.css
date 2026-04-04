@@ -1116,6 +1116,71 @@
   text-align: center;
 }
 
+/* ── Scrollable action list ── */
+
+.actionsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: calc(5 * 36px + 4 * var(--space-2));
+  overflow-y: auto;
+  /* Scroll fade masks — hint that content continues */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 8px,
+    black calc(100% - 8px),
+    transparent 100%
+  );
+  /* Thin scrollbar — appears only on interaction */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 200ms ease-out;
+}
+
+.actionsList:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+/* ── DnD wrapper ── */
+
+.actionButtonWrapper {
+  position: relative;
+  flex-shrink: 0;
+  cursor: grab;
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.actionButtonWrapper:active {
+  cursor: grabbing;
+}
+
+/* Drag feedback — scale + opacity with strong ease-out */
+.actionButtonDragging {
+  opacity: 0.35;
+  transform: scale(0.97);
+  transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1),
+              transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Drop indicator — 2px blue line, matching workspace DnD style */
+.actionButtonDropTarget::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: var(--space-4);
+  right: var(--space-4);
+  height: 2px;
+  background: var(--accent-blue);
+  border-radius: 1px;
+  animation: dropIndicatorIn 120ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@keyframes dropIndicatorIn {
+  from { transform: scaleX(0.4); opacity: 0; }
+  to   { transform: scaleX(1);   opacity: 1; }
+}
+
 @keyframes ciPendingTint {
   0%,
   100% {
@@ -1141,5 +1206,17 @@
   }
   .prCiPending {
     animation: none;
+  }
+  .actionButtonDragging {
+    transform: none;
+    transition: opacity 100ms ease;
+  }
+  .actionButtonDropTarget::before {
+    animation: none;
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  .actionButtonWrapper {
+    transition: none;
   }
 }

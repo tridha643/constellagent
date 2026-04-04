@@ -271,6 +271,9 @@ export interface AppState {
   /** Ephemeral: context window usage for the active workspace's Claude Code session. */
   contextWindowData: ContextWindowData | null
 
+  // Sidebar action order (persisted)
+  sidebarActionOrder: SidebarActionId[]
+
   // Orchestrator
   orchestratorOpen: boolean
   orchestratorStatus: OrchestratorStatus
@@ -331,6 +334,7 @@ export interface AppState {
   openWorkspaceDialog: (projectId: string | null) => void
   renameWorkspace: (id: string, name: string) => void
   reorderWorkspace: (fromId: string, toId: string) => void
+  reorderSidebarAction: (fromId: SidebarActionId, toId: SidebarActionId) => void
   updateWorkspaceBranch: (id: string, branch: string) => void
   deleteWorkspace: (workspaceId: string) => Promise<void>
   updateProject: (id: string, partial: Partial<Omit<Project, 'id'>>) => void
@@ -412,6 +416,17 @@ export interface AppState {
   activeProject: () => Project | undefined
 }
 
+export type SidebarActionId = 'add-project' | 'automations' | 'context' | 'plans' | 'orchestrator' | 'settings'
+
+export const DEFAULT_SIDEBAR_ACTION_ORDER: SidebarActionId[] = [
+  'add-project',
+  'automations',
+  'context',
+  'plans',
+  'orchestrator',
+  'settings',
+]
+
 export interface PersistedState {
   projects: Project[]
   workspaces: Workspace[]
@@ -421,4 +436,5 @@ export interface PersistedState {
   activeTabId?: string | null
   lastActiveTabByWorkspace?: Record<string, string>
   settings?: Settings
+  sidebarActionOrder?: SidebarActionId[]
 }

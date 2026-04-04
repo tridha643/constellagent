@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useAppStore } from "../../store/app-store";
-import type { AgentType, Project, PrLinkProvider } from "../../store/types";
+import type { AgentType, Project, PrLinkProvider, SidebarActionId } from "../../store/types";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
 import type { OpenPrInfo, GithubLookupError } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
@@ -8,7 +8,7 @@ import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
 import { Tooltip } from "../Tooltip/Tooltip";
 import { GraphiteStack } from "./GraphiteStack";
-import { CONSTELLAGENT_WORKSPACE_MIME } from "../../utils/add-to-chat";
+import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME } from "../../utils/add-to-chat";
 import { ContextWindowIndicator } from "./ContextWindowIndicator";
 import styles from "./Sidebar.module.css";
 
@@ -96,6 +96,16 @@ function githubErrorMessage(error?: GithubLookupError): string {
 interface WorkspaceCreationState {
   requestId: string;
   message: string;
+}
+
+interface ActionButtonConfig {
+  id: SidebarActionId;
+  icon: string;
+  label: string;
+  tooltipLabel: string;
+  shortcut?: string;
+  onClick: () => void;
+  disabled?: boolean;
 }
 
 function PrStateIcon({ state }: { state: "open" | "merged" | "closed" }) {
@@ -360,6 +370,8 @@ export function Sidebar() {
   const toggleContextHistory = useAppStore((s) => s.toggleContextHistory);
   const toggleOrchestrator = useAppStore((s) => s.toggleOrchestrator);
   const openLatestAgentPlan = useAppStore((s) => s.openLatestAgentPlan);
+  const sidebarActionOrder = useAppStore((s) => s.sidebarActionOrder);
+  const reorderSidebarAction = useAppStore((s) => s.reorderSidebarAction);
   const unreadWorkspaceIds = useAppStore((s) => s.unreadWorkspaceIds);
   const activeClaudeWorkspaceIds = useAppStore((s) => s.activeClaudeWorkspaceIds);
   const renameWorkspace = useAppStore((s) => s.renameWorkspace);
@@ -401,6 +413,9 @@ export function Sidebar() {
   const [pullingStackPrKey, setPullingStackPrKey] = useState<string | null>(null);
   const [projectPrSearch, setProjectPrSearch] = useState("");
   const draggingWorkspaceIdRef = useRef<string | null>(null);
+  const [draggedActionId, setDraggedActionId] = useState<SidebarActionId | null>(null);
+  const [dropTargetActionId, setDropTargetActionId] = useState<SidebarActionId | null>(null);
+  const draggingActionIdRef = useRef<SidebarActionId | null>(null);
   const editRef = useRef<string>("");
   const dialogProject = workspaceDialogProjectId
     ? (projects.find((p) => p.id === workspaceDialogProjectId) ?? null)
@@ -1068,6 +1083,59 @@ export function Sidebar() {
           return haystack.includes(searchNeedle);
         });
 
+  const actionButtonConfigs = useMemo<Record<SidebarActionId, ActionButtonConfig>>(() => ({
+    'add-project': {
+      id: 'add-project',
+      icon: isInitializingRepo ? '…' : '+',
+      label: isInitializingRepo ? 'Initializing…' : 'Add project',
+      tooltipLabel: isInitializingRepo ? 'Initializing repository…' : 'Add project',
+      onClick: handleAddProject,
+      disabled: isInitializingRepo,
+    },
+    automations: {
+      id: 'automations',
+      icon: '⏱',
+      label: 'Automations',
+      tooltipLabel: 'Automations',
+      onClick: toggleAutomations,
+    },
+    context: {
+      id: 'context',
+      icon: '↻',
+      label: 'Context',
+      tooltipLabel: 'Context history',
+      shortcut: '⇧⌘K',
+      onClick: toggleContextHistory,
+    },
+    plans: {
+      id: 'plans',
+      icon: '≡',
+      label: 'Plans',
+      tooltipLabel: 'Open newest agent plan across all agents',
+      onClick: () => { void openLatestAgentPlan(); },
+    },
+    orchestrator: {
+      id: 'orchestrator',
+      icon: '⬡',
+      label: 'Orchestrator',
+      tooltipLabel: 'Universal Orchestrator',
+      onClick: toggleOrchestrator,
+    },
+    settings: {
+      id: 'settings',
+      icon: '⚙',
+      label: 'Settings',
+      tooltipLabel: 'Settings',
+      shortcut: '⌘,',
+      onClick: toggleSettings,
+    },
+  }), [isInitializingRepo, handleAddProject, toggleAutomations, toggleContextHistory, openLatestAgentPlan, toggleOrchestrator, toggleSettings]);
+
+  const orderedActions = useMemo(
+    () => sidebarActionOrder.map((id) => actionButtonConfigs[id]),
+    [sidebarActionOrder, actionButtonConfigs],
+  );
+
   return (
     <div className={styles.sidebar}>
       <div className={styles.titleArea} />
@@ -1298,47 +1366,59 @@ export function Sidebar() {
 
       <div className={styles.actions}>
         <ContextWindowIndicator />
-        <Tooltip label={isInitializingRepo ? "Initializing repository…" : "Add project"}>
-          <button className={styles.actionButton} onClick={handleAddProject} disabled={isInitializingRepo}>
-            <span className={styles.actionIcon}>{isInitializingRepo ? "…" : "+"}</span>
-            <span>{isInitializingRepo ? "Initializing…" : "Add project"}</span>
-          </button>
-        </Tooltip>
-        <Tooltip label="Automations">
-          <button className={styles.actionButton} onClick={toggleAutomations}>
-            <span className={styles.actionIcon}>⏱</span>
-            <span>Automations</span>
-          </button>
-        </Tooltip>
-        <Tooltip label="Context history" shortcut="⇧⌘K">
-          <button className={styles.actionButton} onClick={toggleContextHistory}>
-            <span className={styles.actionIcon}>↻</span>
-            <span>Context</span>
-          </button>
-        </Tooltip>
-        <Tooltip label="Open newest agent plan across all agents">
-          <button
-            className={styles.actionButton}
-            onClick={() => {
-              void openLatestAgentPlan();
-            }}
-          >
-            <span className={styles.actionIcon}>≡</span>
-            <span>Plans</span>
-          </button>
-        </Tooltip>
-        <Tooltip label="Universal Orchestrator">
-          <button className={styles.actionButton} onClick={toggleOrchestrator}>
-            <span className={styles.actionIcon}>⬡</span>
-            <span>Orchestrator</span>
-          </button>
-        </Tooltip>
-        <Tooltip label="Settings" shortcut="⌘,">
-          <button className={styles.actionButton} onClick={toggleSettings}>
-            <span className={styles.actionIcon}>⚙</span>
-            <span>Settings</span>
-          </button>
-        </Tooltip>
+        <div className={styles.actionsList}>
+          {orderedActions.map((action) => (
+            <div
+              key={action.id}
+              className={[
+                styles.actionButtonWrapper,
+                draggedActionId === action.id ? styles.actionButtonDragging : '',
+                dropTargetActionId === action.id ? styles.actionButtonDropTarget : '',
+              ].filter(Boolean).join(' ')}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData(CONSTELLAGENT_ACTION_MIME, action.id);
+                e.dataTransfer.effectAllowed = 'move';
+                draggingActionIdRef.current = action.id;
+                requestAnimationFrame(() => setDraggedActionId(action.id));
+              }}
+              onDragEnd={() => {
+                draggingActionIdRef.current = null;
+                setDraggedActionId(null);
+                setDropTargetActionId(null);
+              }}
+              onDragOver={(e) => {
+                if (!draggingActionIdRef.current) return;
+                if (draggingActionIdRef.current === action.id) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setDropTargetActionId(action.id);
+              }}
+              onDragLeave={() => {
+                setDropTargetActionId((prev) => prev === action.id ? null : prev);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const fromId = e.dataTransfer.getData(CONSTELLAGENT_ACTION_MIME) as SidebarActionId;
+                if (fromId && fromId !== action.id) {
+                  reorderSidebarAction(fromId, action.id);
+                }
+                setDropTargetActionId(null);
+              }}
+            >
+              <Tooltip label={action.tooltipLabel} shortcut={action.shortcut}>
+                <button
+                  className={styles.actionButton}
+                  onClick={action.onClick}
+                  disabled={action.disabled}
+                >
+                  <span className={styles.actionIcon}>{action.icon}</span>
+                  <span>{action.label}</span>
+                </button>
+              </Tooltip>
+            </div>
+          ))}
+        </div>
       </div>
 
       {projectPrModalProject && (
