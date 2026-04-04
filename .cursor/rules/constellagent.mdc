@@ -1,0 +1,16 @@
+---
+description: Cross-agent context and tools from Constellagent
+alwaysApply: true
+---
+
+## Session & Activity Context
+Read these files to see what other agents (and you) have been doing recently:
+- `.constellagent/context/sliding-window.md` — Compact table of last 20 agent actions across all agents
+- `.constellagent/context/agent-context.md` — Rich context summary (files touched, tool details, activity timeline)
+- `.constellagent/sessions/` — Session-end summaries with timestamps
+
+## Cachebro (MCP — auto-configured)
+Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) instead of raw file reads to save tokens.
+
+## Hunk annotations (review context)
+After non-trivial edits, write reviewer context to **`.constellagent/annotations.json`** (schema: `DiffAnnotationsFile` in `desktop/src/shared/diff-annotation-types.ts`). Merge new entries into `annotations`; do not wipe the file. Use `side: "additions"` and `lineNumber` on the key new line; `body` explains **why**, not the diff. IDs: `da_` prefix per `generateAnnotationId()` in that file. Full wording and JSON example: root **`AGENTS.md`**.
