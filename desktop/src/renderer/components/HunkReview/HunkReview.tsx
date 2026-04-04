@@ -23,15 +23,18 @@ interface Props {
 function hunkCommentsToAnnotations(
   comments: Awaited<ReturnType<typeof window.api.hunk.commentList>>,
 ): DiffAnnotation[] {
-  return comments.map((c) => ({
-    id: c.id,
-    filePath: c.file,
-    side: 'additions' as const,
-    lineNumber: c.newLine ?? c.oldLine ?? 1,
-    body: c.summary,
-    createdAt: new Date().toISOString(),
-    resolved: false,
-  }))
+  return comments.map((c) => {
+    const side = c.oldLine != null && c.newLine == null ? 'deletions' as const : 'additions' as const
+    return {
+      id: c.id,
+      filePath: c.file,
+      side,
+      lineNumber: side === 'deletions' ? c.oldLine! : (c.newLine ?? c.oldLine ?? 1),
+      body: c.summary,
+      createdAt: new Date().toISOString(),
+      resolved: false,
+    }
+  })
 }
 
 export function HunkReview({ worktreePath }: Props) {
