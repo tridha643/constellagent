@@ -1934,7 +1934,7 @@ Cachebro is pre-configured via \`npx cachebro init\`. Use the cachebro MCP tools
     return HunkService.getContext(worktreePath)
   })
 
-  ipcMain.handle(IPC.HUNK_COMMENT_ADD, async (_e, worktreePath: string, file: string, newLine: number, summary: string, opts?: { rationale?: string; author?: string; focus?: boolean }) => {
+  ipcMain.handle(IPC.HUNK_COMMENT_ADD, async (_e, worktreePath: string, file: string, newLine: number, summary: string, opts?: { rationale?: string; author?: string; focus?: boolean; oldLine?: number }) => {
     await HunkService.addComment(worktreePath, file, newLine, summary, opts)
   })
 

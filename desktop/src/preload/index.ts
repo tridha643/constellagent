@@ -362,7 +362,7 @@ const api = {
       ipcRenderer.invoke(IPC.HUNK_STOP_SESSION, worktreePath) as Promise<void>,
     getContext: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.HUNK_GET_CONTEXT, worktreePath) as Promise<HunkSessionContext | null>,
-    commentAdd: (worktreePath: string, file: string, newLine: number, summary: string, opts?: { rationale?: string; author?: string; focus?: boolean }) =>
+    commentAdd: (worktreePath: string, file: string, newLine: number, summary: string, opts?: { rationale?: string; author?: string; focus?: boolean; oldLine?: number }) =>
       ipcRenderer.invoke(IPC.HUNK_COMMENT_ADD, worktreePath, file, newLine, summary, opts) as Promise<void>,
     commentList: (worktreePath: string, file?: string) =>
       ipcRenderer.invoke(IPC.HUNK_COMMENT_LIST, worktreePath, file) as Promise<HunkComment[]>,

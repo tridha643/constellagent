@@ -94,7 +94,8 @@ export function AnnotationComposer({
     if (!trimmed || busy) return
     setBusy(true)
     try {
-      await window.api.hunk.commentAdd(worktreePath, filePath, lineNumber, trimmed)
+      const opts = side === 'deletions' ? { oldLine: lineNumber } : undefined
+      await window.api.hunk.commentAdd(worktreePath, filePath, lineNumber, trimmed, opts)
       setBody('')
       onSaved()
     } catch (e) {
