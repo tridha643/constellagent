@@ -5,12 +5,13 @@ import type {
   ChatSnippet,
   PersistedState,
   Project,
+  SidebarActionId,
   StartupCommand,
   Tab,
   SplitNode,
   Workspace,
 } from './types'
-import { DEFAULT_SETTINGS } from './types'
+import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_ACTION_ORDER } from './types'
 import { AGENT_PLAN_DIRS_LABEL } from '../utils/agent-plan-dirs'
 import { GEMINI_TAB_LABEL, isGeminiIdleOscTitle } from '../../shared/gemini-tab-title'
 import {
@@ -144,6 +145,25 @@ function planBuildMapForTabs(map: Record<string, string>, tabs: Tab[]): Record<s
   return next
 }
 
+/** Filter invalid IDs and append any missing ones (forward-compat when new actions are added). */
+function normalizeSidebarActionOrder(raw: SidebarActionId[] | undefined): SidebarActionId[] {
+  const valid = new Set<SidebarActionId>(DEFAULT_SIDEBAR_ACTION_ORDER)
+  const seen = new Set<SidebarActionId>()
+  const result: SidebarActionId[] = []
+  if (raw) {
+    for (const id of raw) {
+      if (valid.has(id) && !seen.has(id)) {
+        result.push(id)
+        seen.add(id)
+      }
+    }
+  }
+  for (const id of DEFAULT_SIDEBAR_ACTION_ORDER) {
+    if (!seen.has(id)) result.push(id)
+  }
+  return result
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
   workspaces: [],
@@ -179,6 +199,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeMonacoEditor: null,
   planBuildTerminalByPlanPath: {},
   contextWindowData: null,
+  sidebarActionOrder: [...DEFAULT_SIDEBAR_ACTION_ORDER],
 
   // Orchestrator
   orchestratorOpen: false,
@@ -335,6 +356,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       const [moved] = next.splice(fromIdx, 1)
       next.splice(toIdx, 0, moved)
       return { workspaces: next }
+    })
+  },
+
+  reorderSidebarAction: (fromId, toId) => {
+    if (fromId === toId) return
+    set((s) => {
+      const fromIdx = s.sidebarActionOrder.indexOf(fromId)
+      const toIdx = s.sidebarActionOrder.indexOf(toId)
+      if (fromIdx === -1 || toIdx === -1) return s
+      const next = [...s.sidebarActionOrder]
+      const [moved] = next.splice(fromIdx, 1)
+      next.splice(toIdx, 0, moved)
+      return { sidebarActionOrder: next }
     })
   },
 
@@ -1637,6 +1671,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       lastKnownRemoteHead: {},
       activeMonacoEditor: null,
       planBuildTerminalByPlanPath: {},
+      sidebarActionOrder: normalizeSidebarActionOrder(data.sidebarActionOrder),
     })
   },
 
@@ -1780,6 +1815,7 @@ function getPersistedSlice(state: AppState): PersistedState {
     activeTabId: state.activeTabId,
     lastActiveTabByWorkspace: state.lastActiveTabByWorkspace,
     settings: state.settings,
+    sidebarActionOrder: state.sidebarActionOrder,
   }
 }
 
@@ -1801,7 +1837,8 @@ useAppStore.subscribe((state, prevState) => {
     state.activeTabId !== prevState.activeTabId ||
     state.automations !== prevState.automations ||
     state.activeWorkspaceId !== prevState.activeWorkspaceId ||
-    state.settings !== prevState.settings
+    state.settings !== prevState.settings ||
+    state.sidebarActionOrder !== prevState.sidebarActionOrder
   ) {
     debouncedSave(state)
   }

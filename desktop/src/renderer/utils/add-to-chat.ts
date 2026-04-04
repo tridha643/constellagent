@@ -11,6 +11,9 @@ export const CONSTELLAGENT_TAB_MIME = 'application/x-constellagent-tab'
 /** Drag-and-drop MIME for workspace IDs (sidebar reorder) */
 export const CONSTELLAGENT_WORKSPACE_MIME = 'application/x-constellagent-workspace'
 
+/** Drag-and-drop MIME for sidebar action button reorder */
+export const CONSTELLAGENT_ACTION_MIME = 'application/x-constellagent-action'
+
 export { wrapBracketedPaste }
 
 function formatSelectionAsContext(filePath: string, languageId: string, selection: string): string {
