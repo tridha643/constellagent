@@ -6,7 +6,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "node scripts/electron-vite-build.mjs",
     "preview": "electron-vite preview",
     "test": "bunx playwright test --project=electron",
     "test:automations": "bun run scripts/automations-smoke.ts",
@@ -15,7 +15,7 @@
     "test:hunk:e2e": "bunx playwright test e2e/hunk-review.spec.ts --project=electron",
     "verify:automations": "bash scripts/verify-automations.sh",
     "rebuild": "bunx electron-rebuild",
-    "dist": "electron-vite build && electron-builder --mac --arm64",
+    "dist": "node scripts/electron-vite-build.mjs && electron-builder --mac --arm64",
     "macos-fda-electron": "sh scripts/macos-electron-full-disk-access.sh",
     "postinstall": "bash scripts/patch-electron-dev.sh && bunx electron-rebuild"
   },

@@ -131,7 +131,7 @@ export interface McpServer {
   env?: Record<string, string>
 }
 
-export type AgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor'
+export type AgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor' | 'opencode'
 
 export type AgentMcpAssignments = Record<AgentType, string[]>
 
@@ -182,7 +182,7 @@ export const DEFAULT_SETTINGS: Settings = {
   favoriteEditor: 'cursor',
   favoriteEditorCustom: '',
   mcpServers: [],
-  agentMcpAssignments: { 'claude-code': [], 'codex': [], 'gemini': [], 'cursor': [] },
+  agentMcpAssignments: { 'claude-code': [], 'codex': [], 'gemini': [], 'cursor': [], 'opencode': [] },
   contextCaptureEnabled: false,
   sessionResumeEnabled: true,
   skills: [],

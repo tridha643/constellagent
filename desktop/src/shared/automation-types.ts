@@ -1,6 +1,6 @@
 import type { PrInfo } from './github-types'
 
-export type AutomationAgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor'
+export type AutomationAgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor' | 'opencode'
 
 export type AgentEventType = 'agent:started' | 'agent:stopped' | 'agent:tool-used'
 export type GitHubEventType =
@@ -179,4 +179,3 @@ export function toAutomationConfigV2(config: AutomationConfigLike): AutomationCo
     cooldownMs: config.cooldownMs,
   }
 }
-

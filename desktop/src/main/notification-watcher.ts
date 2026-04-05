@@ -9,6 +9,7 @@ import {
   CODEX_MARKER_SEGMENT,
   GEMINI_MARKER_SEGMENT,
   CURSOR_MARKER_SEGMENT,
+  OPENCODE_MARKER_SEGMENT,
 } from '../shared/agent-markers'
 import { lookupPersistedWorkspace } from './persisted-state'
 
@@ -158,6 +159,12 @@ export class NotificationWatcher {
     if (cursorIdx > 0) {
       const wsId = marker.slice(0, cursorIdx)
       return wsId ? { wsId, agentType: 'cursor' } : null
+    }
+
+    const opencodeIdx = marker.indexOf(OPENCODE_MARKER_SEGMENT)
+    if (opencodeIdx > 0) {
+      const wsId = marker.slice(0, opencodeIdx)
+      return wsId ? { wsId, agentType: 'opencode' } : null
     }
 
     return null

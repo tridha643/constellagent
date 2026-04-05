@@ -11,6 +11,7 @@ import {
   CODEX_MARKER_SEGMENT,
   GEMINI_MARKER_SEGMENT,
   CURSOR_MARKER_SEGMENT,
+  OPENCODE_MARKER_SEGMENT,
 } from '../shared/agent-markers'
 
 const TAB_TITLE_LOG = '[constellagent:tab-title]'
@@ -67,6 +68,7 @@ const AGENT_PATTERNS: AgentPattern[] = [
   { agentType: 'codex',       basenames: ['codex'], nodeBasenames: ['codex', 'codex.js'] },
   { agentType: 'gemini',      basenames: ['gemini'] },
   { agentType: 'cursor',      basenames: ['cursor-agent', 'cursor', 'agent'] },
+  { agentType: 'opencode',    basenames: ['opencode'] },
 ]
 
 function detectAgentFromCommand(command: string): string | null {
@@ -493,6 +495,7 @@ export class PtyManager {
       case 'codex': return `${getActivityDir()}/${workspaceId}${CODEX_MARKER_SEGMENT}${ptyPid}`
       case 'gemini': return `${getActivityDir()}/${workspaceId}${GEMINI_MARKER_SEGMENT}${ptyPid}`
       case 'cursor': return `${getActivityDir()}/${workspaceId}${CURSOR_MARKER_SEGMENT}${ptyPid}`
+      case 'opencode': return `${getActivityDir()}/${workspaceId}${OPENCODE_MARKER_SEGMENT}${ptyPid}`
       default: return `${getActivityDir()}/${workspaceId}.${agentType}.${ptyPid}`
     }
   }
