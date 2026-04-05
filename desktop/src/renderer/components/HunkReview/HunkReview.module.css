@@ -184,6 +184,21 @@
   font-size: var(--text-sm);
 }
 
+/* ── Select all button ── */
+
+.selectAllBtn {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-0);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-family: var(--font-ui);
+  cursor: pointer;
+}
+.selectAllBtn:hover { color: var(--text-primary); background: var(--surface-3); }
+.selectAllBtn:active { transform: scale(0.97); }
+
 /* ── Reduced motion ── */
 
 @media (prefers-reduced-motion: reduce) {

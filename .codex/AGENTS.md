@@ -20,40 +20,22 @@ Agent tool calls and activity are recorded in `.constellagent/constellagent.db` 
 
 The `entries` table stores: workspace_id, agent_type, session_id, tool_name, tool_input, file_path, tool_response, timestamp.
 
-## Hunk annotations (review context for humans)
+## Hunk review comments (human ↔ agent)
 
-Constellagent’s hunk review UI reads **`.constellagent/annotations.json`**. After you make **non-trivial** code changes, add entries there so human reviewers see **why** you changed things in the HunkReview panel (the diff already shows **what** changed).
+The **Review Changes** panel and the **Changes** diff use **hunk session** comments (the `hunk` CLI from **`hunkdiff`**). There is no separate annotations JSON file in the app.
 
-### Schema (`DiffAnnotationsFile`, version 1)
+- **In the desktop UI:** After non-trivial edits, add review notes on the relevant **new-side** lines (or old-side when appropriate). The diff shows **what** changed; comments explain **why** something needs attention.
+- **In a terminal (Codex, Claude Code, etc.):** Use **`hunk session *`** only (see upstream skill — do not drive the interactive `hunk diff` TUI from agents). Canonical source: **[modem-dev/hunk `hunk-review` skill](https://github.com/modem-dev/hunk/blob/main/skills/hunk-review/SKILL.md)**.
 
-Persist a single JSON object:
+**Recommended flow:**
 
-```json
-{
-  "version": 1,
-  "annotations": [
-    {
-      "id": "da_550e8400-e29b-41d4-a716-446655440000",
-      "filePath": "src/example.ts",
-      "side": "additions",
-      "lineNumber": 42,
-      "body": "Extracted validation into a helper so both handlers stay in sync and we only fix bugs in one place.",
-      "createdAt": "2026-04-04T12:00:00.000Z",
-      "resolved": false
-    }
-  ]
-}
+```bash
+hunk session list
+hunk session comment add <session-id> --file src/foo.ts --new-line 42 --summary "Why" --author "codex"
 ```
 
-Optional field per annotation: `lineEnd` (number, inclusive end line when the comment spans multiple lines).
+**Always pass `--author "<agent-name>"`** when adding comments. This tags review notes so human reviewers can distinguish AI annotations from human comments in the UI.
 
-### Rules
+**AI annotations are non-toggleable:** Comments with an `author` field are display-only context in the Review Changes panel — they are never included in submission text sent to the agent. Only human comments (no `author`) have checkboxes and can be selected for submission.
 
-- Annotate **meaningful** edits only — skip trivial renames, formatting-only changes, or obvious one-line fixes.
-- `side` is almost always **`"additions"`** (you are explaining new or modified lines).
-- `lineNumber` should anchor the note on the most relevant **new** line (additions side).
-- `body`: explain **rationale and tradeoffs**, not a repeat of the diff.
-- If `.constellagent/annotations.json` already exists, **merge** new annotations into the `annotations` array — **do not** replace the whole file unless you intend to discard prior notes.
-- **IDs**: use the `da_` prefix format from `generateAnnotationId()` in `desktop/src/shared/diff-annotation-types.ts` — e.g. `da_<uuid>` or `da_<timestamp>_<random>` when UUID is unavailable.
-
-Canonical TypeScript types: `desktop/src/shared/diff-annotation-types.ts`.
+Shared types: `desktop/src/shared/diff-annotation-types.ts`.

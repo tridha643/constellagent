@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import type { DiffAnnotation } from '@shared/diff-annotation-types'
 import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
@@ -54,6 +54,41 @@ export function HunkReview({ worktreePath }: Props) {
   const closeHunkReview = useAppStore((s) => s.closeHunkReview)
   const submitHunkReview = useAppStore((s) => s.submitHunkReview)
   const inline = settings.diffInline
+
+  // ── Comment selection state ──
+
+  const humanAnnotations = useMemo(
+    () => annotations.filter((a) => !a.author),
+    [annotations],
+  )
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // Auto-select all human comments when annotations load/change
+  useEffect(() => {
+    setSelectedIds(new Set(humanAnnotations.map((a) => a.id)))
+  }, [humanAnnotations])
+
+  const toggleComment = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const allSelected = humanAnnotations.length > 0 && humanAnnotations.every((a) => selectedIds.has(a.id))
+
+  const toggleAll = useCallback(() => {
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(humanAnnotations.map((a) => a.id)))
+    }
+  }, [allSelected, humanAnnotations])
+
+  const selectedCount = selectedIds.size
 
   useEffect(() => {
     panelRef.current?.focus()
@@ -178,8 +213,6 @@ export function HunkReview({ worktreePath }: Props) {
     return () => observer.disconnect()
   }, [files])
 
-  const commentCount = annotations.length
-
   return (
     <>
       {/* Backdrop */}
@@ -205,6 +238,11 @@ export function HunkReview({ worktreePath }: Props) {
               {files.length} file{files.length !== 1 ? 's' : ''}
             </span>
           )}
+          {humanAnnotations.length > 0 && (
+            <button className={styles.selectAllBtn} onClick={toggleAll}>
+              {allSelected ? 'Deselect all' : 'Select all'}
+            </button>
+          )}
           <div className={styles.headerSpacer} />
           <div className={styles.toggleGroup}>
             <button
@@ -222,10 +260,10 @@ export function HunkReview({ worktreePath }: Props) {
           </div>
           <button
             className={styles.submitBtn}
-            disabled={commentCount === 0}
-            onClick={() => void submitHunkReview()}
+            disabled={selectedCount === 0}
+            onClick={() => void submitHunkReview(selectedIds)}
           >
-            Submit Review{commentCount > 0 ? ` (${commentCount})` : ''}
+            Submit Review{selectedCount > 0 ? ` (${selectedCount})` : ''}
           </button>
           <button className={styles.closeBtn} onClick={closeHunkReview}>
             &times;
@@ -234,8 +272,8 @@ export function HunkReview({ worktreePath }: Props) {
 
         {/* Hint */}
         <p className={styles.hint}>
-          Drag across line numbers to select a range, then leave a comment. Submit sends all
-          comments to the agent.
+          Drag across line numbers to select a range, then leave a comment. Submit sends
+          selected comments to the agent.
         </p>
 
         {/* File strip */}
@@ -263,6 +301,8 @@ export function HunkReview({ worktreePath }: Props) {
                 worktreeAnnotations={annotations}
                 onAnnotationsChanged={loadAnnotations}
                 showPatchAnchorNote={false}
+                selectedCommentIds={selectedIds}
+                onToggleComment={toggleComment}
               />
             ))}
           </div>

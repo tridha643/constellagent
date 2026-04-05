@@ -14,3 +14,5 @@ Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (
 
 ## Hunk review comments
 After non-trivial edits, leave review notes in the **diff / Review Changes** UI (hunk session comments), or from a terminal using **`hunk session *`** per the upstream **[hunk-review](https://github.com/modem-dev/hunk/blob/main/skills/hunk-review/SKILL.md)** skill (installed to **`desktop/.claude/skills/hunk-review/SKILL.md`** by **`bun run setup`**; gitignored). `npm i -g hunkdiff`. Root **`AGENTS.md`** has the summary.
+
+**AI annotations are non-toggleable:** Comments with an `author` field are display-only context in the Review Changes panel — they are never included in submission text sent to the agent. Only human comments (no `author`) have checkboxes and can be selected for submission.

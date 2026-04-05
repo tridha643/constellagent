@@ -136,6 +136,14 @@
   cursor: not-allowed;
 }
 
+.bubbleNonSelectable { opacity: 0.65; }
+.bubbleUnselected { opacity: 0.6; border-style: dashed; }
+.selectCheckbox {
+  flex-shrink: 0; width: 14px; height: 14px;
+  accent-color: var(--accent-blue); cursor: pointer; margin: 0;
+  margin-right: var(--space-1);
+}
+
 .commitNote {
   font-size: var(--text-xs);
   color: var(--text-tertiary);

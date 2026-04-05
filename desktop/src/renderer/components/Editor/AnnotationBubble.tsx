@@ -17,10 +17,14 @@ export function AnnotationBubble({
   annotation,
   worktreePath,
   onChanged,
+  selected,
+  onToggle,
 }: {
   annotation: DiffAnnotation
   worktreePath: string
   onChanged: () => void
+  selected?: boolean
+  onToggle?: (id: string) => void
 }) {
   const [busy, setBusy] = useState(false)
   const addToast = useAppStore((s) => s.addToast)
@@ -50,13 +54,29 @@ export function AnnotationBubble({
     end !== annotation.lineNumber ? `L${annotation.lineNumber}–L${end}` : `L${annotation.lineNumber}`
   const isAgent = !!annotation.author
 
+  const selectionClass = onToggle
+    ? isAgent
+      ? styles.bubbleNonSelectable
+      : selected === false
+        ? styles.bubbleUnselected
+        : ''
+    : ''
+
   return (
     <div
-      className={`${styles.bubble} ${isAgent ? styles.bubbleAgent : ''} ${annotation.resolved ? styles.bubbleResolved : ''}`}
+      className={`${styles.bubble} ${isAgent ? styles.bubbleAgent : ''} ${annotation.resolved ? styles.bubbleResolved : ''} ${selectionClass}`}
       data-annotation-id={annotation.id}
     >
       <div className={styles.meta}>
         <span>
+          {!isAgent && onToggle && (
+            <input
+              type="checkbox"
+              className={styles.selectCheckbox}
+              checked={!!selected}
+              onChange={() => onToggle(annotation.id)}
+            />
+          )}
           {isAgent && <span className={styles.authorLabel}>AI</span>}
           {annotation.resolved ? `Resolved · ${rangeLabel}` : rangeLabel}
         </span>

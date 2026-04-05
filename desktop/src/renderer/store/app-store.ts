@@ -1271,13 +1271,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ hunkReviewOpen: true, hunkReviewWorkspaceId: ws.id, quickOpenVisible: false, planPaletteVisible: false })
   },
   closeHunkReview: () => set({ hunkReviewOpen: false, hunkReviewWorkspaceId: null }),
-  submitHunkReview: async () => {
+  submitHunkReview: async (selectedCommentIds?: Set<string>) => {
     const s = get()
     const ws = s.workspaces.find((w) => w.id === s.hunkReviewWorkspaceId)
     if (!ws) return
     try {
       const comments = await window.api.hunk.commentList(ws.worktreePath)
-      const formatted = formatReviewForAgent(comments)
+      const formatted = formatReviewForAgent(comments, selectedCommentIds)
       if (!formatted) {
         s.addToast({ id: `hunk-empty-${Date.now()}`, message: 'No comments to submit', type: 'info' })
         return
