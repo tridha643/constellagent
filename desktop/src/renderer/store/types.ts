@@ -358,7 +358,7 @@ export interface AppState {
   closePlanPalette: () => void
   toggleHunkReview: () => Promise<void>
   closeHunkReview: () => void
-  submitHunkReview: () => Promise<void>
+  submitHunkReview: (selectedCommentIds?: Set<string>) => Promise<void>
 
   // Add to Chat actions
   setActiveMonacoEditor: (editor: editor.IStandaloneCodeEditor | null) => void

@@ -53,6 +53,8 @@ export interface DiffFileSectionProps {
   worktreeAnnotations: DiffAnnotation[]
   onAnnotationsChanged: () => void
   showPatchAnchorNote: boolean
+  selectedCommentIds?: Set<string>
+  onToggleComment?: (id: string) => void
 }
 
 export const DiffFileSection = memo(function DiffFileSection({
@@ -63,6 +65,8 @@ export const DiffFileSection = memo(function DiffFileSection({
   worktreeAnnotations,
   onAnnotationsChanged,
   showPatchAnchorNote,
+  selectedCommentIds,
+  onToggleComment,
 }: DiffFileSectionProps) {
   const [selectedLines, setSelectedLines] = useState<PierreSelectedRange | null>(null)
   const [pendingRange, setPendingRange] = useState<{
@@ -176,6 +180,8 @@ export const DiffFileSection = memo(function DiffFileSection({
               annotation={a}
               worktreePath={worktreePath}
               onChanged={onAnnotationsChanged}
+              selected={selectedCommentIds?.has(a.id)}
+              onToggle={onToggleComment}
             />
           ))}
           {showComposer && (
@@ -201,6 +207,8 @@ export const DiffFileSection = memo(function DiffFileSection({
       data.filePath,
       onAnnotationsChanged,
       clearSelectionAndComposer,
+      selectedCommentIds,
+      onToggleComment,
     ],
   )
 

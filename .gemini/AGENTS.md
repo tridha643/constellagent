@@ -31,4 +31,6 @@ The **Review Changes** panel and the **Changes** diff use **hunk session** comme
 
 Constellagent **ensures the `hunk` CLI** when you use workspaces / Review Changes; you do not need to install it by hand. **Recommended:** `hunk session list`, then `hunk session comment add <session-id> … --author "gemini"`. Optional: `sh scripts/hunk-agent.sh … --repo .` when you do not want to pick an id; or **`hunk session list --json` + `jq`** to resolve a session id without `curl` (see **CLI-only resolver** in root **`AGENTS.md`**). An active hunk session for that repo is required: Constellagent’s **Review Changes** starts one; otherwise ask the user to open Hunk per the upstream skill.
 
+**AI annotations are non-toggleable:** Comments with an `author` field are display-only context in the Review Changes panel — they are never included in submission text sent to the agent. Only human comments (no `author`) have checkboxes and can be selected for submission.
+
 Shared types: `desktop/src/shared/diff-annotation-types.ts`.
