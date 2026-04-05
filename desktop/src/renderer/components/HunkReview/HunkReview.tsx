@@ -18,7 +18,7 @@ interface Props {
 
 /**
  * Map hunk CLI comments to the DiffAnnotation shape expected by
- * DiffFileSection / AnnotationBubble so the component tree stays unchanged.
+ * DiffFileSection / CommentBubble so the component tree stays unchanged.
  */
 function hunkCommentsToAnnotations(
   comments: Awaited<ReturnType<typeof window.api.hunk.commentList>>,
@@ -53,6 +53,7 @@ export function HunkReview({ worktreePath }: Props) {
   const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
   const closeHunkReview = useAppStore((s) => s.closeHunkReview)
   const submitHunkReview = useAppStore((s) => s.submitHunkReview)
+  const addToast = useAppStore((s) => s.addToast)
   const inline = settings.diffInline
 
   // ── Comment selection state ──
@@ -135,6 +136,73 @@ export function HunkReview({ worktreePath }: Props) {
   useEffect(() => {
     void loadAnnotations()
   }, [loadAnnotations])
+
+  // ── GitHub PR comment loading ──
+  useEffect(() => {
+    if (!sessionReady) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const branch = await window.api.git.getCurrentBranch(worktreePath)
+        if (!branch || cancelled) return
+
+        const { projects, workspaces, prStatusMap } = useAppStore.getState()
+        const ws = workspaces.find((w) => w.worktreePath === worktreePath)
+        if (!ws) return
+        const project = projects.find((p) => p.id === ws.projectId)
+        if (!project) return
+
+        const prInfo = prStatusMap.get(`${project.id}:${branch}`)
+        if (!prInfo?.number) return
+
+        const comments = await window.api.github.getPrReviewComments(worktreePath, prInfo.number)
+        if (cancelled) return
+        const mapped: DiffAnnotation[] = comments.map((c) => ({
+          id: c.id,
+          filePath: c.filePath,
+          side: c.diffSide === 'LEFT' ? ('deletions' as const) : ('additions' as const),
+          lineNumber: c.line ?? c.startLine ?? 1,
+          body: c.body,
+          createdAt: c.createdAt,
+          resolved: c.resolved,
+          author: c.author,
+        }))
+        setAnnotations((prev) => [...prev, ...mapped])
+      } catch (err) {
+        console.error('Failed to load PR review comments:', err)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [worktreePath, sessionReady])
+
+  // ── Git operations for accept/reject ──
+  const handleFileAccepted = useCallback(
+    async (filePath: string, status: string) => {
+      try {
+        await window.api.git.stage(worktreePath, [filePath])
+      } catch (err) {
+        console.error('Failed to stage file:', err)
+        addToast({ id: `stage-err-${Date.now()}`, message: `Failed to stage ${filePath}`, type: 'error' })
+      }
+    },
+    [worktreePath, addToast],
+  )
+
+  const handleFileRejected = useCallback(
+    async (filePath: string, status: string) => {
+      try {
+        if (status === 'added' || status === 'untracked') {
+          await window.api.git.discard(worktreePath, [], [filePath])
+        } else {
+          await window.api.git.discard(worktreePath, [filePath], [])
+        }
+      } catch (err) {
+        console.error('Failed to discard file:', err)
+        addToast({ id: `discard-err-${Date.now()}`, message: `Failed to discard ${filePath}`, type: 'error' })
+      }
+    },
+    [worktreePath, addToast],
+  )
 
   // ── Load working-tree diff ──
 
@@ -304,6 +372,8 @@ export function HunkReview({ worktreePath }: Props) {
                 selectedCommentIds={selectedIds}
                 onToggleComment={toggleComment}
                 enableAcceptReject
+                onFileAccepted={(fp, status) => void handleFileAccepted(fp, status)}
+                onFileRejected={(fp, status) => void handleFileRejected(fp, status)}
               />
             ))}
           </div>

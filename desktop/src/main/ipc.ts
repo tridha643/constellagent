@@ -782,6 +782,10 @@ export function registerIpcHandlers(): void {
     return GithubService.resolvePr(repoPath, prNumber, repoSlug)
   })
 
+  ipcMain.handle(IPC.GITHUB_GET_PR_REVIEW_COMMENTS, async (_e, repoPath: string, prNumber: number) => {
+    return GithubService.fetchPrReviewComments(repoPath, prNumber)
+  })
+
   // ── Graphite handlers ──
   ipcMain.handle(IPC.GRAPHITE_GET_STACK, async (_e, repoPath: string, worktreePath: string) => {
     return GraphiteService.getStackInfo(repoPath, worktreePath)

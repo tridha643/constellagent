@@ -79,7 +79,10 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   const updateSettings = useAppStore((s) => s.updateSettings)
   const openFileTab = useAppStore((s) => s.openFileTab)
   const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
+  const addToast = useAppStore((s) => s.addToast)
   const inline = settings.diffInline
+
+  const enableAcceptReject = !commitHash
 
   const openFileFromDiff = useCallback(
     (fullPath: string) => {
@@ -113,6 +116,75 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   useEffect(() => {
     void loadAnnotations()
   }, [loadAnnotations])
+
+  // ── GitHub PR comment loading ──
+  useEffect(() => {
+    if (commitHash) return // Don't load PR comments for commit diffs
+    let cancelled = false
+    ;(async () => {
+      try {
+        // Get current branch to look up PR
+        const branch = await window.api.git.getCurrentBranch(worktreePath)
+        if (!branch || cancelled) return
+
+        // Check prStatusMap for a PR on this branch
+        const { projects, workspaces, prStatusMap } = useAppStore.getState()
+        const ws = workspaces.find((w) => w.worktreePath === worktreePath)
+        if (!ws) return
+        const project = projects.find((p) => p.id === ws.projectId)
+        if (!project) return
+
+        const prInfo = prStatusMap.get(`${project.id}:${branch}`)
+        if (!prInfo?.number) return
+
+        const comments = await window.api.github.getPrReviewComments(worktreePath, prInfo.number)
+        if (cancelled) return
+        const mapped: DiffAnnotation[] = comments.map((c) => ({
+          id: c.id,
+          filePath: c.filePath,
+          side: c.diffSide === 'LEFT' ? ('deletions' as const) : ('additions' as const),
+          lineNumber: c.line ?? c.startLine ?? 1,
+          body: c.body,
+          createdAt: c.createdAt,
+          resolved: c.resolved,
+          author: c.author,
+        }))
+        setAnnotations((prev) => [...prev, ...mapped])
+      } catch (err) {
+        console.error('Failed to load PR review comments:', err)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [worktreePath, commitHash])
+
+  // ── Git operations for accept/reject ──
+  const handleFileAccepted = useCallback(
+    async (filePath: string, status: string) => {
+      try {
+        await window.api.git.stage(worktreePath, [filePath])
+      } catch (err) {
+        console.error('Failed to stage file:', err)
+        addToast({ id: `stage-err-${Date.now()}`, message: `Failed to stage ${filePath}`, type: 'error' })
+      }
+    },
+    [worktreePath, addToast],
+  )
+
+  const handleFileRejected = useCallback(
+    async (filePath: string, status: string) => {
+      try {
+        if (status === 'added' || status === 'untracked') {
+          await window.api.git.discard(worktreePath, [], [filePath])
+        } else {
+          await window.api.git.discard(worktreePath, [filePath], [])
+        }
+      } catch (err) {
+        console.error('Failed to discard file:', err)
+        addToast({ id: `discard-err-${Date.now()}`, message: `Failed to discard ${filePath}`, type: 'error' })
+      }
+    },
+    [worktreePath, addToast],
+  )
 
   // Load commit-specific diff
   const loadCommitDiff = useCallback(async () => {
@@ -301,7 +373,9 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
             worktreeAnnotations={annotations}
             onAnnotationsChanged={loadAnnotations}
             showPatchAnchorNote={!!commitHash}
-            enableAcceptReject
+            enableAcceptReject={enableAcceptReject}
+            onFileAccepted={(fp, status) => void handleFileAccepted(fp, status)}
+            onFileRejected={(fp, status) => void handleFileRejected(fp, status)}
           />
         ))}
       </div>

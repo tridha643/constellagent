@@ -107,6 +107,7 @@ export const IPC = {
   GITHUB_GET_PR_STATUSES: 'github:get-pr-statuses',
   GITHUB_LIST_OPEN_PRS: 'github:list-open-prs',
   GITHUB_RESOLVE_PR: 'github:resolve-pr',
+  GITHUB_GET_PR_REVIEW_COMMENTS: 'github:get-pr-review-comments',
 
   // LSP operations
   LSP_GET_PORT: 'lsp:get-port',
