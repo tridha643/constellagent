@@ -20,40 +20,15 @@ Agent tool calls and activity are recorded in `.constellagent/constellagent.db` 
 
 The `entries` table stores: workspace_id, agent_type, session_id, tool_name, tool_input, file_path, tool_response, timestamp.
 
-## Hunk annotations (review context for humans)
+## Hunk review comments (human ↔ agent)
 
-Constellagent’s hunk review UI reads **`.constellagent/annotations.json`**. After you make **non-trivial** code changes, add entries there so human reviewers see **why** you changed things in the HunkReview panel (the diff already shows **what** changed).
+The **Review Changes** panel and the **Changes** diff use **hunk session** comments (the `hunk` CLI from **`hunkdiff`**). There is no separate annotations JSON file in the app.
 
-### Schema (`DiffAnnotationsFile`, version 1)
+- **In the desktop UI:** After non-trivial edits, add review notes on the relevant **new-side** lines (or old-side when appropriate). The diff shows **what** changed; comments explain **why** something needs attention.
+- **In a terminal (Claude Code, Codex, Cursor, etc.):** Use **`hunk session *`** only (see upstream skill — do not drive the interactive `hunk diff` TUI from agents). Canonical source: **[modem-dev/hunk `hunk-review` skill](https://github.com/modem-dev/hunk/blob/main/skills/hunk-review/SKILL.md)**.
 
-Persist a single JSON object:
+**Local skill path (not committed; gitignored):** after **`bun run setup`** or **`sh scripts/install-hunk-skill.sh`**, the same upstream `SKILL.md` is present at **`desktop/.claude/skills/hunk-review/SKILL.md`**, with symlinks **`.cursor/skills/hunk-review`** and **`.gemini/skills/hunk-review`**. Override revision with **`HUNK_SKILL_REF`** when running the install script (defaults to `main`).
 
-```json
-{
-  "version": 1,
-  "annotations": [
-    {
-      "id": "da_550e8400-e29b-41d4-a716-446655440000",
-      "filePath": "src/example.ts",
-      "side": "additions",
-      "lineNumber": 42,
-      "body": "Extracted validation into a helper so both handlers stay in sync and we only fix bugs in one place.",
-      "createdAt": "2026-04-04T12:00:00.000Z",
-      "resolved": false
-    }
-  ]
-}
-```
+Constellagent **ensures the `hunk` CLI** when you use workspaces / Review Changes; you do not need to install it by hand. **Recommended:** `hunk session list`, then `hunk session comment add <session-id> … --author "gemini"`. Optional: `sh scripts/hunk-agent.sh … --repo .` when you do not want to pick an id; or **`hunk session list --json` + `jq`** to resolve a session id without `curl` (see **CLI-only resolver** in root **`AGENTS.md`**). An active hunk session for that repo is required: Constellagent’s **Review Changes** starts one; otherwise ask the user to open Hunk per the upstream skill.
 
-Optional field per annotation: `lineEnd` (number, inclusive end line when the comment spans multiple lines).
-
-### Rules
-
-- Annotate **meaningful** edits only — skip trivial renames, formatting-only changes, or obvious one-line fixes.
-- `side` is almost always **`"additions"`** (you are explaining new or modified lines).
-- `lineNumber` should anchor the note on the most relevant **new** line (additions side).
-- `body`: explain **rationale and tradeoffs**, not a repeat of the diff.
-- If `.constellagent/annotations.json` already exists, **merge** new annotations into the `annotations` array — **do not** replace the whole file unless you intend to discard prior notes.
-- **IDs**: use the `da_` prefix format from `generateAnnotationId()` in `desktop/src/shared/diff-annotation-types.ts` — e.g. `da_<uuid>` or `da_<timestamp>_<random>` when UUID is unavailable.
-
-Canonical TypeScript types: `desktop/src/shared/diff-annotation-types.ts`.
+Shared types: `desktop/src/shared/diff-annotation-types.ts`.

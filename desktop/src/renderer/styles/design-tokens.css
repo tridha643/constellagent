@@ -50,6 +50,7 @@
 
   --accent-cyan: #88C0D0;
   --accent-purple: #B48EAD;
+  --accent-purple-dim: rgba(180, 142, 173, 0.08);
   --accent-green: #A3BE8C;
   --accent-green-muted: #7A9A6C;
   --accent-green-dim: rgba(163, 190, 140, 0.14);

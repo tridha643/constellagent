@@ -4,7 +4,14 @@ import {
   type DiffAnnotation,
   type DiffAnnotationSide,
 } from '../../../shared/diff-annotation-types'
+import { useAppStore } from '../../store/app-store'
 import styles from './AnnotationBubble.module.css'
+
+function hunkCliMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err)
+  const m = raw.match(/hunk:\s*[^\n]+/)
+  return m ? m[0] : raw.split('\n')[0] ?? 'Hunk comment action failed'
+}
 
 export function AnnotationBubble({
   annotation,
@@ -16,6 +23,7 @@ export function AnnotationBubble({
   onChanged: () => void
 }) {
   const [busy, setBusy] = useState(false)
+  const addToast = useAppStore((s) => s.addToast)
 
   const run = useCallback(
     async (fn: () => Promise<void>) => {
@@ -23,37 +31,36 @@ export function AnnotationBubble({
       try {
         await fn()
         onChanged()
+      } catch (e) {
+        console.error('Hunk comment action failed:', e)
+        addToast({
+          id: `hunk-comment-err-${Date.now()}`,
+          message: hunkCliMessage(e),
+          type: 'error',
+        })
       } finally {
         setBusy(false)
       }
     },
-    [onChanged],
+    [onChanged, addToast],
   )
 
   const end = annotationLineEnd(annotation)
   const rangeLabel =
     end !== annotation.lineNumber ? `L${annotation.lineNumber}–L${end}` : `L${annotation.lineNumber}`
+  const isAgent = !!annotation.author
 
   return (
     <div
-      className={`${styles.bubble} ${annotation.resolved ? styles.bubbleResolved : ''}`}
+      className={`${styles.bubble} ${isAgent ? styles.bubbleAgent : ''} ${annotation.resolved ? styles.bubbleResolved : ''}`}
       data-annotation-id={annotation.id}
     >
       <div className={styles.meta}>
         <span>
-          {annotation.resolved ? 'Resolved' : 'Open'} · {rangeLabel}
+          {isAgent && <span className={styles.authorLabel}>AI</span>}
+          {annotation.resolved ? `Resolved · ${rangeLabel}` : rangeLabel}
         </span>
         <div className={styles.actions}>
-          {!annotation.resolved && (
-            <button
-              type="button"
-              className={styles.actionBtn}
-              disabled={busy}
-              onClick={() => run(() => window.api.hunk.commentRemove(worktreePath, annotation.id))}
-            >
-              Resolve
-            </button>
-          )}
           <button
             type="button"
             className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
@@ -88,6 +95,7 @@ export function AnnotationComposer({
 }) {
   const [body, setBody] = useState('')
   const [busy, setBusy] = useState(false)
+  const addToast = useAppStore((s) => s.addToast)
 
   const submit = async () => {
     const trimmed = body.trim()
@@ -100,6 +108,11 @@ export function AnnotationComposer({
       onSaved()
     } catch (e) {
       console.error('Failed to add hunk comment:', e)
+      addToast({
+        id: `hunk-comment-err-${Date.now()}`,
+        message: hunkCliMessage(e),
+        type: 'error',
+      })
     } finally {
       setBusy(false)
     }

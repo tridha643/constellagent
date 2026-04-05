@@ -27,6 +27,19 @@ function ToastItem({ toast }: { toast: Toast }) {
       onClick={startExit}
     >
       <span className={styles.message}>{toast.message}</span>
+      {toast.action && (
+        <button
+          type="button"
+          className={styles.actionBtn}
+          onClick={(e) => {
+            e.stopPropagation()
+            toast.action!.onClick()
+            startExit()
+          }}
+        >
+          {toast.action.label}
+        </button>
+      )}
     </div>
   )
 }

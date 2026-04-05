@@ -16,8 +16,18 @@
   line-height: 1.45;
 }
 
+.bubbleAgent {
+  background: var(--accent-purple-dim);
+  border-left: 2px solid var(--accent-purple);
+}
+
 .bubbleResolved {
   opacity: 0.55;
+}
+
+.authorLabel {
+  color: var(--accent-purple);
+  margin-right: var(--space-1);
 }
 
 .meta {

@@ -1958,6 +1958,14 @@ Cachebro is pre-configured via \`npx cachebro init\`. Use the cachebro MCP tools
     await HunkService.reload(worktreePath, command)
   })
 
+  ipcMain.handle(IPC.HUNK_CHECK_UPDATE, async () => {
+    return HunkService.checkForUpdate()
+  })
+
+  ipcMain.handle(IPC.HUNK_PERFORM_UPDATE, async () => {
+    await HunkService.performUpdate()
+  })
+
   // ── Phone control (iMessage) handlers ──
   ipcMain.handle(IPC.PHONE_CONTROL_START, async (_e, settings: PhoneControlSettings) => {
     await iMessageService.start(settings)

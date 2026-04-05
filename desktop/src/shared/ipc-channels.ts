@@ -169,6 +169,8 @@ export const IPC = {
   HUNK_COMMENT_CLEAR: 'hunk:comment-clear',
   HUNK_NAVIGATE: 'hunk:navigate',
   HUNK_RELOAD: 'hunk:reload',
+  HUNK_CHECK_UPDATE: 'hunk:check-update',
+  HUNK_PERFORM_UPDATE: 'hunk:perform-update',
 
   // Universal Orchestrator
   ORCHESTRATOR_START: 'orchestrator:start',

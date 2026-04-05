@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   console.log('[hunk-smoke] checking hunk CLI availability…')
   const available = await HunkService.isAvailable()
   if (!available) {
-    console.log('[hunk-smoke] SKIP — hunk CLI not installed (npm i -g hunkdiff)')
+    console.log('[hunk-smoke] SKIP — hunk CLI not installed (open Constellagent to auto-install, or install hunkdiff manually)')
     process.exit(0)
   }
   pass('hunk CLI is available')

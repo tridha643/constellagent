@@ -101,6 +101,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
           body: c.summary,
           createdAt: new Date().toISOString(),
           resolved: false,
+          author: c.author,
         })),
       )
     } catch (err) {

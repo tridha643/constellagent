@@ -33,6 +33,7 @@ function hunkCommentsToAnnotations(
       body: c.summary,
       createdAt: new Date().toISOString(),
       resolved: false,
+      author: c.author,
     }
   })
 }

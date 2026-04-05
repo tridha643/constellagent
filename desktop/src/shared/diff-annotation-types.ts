@@ -1,9 +1,7 @@
 /**
- * Human review comments on diffs, persisted at `{worktree}/.constellagent/annotations.json`.
- * Agents and hooks should read that JSON file as the canonical store.
+ * Shape for inline diff review notes in the UI. The app displays **hunk session** comments
+ * (via the `hunk` CLI / daemon); this file only defines shared TypeScript types.
  */
-
-export const ANNOTATIONS_FILE_VERSION = 1 as const
 
 /** Matches @pierre/diffs AnnotationSide */
 export type DiffAnnotationSide = 'additions' | 'deletions'
@@ -20,18 +18,8 @@ export interface DiffAnnotation {
   body: string
   createdAt: string
   resolved: boolean
-}
-
-export interface DiffAnnotationsFile {
-  version: typeof ANNOTATIONS_FILE_VERSION
-  annotations: DiffAnnotation[]
-}
-
-export function generateAnnotationId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `da_${crypto.randomUUID()}`
-  }
-  return `da_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+  /** Set by coding agents (e.g. "constellagent"). Absent for human-authored comments. */
+  author?: string
 }
 
 export type DiffAnnotationAddInput = Pick<DiffAnnotation, 'filePath' | 'side' | 'lineNumber' | 'body'> & {
