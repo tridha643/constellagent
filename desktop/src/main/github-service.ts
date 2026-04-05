@@ -78,6 +78,47 @@ interface GraphqlReviewThreadsResponse {
   errors?: Array<{ message?: string }>
 }
 
+interface GraphqlPrReviewCommentsResponse {
+  data?: {
+    repository?: {
+      pullRequest?: {
+        reviewThreads?: {
+          nodes?: Array<{
+            id: string
+            isResolved: boolean
+            path: string
+            line: number | null
+            startLine: number | null
+            diffSide: string
+            comments: {
+              nodes: Array<{
+                id: string
+                body: string
+                author?: { login?: string | null } | null
+                createdAt: string
+              }>
+            }
+          }>
+        }
+      }
+    }
+  }
+  errors?: Array<{ message?: string }>
+}
+
+export interface PrReviewComment {
+  id: string
+  threadId: string
+  filePath: string
+  line: number | null
+  startLine: number | null
+  diffSide: 'LEFT' | 'RIGHT'
+  body: string
+  author: string
+  createdAt: string
+  resolved: boolean
+}
+
 interface RepoResponseCache {
   data: Record<string, PrInfo | null>
 }
@@ -716,6 +757,65 @@ export class GithubService {
     }
 
     return payload
+  }
+
+  static async fetchPrReviewComments(
+    repoPath: string,
+    prNumber: number,
+  ): Promise<PrReviewComment[]> {
+    if (!(await this.isGhAvailable())) return []
+    const repoInfo = await this.getGithubRepoInfo(repoPath)
+    if (!repoInfo) return []
+    const token = await this.getAuthToken()
+    if (!token) return []
+
+    const query = `
+      query($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            reviewThreads(first: 100) {
+              nodes {
+                id
+                isResolved
+                path
+                line
+                startLine
+                diffSide
+                comments(first: 50) {
+                  nodes {
+                    id
+                    body
+                    author { login }
+                    createdAt
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `
+    const data = await this.fetchGraphqlJson<GraphqlPrReviewCommentsResponse>(
+      query,
+      { owner: repoInfo.owner, name: repoInfo.name, number: prNumber },
+      token,
+    )
+    const threads = data.data?.repository?.pullRequest?.reviewThreads?.nodes
+    if (!threads) return []
+    return threads.flatMap((thread) =>
+      thread.comments.nodes.map((comment) => ({
+        id: comment.id,
+        threadId: thread.id,
+        filePath: thread.path,
+        line: thread.line,
+        startLine: thread.startLine,
+        diffSide: (thread.diffSide === 'LEFT' ? 'LEFT' : 'RIGHT') as 'LEFT' | 'RIGHT',
+        body: comment.body,
+        author: comment.author?.login ?? 'unknown',
+        createdAt: comment.createdAt,
+        resolved: thread.isResolved,
+      })),
+    )
   }
 
   private static rollupStateToStatus(rollupState: string | undefined): CheckStatus {

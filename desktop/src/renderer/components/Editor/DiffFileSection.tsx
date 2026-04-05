@@ -10,7 +10,7 @@ import { getSingularPatch, diffAcceptRejectHunk } from '@pierre/diffs'
 import type { DiffAnnotation, DiffAnnotationSide } from '@shared/diff-annotation-types'
 import { STATUS_LABELS } from '../../../shared/status-labels'
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
-import { AnnotationBubble, AnnotationComposer } from './AnnotationBubble'
+import { CommentBubble, CommentComposer, HunkActionAnnotation } from './AnnotationBubble'
 import annotationUi from './AnnotationBubble.module.css'
 import styles from './Editor.module.css'
 
@@ -52,6 +52,9 @@ export function isCombinedMergePatch(patch: string): boolean {
   return /^diff --cc /m.test(patch) || /^@@@ /m.test(patch)
 }
 
+// Sentinel key prefix for hunk-action annotations
+const HUNK_ACTION_KEY = '__hunk_action__'
+
 // ── Per-file diff section ──
 
 export interface DiffFileSectionProps {
@@ -67,6 +70,8 @@ export interface DiffFileSectionProps {
   enableAcceptReject?: boolean
   onHunkAccepted?: (filePath: string, hunkIndex: number) => void
   onHunkRejected?: (filePath: string, hunkIndex: number) => void
+  onFileAccepted?: (filePath: string, status: string) => void
+  onFileRejected?: (filePath: string, status: string) => void
 }
 
 export const DiffFileSection = memo(function DiffFileSection({
@@ -82,6 +87,8 @@ export const DiffFileSection = memo(function DiffFileSection({
   enableAcceptReject,
   onHunkAccepted,
   onHunkRejected,
+  onFileAccepted,
+  onFileRejected,
 }: DiffFileSectionProps) {
   const [selectedLines, setSelectedLines] = useState<PierreSelectedRange | null>(null)
   const [pendingRange, setPendingRange] = useState<{
@@ -141,22 +148,57 @@ export const DiffFileSection = memo(function DiffFileSection({
     })
   }, [fileAnnotations])
 
+  // Build hunk-start annotation entries for accept/reject buttons
+  const hunkStartAnnotations = useMemo((): DiffLineAnnotation<DiffAnnotation[]>[] => {
+    if (!enableAcceptReject || !fileDiffState) return []
+    return fileDiffState.hunks.map((hunk, i) => ({
+      side: 'additions' as DiffAnnotationSide,
+      lineNumber: hunk.additionStart,
+      metadata: [{
+        id: `${HUNK_ACTION_KEY}${i}`,
+        filePath: data.filePath,
+        side: 'additions' as const,
+        lineNumber: hunk.additionStart,
+        body: '',
+        createdAt: '',
+        resolved: false,
+      }],
+    }))
+  }, [enableAcceptReject, fileDiffState, data.filePath])
+
   /** Pierre renders annotation slots per (side, lineNumber); anchor composer at the lowest selected line. */
   const displayLineAnnotations = useMemo((): DiffLineAnnotation<DiffAnnotation[]>[] => {
-    if (!pendingRange) return lineAnnotations
-    const key = `${pendingRange.side}:${pendingRange.lineEnd}`
-    if (lineAnnotations.some((a) => `${a.side}:${a.lineNumber}` === key)) {
-      return lineAnnotations
+    // Merge line annotations + hunk start annotations
+    const merged = new Map<string, DiffLineAnnotation<DiffAnnotation[]>>()
+
+    for (const ann of lineAnnotations) {
+      const key = `${ann.side}:${ann.lineNumber}`
+      merged.set(key, { ...ann, metadata: [...(ann.metadata ?? [])] })
     }
-    return [
-      ...lineAnnotations,
-      {
-        side: pendingRange.side,
-        lineNumber: pendingRange.lineEnd,
-        metadata: [],
-      },
-    ]
-  }, [lineAnnotations, pendingRange])
+
+    for (const hunkAnn of hunkStartAnnotations) {
+      const key = `${hunkAnn.side}:${hunkAnn.lineNumber}`
+      const existing = merged.get(key)
+      if (existing) {
+        existing.metadata = [...(hunkAnn.metadata ?? []), ...(existing.metadata ?? [])]
+      } else {
+        merged.set(key, { ...hunkAnn })
+      }
+    }
+
+    if (pendingRange) {
+      const key = `${pendingRange.side}:${pendingRange.lineEnd}`
+      if (!merged.has(key)) {
+        merged.set(key, {
+          side: pendingRange.side,
+          lineNumber: pendingRange.lineEnd,
+          metadata: [],
+        })
+      }
+    }
+
+    return [...merged.values()]
+  }, [lineAnnotations, hunkStartAnnotations, pendingRange])
 
   const handleLineSelectionStart = useCallback(() => {
     setPendingRange(null)
@@ -194,18 +236,55 @@ export const DiffFileSection = memo(function DiffFileSection({
     setPendingRange(null)
   }, [])
 
+  // ── Accept / reject hunks ──
+
+  const handleAcceptHunk = useCallback(
+    (hunkIndex: number) => {
+      if (!fileDiffState) return
+      const next = diffAcceptRejectHunk(fileDiffState, hunkIndex, 'accept')
+      setFileDiffState(next)
+      onHunkAccepted?.(data.filePath, hunkIndex)
+      onFileAccepted?.(data.filePath, data.status)
+    },
+    [fileDiffState, data.filePath, data.status, onHunkAccepted, onFileAccepted],
+  )
+
+  const handleRejectHunk = useCallback(
+    (hunkIndex: number) => {
+      if (!fileDiffState) return
+      const next = diffAcceptRejectHunk(fileDiffState, hunkIndex, 'reject')
+      setFileDiffState(next)
+      onHunkRejected?.(data.filePath, hunkIndex)
+      onFileRejected?.(data.filePath, data.status)
+    },
+    [fileDiffState, data.filePath, data.status, onHunkRejected, onFileRejected],
+  )
+
   const renderAnnotation = useCallback(
     (ann: DiffLineAnnotation<DiffAnnotation[]>) => {
       const items = ann.metadata ?? []
+      const hunkActions = items.filter((a) => a.id.startsWith(HUNK_ACTION_KEY))
+      const comments = items.filter((a) => !a.id.startsWith(HUNK_ACTION_KEY))
       const showComposer =
         pendingRange != null &&
         ann.side === pendingRange.side &&
         ann.lineNumber === pendingRange.lineEnd
-      if (!items.length && !showComposer) return null
+      if (!hunkActions.length && !comments.length && !showComposer) return null
       return (
         <div className={annotationUi.annotationStack}>
-          {items.map((a) => (
-            <AnnotationBubble
+          {hunkActions.map((a) => {
+            const idx = parseInt(a.id.slice(HUNK_ACTION_KEY.length), 10)
+            return (
+              <HunkActionAnnotation
+                key={a.id}
+                hunkIndex={idx}
+                onAccept={handleAcceptHunk}
+                onReject={handleRejectHunk}
+              />
+            )
+          })}
+          {comments.map((a) => (
+            <CommentBubble
               key={a.id}
               annotation={a}
               worktreePath={worktreePath}
@@ -215,7 +294,7 @@ export const DiffFileSection = memo(function DiffFileSection({
             />
           ))}
           {showComposer && (
-            <AnnotationComposer
+            <CommentComposer
               worktreePath={worktreePath}
               filePath={data.filePath}
               side={pendingRange.side}
@@ -239,50 +318,10 @@ export const DiffFileSection = memo(function DiffFileSection({
       clearSelectionAndComposer,
       selectedCommentIds,
       onToggleComment,
+      handleAcceptHunk,
+      handleRejectHunk,
     ],
   )
-
-  // ── Accept / reject hunks ──
-
-  const handleAcceptHunk = useCallback(
-    (hunkIndex: number) => {
-      if (!fileDiffState) return
-      const next = diffAcceptRejectHunk(fileDiffState, hunkIndex, 'accept')
-      setFileDiffState(next)
-      onHunkAccepted?.(data.filePath, hunkIndex)
-    },
-    [fileDiffState, data.filePath, onHunkAccepted],
-  )
-
-  const handleRejectHunk = useCallback(
-    (hunkIndex: number) => {
-      if (!fileDiffState) return
-      const next = diffAcceptRejectHunk(fileDiffState, hunkIndex, 'reject')
-      setFileDiffState(next)
-      onHunkRejected?.(data.filePath, hunkIndex)
-    },
-    [fileDiffState, data.filePath, onHunkRejected],
-  )
-
-  const handleAcceptAll = useCallback(() => {
-    if (!fileDiffState) return
-    let state = fileDiffState
-    for (let i = state.hunks.length - 1; i >= 0; i--) {
-      state = diffAcceptRejectHunk(state, i, 'accept')
-    }
-    setFileDiffState(state)
-  }, [fileDiffState])
-
-  const handleRejectAll = useCallback(() => {
-    if (!fileDiffState) return
-    let state = fileDiffState
-    for (let i = state.hunks.length - 1; i >= 0; i--) {
-      state = diffAcceptRejectHunk(state, i, 'reject')
-    }
-    setFileDiffState(state)
-  }, [fileDiffState])
-
-  const hunkCount = fileDiffState?.hunks.length ?? 0
 
   // ── Pierre native header metadata slot ──
 
@@ -301,31 +340,9 @@ export const DiffFileSection = memo(function DiffFileSection({
         >
           Open
         </button>
-        {enableAcceptReject && hunkCount > 0 && (
-          <div className={styles.headerMetaActions}>
-            <span className={styles.headerMetaHunkCount}>
-              {hunkCount} hunk{hunkCount !== 1 ? 's' : ''}
-            </span>
-            <button
-              className={styles.rejectAllBtn}
-              onClick={(e) => { e.stopPropagation(); handleRejectAll() }}
-            >
-              Reject all
-            </button>
-            <button
-              className={styles.acceptAllBtn}
-              onClick={(e) => { e.stopPropagation(); handleAcceptAll() }}
-            >
-              Accept all
-            </button>
-          </div>
-        )}
-        {enableAcceptReject && hunkCount === 0 && fileDiffState && (
-          <span className={styles.headerMetaResolved}>All changes resolved</span>
-        )}
       </div>
     ),
-    [data.status, fullPath, onOpenFile, enableAcceptReject, hunkCount, fileDiffState, handleAcceptAll, handleRejectAll],
+    [data.status, fullPath, onOpenFile],
   )
 
   // ── Hover utility: "+" button on hovered lines ──
