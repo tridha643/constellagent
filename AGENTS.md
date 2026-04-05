@@ -38,13 +38,33 @@ hunk session comment add <session-id> --file src/foo.ts --new-line 42 --summary 
 
 Same selection rule as [`scripts/hunk-agent.sh`](scripts/hunk-agent.sh): take the **first** session whose `repoRoot` equals the current git top-level (when several sessions match one repo, behavior matches the script—first JSON entry wins).
 
-Uses only the `hunk` binary and `jq` (no `curl`). The daemon and a session for this repo must **already** exist; if not, use **`hunk-agent.sh`** or open the repo in Constellagent so a watch session is started.
+The usual one-liner uses only the `hunk` binary and `jq`. **If `jq` errors with a parse failure** (large or streamed JSON from `hunk session list --json`), use **`sh scripts/hunk-agent.sh`** (daemon HTTP API + `jq`) or resolve the session id via **`curl`** to the daemon (same API as `hunk-agent.sh`):
+
+```bash
+curl -sf -X POST "${HUNK_MCP_URL:-http://127.0.0.1:47657}/session-api" \
+  -H 'content-type: application/json' -d '{"action":"list"}' \
+  | jq -r --arg repo "$(git rev-parse --show-toplevel)" \
+    '[.sessions[] | select(.repoRoot == $repo)][0].sessionId // empty'
+```
+
+Otherwise:
 
 ```bash
 REPO="$(git rev-parse --show-toplevel)"
 SID="$(hunk session list --json | jq -r --arg repo "$REPO" '[.sessions[] | select(.repoRoot == $repo)][0].sessionId // empty')"
 hunk session comment add "$SID" --file src/foo.ts --new-line 42 --summary "Why" --author "claude-code"
 ```
+
+The daemon and a session for this repo must **already** exist; if not, use **`hunk-agent.sh`** or open the repo in Constellagent so a watch session is started.
+
+### Diff visibility (before `reload`)
+
+Hunk comments attach to **lines in the loaded git diff**. If your change is not in that diff, `hunk session reload "$SID" -- diff` reports **0 files** and `comment add` cannot target the file—this is the main cause of “it took forever” debugging loops.
+
+- **Gitignored paths** — Ignored files (e.g. under **`.constellagent/`**, which is gitignored here) never appear. Put edits in **tracked, non-ignored** paths.
+- **New file, fully staged, nothing unstaged** — The session’s working-tree diff can be **empty**. Use **`git add -N <path>`** (intent-to-add) so **`git diff`** shows the new file, then reload; or keep an **unstaged** hunk on a tracked file.
+
+**Sanity check:** run `git diff` (and `git diff --cached` if needed) and confirm the file you want to annotate appears **before** reloading the session.
 
 ### Adding comments: reload + line range discovery
 
