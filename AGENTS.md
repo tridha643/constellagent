@@ -85,6 +85,28 @@ hunk session context "$SID"
 
 For files with multiple hunks, iterate `--hunk 1`, `--hunk 2`, etc. to find the range that covers the line you want to annotate. Use `hunk session get "$SID" --json` to see all files and their `hunkCount` in one call.
 
+### Why agent-side annotation takes a long time
+
+Automated agents (Cursor, Claude Code, etc.) are slow at this step **by design**, not because commenting itself is “heavy”:
+
+- **Range discovery is mandatory.** `--new-line` must fall in each hunk’s **New range**; wrong guesses fail with _“No new diff hunk covers line N”_. That means **`navigate` + `context` per file (and often per hunk)** before each `comment add`.
+- **Large diffs multiply work.** Many files or many hunks ⇒ many sequential CLI round-trips.
+- **Session resolution can fail.** `hunk session list --json | jq` may **error on parse** when JSON is huge or streamed — fall back to **`scripts/hunk-agent.sh`** or the daemon **`curl`** session API (see **CLI-only resolver** above).
+- **Retries add up.** A single wrong line number forces re-navigation and a second `comment add`.
+
+Prefer **`hunk-agent.sh`** when you want one session for `--repo .` without hand-copying a session id; still expect **O(files × hunks)** work for full annotation.
+
+### Where comments live — and why they’re hard to “find”
+
+- **Not in the repo.** Hunk comments are **not** a committed file (e.g. no `annotations.json` in git). They attach to the **hunk session’s loaded git diff** in the Review Changes / `hunk` UI.
+- **Session-bound.** If you’re not looking at **the same hunk session** that received the comments (or the session expired / was replaced), **nothing shows up**.
+- **Diff-bound.** Comments sit on **hunk lines**. If the working tree is **clean** (everything committed) and the session shows **no diff**, there may be **no hunks** to attach notes to until new changes exist — reload after edits.
+- **AI vs human in the UI.** Comments added with **`--author "<agent>"`** are **AI annotations**: display-only context on the diff (see **Comment selection** in root **`CLAUDE.md`**). They are **not** the same as selectable human comments in the submission flow.
+
+**Practical check:** open **Review Changes** for this workspace, ensure the **correct repo session** is active, run **`hunk session reload … -- diff`** (or equivalent) so the **current** uncommitted diff is loaded, then open the file/hunk where the comment was added.
+
+**If you need durable, searchable notes** (e.g. for “where did we document why?”): use the **PR description**, **commit message**, or a short **tracked** note — hunk is for **in-session review**, not a searchable archive.
+
 ### Optional: `hunk-agent` wrapper
 
 [`scripts/hunk-agent.sh`](scripts/hunk-agent.sh) is a thin POSIX helper that starts the daemon if needed, ensures a session exists, resolves one session id for the repo (including when multiple match), then delegates to `hunk session`. Use it when you want `--repo .` without copying a `session-id`:

@@ -14,7 +14,6 @@
     "verify:automations": "bun run --cwd desktop verify:automations",
     "rebuild": "bun run --cwd desktop rebuild",
     "dist": "bun run --cwd desktop dist",
-    "macos-fda-electron": "sh desktop/scripts/macos-electron-full-disk-access.sh",
     "landing": "bunx serve landing-page"
   }
 }

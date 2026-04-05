@@ -8,6 +8,16 @@ Shared instructions for all coding agents — session context, Cachebro, context
 
 Human comments in the Review Changes panel (Cmd+Shift+R) are individually selectable via checkboxes. Only **selected** human comments are included in the text submitted to the agent. AI-authored comments (those with an `author` field) are **non-toggleable** — they are display-only context in the diff and are never included in the submission text.
 
+## Hunk annotations: time cost & discoverability
+
+**Why annotation takes a long time in automation:** each `comment add` needs a **`--new-line` inside that hunk’s new-side range**, so agents must **`navigate` + `context`** per file (often per hunk). Multi-file diffs mean many sequential CLI steps; wrong lines require retries; `hunk session list --json | jq` can **fail to parse** on large output — use **`scripts/hunk-agent.sh`** or the daemon **`curl`** flow documented in **`AGENTS.md`**.
+
+**Where comments “go”:** they are **not** stored as a normal file in git. They attach to the **hunk session’s loaded diff** in Review Changes. **Same workspace + active session + a diff with hunks** (reload after edits) or you won’t see them. **AI-authored** notes (`--author "claude-code"`, etc.) are **display-only** on the diff (see above).
+
+**Durable narrative** for humans searching later: **PR description** or **commit body** — don’t rely on hunk alone as a searchable archive.
+
+Full detail: **`AGENTS.md`** → *Hunk review comments* → *Why agent-side annotation takes a long time* / *Where comments live*.
+
 ## Plan policies
 
 1. **AI annotations in plans**: All plans must include AI annotation instructions — agents leave review comments on their own changes explaining rationale (`--author "<agent-name>"`).

@@ -43,6 +43,16 @@ import {
 
 const DEFAULT_PR_LINK_PROVIDER = 'github' as const
 
+/** Removed Phone Control settings — strip from persisted JSON so old installs do not re-save them. */
+const LEGACY_PHONE_CONTROL_SETTING_KEYS = [
+  'phoneControlEnabled',
+  'phoneControlContactId',
+  'phoneControlNotifyOnStart',
+  'phoneControlNotifyOnFinish',
+  'phoneControlStreamOutput',
+  'phoneControlStreamIntervalSec',
+] as const
+
 /** Strip unknown persisted fields (e.g. legacy waitFor / waitCondition). */
 function normalizeHydratedStartupCommands(raw: Project['startupCommands']): StartupCommand[] | undefined {
   if (!raw?.length) return undefined
@@ -1634,7 +1644,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }))
     const workspaces = data.workspaces ?? []
     const saved = data.activeWorkspaceId
-    const settings = data.settings ? { ...DEFAULT_SETTINGS, ...data.settings } : { ...DEFAULT_SETTINGS }
+    const settingsMerged = data.settings ? { ...DEFAULT_SETTINGS, ...data.settings } : { ...DEFAULT_SETTINGS }
+    for (const k of LEGACY_PHONE_CONTROL_SETTING_KEYS) {
+      delete (settingsMerged as Record<string, unknown>)[k]
+    }
+    const settings = settingsMerged
     const activeWorkspaceId = settings.restoreWorkspace
       ? ((saved && workspaces.some((w) => w.id === saved) ? saved : workspaces[0]?.id) ?? null)
       : null
