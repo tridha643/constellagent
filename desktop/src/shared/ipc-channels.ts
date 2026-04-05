@@ -173,14 +173,6 @@ export const IPC = {
   HUNK_CHECK_UPDATE: 'hunk:check-update',
   HUNK_PERFORM_UPDATE: 'hunk:perform-update',
 
-  // Phone control (iMessage)
-  PHONE_CONTROL_START: 'phone-control:start',
-  PHONE_CONTROL_STOP: 'phone-control:stop',
-  PHONE_CONTROL_STATUS: 'phone-control:status',
-  PHONE_CONTROL_TEST_SEND: 'phone-control:test-send',
-  /** macOS: open System Settings → Privacy & Security (Full Disk Access / Files and Folders) */
-  PHONE_CONTROL_OPEN_FULL_DISK_ACCESS: 'phone-control:open-full-disk-access',
-
   // T3 Code server lifecycle
   T3CODE_START: 't3code:start',
   T3CODE_STOP: 't3code:stop',

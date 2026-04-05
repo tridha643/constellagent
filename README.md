@@ -26,7 +26,6 @@ A macOS desktop app for running multiple AI agents in parallel. Each agent gets 
 - Plan workflow for agent-written markdown plans, including a searchable plan palette, build status, relocation, and build launch
 - MCP server management plus skills and subagent syncing into project agent directories
 - Claude/Codex hook configuration for notifications and context capture
-- Optional Phone Control integration over iMessage for start/finish notifications and remote control flows
 - Keyboard-first UX for Quick Open, tab and workspace switching, pane management, settings, and plan/context panels
 
 ## Getting started

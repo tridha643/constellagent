@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app, BrowserWindow, clipboard, webContents, type WebContents, shell } from 'electron'
+import { ipcMain, dialog, app, BrowserWindow, clipboard, webContents, type WebContents } from 'electron'
 import { join, dirname, relative, resolve } from 'path'
 import { mkdir, writeFile, readFile, readdir, unlink } from 'fs/promises'
 import { existsSync, mkdirSync, writeFileSync, realpathSync } from 'fs'
@@ -24,8 +24,6 @@ import { CLAUDE_CONFIG_PATH } from './claude-config'
 import { LspService } from './lsp/lsp-service'
 import { SkillsService } from './skills-service'
 import { GraphiteService } from './graphite-service'
-import { IMessageService, type ProjectInfo } from './imessage-service'
-import type { PhoneControlSettings } from '../shared/phone-control-types'
 import { t3codeService } from './t3code-service.js'
 import { ContextWindowService } from './context-window-service'
 
@@ -65,51 +63,6 @@ ptyManager.onTitleChanged = (ptyId, title, workspaceId, workingDir) => {
 const automationEngine = new AutomationEngine(ptyManager)
 const githubPollService = new GithubPollService()
 const lspService = new LspService()
-
-// Phone control via iMessage
-const iMessageService = new IMessageService(
-  ptyManager,
-  () => {
-    // Read projects from persisted state on disk
-    try {
-      const statePath = join(app.getPath('userData'), 'constellagent-state.json')
-      const raw = JSON.parse(require('fs').readFileSync(statePath, 'utf-8'))
-      const projects = Array.isArray(raw?.projects) ? raw.projects : []
-      return projects.map((p: { id: string; name: string; repoPath: string }) => ({
-        id: p.id,
-        name: p.name,
-        repoPath: p.repoPath,
-      })) as ProjectInfo[]
-    } catch {
-      return []
-    }
-  },
-  () => {
-    // Read active workspace → project from persisted state
-    try {
-      const statePath = join(app.getPath('userData'), 'constellagent-state.json')
-      const raw = JSON.parse(require('fs').readFileSync(statePath, 'utf-8'))
-      const activeWsId = raw?.activeWorkspaceId
-      if (!activeWsId) return null
-      const ws = (raw?.workspaces ?? []).find((w: { id: string }) => w.id === activeWsId)
-      return ws?.projectId ?? null
-    } catch {
-      return null
-    }
-  },
-)
-
-// Wire phone control to PTY data stream
-ptyManager.onPtyData = (ptyId, data) => {
-  iMessageService.onPtyData(ptyId, data)
-}
-
-// Wire phone control to PTY title changes (chain with existing callback)
-const existingOnTitleChanged = ptyManager.onTitleChanged
-ptyManager.onTitleChanged = (ptyId, title, workspaceId, workingDir) => {
-  existingOnTitleChanged?.(ptyId, title, workspaceId, workingDir)
-  iMessageService.onTitleChanged(ptyId, title)
-}
 
 // Cache of open context databases keyed by projectDir
 const contextDbs = new Map<string, ContextDb>()
@@ -1879,48 +1832,6 @@ export function registerIpcHandlers(): void {
     await HunkService.performUpdate()
   })
 
-  // ── Phone control (iMessage) handlers ──
-  ipcMain.handle(IPC.PHONE_CONTROL_START, async (_e, settings: PhoneControlSettings) => {
-    await iMessageService.start(settings)
-  })
-
-  ipcMain.handle(IPC.PHONE_CONTROL_STOP, async () => {
-    iMessageService.stop()
-  })
-
-  ipcMain.handle(IPC.PHONE_CONTROL_STATUS, async () => {
-    return iMessageService.getStatus()
-  })
-
-  ipcMain.handle(IPC.PHONE_CONTROL_TEST_SEND, async (_e, message: string) => {
-    await iMessageService.testSend(message)
-  })
-
-  ipcMain.handle(IPC.PHONE_CONTROL_OPEN_FULL_DISK_ACCESS, async () => {
-    if (process.platform !== 'darwin') return
-    const urls = [
-      'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles',
-      'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?path=Privacy/Full%20Disk%20Access',
-    ]
-    const runOpen = promisify(execFile)
-    for (const url of urls) {
-      try {
-        await runOpen('open', [url])
-        return
-      } catch {
-        // try next
-      }
-    }
-    for (const url of urls) {
-      try {
-        await shell.openExternal(url)
-        return
-      } catch {
-        // try next
-      }
-    }
-  })
-
   // ── T3 Code server handlers ──
   ipcMain.handle(IPC.T3CODE_START, async (_e, cwd: string) => {
     return t3codeService.start(cwd)
@@ -2009,11 +1920,6 @@ export function registerIpcHandlers(): void {
   })
 }
 
-/** Expose the iMessage service so index.ts can wire the notification watcher callback. */
-export function getIMessageService(): IMessageService {
-  return iMessageService
-}
-
 export function getGithubPollService(): GithubPollService {
   return githubPollService
 }
@@ -2024,7 +1930,6 @@ export function cleanupAll(): void {
   ptyManager.destroyAll()
   automationEngine.destroyAll()
   githubPollService.stop()
-  iMessageService.destroy()
   lspService.shutdown()
   HunkService.cleanupAll()
   for (const watcher of pendingIndexerWatchers.values()) watcher.close()

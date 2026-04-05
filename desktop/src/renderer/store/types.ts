@@ -145,12 +145,6 @@ export interface Settings {
   sessionResumeEnabled: boolean
   skills: SkillEntry[]
   subagents: SubagentEntry[]
-  phoneControlEnabled: boolean
-  phoneControlContactId: string
-  phoneControlNotifyOnStart: boolean
-  phoneControlNotifyOnFinish: boolean
-  phoneControlStreamOutput: boolean
-  phoneControlStreamIntervalSec: number
   t3CodeCollapseSidePanels: boolean
 }
 
@@ -170,12 +164,6 @@ export const DEFAULT_SETTINGS: Settings = {
   sessionResumeEnabled: true,
   skills: [],
   subagents: [],
-  phoneControlEnabled: false,
-  phoneControlContactId: '',
-  phoneControlNotifyOnStart: true,
-  phoneControlNotifyOnFinish: true,
-  phoneControlStreamOutput: false,
-  phoneControlStreamIntervalSec: 10,
   t3CodeCollapseSidePanels: false,
 }
 

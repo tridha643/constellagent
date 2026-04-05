@@ -16,7 +16,6 @@
     "verify:automations": "bash scripts/verify-automations.sh",
     "rebuild": "bunx electron-rebuild",
     "dist": "node scripts/electron-vite-build.mjs && electron-builder --mac --arm64",
-    "macos-fda-electron": "sh scripts/macos-electron-full-disk-access.sh",
     "postinstall": "bash scripts/patch-electron-dev.sh && bunx electron-rebuild"
   },
   "keywords": [],
@@ -25,7 +24,6 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@openrouter/ai-sdk-provider": "^2.3.3",
-    "@photon-ai/imessage-kit": "^2.1.2",
     "@pierre/diffs": "^1.1.11",
     "@streamdown/cjk": "^1.0.3",
     "@streamdown/code": "^1.1.1",
@@ -40,7 +38,6 @@
     "agentfs-sdk": "^0.6.0",
     "ai": "^6.0.146",
     "allotment": "^1.20.5",
-    "better-sqlite3": "^12.8.0",
     "cachebro": "^0.2.0",
     "diff": "^8.0.3",
     "electron-vite": "^5.0.0",

@@ -7,7 +7,6 @@ import type {
   AutomationStatusEvent,
   AutomationWorkspaceEvent,
 } from '../shared/automation-types'
-import type { PhoneControlSettings, PhoneControlStatus } from '../shared/phone-control-types'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { PlanAgent } from '../shared/agent-plan-path'
@@ -373,19 +372,6 @@ const api = {
       ipcRenderer.invoke(IPC.HUNK_CHECK_UPDATE) as Promise<HunkVersionInfo>,
     performUpdate: () =>
       ipcRenderer.invoke(IPC.HUNK_PERFORM_UPDATE) as Promise<void>,
-  },
-
-  phoneControl: {
-    start: (settings: PhoneControlSettings) =>
-      ipcRenderer.invoke(IPC.PHONE_CONTROL_START, settings),
-    stop: () =>
-      ipcRenderer.invoke(IPC.PHONE_CONTROL_STOP),
-    status: () =>
-      ipcRenderer.invoke(IPC.PHONE_CONTROL_STATUS) as Promise<PhoneControlStatus>,
-    testSend: (message: string) =>
-      ipcRenderer.invoke(IPC.PHONE_CONTROL_TEST_SEND, message),
-    openFullDiskAccessSettings: () =>
-      ipcRenderer.invoke(IPC.PHONE_CONTROL_OPEN_FULL_DISK_ACCESS),
   },
 
   t3code: {
