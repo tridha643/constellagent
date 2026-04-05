@@ -12,6 +12,21 @@ Human comments in the Review Changes panel (Cmd+Shift+R) are individually select
 
 1. **AI annotations in plans**: All plans must include AI annotation instructions — agents leave review comments on their own changes explaining rationale (`--author "<agent-name>"`).
 2. **Verification loops**: Every plan must include a verification section with both automated tests (`bun run test`, specific test files) and manual test steps.
+3. **Sendblue notifications**: Every plan must include the required Sendblue CLI notification step for both `plan created` and `task over`.
+
+## Mandatory Sendblue CLI notifications
+
+**Claude Code MUST send a Sendblue CLI notification to `+18258883809` when a plan is created and again when the task is over.**
+
+```bash
+sendblue send +18258883809 "claude-code <plan-topic-name> plan created"
+sendblue send +18258883809 "claude-code <plan-topic-name> is over"
+```
+
+- Use the plan title for `<plan-topic-name>` when one exists; otherwise use a short task topic from the request.
+- Retry each `sendblue send` command up to 3 times if it fails.
+- If all retries fail, Claude Code must still say that explicitly in the final response and include the error text.
+- The completion notification happens after build/test/annotation steps and before reporting the task as done to the user.
 
 ## Mandatory AI annotations on code changes
 

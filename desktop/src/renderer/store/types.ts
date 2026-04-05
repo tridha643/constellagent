@@ -4,12 +4,6 @@ import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
 import type { GraphiteStackInfo } from '@shared/graphite-types'
 import type { ContextWindowData } from '@shared/context-window-types'
 import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '../../shared/automation-types'
-import {
-  DEFAULT_ORCHESTRATOR_MODEL,
-  type OrchestratorStatus,
-  type OrchestratorSession,
-  type OrchestratorMessage,
-} from '../../shared/orchestrator-types'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
 export type WaitCondition =
@@ -151,17 +145,6 @@ export interface Settings {
   sessionResumeEnabled: boolean
   skills: SkillEntry[]
   subagents: SubagentEntry[]
-  sendblueEnabled: boolean
-  sendblueApiKey: string
-  sendblueApiSecretKey: string
-  sendbluePhoneNumber: string
-  sendblueWebhookPort: number
-  sendblueWebhookUrl: string
-  sendblueNotifyOnCompletion: boolean
-  /** OpenRouter API key for orchestrator LLM (Settings). */
-  openRouterApiKey: string
-  /** OpenRouter model slug; empty string means use default. */
-  orchestratorModel: string
   phoneControlEnabled: boolean
   phoneControlContactId: string
   phoneControlNotifyOnStart: boolean
@@ -187,15 +170,6 @@ export const DEFAULT_SETTINGS: Settings = {
   sessionResumeEnabled: true,
   skills: [],
   subagents: [],
-  sendblueEnabled: false,
-  sendblueApiKey: '',
-  sendblueApiSecretKey: '',
-  sendbluePhoneNumber: '',
-  sendblueWebhookPort: 3847,
-  sendblueWebhookUrl: '',
-  sendblueNotifyOnCompletion: true,
-  openRouterApiKey: '',
-  orchestratorModel: DEFAULT_ORCHESTRATOR_MODEL,
   phoneControlEnabled: false,
   phoneControlContactId: '',
   phoneControlNotifyOnStart: true,
@@ -276,12 +250,6 @@ export interface AppState {
 
   // Sidebar action order (persisted)
   sidebarActionOrder: SidebarActionId[]
-
-  // Orchestrator
-  orchestratorOpen: boolean
-  orchestratorStatus: OrchestratorStatus
-  orchestratorSessions: OrchestratorSession[]
-  orchestratorMessages: OrchestratorMessage[]
 
   // Actions
   addProject: (project: Project) => void
@@ -396,13 +364,6 @@ export interface AppState {
   updateAutomation: (id: string, partial: Partial<Omit<Automation, 'id'>>) => void
   removeAutomation: (id: string) => void
 
-  // Orchestrator actions
-  toggleOrchestrator: () => void
-  setOrchestratorStatus: (status: OrchestratorStatus) => void
-  addOrchestratorMessage: (msg: OrchestratorMessage) => void
-  setOrchestratorSessions: (sessions: OrchestratorSession[]) => void
-  updateOrchestratorSession: (session: OrchestratorSession) => void
-
   // Skills & Subagents actions
   addSkill: (skill: SkillEntry) => void
   removeSkill: (id: string) => void
@@ -419,7 +380,7 @@ export interface AppState {
   activeProject: () => Project | undefined
 }
 
-export type SidebarActionId = 'add-project' | 'automations' | 'context' | 'plans' | 'orchestrator' | 'settings' | 'review'
+export type SidebarActionId = 'add-project' | 'automations' | 'context' | 'plans' | 'settings' | 'review'
 
 export const DEFAULT_SIDEBAR_ACTION_ORDER: SidebarActionId[] = [
   'add-project',
@@ -427,7 +388,6 @@ export const DEFAULT_SIDEBAR_ACTION_ORDER: SidebarActionId[] = [
   'context',
   'plans',
   'review',
-  'orchestrator',
   'settings',
 ]
 

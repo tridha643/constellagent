@@ -376,7 +376,6 @@ export function Sidebar() {
   const toggleSettings = useAppStore((s) => s.toggleSettings);
   const toggleAutomations = useAppStore((s) => s.toggleAutomations);
   const toggleContextHistory = useAppStore((s) => s.toggleContextHistory);
-  const toggleOrchestrator = useAppStore((s) => s.toggleOrchestrator);
   const toggleHunkReview = useAppStore((s) => s.toggleHunkReview);
   const openLatestAgentPlan = useAppStore((s) => s.openLatestAgentPlan);
   const sidebarActionOrder = useAppStore((s) => s.sidebarActionOrder);
@@ -1125,13 +1124,6 @@ export function Sidebar() {
       tooltipLabel: 'Open newest agent plan across all agents',
       onClick: () => { void openLatestAgentPlan(); },
     },
-    orchestrator: {
-      id: 'orchestrator',
-      icon: '⬡',
-      label: 'Orchestrator',
-      tooltipLabel: 'Universal Orchestrator',
-      onClick: toggleOrchestrator,
-    },
     review: {
       id: 'review',
       icon: '±',
@@ -1148,7 +1140,7 @@ export function Sidebar() {
       shortcut: '⌘,',
       onClick: toggleSettings,
     },
-  }), [isInitializingRepo, handleAddProject, toggleAutomations, toggleContextHistory, openLatestAgentPlan, toggleOrchestrator, toggleSettings, toggleHunkReview]);
+  }), [isInitializingRepo, handleAddProject, toggleAutomations, toggleContextHistory, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
 
   const orderedActions = useMemo(
     () => sidebarActionOrder.map((id) => actionButtonConfigs[id]),

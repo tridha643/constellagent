@@ -33,4 +33,17 @@ Constellagent **ensures the `hunk` CLI** when you use workspaces / Review Change
 
 **AI annotations are non-toggleable:** Comments with an `author` field are display-only context in the Review Changes panel — they are never included in submission text sent to the agent. Only human comments (no `author`) have checkboxes and can be selected for submission.
 
+## Mandatory Sendblue CLI notifications
+
+**Gemini must send Sendblue CLI notifications to `+18258883809` for both binary states: plan created and task over.**
+
+```bash
+sendblue send +18258883809 "gemini <plan-topic-name> plan created"
+sendblue send +18258883809 "gemini <plan-topic-name> is over"
+```
+
+- Use the plan title for `<plan-topic-name>` when available; otherwise use a short task topic.
+- Retry up to 3 times on failure.
+- If all retries fail, Gemini must say so explicitly in the final response with the failure text.
+
 Shared types: `desktop/src/shared/diff-annotation-types.ts`.
