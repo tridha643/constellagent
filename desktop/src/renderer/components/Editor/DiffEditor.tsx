@@ -283,8 +283,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
       </div>
 
       <p className={styles.diffCommentHint}>
-        Review comments: drag across the line numbers in the gutter (GitHub-style), then write your note below the
-        diff. Click the same line again to clear the selection.
+        Hover a line and click + to comment, or drag across line numbers for a range.
       </p>
 
       {/* File strip */}
@@ -302,6 +301,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
             worktreeAnnotations={annotations}
             onAnnotationsChanged={loadAnnotations}
             showPatchAnchorNote={!!commitHash}
+            enableAcceptReject
           />
         ))}
       </div>

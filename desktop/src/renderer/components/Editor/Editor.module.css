@@ -216,6 +216,124 @@
 .fileHeaderBadge.renamed { color: var(--accent-cyan); }
 .fileHeaderBadge.untracked { color: var(--text-tertiary); }
 
+/* Pierre native header — custom metadata slot */
+.headerMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.headerMetaBadge {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.headerMetaBadge.modified { color: var(--accent-orange); }
+.headerMetaBadge.added { color: var(--accent-green); }
+.headerMetaBadge.deleted { color: var(--accent-red); }
+.headerMetaBadge.renamed { color: var(--accent-cyan); }
+.headerMetaBadge.untracked { color: var(--text-tertiary); }
+
+.headerMetaOpenBtn {
+  border: none;
+  background: none;
+  color: var(--accent-blue);
+  font-size: var(--text-xs);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: background-color 120ms ease-out;
+}
+
+.headerMetaOpenBtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Accept / reject actions in header */
+.headerMetaActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: var(--space-2);
+}
+
+.headerMetaHunkCount {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.acceptAllBtn,
+.rejectAllBtn {
+  border: none;
+  font-size: var(--text-xs);
+  font-family: var(--font-ui);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: background-color 150ms ease-out, transform 150ms ease-out;
+}
+
+.acceptAllBtn:active,
+.rejectAllBtn:active {
+  transform: scale(0.97);
+}
+
+.acceptAllBtn {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.acceptAllBtn:hover {
+  background: rgba(34, 197, 94, 0.25);
+}
+
+.rejectAllBtn {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.rejectAllBtn:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.headerMetaResolved {
+  font-size: var(--text-xs);
+  color: #22c55e;
+  font-family: var(--font-ui);
+}
+
+/* Hover utility: "+" comment button */
+.hoverAddBtn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1;
+  transition: background-color 120ms ease-out, transform 120ms ease-out;
+}
+
+.hoverAddBtn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.hoverAddBtn:active {
+  transform: scale(0.97);
+}
+
 .combinedDiffNote {
   font-size: var(--text-xs);
   color: var(--text-tertiary);

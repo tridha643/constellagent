@@ -12,3 +12,37 @@ Human comments in the Review Changes panel (Cmd+Shift+R) are individually select
 
 1. **AI annotations in plans**: All plans must include AI annotation instructions — agents leave review comments on their own changes explaining rationale (`--author "<agent-name>"`).
 2. **Verification loops**: Every plan must include a verification section with both automated tests (`bun run test`, specific test files) and manual test steps.
+
+## Mandatory AI annotations on code changes
+
+**After implementing any code changes, agents MUST leave hunk review comments explaining their rationale on key changed lines.** This is not optional — it is a required step before considering work complete.
+
+- Annotate **every source file you modified** with at least one comment on the most significant change (skip auto-generated files like `bun.lock`).
+- Comments should explain **why** the change was made, not just restate what the code does.
+- This step comes **after** a successful build but **before** reporting the task as done to the user.
+- Failure to annotate is equivalent to leaving the task incomplete.
+
+### Annotation workflow (exact steps)
+
+```bash
+# 1. Resolve session ID for this repo
+REPO="$(git rev-parse --show-toplevel)"
+SID="$(hunk session list --json | jq -r --arg repo "$REPO" '[.sessions[] | select(.repoRoot == $repo)][0].sessionId // empty')"
+
+# 2. Reload session so it sees your uncommitted changes
+hunk session reload "$SID" -- diff
+
+# 3. For each file, discover valid hunk line ranges BEFORE commenting.
+#    --new-line MUST fall within a hunk's "New range" or the command fails.
+#    Navigate to each hunk and read its range:
+hunk session navigate "$SID" --file <path> --hunk 1
+hunk session context "$SID"          # look at "New range: X..Y"
+
+# 4. Add comments using a line within the reported New range:
+hunk session comment add "$SID" \
+  --file <path> --new-line <line-within-range> \
+  --summary "<why this change was made>" \
+  --author "claude-code"
+```
+
+**Key gotcha:** `--new-line` must be inside a diff hunk's new-side range. Arbitrary file line numbers that fall outside changed hunks will be rejected with "No new diff hunk covers line N". Always discover ranges first via `navigate` + `context`.

@@ -272,8 +272,8 @@ export function HunkReview({ worktreePath }: Props) {
 
         {/* Hint */}
         <p className={styles.hint}>
-          Drag across line numbers to select a range, then leave a comment. Submit sends
-          selected comments to the agent.
+          Hover a line and click + to comment, or drag across line numbers for a range.
+          Submit sends selected comments to the agent.
         </p>
 
         {/* File strip */}
@@ -303,6 +303,7 @@ export function HunkReview({ worktreePath }: Props) {
                 showPatchAnchorNote={false}
                 selectedCommentIds={selectedIds}
                 onToggleComment={toggleComment}
+                enableAcceptReject
               />
             ))}
           </div>
