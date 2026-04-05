@@ -596,6 +596,8 @@ export function Sidebar() {
             ? "codex"
             : cmd.command.startsWith("gemini")
               ? "gemini"
+              : cmd.command.startsWith("opencode")
+                ? "opencode"
               : cmd.command.startsWith("claude")
                 ? "claude-code"
                 : "unknown";

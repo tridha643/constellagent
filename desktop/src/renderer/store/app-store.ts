@@ -62,6 +62,7 @@ const AGENT_NAMES: Record<string, string> = {
   codex: 'Codex',
   gemini: 'Gemini',
   cursor: 'Cursor Agent',
+  opencode: 'OpenCode',
 }
 
 const GENERIC_AGENT_TITLES = new Set(Object.values(AGENT_NAMES))

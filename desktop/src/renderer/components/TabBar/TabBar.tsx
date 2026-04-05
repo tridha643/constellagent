@@ -17,6 +17,7 @@ const AGENT_ICON_MAP: Record<AgentType, { src: string; alt: string } | null> = {
   codex: { src: openaiIcon, alt: 'Codex' },
   gemini: null, // reuses GeminiIcon component
   cursor: null, // reuses CursorIcon component
+  opencode: null,
 }
 
 /** VS Code logo */
