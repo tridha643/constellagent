@@ -195,28 +195,6 @@ export class FileService {
     return results
   }
 
-  /**
-   * Workspace agent plan dirs plus the same relative dirs under the user home directory
-   * (Claude Code default: ~/.claude/plans).
-   */
-  private static async collectPlanFiles(worktreePath: string): Promise<AgentPlanEntry[]> {
-    const fromWt = await this.collectPlanFilesUnderRoot(worktreePath, 'worktree')
-    let fromHome: AgentPlanEntry[] = []
-    try {
-      fromHome = await this.collectPlanFilesUnderRoot(homedir(), 'home')
-    } catch {
-      /* ignore */
-    }
-    const seen = new Set<string>()
-    const merged: AgentPlanEntry[] = []
-    for (const e of [...fromWt, ...fromHome]) {
-      if (seen.has(e.path)) continue
-      seen.add(e.path)
-      merged.push(e)
-    }
-    return merged
-  }
-
   private static dedupeWorktreePaths(paths: string[]): string[] {
     const seen = new Set<string>()
     const out: string[] = []
@@ -232,16 +210,12 @@ export class FileService {
 
   /**
    * Find the most recently modified `.md` / `.mdx` under known agent plan folders
-   * in the workspace worktree (e.g. `.cursor/plans/*.plan.md`).
+   * across one or more worktree roots (e.g. main project checkout plus linked worktrees),
+   * merged with home agent plan dirs the same way as {@link listAgentPlanMarkdowns}.
    */
-  static async findNewestPlanMarkdown(worktreePath: string): Promise<string | null> {
-    const all = await this.collectPlanFiles(worktreePath)
-    if (all.length === 0) return null
-    let best = all[0]
-    for (let i = 1; i < all.length; i++) {
-      if (all[i].mtimeMs > best.mtimeMs) best = all[i]
-    }
-    return best.path
+  static async findNewestPlanMarkdown(worktreePathOrPaths: string | string[]): Promise<string | null> {
+    const all = await this.listAgentPlanMarkdowns(worktreePathOrPaths)
+    return all[0]?.path ?? null
   }
 
   /**

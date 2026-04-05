@@ -158,7 +158,7 @@ const api = {
         ipcRenderer.removeListener(IPC.FS_WATCH_CHANGED, listener)
       }
     },
-    findNewestPlanMarkdown: (worktreePath: string) =>
+    findNewestPlanMarkdown: (worktreePath: string | string[]) =>
       ipcRenderer.invoke(IPC.FS_FIND_NEWEST_PLAN, worktreePath) as Promise<string | null>,
     listAgentPlanMarkdowns: (worktreePath: string | string[]) =>
       ipcRenderer.invoke(IPC.FS_LIST_AGENT_PLANS, worktreePath) as Promise<

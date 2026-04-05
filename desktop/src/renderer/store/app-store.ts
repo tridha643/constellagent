@@ -642,7 +642,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       return
     }
     try {
-      const path = await window.api.fs.findNewestPlanMarkdown(ws.worktreePath)
+      const projectPaths = s.workspaces
+        .filter((w) => w.projectId === ws.projectId)
+        .map((w) => w.worktreePath)
+        .filter((p): p is string => Boolean(p))
+      const scanArg = projectPaths.length <= 1 ? (projectPaths[0] ?? ws.worktreePath) : projectPaths
+      const path = await window.api.fs.findNewestPlanMarkdown(scanArg)
       if (!path) {
         s.addToast({
           id: crypto.randomUUID(),

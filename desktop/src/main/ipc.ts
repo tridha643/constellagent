@@ -925,7 +925,7 @@ export function registerIpcHandlers(): void {
     return FileService.deleteFile(filePath)
   })
 
-  ipcMain.handle(IPC.FS_FIND_NEWEST_PLAN, async (_e, worktreePath: string) => {
+  ipcMain.handle(IPC.FS_FIND_NEWEST_PLAN, async (_e, worktreePath: string | string[]) => {
     return FileService.findNewestPlanMarkdown(worktreePath)
   })
 

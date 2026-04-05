@@ -16,6 +16,29 @@ import styles from './Editor.module.css'
 
 const DIFFS_THEME = 'pierre-dark' as const
 
+/**
+ * Pierre’s `[data-hover-slot]` is a flex row without vertical alignment; the React slotted
+ * wrapper uses `HoverSlotStyles` (absolute + `text-align`) which does not center the `+`
+ * button on the line. Injected in `@layer unsafe` via `unsafeCSS`.
+ */
+const HOVER_UTILITY_UNSAFE_CSS = `
+[data-hover-slot] {
+  align-items: center;
+}
+::slotted([slot="hover-slot"]) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: static !important;
+  top: auto !important;
+  bottom: auto !important;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+`.trim()
+
 /** Pierre LineSelectionManager payload (not re-exported from `@pierre/diffs/react`). */
 export interface PierreSelectedRange {
   start: number
@@ -225,6 +248,7 @@ export const DiffFileSection = memo(function DiffFileSection({
       disableFileHeader: false,
       enableLineSelection: true,
       enableHoverUtility: true,
+      unsafeCSS: HOVER_UTILITY_UNSAFE_CSS,
       onLineSelectionStart: handleLineSelectionStart,
       onLineSelectionEnd: handleLineSelectionEnd,
     }),
