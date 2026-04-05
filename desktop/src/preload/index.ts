@@ -20,7 +20,7 @@ import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { PlanAgent } from '../shared/agent-plan-path'
 import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
 import type { GraphiteStackInfo } from '../shared/graphite-types'
-import type { HunkComment, HunkSessionContext, HunkSessionInfo } from '../shared/hunk-types'
+import type { HunkComment, HunkSessionContext, HunkSessionInfo, HunkVersionInfo } from '../shared/hunk-types'
 import type { ContextWindowData } from '../shared/context-window-types'
 
 const api = {
@@ -374,6 +374,10 @@ const api = {
       ipcRenderer.invoke(IPC.HUNK_NAVIGATE, worktreePath, file, target) as Promise<void>,
     reload: (worktreePath: string, command: string[]) =>
       ipcRenderer.invoke(IPC.HUNK_RELOAD, worktreePath, command) as Promise<void>,
+    checkUpdate: () =>
+      ipcRenderer.invoke(IPC.HUNK_CHECK_UPDATE) as Promise<HunkVersionInfo>,
+    performUpdate: () =>
+      ipcRenderer.invoke(IPC.HUNK_PERFORM_UPDATE) as Promise<void>,
   },
 
   orchestrator: {

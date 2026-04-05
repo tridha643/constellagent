@@ -209,6 +209,7 @@ export interface Toast {
   id: string
   message: string
   type: 'error' | 'info'
+  action?: { label: string; onClick: () => void }
 }
 
 export interface ConfirmDialogState {

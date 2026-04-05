@@ -292,6 +292,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       workspaces: [...s.workspaces, workspace],
       activeWorkspaceId: workspace.id,
     }))
+    if (workspace.worktreePath) {
+      window.api.hunk.startSession(workspace.worktreePath).catch(() => {})
+    }
   },
 
   removeWorkspace: (id) => {
@@ -1158,6 +1161,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (project && ws.worktreePath !== project.repoPath) {
       try {
         await window.api.git.removeWorktree(project.repoPath, ws.worktreePath)
+        void window.api.hunk.stopSession(ws.worktreePath).catch(() => {})
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to remove worktree'
         get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
@@ -1188,6 +1192,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (ws.worktreePath !== project.repoPath) {
         try {
           await window.api.git.removeWorktree(project.repoPath, ws.worktreePath)
+          void window.api.hunk.stopSession(ws.worktreePath).catch(() => {})
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Failed to remove worktree'
           get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
@@ -1249,7 +1254,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!available) {
       s.addToast({
         id: `hunk-not-installed-${Date.now()}`,
-        message: 'hunk CLI not found. Install with: npm i -g hunkdiff',
+        message:
+          'Hunk CLI is unavailable (auto-install may have failed). Ensure Node/npm works, or install the hunkdiff package manually.',
         type: 'error',
       })
       return
@@ -1956,6 +1962,44 @@ export async function hydrateFromDisk(): Promise<void> {
       .filter((p): p is string => Boolean(p))
     window.api.git.setSyncBusy(paths)
   }
+
+  // Proactively ensure hunk sessions exist for all active workspaces
+  for (const ws of state.workspaces) {
+    if (ws.worktreePath) {
+      window.api.hunk.startSession(ws.worktreePath).catch(() => {})
+    }
+  }
+
+  // Check for hunk CLI updates (once per app launch, non-blocking)
+  window.api.hunk.checkUpdate().then((info) => {
+    if (!info.updateAvailable || !info.latest) return
+    useAppStore.getState().addToast({
+      id: `hunk-update-${info.latest}`,
+      message: `Hunk ${info.installed} is outdated. Update to ${info.latest}?`,
+      type: 'info',
+      action: {
+        label: 'Update',
+        onClick: () => {
+          const store = useAppStore.getState()
+          store.addToast({ id: 'hunk-updating', message: 'Updating hunk...', type: 'info' })
+          window.api.hunk.performUpdate().then(() => {
+            useAppStore.getState().addToast({
+              id: `hunk-updated-${Date.now()}`,
+              message: `Hunk updated to ${info.latest}`,
+              type: 'info',
+            })
+          }).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : 'Update failed'
+            useAppStore.getState().addToast({
+              id: `hunk-update-err-${Date.now()}`,
+              message: `Hunk update failed: ${msg}`,
+              type: 'error',
+            })
+          })
+        },
+      },
+    })
+  }).catch(() => {})
 
   // Schedule all enabled automations on startup
   for (const automation of state.automations) {

@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Repo-wide agent instructions (context DB, Cachebro, **hunk review comments**, **author tagging**) live in **`../AGENTS.md`**. Terminal **hunk** CLI: upstream **[hunk-review](https://github.com/modem-dev/hunk/blob/main/skills/hunk-review/SKILL.md)** — run **`bun run setup`** or **`sh ../scripts/install-hunk-skill.sh`** to materialize **`.claude/skills/hunk-review/SKILL.md`** (gitignored). Constellagent installs the **`hunk`** binary automatically when needed. Prefer **`hunk session list`** then **`hunk session comment add <session-id> …`**; optional **`sh ../scripts/hunk-agent.sh`** when you want `--repo` without picking an id; or **`hunk session list --json` + `jq`** (see **CLI-only resolver** in **`../AGENTS.md`**). **Always pass `--author "claude-code"`** when adding comments.
+
 ## Commands
 
 ```bash

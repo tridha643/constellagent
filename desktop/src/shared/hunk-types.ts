@@ -21,3 +21,9 @@ export interface HunkSessionContext {
   newLine?: number
   oldLine?: number
 }
+
+export interface HunkVersionInfo {
+  installed: string | null
+  latest: string | null
+  updateAvailable: boolean
+}
