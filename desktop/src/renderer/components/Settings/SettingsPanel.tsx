@@ -2,7 +2,6 @@ import { useEffect, useState, useRef } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type { Settings, FavoriteEditor, McpServer, AgentType, SkillEntry, SubagentEntry } from '../../store/types'
 import type { PhoneControlStatus } from '@shared/phone-control-types'
-import { DEFAULT_ORCHESTRATOR_MODEL } from '../../../shared/orchestrator-types'
 import { Tooltip } from '../Tooltip/Tooltip'
 import styles from './SettingsPanel.module.css'
 
@@ -553,151 +552,6 @@ function McpServersSection() {
   )
 }
 
-function OrchestratorOpenRouterSection() {
-  const settings = useAppStore((s) => s.settings)
-  const updateSettings = useAppStore((s) => s.updateSettings)
-
-  const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
-    updateSettings({ [key]: value })
-  }
-
-  return (
-    <div className={styles.section}>
-      <div className={styles.sectionTitle}>Orchestrator (OpenRouter)</div>
-      <p className={styles.rowDescription} style={{ marginBottom: '0.75rem' }}>
-        Task planning uses OpenRouter. Add a key here for the Orchestrator Send button. The Orchestrator Start button only starts the SendBlue SMS webhook; it does not configure the LLM.
-      </p>
-
-      <TextRow
-        label="OpenRouter API key"
-        description="From openrouter.ai — used only for orchestrator JSON planning"
-        value={settings.openRouterApiKey}
-        onChange={(v) => update('openRouterApiKey', v)}
-        placeholder="sk-or-..."
-        password
-      />
-
-      <TextRow
-        label="Model (optional)"
-        description="OpenRouter model slug; leave default for Kimi K2.5"
-        value={settings.orchestratorModel}
-        onChange={(v) => update('orchestratorModel', v)}
-        placeholder={DEFAULT_ORCHESTRATOR_MODEL}
-      />
-    </div>
-  )
-}
-
-function SendBlueSection() {
-  const settings = useAppStore((s) => s.settings)
-  const updateSettings = useAppStore((s) => s.updateSettings)
-  const addToast = useAppStore((s) => s.addToast)
-  const [testing, setTesting] = useState(false)
-  const [status, setStatus] = useState<{ connected: boolean; webhookUrl: string | null; phoneNumber: string | null } | null>(null)
-
-  const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
-    updateSettings({ [key]: value })
-  }
-
-  useEffect(() => {
-    window.api.sendblue.getStatus().then(setStatus).catch(() => {})
-  }, [])
-
-  const handleTestConnection = async () => {
-    setTesting(true)
-    try {
-      await window.api.sendblue.test(settings)
-      addToast({ id: crypto.randomUUID(), message: 'Test message sent via SendBlue', type: 'info' })
-    } catch (e: unknown) {
-      addToast({
-        id: crypto.randomUUID(),
-        message: e instanceof Error ? e.message : 'Failed to send test message',
-        type: 'error',
-      })
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  return (
-    <div className={styles.section}>
-      <div className={styles.sectionTitle}>SendBlue (SMS/iMessage Relay)</div>
-
-      <ToggleRow
-        label="Enable SendBlue"
-        description="Receive and send commands via SMS/iMessage through SendBlue"
-        value={settings.sendblueEnabled}
-        onChange={(v) => update('sendblueEnabled', v)}
-      />
-
-      <TextRow
-        label="API key ID"
-        description="Your SendBlue key ID. If your dashboard only gives one credential, enter it here."
-        value={settings.sendblueApiKey}
-        onChange={(v) => update('sendblueApiKey', v)}
-        placeholder="sb-key-id-..."
-      />
-
-      <TextRow
-        label="API secret key"
-        description="Optional if SendBlue gave you a separate secret. Leave blank to reuse the key ID."
-        value={settings.sendblueApiSecretKey}
-        onChange={(v) => update('sendblueApiSecretKey', v)}
-        placeholder="sb-secret-..."
-        password
-      />
-
-      <TextRow
-        label="Phone number"
-        description="Your SendBlue line in E.164 format, used as from_number on outbound replies"
-        value={settings.sendbluePhoneNumber}
-        onChange={(v) => update('sendbluePhoneNumber', v)}
-        placeholder="+15551234567"
-      />
-
-      <NumberRow
-        label="Webhook port"
-        description="Local port for the SendBlue webhook server"
-        value={settings.sendblueWebhookPort}
-        onChange={(v) => update('sendblueWebhookPort', v)}
-        min={1024}
-        max={65535}
-      />
-
-      <TextRow
-        label="Public webhook URL"
-        description="Your tunnel URL (ngrok/cloudflared) pointing to the webhook port"
-        value={settings.sendblueWebhookUrl}
-        onChange={(v) => update('sendblueWebhookUrl', v)}
-        placeholder="https://your-tunnel.ngrok.io"
-      />
-
-      <ToggleRow
-        label="Notify on completion"
-        description="Reserved for future task lifecycle support; completion SMS is not wired yet"
-        value={settings.sendblueNotifyOnCompletion}
-        onChange={(v) => update('sendblueNotifyOnCompletion', v)}
-      />
-
-      <div className={styles.row}>
-        <div className={styles.rowText}>
-          <div className={styles.rowLabel}>Connection status</div>
-          <div className={styles.rowDescription}>
-            {status?.connected ? 'Webhook server running' : 'Not connected'}
-          </div>
-        </div>
-        <button
-          className={styles.actionBtn}
-          onClick={handleTestConnection}
-          disabled={testing || !settings.sendblueApiKey || !settings.sendbluePhoneNumber}
-        >
-          {testing ? 'Sending...' : 'Test'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
 function PhoneControlSection() {
   const settings = useAppStore((s) => s.settings)
   const updateSettings = useAppStore((s) => s.updateSettings)
@@ -1061,11 +915,6 @@ export function SettingsPanel() {
             onChange={(v) => update('sessionResumeEnabled', v)}
           />
         </div>
-
-        <OrchestratorOpenRouterSection />
-
-        <SendBlueSection />
-
         <PhoneControlSection />
 
         <SkillsSubagentsSection />

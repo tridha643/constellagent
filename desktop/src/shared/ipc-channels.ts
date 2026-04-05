@@ -173,22 +173,6 @@ export const IPC = {
   HUNK_CHECK_UPDATE: 'hunk:check-update',
   HUNK_PERFORM_UPDATE: 'hunk:perform-update',
 
-  // Universal Orchestrator
-  ORCHESTRATOR_START: 'orchestrator:start',
-  ORCHESTRATOR_STOP: 'orchestrator:stop',
-  ORCHESTRATOR_STATUS: 'orchestrator:status',
-  ORCHESTRATOR_COMMAND: 'orchestrator:command',
-  ORCHESTRATOR_SESSIONS: 'orchestrator:sessions',
-  ORCHESTRATOR_MESSAGES: 'orchestrator:messages',
-  // Events (renderer ← main)
-  ORCHESTRATOR_STATUS_CHANGED: 'orchestrator:status-changed',
-  ORCHESTRATOR_SESSION_UPDATED: 'orchestrator:session-updated',
-  ORCHESTRATOR_MESSAGE_RECEIVED: 'orchestrator:message-received',
-  // SendBlue
-  SENDBLUE_STATUS: 'sendblue:status',
-  SENDBLUE_SEND: 'sendblue:send',
-  SENDBLUE_TEST: 'sendblue:test',
-
   // Phone control (iMessage)
   PHONE_CONTROL_START: 'phone-control:start',
   PHONE_CONTROL_STOP: 'phone-control:stop',

@@ -28,9 +28,6 @@ import { IMessageService, type ProjectInfo } from './imessage-service'
 import type { PhoneControlSettings } from '../shared/phone-control-types'
 import { t3codeService } from './t3code-service.js'
 import { ContextWindowService } from './context-window-service'
-import { SendBlueService } from './sendblue-service'
-import { UniversalOrchestratorService } from './universal-orchestrator'
-import type { OrchestratorCommandPayload } from '../shared/orchestrator-types'
 
 import { ContextDb } from './context-db'
 import { getAgentFS, closeAllAgentFS, checkpoint, checkpointAll } from './agentfs-service'
@@ -112,15 +109,6 @@ const existingOnTitleChanged = ptyManager.onTitleChanged
 ptyManager.onTitleChanged = (ptyId, title, workspaceId, workingDir) => {
   existingOnTitleChanged?.(ptyId, title, workspaceId, workingDir)
   iMessageService.onTitleChanged(ptyId, title)
-}
-
-// SendBlue + Universal Orchestrator
-const sendBlueService = new SendBlueService()
-const universalOrchestrator = new UniversalOrchestratorService(sendBlueService)
-
-// Wire sendblue → orchestrator
-sendBlueService.onMessage = (from, content) => {
-  universalOrchestrator.handleCommand(from, content)
 }
 
 // Cache of open context databases keyed by projectDir
@@ -1933,45 +1921,6 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  // ── Universal Orchestrator + SendBlue handlers ──
-  ipcMain.handle(IPC.ORCHESTRATOR_START, async (_e, settings) => {
-    await sendBlueService.start(settings)
-    universalOrchestrator.setCachedLlmFromSettings(settings)
-  })
-
-  ipcMain.handle(IPC.ORCHESTRATOR_STOP, async () => {
-    await sendBlueService.stop()
-  })
-
-  ipcMain.handle(IPC.ORCHESTRATOR_STATUS, async () => {
-    return universalOrchestrator.getStatus()
-  })
-
-  ipcMain.handle(IPC.ORCHESTRATOR_COMMAND, async (_e, payload: OrchestratorCommandPayload) => {
-    const { command, openRouterApiKey, orchestratorModel } = payload
-    await universalOrchestrator.handleCommand('ui', command, { openRouterApiKey, orchestratorModel })
-  })
-
-  ipcMain.handle(IPC.ORCHESTRATOR_SESSIONS, async () => {
-    return universalOrchestrator.getSessions()
-  })
-
-  ipcMain.handle(IPC.ORCHESTRATOR_MESSAGES, async () => {
-    return universalOrchestrator.getMessages()
-  })
-
-  ipcMain.handle(IPC.SENDBLUE_STATUS, async () => {
-    return sendBlueService.status()
-  })
-
-  ipcMain.handle(IPC.SENDBLUE_SEND, async (_e, to: string, message: string) => {
-    await sendBlueService.send(to, message)
-  })
-
-  ipcMain.handle(IPC.SENDBLUE_TEST, async (_e, settings) => {
-    await sendBlueService.send(settings.sendbluePhoneNumber, 'Constellagent connected', settings)
-  })
-
   // ── T3 Code server handlers ──
   ipcMain.handle(IPC.T3CODE_START, async (_e, cwd: string) => {
     return t3codeService.start(cwd)
@@ -2076,7 +2025,6 @@ export function cleanupAll(): void {
   automationEngine.destroyAll()
   githubPollService.stop()
   iMessageService.destroy()
-  sendBlueService.destroy()
   lspService.shutdown()
   HunkService.cleanupAll()
   for (const watcher of pendingIndexerWatchers.values()) watcher.close()
