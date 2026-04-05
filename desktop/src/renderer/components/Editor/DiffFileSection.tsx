@@ -1,5 +1,12 @@
-import { useState, useCallback, memo, useMemo } from 'react'
-import { PatchDiff, type DiffLineAnnotation } from '@pierre/diffs/react'
+import { useState, useCallback, memo, useMemo, useEffect } from 'react'
+import {
+  PatchDiff,
+  FileDiff,
+  type DiffLineAnnotation,
+  type FileDiffMetadata,
+  type RenderHeaderMetadataProps,
+} from '@pierre/diffs/react'
+import { getSingularPatch, diffAcceptRejectHunk } from '@pierre/diffs'
 import type { DiffAnnotation, DiffAnnotationSide } from '@shared/diff-annotation-types'
 import { STATUS_LABELS } from '../../../shared/status-labels'
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
@@ -7,7 +14,7 @@ import { AnnotationBubble, AnnotationComposer } from './AnnotationBubble'
 import annotationUi from './AnnotationBubble.module.css'
 import styles from './Editor.module.css'
 
-const DIFFS_THEME = 'nord' as const
+const DIFFS_THEME = 'pierre-dark' as const
 
 /** Pierre LineSelectionManager payload (not re-exported from `@pierre/diffs/react`). */
 export interface PierreSelectedRange {
@@ -57,6 +64,9 @@ export interface DiffFileSectionProps {
   showPatchAnchorNote: boolean
   selectedCommentIds?: Set<string>
   onToggleComment?: (id: string) => void
+  enableAcceptReject?: boolean
+  onHunkAccepted?: (filePath: string, hunkIndex: number) => void
+  onHunkRejected?: (filePath: string, hunkIndex: number) => void
 }
 
 export const DiffFileSection = memo(function DiffFileSection({
@@ -69,6 +79,9 @@ export const DiffFileSection = memo(function DiffFileSection({
   showPatchAnchorNote,
   selectedCommentIds,
   onToggleComment,
+  enableAcceptReject,
+  onHunkAccepted,
+  onHunkRejected,
 }: DiffFileSectionProps) {
   const [selectedLines, setSelectedLines] = useState<PierreSelectedRange | null>(null)
   const [pendingRange, setPendingRange] = useState<{
@@ -76,6 +89,20 @@ export const DiffFileSection = memo(function DiffFileSection({
     lineNumber: number
     lineEnd: number
   } | null>(null)
+
+  const [fileDiffState, setFileDiffState] = useState<FileDiffMetadata | null>(null)
+
+  useEffect(() => {
+    if (!data.patch || isCombinedMergePatch(data.patch)) {
+      setFileDiffState(null)
+      return
+    }
+    try {
+      setFileDiffState(getSingularPatch(data.patch))
+    } catch {
+      setFileDiffState(null)
+    }
+  }, [data.patch])
 
   const parts = data.filePath.split('/')
   const fileName = parts.pop()
@@ -153,8 +180,9 @@ export const DiffFileSection = memo(function DiffFileSection({
       lineDiffType: 'word-alt' as const,
       overflow: 'scroll' as const,
       expandUnchanged: false,
-      disableFileHeader: true,
+      disableFileHeader: false,
       enableLineSelection: true,
+      enableHoverUtility: true,
       onLineSelectionStart: handleLineSelectionStart,
       onLineSelectionEnd: handleLineSelectionEnd,
     }),
@@ -214,26 +242,137 @@ export const DiffFileSection = memo(function DiffFileSection({
     ],
   )
 
+  // ── Accept / reject hunks ──
+
+  const handleAcceptHunk = useCallback(
+    (hunkIndex: number) => {
+      if (!fileDiffState) return
+      const next = diffAcceptRejectHunk(fileDiffState, hunkIndex, 'accept')
+      setFileDiffState(next)
+      onHunkAccepted?.(data.filePath, hunkIndex)
+    },
+    [fileDiffState, data.filePath, onHunkAccepted],
+  )
+
+  const handleRejectHunk = useCallback(
+    (hunkIndex: number) => {
+      if (!fileDiffState) return
+      const next = diffAcceptRejectHunk(fileDiffState, hunkIndex, 'reject')
+      setFileDiffState(next)
+      onHunkRejected?.(data.filePath, hunkIndex)
+    },
+    [fileDiffState, data.filePath, onHunkRejected],
+  )
+
+  const handleAcceptAll = useCallback(() => {
+    if (!fileDiffState) return
+    let state = fileDiffState
+    for (let i = state.hunks.length - 1; i >= 0; i--) {
+      state = diffAcceptRejectHunk(state, i, 'accept')
+    }
+    setFileDiffState(state)
+  }, [fileDiffState])
+
+  const handleRejectAll = useCallback(() => {
+    if (!fileDiffState) return
+    let state = fileDiffState
+    for (let i = state.hunks.length - 1; i >= 0; i--) {
+      state = diffAcceptRejectHunk(state, i, 'reject')
+    }
+    setFileDiffState(state)
+  }, [fileDiffState])
+
+  const hunkCount = fileDiffState?.hunks.length ?? 0
+
+  // ── Pierre native header metadata slot ──
+
+  const renderHeaderMetadata = useCallback(
+    (_props: RenderHeaderMetadataProps) => (
+      <div className={styles.headerMeta}>
+        <span className={`${styles.headerMetaBadge} ${styles[data.status] || ''}`}>
+          {STATUS_LABELS[data.status] || '?'}
+        </span>
+        <button
+          className={styles.headerMetaOpenBtn}
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpenFile(fullPath)
+          }}
+        >
+          Open
+        </button>
+        {enableAcceptReject && hunkCount > 0 && (
+          <div className={styles.headerMetaActions}>
+            <span className={styles.headerMetaHunkCount}>
+              {hunkCount} hunk{hunkCount !== 1 ? 's' : ''}
+            </span>
+            <button
+              className={styles.rejectAllBtn}
+              onClick={(e) => { e.stopPropagation(); handleRejectAll() }}
+            >
+              Reject all
+            </button>
+            <button
+              className={styles.acceptAllBtn}
+              onClick={(e) => { e.stopPropagation(); handleAcceptAll() }}
+            >
+              Accept all
+            </button>
+          </div>
+        )}
+        {enableAcceptReject && hunkCount === 0 && fileDiffState && (
+          <span className={styles.headerMetaResolved}>All changes resolved</span>
+        )}
+      </div>
+    ),
+    [data.status, fullPath, onOpenFile, enableAcceptReject, hunkCount, fileDiffState, handleAcceptAll, handleRejectAll],
+  )
+
+  // ── Hover utility: "+" button on hovered lines ──
+
+  const renderHoverUtility = useCallback(
+    (getHoveredLine: () => { lineNumber: number; side: 'additions' | 'deletions' } | undefined) => (
+      <button
+        className={styles.hoverAddBtn}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+          const hovered = getHoveredLine()
+          if (!hovered) return
+          setPendingRange({
+            side: hovered.side as DiffAnnotationSide,
+            lineNumber: hovered.lineNumber,
+            lineEnd: hovered.lineNumber,
+          })
+        }}
+      >
+        +
+      </button>
+    ),
+    [],
+  )
+
   const hasAnnotationUi = displayLineAnnotations.length > 0
   const combinedMergePatch = isCombinedMergePatch(data.patch)
 
   return (
     <div className={styles.diffFileSection} id={`diff-${data.filePath}`}>
-      <div
-        className={styles.fileHeader}
-        onClick={() => onOpenFile(fullPath)}
-      >
-        <span className={`${styles.fileHeaderBadge} ${styles[data.status] || ''}`}>
-          {STATUS_LABELS[data.status] || '?'}
-        </span>
-        <span className={styles.fileHeaderPath}>
-          {dir && <span className={styles.fileHeaderDir}>{dir}</span>}
-          {fileName}
-        </span>
-      </div>
       {data.patch ? (
         combinedMergePatch ? (
           <>
+            {/* Custom header only for combined merge patch fallback */}
+            <div
+              className={styles.fileHeader}
+              onClick={() => onOpenFile(fullPath)}
+            >
+              <span className={`${styles.fileHeaderBadge} ${styles[data.status] || ''}`}>
+                {STATUS_LABELS[data.status] || '?'}
+              </span>
+              <span className={styles.fileHeaderPath}>
+                {dir && <span className={styles.fileHeaderDir}>{dir}</span>}
+                {fileName}
+              </span>
+            </div>
             <p className={styles.combinedDiffNote}>
               Merge commit: combined diff (<code className={styles.combinedDiffCode}>diff --cc</code> /{' '}
               <code className={styles.combinedDiffCode}>@@@</code>) — showing raw patch. The rich diff
@@ -249,13 +388,27 @@ export const DiffFileSection = memo(function DiffFileSection({
               </div>
             }
           >
-            <PatchDiff<DiffAnnotation[]>
-              patch={data.patch}
-              options={patchOptions}
-              selectedLines={selectedLines}
-              lineAnnotations={hasAnnotationUi ? displayLineAnnotations : undefined}
-              renderAnnotation={hasAnnotationUi ? renderAnnotation : undefined}
-            />
+            {fileDiffState ? (
+              <FileDiff<DiffAnnotation[]>
+                fileDiff={fileDiffState}
+                options={patchOptions}
+                selectedLines={selectedLines}
+                lineAnnotations={hasAnnotationUi ? displayLineAnnotations : undefined}
+                renderAnnotation={hasAnnotationUi ? renderAnnotation : undefined}
+                renderHeaderMetadata={renderHeaderMetadata}
+                renderHoverUtility={renderHoverUtility}
+              />
+            ) : (
+              <PatchDiff<DiffAnnotation[]>
+                patch={data.patch}
+                options={patchOptions}
+                selectedLines={selectedLines}
+                lineAnnotations={hasAnnotationUi ? displayLineAnnotations : undefined}
+                renderAnnotation={hasAnnotationUi ? renderAnnotation : undefined}
+                renderHeaderMetadata={renderHeaderMetadata}
+                renderHoverUtility={renderHoverUtility}
+              />
+            )}
             {showPatchAnchorNote && fileAnnotations.length > 0 && (
               <p className={annotationUi.commitNote}>
                 Comments reflect this patch; line anchors may not match other revisions.

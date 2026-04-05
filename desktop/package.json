@@ -26,7 +26,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@openrouter/ai-sdk-provider": "^2.3.3",
     "@photon-ai/imessage-kit": "^2.1.2",
-    "@pierre/diffs": "^1.0.10",
+    "@pierre/diffs": "^1.1.11",
     "@streamdown/cjk": "^1.0.3",
     "@streamdown/code": "^1.1.1",
     "@streamdown/math": "^1.0.2",

@@ -46,6 +46,25 @@ SID="$(hunk session list --json | jq -r --arg repo "$REPO" '[.sessions[] | selec
 hunk session comment add "$SID" --file src/foo.ts --new-line 42 --summary "Why" --author "claude-code"
 ```
 
+### Adding comments: reload + line range discovery
+
+Sessions can go stale (e.g. tracking an old HEAD). **Always reload before annotating** so hunk sees your latest uncommitted changes:
+
+```bash
+hunk session reload "$SID" -- diff
+```
+
+**`--new-line` must be inside a diff hunk's new-side range.** Arbitrary file line numbers outside changed hunks are rejected with _"No new diff hunk covers line N"_. Before commenting on a file, discover valid ranges:
+
+```bash
+# Navigate to the file's first hunk and read its range
+hunk session navigate "$SID" --file <path> --hunk 1
+hunk session context "$SID"
+# Output includes "New range: X..Y" — use any line in [X, Y]
+```
+
+For files with multiple hunks, iterate `--hunk 1`, `--hunk 2`, etc. to find the range that covers the line you want to annotate. Use `hunk session get "$SID" --json` to see all files and their `hunkCount` in one call.
+
 ### Optional: `hunk-agent` wrapper
 
 [`scripts/hunk-agent.sh`](scripts/hunk-agent.sh) is a thin POSIX helper that starts the daemon if needed, ensures a session exists, resolves one session id for the repo (including when multiple match), then delegates to `hunk session`. Use it when you want `--repo .` without copying a `session-id`:
