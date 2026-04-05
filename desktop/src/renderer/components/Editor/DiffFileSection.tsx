@@ -7,6 +7,8 @@ import { AnnotationBubble, AnnotationComposer } from './AnnotationBubble'
 import annotationUi from './AnnotationBubble.module.css'
 import styles from './Editor.module.css'
 
+const DIFFS_THEME = 'nord' as const
+
 /** Pierre LineSelectionManager payload (not re-exported from `@pierre/diffs/react`). */
 export interface PierreSelectedRange {
   start: number
@@ -144,7 +146,7 @@ export const DiffFileSection = memo(function DiffFileSection({
 
   const patchOptions = useMemo(
     () => ({
-      theme: 'tokyo-night' as const,
+      theme: DIFFS_THEME,
       themeType: 'dark' as const,
       diffStyle: inline ? ('unified' as const) : ('split' as const),
       diffIndicators: 'bars' as const,
