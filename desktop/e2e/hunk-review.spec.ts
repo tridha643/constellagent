@@ -22,6 +22,7 @@ function createTestRepo(name: string): string {
   execSync('git config user.email "test@test.com"', { cwd: repoPath })
   execSync('git config user.name "Test"', { cwd: repoPath })
   writeFileSync(join(repoPath, 'README.md'), '# Test Repo\n')
+  mkdirSync(join(repoPath, '.constellagent'), { recursive: true })
   execSync('git add .', { cwd: repoPath })
   execSync('git commit -m "initial commit"', { cwd: repoPath })
   return repoPath
@@ -42,32 +43,9 @@ function cleanupTestRepo(repoPath: string): void {
   } catch { /* best effort */ }
 }
 
-function isHunkAvailable(): boolean {
-  try {
-    execSync('hunk --version', { timeout: 5000, stdio: 'pipe' })
-    return true
-  } catch {
-    return false
-  }
-}
-
-test.describe('Hunk review IPC integration', () => {
-  test.skip(!isHunkAvailable(), 'hunk CLI not installed')
-
-  test('hunk:available returns true when CLI is installed', async () => {
-    const { app, window } = await launchApp()
-    try {
-      const available = await window.evaluate(async () => {
-        return await (window as any).api.hunk.isAvailable()
-      })
-      expect(available).toBe(true)
-    } finally {
-      await app.close()
-    }
-  })
-
-  test('full comment lifecycle via IPC: start session, add/list/remove comments', async () => {
-    const repoPath = createTestRepo('hunk-ipc')
+test.describe('Review annotations IPC integration', () => {
+  test('full comment lifecycle via IPC: add/list/remove/clear', async () => {
+    const repoPath = createTestRepo('review-ipc')
     const realRepo = realpathSync(repoPath)
     const { app, window } = await launchApp()
 
@@ -75,68 +53,60 @@ test.describe('Hunk review IPC integration', () => {
       writeFileSync(join(realRepo, 'README.md'), '# Modified\nNew line\n')
 
       await window.evaluate(async (repo: string) => {
-        await (window as any).api.hunk.startSession(repo)
-      }, realRepo)
-
-      await window.waitForTimeout(1000)
-
-      await window.evaluate(async (repo: string) => {
-        await (window as any).api.hunk.commentAdd(repo, 'README.md', 1, 'Needs a better title')
+        await (window as any).api.review.commentAdd(repo, 'README.md', 1, 'Needs a better title', { force: true })
       }, realRepo)
 
       const comments = await window.evaluate(async (repo: string) => {
-        return await (window as any).api.hunk.commentList(repo)
+        return await (window as any).api.review.commentList(repo)
       }, realRepo)
 
       expect(Array.isArray(comments)).toBe(true)
       expect(comments.length).toBe(1)
-      expect(comments[0].file).toBe('README.md')
+      expect(comments[0].file_path).toBe('README.md')
       expect(comments[0].summary).toBe('Needs a better title')
       expect(typeof comments[0].id).toBe('string')
       expect(comments[0].id.length).toBeGreaterThan(0)
-      expect(typeof comments[0].newLine).toBe('number')
+      expect(comments[0].side).toBe('new')
+      expect(comments[0].line_start).toBe(1)
+      expect(comments[0].line_end).toBe(1)
 
       const commentId = comments[0].id
       await window.evaluate(async (args: { repo: string; id: string }) => {
-        await (window as any).api.hunk.commentRemove(args.repo, args.id)
+        await (window as any).api.review.commentRemove(args.repo, args.id)
       }, { repo: realRepo, id: commentId })
 
       const afterRemove = await window.evaluate(async (repo: string) => {
-        return await (window as any).api.hunk.commentList(repo)
+        return await (window as any).api.review.commentList(repo)
       }, realRepo)
 
       expect(afterRemove.length).toBe(0)
 
       await window.evaluate(async (repo: string) => {
-        await (window as any).api.hunk.commentAdd(repo, 'README.md', 1, 'first')
-        await (window as any).api.hunk.commentAdd(repo, 'README.md', 1, 'second')
+        await (window as any).api.review.commentAdd(repo, 'README.md', 1, 'first', { force: true })
+        await (window as any).api.review.commentAdd(repo, 'README.md', 2, 'second', { force: true })
       }, realRepo)
 
       const beforeClear = await window.evaluate(async (repo: string) => {
-        return await (window as any).api.hunk.commentList(repo)
+        return await (window as any).api.review.commentList(repo)
       }, realRepo)
       expect(beforeClear.length).toBe(2)
 
       await window.evaluate(async (repo: string) => {
-        await (window as any).api.hunk.commentClear(repo)
+        await (window as any).api.review.commentClear(repo)
       }, realRepo)
 
       const afterClear = await window.evaluate(async (repo: string) => {
-        return await (window as any).api.hunk.commentList(repo)
+        return await (window as any).api.review.commentList(repo)
       }, realRepo)
       expect(afterClear.length).toBe(0)
-
-      await window.evaluate(async (repo: string) => {
-        await (window as any).api.hunk.stopSession(repo)
-      }, realRepo)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
     }
   })
 
-  test('getContext returns session context for active session', async () => {
-    const repoPath = createTestRepo('hunk-ctx')
+  test('commentResolve toggles resolved status', async () => {
+    const repoPath = createTestRepo('review-resolve')
     const realRepo = realpathSync(repoPath)
     const { app, window } = await launchApp()
 
@@ -144,29 +114,39 @@ test.describe('Hunk review IPC integration', () => {
       writeFileSync(join(realRepo, 'README.md'), '# Changed\n')
 
       await window.evaluate(async (repo: string) => {
-        await (window as any).api.hunk.startSession(repo)
+        await (window as any).api.review.commentAdd(repo, 'README.md', 1, 'Fix this', { force: true })
       }, realRepo)
 
-      await window.waitForTimeout(1000)
-
-      const ctx = await window.evaluate(async (repo: string) => {
-        return await (window as any).api.hunk.getContext(repo)
+      const comments = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.review.commentList(repo)
       }, realRepo)
+      expect(comments[0].resolved).toBe(false)
 
-      expect(ctx).not.toBeNull()
-      expect(typeof ctx.file).toBe('string')
+      await window.evaluate(async (args: { repo: string; id: string }) => {
+        await (window as any).api.review.commentResolve(args.repo, args.id, true)
+      }, { repo: realRepo, id: comments[0].id })
 
-      await window.evaluate(async (repo: string) => {
-        await (window as any).api.hunk.stopSession(repo)
+      const afterResolve = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.review.commentList(repo)
       }, realRepo)
+      expect(afterResolve[0].resolved).toBe(true)
+
+      await window.evaluate(async (args: { repo: string; id: string }) => {
+        await (window as any).api.review.commentResolve(args.repo, args.id, false)
+      }, { repo: realRepo, id: comments[0].id })
+
+      const afterUnresolve = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.review.commentList(repo)
+      }, realRepo)
+      expect(afterUnresolve[0].resolved).toBe(false)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
     }
   })
 
-  test('commentList returns mapped fields matching HunkComment interface', async () => {
-    const repoPath = createTestRepo('hunk-fields')
+  test('commentList returns ReviewComment fields', async () => {
+    const repoPath = createTestRepo('review-fields')
     const realRepo = realpathSync(repoPath)
     const { app, window } = await launchApp()
 
@@ -174,30 +154,23 @@ test.describe('Hunk review IPC integration', () => {
       writeFileSync(join(realRepo, 'README.md'), '# Updated\nLine two\n')
 
       await window.evaluate(async (repo: string) => {
-        await (window as any).api.hunk.startSession(repo)
-      }, realRepo)
-      await window.waitForTimeout(1000)
-
-      await window.evaluate(async (repo: string) => {
-        await (window as any).api.hunk.commentAdd(repo, 'README.md', 1, 'Check this', { author: 'tester' })
+        await (window as any).api.review.commentAdd(repo, 'README.md', 1, 'Check this', { author: 'tester', force: true })
       }, realRepo)
 
       const comments = await window.evaluate(async (repo: string) => {
-        return await (window as any).api.hunk.commentList(repo)
+        return await (window as any).api.review.commentList(repo)
       }, realRepo)
 
       const c = comments[0]
       expect(c).toHaveProperty('id')
-      expect(c).toHaveProperty('file')
+      expect(c).toHaveProperty('file_path')
       expect(c).toHaveProperty('summary')
-      expect(c).not.toHaveProperty('commentId')
-      expect(c).not.toHaveProperty('filePath')
-      expect(c.newLine === undefined || typeof c.newLine === 'number').toBe(true)
-      expect(c.oldLine === undefined || typeof c.oldLine === 'number').toBe(true)
-
-      await window.evaluate(async (repo: string) => {
-        await (window as any).api.hunk.stopSession(repo)
-      }, realRepo)
+      expect(c).toHaveProperty('side')
+      expect(c).toHaveProperty('line_start')
+      expect(c).toHaveProperty('line_end')
+      expect(c).toHaveProperty('resolved')
+      expect(c).toHaveProperty('created_at')
+      expect(c.author).toBe('tester')
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

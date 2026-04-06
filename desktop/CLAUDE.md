@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Repo-wide agent instructions (context DB, Cachebro, **hunk review comments**, **author tagging**, **Sendblue CLI notifications**) live in **`../AGENTS.md`**. Terminal **hunk** CLI: upstream **[hunk-review](https://github.com/modem-dev/hunk/blob/main/skills/hunk-review/SKILL.md)** — run **`bun run setup`** or **`sh ../scripts/install-hunk-skill.sh`** to materialize **`.claude/skills/hunk-review/SKILL.md`** (gitignored). Constellagent installs the **`hunk`** binary automatically when needed. Prefer **`hunk session list`** then **`hunk session comment add <session-id> …`**; optional **`sh ../scripts/hunk-agent.sh`** when you want `--repo` without picking an id; or **`hunk session list --json` + `jq`** (see **CLI-only resolver** in **`../AGENTS.md`**). **Always pass `--author "claude-code"`** when adding comments.
+Repo-wide agent instructions (context DB, Cachebro, **review annotations**, **author tagging**, **Sendblue CLI notifications**) live in **`../AGENTS.md`**. Use **`constell-annotate add --file <path> --new-line <N> --summary "..." --author "claude-code"`** to add review annotations. Install: `npm i -g @tridha643/review-annotations`. **Always pass `--author "claude-code"`** when adding comments.
 
 ## Mandatory Sendblue notifications
 
@@ -15,7 +15,7 @@ sendblue send +18258883809 "claude-code <plan-topic-name> is over"
 
 - Retry each command up to 3 times if it fails.
 - If all retries fail, the final response must say that explicitly with the failure text.
-- The `task over` notification happens after required tests/builds and hunk comments, before reporting completion.
+- The `task over` notification happens after required tests/builds and review annotations, before reporting completion.
 
 ## Commands
 

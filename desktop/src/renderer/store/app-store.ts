@@ -297,9 +297,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       workspaces: [...s.workspaces, workspace],
       activeWorkspaceId: workspace.id,
     }))
-    if (workspace.worktreePath) {
-      window.api.hunk.startSession(workspace.worktreePath).catch(() => {})
-    }
   },
 
   removeWorkspace: (id) => {
@@ -1171,7 +1168,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (project && ws.worktreePath !== project.repoPath) {
       try {
         await window.api.git.removeWorktree(project.repoPath, ws.worktreePath)
-        void window.api.hunk.stopSession(ws.worktreePath).catch(() => {})
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to remove worktree'
         get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
@@ -1202,7 +1198,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (ws.worktreePath !== project.repoPath) {
         try {
           await window.api.git.removeWorktree(project.repoPath, ws.worktreePath)
-          void window.api.hunk.stopSession(ws.worktreePath).catch(() => {})
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Failed to remove worktree'
           get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
@@ -1249,22 +1244,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
     if (!ws) return
 
-    const available = await window.api.hunk.isAvailable()
-    if (!available) {
-      s.addToast({
-        id: `hunk-not-installed-${Date.now()}`,
-        message:
-          'Hunk CLI is unavailable (auto-install may have failed). Ensure Node/npm works, or install the hunkdiff package manually.',
-        type: 'error',
-      })
-      return
-    }
-
     const hasAgent = s.tabs.some(
       (t) => t.workspaceId === ws.id && t.type === 'terminal' && t.agentType,
     )
     if (!hasAgent) {
-      s.addToast({ id: `hunk-no-agent-${Date.now()}`, message: 'No agent detected', type: 'info' })
+      s.addToast({ id: `review-no-agent-${Date.now()}`, message: 'No agent detected', type: 'info' })
       return
     }
     set({ hunkReviewOpen: true, hunkReviewWorkspaceId: ws.id, quickOpenVisible: false, planPaletteVisible: false })
@@ -1275,10 +1259,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     const ws = s.workspaces.find((w) => w.id === s.hunkReviewWorkspaceId)
     if (!ws) return
     try {
-      const comments = await window.api.hunk.commentList(ws.worktreePath)
+      const rows = await window.api.review.commentList(ws.worktreePath)
+      const comments = rows.map((r) => ({
+        id: r.id,
+        file: r.file_path,
+        newLine: r.side === 'new' ? r.line_start : undefined,
+        oldLine: r.side === 'old' ? r.line_start : undefined,
+        summary: r.summary,
+        author: r.author ?? undefined,
+      }))
       const formatted = formatReviewForAgent(comments, selectedCommentIds)
       if (!formatted) {
-        s.addToast({ id: `hunk-empty-${Date.now()}`, message: 'No comments to submit', type: 'info' })
+        s.addToast({ id: `review-empty-${Date.now()}`, message: 'No comments to submit', type: 'info' })
         return
       }
       const pty = resolveAgentPtyForContextInjection({
@@ -1287,15 +1279,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeWorkspaceId: s.hunkReviewWorkspaceId,
       })
       if (!pty) {
-        s.addToast({ id: `hunk-no-pty-${Date.now()}`, message: 'No agent terminal found', type: 'error' })
+        s.addToast({ id: `review-no-pty-${Date.now()}`, message: 'No agent terminal found', type: 'error' })
         return
       }
       window.api.pty.write(pty, wrapBracketedPaste(formatted))
-      s.addToast({ id: `hunk-sent-${Date.now()}`, message: 'Review submitted to agent', type: 'info' })
+      s.addToast({ id: `review-sent-${Date.now()}`, message: 'Review submitted to agent', type: 'info' })
       set({ hunkReviewOpen: false, hunkReviewWorkspaceId: null })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to submit review'
-      s.addToast({ id: `hunk-err-${Date.now()}`, message: msg, type: 'error' })
+      s.addToast({ id: `review-err-${Date.now()}`, message: msg, type: 'error' })
     }
   },
 
@@ -1965,44 +1957,6 @@ export async function hydrateFromDisk(): Promise<void> {
       .filter((p): p is string => Boolean(p))
     window.api.git.setSyncBusy(paths)
   }
-
-  // Proactively ensure hunk sessions exist for all active workspaces
-  for (const ws of state.workspaces) {
-    if (ws.worktreePath) {
-      window.api.hunk.startSession(ws.worktreePath).catch(() => {})
-    }
-  }
-
-  // Check for hunk CLI updates (once per app launch, non-blocking)
-  window.api.hunk.checkUpdate().then((info) => {
-    if (!info.updateAvailable || !info.latest) return
-    useAppStore.getState().addToast({
-      id: `hunk-update-${info.latest}`,
-      message: `Hunk ${info.installed} is outdated. Update to ${info.latest}?`,
-      type: 'info',
-      action: {
-        label: 'Update',
-        onClick: () => {
-          const store = useAppStore.getState()
-          store.addToast({ id: 'hunk-updating', message: 'Updating hunk...', type: 'info' })
-          window.api.hunk.performUpdate().then(() => {
-            useAppStore.getState().addToast({
-              id: `hunk-updated-${Date.now()}`,
-              message: `Hunk updated to ${info.latest}`,
-              type: 'info',
-            })
-          }).catch((err: unknown) => {
-            const msg = err instanceof Error ? err.message : 'Update failed'
-            useAppStore.getState().addToast({
-              id: `hunk-update-err-${Date.now()}`,
-              message: `Hunk update failed: ${msg}`,
-              type: 'error',
-            })
-          })
-        },
-      },
-    })
-  }).catch(() => {})
 
   // Schedule all enabled automations on startup
   for (const automation of state.automations) {

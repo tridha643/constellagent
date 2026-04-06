@@ -1,4 +1,4 @@
-export interface HunkCommentLike {
+export interface ReviewCommentLike {
   id: string
   file: string
   newLine?: number
@@ -8,14 +8,14 @@ export interface HunkCommentLike {
 }
 
 /**
- * Format hunk session comments into a structured text block for agent consumption.
+ * Format review annotations into a structured text block for agent consumption.
  * Submitted to the agent terminal via bracketed paste.
  *
  * - Comments with a truthy `author` (AI-authored) are always excluded.
  * - When `selectedIds` is provided, only human comments whose id is in the set are included.
  */
 export function formatReviewForAgent(
-  comments: HunkCommentLike[],
+  comments: ReviewCommentLike[],
   selectedIds?: Set<string>,
 ): string {
   const filtered = comments.filter((c) => {

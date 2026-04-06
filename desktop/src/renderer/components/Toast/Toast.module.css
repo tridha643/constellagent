@@ -33,6 +33,10 @@
   border-left-color: var(--accent-blue);
 }
 
+.toast.warning {
+  border-left-color: var(--accent-yellow, #e5a100);
+}
+
 .message {
   font-size: var(--text-sm);
   font-family: var(--font-ui);

@@ -662,9 +662,9 @@ export class GitService {
 
   static async getFileDiff(worktreePath: string, filePath: string): Promise<string> {
     try {
-      // Match `hunk diff --watch HEAD` (see HunkService.startSession): one coherent diff vs HEAD.
+      // One coherent diff vs HEAD — matches what AnnotationService uses for validation.
       // Plain `git diff` + `--staged` fallback can disagree when a file has both staged and
-      // unstaged edits, or when the hunk CLI anchors on HEAD while the UI showed index-only diff.
+      // unstaged edits.
       const vsHead = await git(['diff', 'HEAD', '--', filePath], worktreePath)
       if (vsHead) return vsHead
       // Untracked paths often have no `HEAD` blob; try index/worktree slices as a fallback.

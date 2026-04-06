@@ -26,11 +26,12 @@ else
   # Dev mode: find the repo root (bin/ lives inside desktop/)
   SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
   DESKTOP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+  REPO_ROOT="$(cd "$DESKTOP_DIR/.." && pwd)"
 
-  # If node_modules missing, run bun install first
-  if [ ! -d "$DESKTOP_DIR/node_modules" ]; then
+  # Monorepo: deps live at repo root; install once if missing
+  if [ ! -d "$REPO_ROOT/node_modules" ]; then
     echo "constell: installing dependencies..."
-    (cd "$DESKTOP_DIR" && bun install)
+    (cd "$REPO_ROOT" && bun install)
   fi
 
   # Attach to an existing Vite dev server (5173, or next free port when multiple worktrees run dev).

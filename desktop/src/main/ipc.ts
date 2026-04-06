@@ -29,9 +29,9 @@ import { ContextWindowService } from './context-window-service'
 
 import { ContextDb } from './context-db'
 import { getAgentFS, closeAllAgentFS, checkpoint, checkpointAll } from './agentfs-service'
-import { HunkService } from './hunk-service'
-import { emitAutomationEvent } from './automation-event-bus'
-import { lookupPersistedProjectByRepoPath, lookupPersistedWorkspace } from './persisted-state'
+import { AnnotationService } from './annotation-service'
+import { emitAutomationEvent, onAutomationEvent } from './automation-event-bus'
+import { lookupPersistedProjectByRepoPath, lookupPersistedProjectRepo, lookupPersistedWorkspace } from './persisted-state'
 import { GithubPollService } from './github-poll-service'
 
 const ptyManager = new PtyManager()
@@ -68,6 +68,33 @@ const lspService = new LspService()
 const contextDbs = new Map<string, ContextDb>()
 const pendingIndexerWatchers = new Map<string, FSWatcher>()
 const guestTabSwitchListeners = new Map<number, { inputListener: (...args: unknown[]) => void; destroyListener: () => void }>()
+// Clear all review annotations when a GitHub PR merges
+onAutomationEvent(async (event) => {
+  if (event.type !== 'pr:merged' || !event.projectId) return
+  const repoPath = lookupPersistedProjectRepo(event.projectId)
+  if (!repoPath) {
+    console.warn('[review-annotations] pr:merged — no repoPath for project', event.projectId)
+    return
+  }
+  try {
+    await AnnotationService.clearComments(repoPath)
+    console.log('[review-annotations] cleared all annotations after PR merge', { projectId: event.projectId, repoPath })
+    let normalizedRepoPath: string
+    try {
+      normalizedRepoPath = realpathSync(repoPath)
+    } catch {
+      normalizedRepoPath = repoPath
+    }
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC.REVIEW_ANNOTATIONS_CLEARED, { repoPath: normalizedRepoPath })
+      }
+    }
+  } catch (err) {
+    console.error('[review-annotations] failed to clear after PR merge', err)
+  }
+})
+
 /** Debounce bursts of pending files so the renderer refreshes context history once per tick */
 const contextEntriesUpdatedTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -1783,53 +1810,25 @@ export function registerIpcHandlers(): void {
     return filePath
   })
 
-  // ── Hunk review (via hunk CLI sessions) ──
-  ipcMain.handle(IPC.HUNK_AVAILABLE, async () => {
-    return HunkService.isAvailable()
+  // ── Review annotations (libSQL-backed) ──
+  ipcMain.handle(IPC.REVIEW_COMMENT_ADD, async (_e, worktreePath: string, file: string, newLine: number, summary: string, opts?: { rationale?: string; author?: string; focus?: boolean; oldLine?: number; force?: boolean; lineEnd?: number; workspaceId?: string }) => {
+    await AnnotationService.addComment(worktreePath, file, newLine, summary, opts)
   })
 
-  ipcMain.handle(IPC.HUNK_START_SESSION, async (_e, worktreePath: string) => {
-    await HunkService.startSession(worktreePath)
+  ipcMain.handle(IPC.REVIEW_COMMENT_LIST, async (_e, worktreePath: string, file?: string) => {
+    return AnnotationService.listComments(worktreePath, file)
   })
 
-  ipcMain.handle(IPC.HUNK_STOP_SESSION, async (_e, worktreePath: string) => {
-    await HunkService.stopSession(worktreePath)
+  ipcMain.handle(IPC.REVIEW_COMMENT_REMOVE, async (_e, worktreePath: string, commentId: string) => {
+    await AnnotationService.removeComment(worktreePath, commentId)
   })
 
-  ipcMain.handle(IPC.HUNK_GET_CONTEXT, async (_e, worktreePath: string) => {
-    return HunkService.getContext(worktreePath)
+  ipcMain.handle(IPC.REVIEW_COMMENT_CLEAR, async (_e, worktreePath: string, file?: string) => {
+    await AnnotationService.clearComments(worktreePath, file)
   })
 
-  ipcMain.handle(IPC.HUNK_COMMENT_ADD, async (_e, worktreePath: string, file: string, newLine: number, summary: string, opts?: { rationale?: string; author?: string; focus?: boolean; oldLine?: number }) => {
-    await HunkService.addComment(worktreePath, file, newLine, summary, opts)
-  })
-
-  ipcMain.handle(IPC.HUNK_COMMENT_LIST, async (_e, worktreePath: string, file?: string) => {
-    return HunkService.listComments(worktreePath, file)
-  })
-
-  ipcMain.handle(IPC.HUNK_COMMENT_REMOVE, async (_e, worktreePath: string, commentId: string) => {
-    await HunkService.removeComment(worktreePath, commentId)
-  })
-
-  ipcMain.handle(IPC.HUNK_COMMENT_CLEAR, async (_e, worktreePath: string, file?: string) => {
-    await HunkService.clearComments(worktreePath, file)
-  })
-
-  ipcMain.handle(IPC.HUNK_NAVIGATE, async (_e, worktreePath: string, file: string, target: { hunk?: number; newLine?: number; oldLine?: number }) => {
-    await HunkService.navigate(worktreePath, file, target)
-  })
-
-  ipcMain.handle(IPC.HUNK_RELOAD, async (_e, worktreePath: string, command: string[]) => {
-    await HunkService.reload(worktreePath, command)
-  })
-
-  ipcMain.handle(IPC.HUNK_CHECK_UPDATE, async () => {
-    return HunkService.checkForUpdate()
-  })
-
-  ipcMain.handle(IPC.HUNK_PERFORM_UPDATE, async () => {
-    await HunkService.performUpdate()
+  ipcMain.handle(IPC.REVIEW_COMMENT_RESOLVE, async (_e, worktreePath: string, commentId: string, resolved: boolean) => {
+    await AnnotationService.setResolved(worktreePath, commentId, resolved)
   })
 
   // ── T3 Code server handlers ──
@@ -1931,7 +1930,7 @@ export function cleanupAll(): void {
   automationEngine.destroyAll()
   githubPollService.stop()
   lspService.shutdown()
-  HunkService.cleanupAll()
+  AnnotationService.cleanupAll()
   for (const watcher of pendingIndexerWatchers.values()) watcher.close()
   pendingIndexerWatchers.clear()
   // Close AgentFS-backed context databases (async, best-effort on quit)
