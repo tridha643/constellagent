@@ -293,6 +293,7 @@ export interface AppState {
   openWorkspaceDialog: (projectId: string | null) => void
   renameWorkspace: (id: string, name: string) => void
   reorderWorkspace: (fromId: string, toId: string) => void
+  reorderProject: (fromId: string, toId: string) => void
   reorderSidebarAction: (fromId: SidebarActionId, toId: SidebarActionId) => void
   updateWorkspaceBranch: (id: string, branch: string) => void
   deleteWorkspace: (workspaceId: string) => Promise<void>

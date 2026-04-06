@@ -45,8 +45,29 @@
   position: relative;
 }
 
+.projectHeader[draggable="true"] {
+  cursor: grab;
+}
+
 .projectHeader:hover {
   color: var(--text-primary);
+}
+
+.projectSectionDragging {
+  opacity: 0.4;
+  transform: scale(0.98);
+  cursor: grabbing;
+}
+
+.projectSectionDropTarget::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: var(--space-4);
+  right: var(--space-4);
+  height: 2px;
+  background: var(--accent-blue);
+  border-radius: 1px;
 }
 
 .chevron {

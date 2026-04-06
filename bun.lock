@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "constellagent-root",
+      "dependencies": {
+        "katex": "^0.16.45",
+      },
     },
     "desktop": {
       "name": "constellagent",

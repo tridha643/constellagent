@@ -364,6 +364,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
+  reorderProject: (fromId, toId) => {
+    if (fromId === toId) return
+    set((s) => {
+      const fromIdx = s.projects.findIndex((p) => p.id === fromId)
+      const toIdx = s.projects.findIndex((p) => p.id === toId)
+      if (fromIdx === -1 || toIdx === -1) return s
+      const next = [...s.projects]
+      const [moved] = next.splice(fromIdx, 1)
+      next.splice(toIdx, 0, moved)
+      return { projects: next }
+    })
+  },
+
   reorderSidebarAction: (fromId, toId) => {
     if (fromId === toId) return
     set((s) => {
