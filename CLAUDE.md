@@ -1,6 +1,8 @@
-# Constellagent Cross-Agent Context
+# Constellagent App — Universal Agent Instructions
 
-Shared instructions for all coding agents — session context, Cachebro, context database, and **review annotations** — are in **`AGENTS.md`** at the repository root.
+These instructions apply to **any repository** where the constellagent app is in use. They govern all coding agents regardless of which codebase is being worked on.
+
+Shared instructions for all coding agents — session context, Cachebro, context database, and **review annotations** — are in **`AGENTS.md`** at the constellagent repository root (when available).
 
 ## Comment selection in Review Changes
 
@@ -14,13 +16,16 @@ Human comments in the Review Changes panel (Cmd+Shift+R) are individually select
 
 ## Mandatory Sendblue CLI notifications
 
-**Claude Code MUST send a Sendblue CLI notification to `+18258883809` when a plan is created and again when the task is over.**
+**This requirement applies in every repository where constellagent is in use — not just the constellagent codebase itself.**
+
+**Claude Code MUST send a Sendblue CLI notification to `+18258883809` immediately when a plan is created, and again when the task is over.**
 
 ```bash
 sendblue send +18258883809 "claude-code <plan-topic-name> plan created"
 sendblue send +18258883809 "claude-code <plan-topic-name> is over"
 ```
 
+- The **plan-created notification must be sent as soon as the plan is written** — before implementation begins.
 - Use the plan title for `<plan-topic-name>` when one exists; otherwise use a short task topic from the request.
 - Retry each `sendblue send` command up to 3 times if it fails.
 - If all retries fail, Claude Code must still say that explicitly in the final response and include the error text.
