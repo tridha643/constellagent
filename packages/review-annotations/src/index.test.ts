@@ -73,6 +73,30 @@ diff --git a/x.ts b/x.ts
     assert.equal(result[0].hunks[0].oldCount, 1)
     assert.equal(result[0].hunks[0].newCount, 2)
   })
+
+  it('merges hunks when the same file appears in combined diffs', () => {
+    const diff = `diff --git a/foo.ts b/foo.ts
+--- a/foo.ts
++++ b/foo.ts
+@@ -1,0 +1,1 @@
++branch line
+diff --git a/foo.ts b/foo.ts
+--- a/foo.ts
++++ b/foo.ts
+@@ -5,0 +6,1 @@
++worktree line
+`
+    const result = parseUnifiedDiff(diff)
+    assert.equal(result.length, 1)
+    assert.equal(result[0].filePath, 'foo.ts')
+    assert.equal(result[0].hunks.length, 2)
+    assert.deepStrictEqual(result[0].hunks[0], {
+      oldStart: 1, oldCount: 0, newStart: 1, newCount: 1,
+    })
+    assert.deepStrictEqual(result[0].hunks[1], {
+      oldStart: 5, oldCount: 0, newStart: 6, newCount: 1,
+    })
+  })
 })
 
 describe('validateRangeInDiff', () => {
@@ -114,5 +138,21 @@ describe('validateRangeInDiff', () => {
   it('rejects old-side line outside range', () => {
     const result = validateRangeInDiff(parsed, 'foo.ts', 'old', 5, 15)
     assert.equal(result.valid, false)
+  })
+
+  it('accepts a line from a later hunk for the same file in combined diffs', () => {
+    const combined = parseUnifiedDiff(`diff --git a/foo.ts b/foo.ts
+--- a/foo.ts
++++ b/foo.ts
+@@ -1,0 +1,1 @@
++branch line
+diff --git a/foo.ts b/foo.ts
+--- a/foo.ts
++++ b/foo.ts
+@@ -10,0 +11,1 @@
++worktree line
+`)
+    const result = validateRangeInDiff(combined, 'foo.ts', 'new', 11, 11)
+    assert.equal(result.valid, true)
   })
 })

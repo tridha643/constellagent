@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process';
 import { addAnnotation } from '../index.js';
+import { getAnnotationDiffText, getCurrentBranchSync } from '../graphite.js';
 function parseLineRange(value) {
     const parts = value.split('-');
     if (parts.length === 1) {
@@ -24,6 +25,7 @@ export async function runAdd(db, args, ctx) {
     let summary;
     let author;
     let rationale;
+    let branch;
     let force = false;
     for (let i = 0; i < args.length; i++) {
         switch (args[i]) {
@@ -45,6 +47,9 @@ export async function runAdd(db, args, ctx) {
             case '--rationale':
                 rationale = args[++i];
                 break;
+            case '--branch':
+                branch = args[++i];
+                break;
             case '--force':
                 force = true;
                 break;
@@ -60,15 +65,12 @@ export async function runAdd(db, args, ctx) {
         throw new Error('--new-line or --old-line is required');
     const side = oldLine && !newLine ? 'old' : 'new';
     const range = parseLineRange((side === 'old' ? oldLine : newLine));
+    // Auto-detect branch and Graphite-aware diff coverage
+    const detectedBranch = branch ?? getCurrentBranchSync(ctx.repoRoot);
     let diffText;
     let headSha;
     if (!force) {
-        try {
-            diffText = execSync('git diff HEAD', { cwd: ctx.repoRoot, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
-        }
-        catch {
-            diffText = '';
-        }
+        diffText = getAnnotationDiffText(ctx.repoRoot, detectedBranch);
     }
     try {
         headSha = execSync('git rev-parse HEAD', { cwd: ctx.repoRoot, encoding: 'utf-8' }).trim();
@@ -85,6 +87,7 @@ export async function runAdd(db, args, ctx) {
         rationale: rationale ?? null,
         author: author ?? null,
         head_sha: headSha ?? null,
+        branch: detectedBranch ?? null,
     }, { force, diffText });
     console.log(JSON.stringify({ id: row.id, file_path: row.file_path, side: row.side, line_start: row.line_start, line_end: row.line_end }));
 }

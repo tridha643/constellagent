@@ -8,7 +8,7 @@
 
 - **Node.js** ≥ 18
 - **`git`** on `PATH` (required for `add`; other commands work without a repo if you pass `--db` appropriately)
-- For `add` without `--force`: a **non-empty `git diff HEAD`** that includes the target file and line range (annotations must fall inside a unified-diff hunk)
+- For `add` without `--force`: a unified diff that includes the target file and line range. In standard git repos this is based on **`git diff HEAD`**; on tracked Graphite branches it includes both the branch delta and any local worktree changes.
 
 ## Install
 
@@ -57,7 +57,7 @@ Global flags (before or after the subcommand, parsed globally):
 
 Add an annotation. **Must be run from inside a git repository** (repository root is detected with `git rev-parse --show-toplevel`).
 
-By default, the CLI loads **`git diff HEAD`** and checks that the given **file** and **line range** lie inside a hunk on the **new** or **old** side of the diff. Use **`--force`** to skip that check (bulk notes, unusual bases, or empty diffs).
+By default, the CLI validates against the current review diff. In a standard git repo this is **`git diff HEAD`**. On a tracked Graphite branch it uses the branch's Graphite parent as the base and also includes any local worktree changes, so both committed branch hunks and fresh local edits can be annotated. Use **`--force`** to skip that check (bulk notes, unusual bases, or empty diffs).
 
 | Option | Description |
 |--------|-------------|
@@ -67,6 +67,7 @@ By default, the CLI loads **`git diff HEAD`** and checks that the given **file**
 | `--summary <text>` | **Required.** Short message |
 | `--rationale <text>` | Optional longer note |
 | `--author <name>` | Optional author label (e.g. `codex`, `cursor`) — recommended for machine-authored notes |
+| `--branch <name>` | Override branch detection for Graphite-aware diff selection |
 | `--force` | Skip hunk validation |
 
 **Example:**
@@ -91,8 +92,9 @@ constell-annotate add \
 | Option | Description |
 |--------|-------------|
 | `--file <path>` | Filter by file |
+| `--branch <name>` | Filter by stored branch |
 | `--json` | JSON array output |
-| `--include-stale` | With `--json`, annotate rows with a **`stale`** boolean using current `git diff HEAD` (needs a repo root) |
+| `--include-stale` | With `--json`, annotate rows with a **`stale`** boolean using the current review diff (Graphite-aware when applicable) |
 
 Human-readable default: prints file, line range, side, optional author, resolved state, summary, and id.
 
@@ -109,6 +111,17 @@ Deletes annotations matching filters (workspace + optional repo/file).
 | Option | Description |
 |--------|-------------|
 | `--file <path>` | Limit to one file |
+| `--branch <name>` | Limit to one stored branch |
+
+### `clean-deleted`
+
+Removes annotations for files that are deleted in the current review diff.
+
+| Option | Description |
+|--------|-------------|
+| `--base <rev>` | Explicit diff base; otherwise uses Graphite parent when available, falling back to `HEAD` |
+| `--dry-run` | Report matching deleted files without deleting annotations |
+| `--json` | JSON output |
 
 ### `resolve` / `unresolve`
 
@@ -157,7 +170,7 @@ npm test
 
 ## Publishing (maintainers)
 
-Publishing uses the **`@constellagent`** scope on the [npm registry](https://www.npmjs.com/). You must:
+Publishing uses the **`@tridha643`** scope on the [npm registry](https://www.npmjs.com/). You must:
 
 1. Log in: `npm login`
 2. Have **publish access** to the `@constellagent` organization (create the org at npmjs.com and add your user, or use an account that already owns the scope).

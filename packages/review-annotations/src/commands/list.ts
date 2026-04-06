@@ -1,5 +1,5 @@
-import { execSync } from 'node:child_process'
 import { listAnnotations, computeStaleFlags, type Client } from '../index.js'
+import { getAnnotationDiffText, getCurrentBranchSync } from '../graphite.js'
 
 export async function runList(
   db: Client,
@@ -7,12 +7,14 @@ export async function runList(
   ctx: { workspaceId: string; repoRoot: string | null },
 ) {
   let file: string | undefined
+  let branch: string | undefined
   let json = false
   let includeStale = false
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--file': file = args[++i]; break
+      case '--branch': branch = args[++i]; break
       case '--json': json = true; break
       case '--include-stale': includeStale = true; break
       default:
@@ -24,13 +26,15 @@ export async function runList(
     workspace_id: ctx.workspaceId,
     repo_root: ctx.repoRoot ?? undefined,
     file_path: file,
+    branch,
   })
 
   if (json) {
     let staleMap: Map<string, boolean> | undefined
     if (includeStale && ctx.repoRoot) {
       try {
-        const diffText = execSync('git diff HEAD', { cwd: ctx.repoRoot, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 })
+        const currentBranch = getCurrentBranchSync(ctx.repoRoot)
+        const diffText = getAnnotationDiffText(ctx.repoRoot, currentBranch)
         staleMap = computeStaleFlags(rows, diffText)
       } catch { /* no diff available */ }
     }
@@ -47,9 +51,10 @@ export async function runList(
     }
     for (const r of rows) {
       const resolvedTag = r.resolved ? ' [resolved]' : ''
+      const branchTag = r.branch ? ` [${r.branch}]` : ''
       const authorTag = r.author ? ` (${r.author})` : ''
       const range = r.line_start === r.line_end ? `${r.line_start}` : `${r.line_start}-${r.line_end}`
-      console.log(`${r.file_path}:${range} (${r.side})${authorTag}${resolvedTag}`)
+      console.log(`${r.file_path}:${range} (${r.side})${authorTag}${branchTag}${resolvedTag}`)
       console.log(`  ${r.summary}`)
       console.log(`  id: ${r.id}`)
       console.log()

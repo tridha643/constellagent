@@ -12,6 +12,7 @@ import { runList } from './commands/list.js'
 import { runRemove } from './commands/remove.js'
 import { runClear } from './commands/clear.js'
 import { runResolve } from './commands/resolve.js'
+import { runCleanDeleted } from './commands/clean-deleted.js'
 
 function getRepoRoot(): string | null {
   try {
@@ -46,12 +47,13 @@ function getWorkspaceId(): string {
 const USAGE = `Usage: constell-annotate <command> [options]
 
 Commands:
-  add        Add a review annotation
-  list       List annotations
-  remove     Remove an annotation by id
-  clear      Clear annotations
-  resolve    Mark annotation as resolved
-  unresolve  Mark annotation as unresolved
+  add            Add a review annotation
+  list           List annotations
+  remove         Remove an annotation by id
+  clear          Clear annotations
+  clean-deleted  Remove annotations for deleted files
+  resolve        Mark annotation as resolved
+  unresolve      Mark annotation as unresolved
 
 Global options:
   --db <path>           Explicit DB file path
@@ -86,7 +88,7 @@ async function main() {
   const workspaceId = wsFlag || getWorkspaceId()
   const repoRoot = getRepoRoot()
 
-  if (!repoRoot && command === 'add') {
+  if (!repoRoot && (command === 'add' || command === 'clean-deleted')) {
     console.error('Error: not inside a git repository')
     process.exit(1)
   }
@@ -106,6 +108,9 @@ async function main() {
         break
       case 'clear':
         await runClear(db, cleaned, { workspaceId, repoRoot })
+        break
+      case 'clean-deleted':
+        await runCleanDeleted(db, cleaned, { workspaceId, repoRoot: repoRoot! })
         break
       case 'resolve':
         await runResolve(db, cleaned, true)
