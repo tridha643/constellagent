@@ -72,6 +72,13 @@ export function lookupPersistedProjectByRepoPath(repoPath: string): PersistedPro
   return null
 }
 
+export function lookupPersistedProjectRepo(projectId: string): string | null {
+  if (!projectId) return null
+  const state = loadState()
+  const project = state.projects?.find((entry) => entry.id === projectId)
+  return project?.repoPath ?? null
+}
+
 export function listPersistedProjectsWithBranches(): Array<{
   projectId: string
   repoPath: string

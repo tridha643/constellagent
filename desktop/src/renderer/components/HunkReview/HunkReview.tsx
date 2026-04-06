@@ -4,6 +4,8 @@ import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import { DiffFileSection, FileStrip, type DiffFileData } from '../Editor/DiffFileSection'
+import { AnnotationsSummary } from './AnnotationsSummary'
+import { resolveAnnotationPathForDiff } from '../../utils/annotation-diff-path'
 import styles from './HunkReview.module.css'
 
 interface FileStatus {
@@ -16,26 +18,20 @@ interface Props {
   worktreePath: string
 }
 
-/**
- * Map hunk CLI comments to the DiffAnnotation shape expected by
- * DiffFileSection / CommentBubble so the component tree stays unchanged.
- */
-function hunkCommentsToAnnotations(
-  comments: Awaited<ReturnType<typeof window.api.hunk.commentList>>,
+function reviewToDiffAnnotations(
+  rows: Awaited<ReturnType<typeof window.api.review.commentList>>,
 ): DiffAnnotation[] {
-  return comments.map((c) => {
-    const side = c.oldLine != null && c.newLine == null ? 'deletions' as const : 'additions' as const
-    return {
-      id: c.id,
-      filePath: c.file,
-      side,
-      lineNumber: side === 'deletions' ? c.oldLine! : (c.newLine ?? c.oldLine ?? 1),
-      body: c.summary,
-      createdAt: new Date().toISOString(),
-      resolved: false,
-      author: c.author,
-    }
-  })
+  return rows.map((r) => ({
+    id: r.id,
+    filePath: r.file_path,
+    side: r.side === 'old' ? 'deletions' as const : 'additions' as const,
+    lineNumber: r.line_start,
+    lineEnd: r.line_end !== r.line_start ? r.line_end : undefined,
+    body: r.summary,
+    createdAt: r.created_at,
+    resolved: r.resolved,
+    author: r.author ?? undefined,
+  }))
 }
 
 export function HunkReview({ worktreePath }: Props) {
@@ -43,7 +39,6 @@ export function HunkReview({ worktreePath }: Props) {
   const [loading, setLoading] = useState(true)
   const [annotations, setAnnotations] = useState<DiffAnnotation[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
-  const [sessionReady, setSessionReady] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -103,43 +98,31 @@ export function HunkReview({ worktreePath }: Props) {
     [openFileTab, openMarkdownPreview],
   )
 
-  // ── Hunk session lifecycle ──
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        await window.api.hunk.startSession(worktreePath)
-        if (!cancelled) setSessionReady(true)
-      } catch (err) {
-        console.error('Failed to start hunk session:', err)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [worktreePath])
-
-  // ── Comments (via hunk session) ──
+  // ── Annotations (libSQL-backed) ──
 
   const loadAnnotations = useCallback(async () => {
-    if (!sessionReady) return
     try {
-      const comments = await window.api.hunk.commentList(worktreePath)
-      setAnnotations(hunkCommentsToAnnotations(comments))
+      const rows = await window.api.review.commentList(worktreePath)
+      setAnnotations(reviewToDiffAnnotations(rows))
     } catch (err) {
-      console.error('Failed to load hunk comments:', err)
+      console.error('Failed to load review annotations:', err)
       setAnnotations([])
     }
-  }, [worktreePath, sessionReady])
+  }, [worktreePath])
 
   useEffect(() => {
     void loadAnnotations()
   }, [loadAnnotations])
 
+  // Reload when annotations are cleared (e.g. after PR merge)
+  useEffect(() => {
+    return window.api.review.onAnnotationsCleared(() => {
+      void loadAnnotations()
+    })
+  }, [loadAnnotations])
+
   // ── GitHub PR comment loading ──
   useEffect(() => {
-    if (!sessionReady) return
     let cancelled = false
     ;(async () => {
       try {
@@ -173,7 +156,7 @@ export function HunkReview({ worktreePath }: Props) {
       }
     })()
     return () => { cancelled = true }
-  }, [worktreePath, sessionReady])
+  }, [worktreePath])
 
   // ── Git operations for accept/reject ──
   const handleFileAccepted = useCallback(
@@ -254,6 +237,54 @@ export function HunkReview({ worktreePath }: Props) {
   }, [loadFiles])
 
   useFileWatcher(worktreePath, loadFiles, true)
+
+  const scrollToAnnotationInDiff = useCallback(
+    (annotation: DiffAnnotation) => {
+      const resolved = resolveAnnotationPathForDiff(
+        annotation.filePath,
+        files.map((f) => f.filePath),
+      )
+      if (!resolved) {
+        addToast({
+          id: `ann-jump-${Date.now()}`,
+          message: `File not in current diff: ${annotation.filePath}`,
+          type: 'warning',
+        })
+        return
+      }
+      const fileEl = document.getElementById(`diff-${resolved}`)
+      const bubble = document.querySelector(`[data-annotation-id="${annotation.id}"]`)
+      const target = (bubble ?? fileEl) as HTMLElement | null
+      if (!target) {
+        addToast({
+          id: `ann-jump-${Date.now()}`,
+          message: 'Could not find annotation in diff view',
+          type: 'warning',
+        })
+        return
+      }
+      const root = scrollAreaRef.current
+      if (root) {
+        const rootRect = root.getBoundingClientRect()
+        const elRect = target.getBoundingClientRect()
+        const top = elRect.top - rootRect.top + root.scrollTop
+        root.scrollTo({ top: Math.max(0, top - 12), behavior: 'smooth' })
+      } else {
+        target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+      requestAnimationFrame(() => {
+        const b = document.querySelector(`[data-annotation-id="${annotation.id}"]`)
+        if (b) {
+          b.classList.add('highlightFlash')
+          setTimeout(() => b.classList.remove('highlightFlash'), 1200)
+        } else if (fileEl) {
+          fileEl.classList.add('highlightFlash')
+          setTimeout(() => fileEl.classList.remove('highlightFlash'), 1200)
+        }
+      })
+    },
+    [files, addToast],
+  )
 
   // IntersectionObserver to highlight active file in strip
   useEffect(() => {
@@ -346,6 +377,16 @@ export function HunkReview({ worktreePath }: Props) {
 
         {/* File strip */}
         {files.length > 0 && <FileStrip files={files} activeFile={activeFile} />}
+
+        {/* Annotations summary from constell-annotate SQLite DB */}
+        <AnnotationsSummary
+          annotations={annotations}
+          worktreePath={worktreePath}
+          onAnnotationsChanged={loadAnnotations}
+          selectedIds={selectedIds}
+          onToggleComment={toggleComment}
+          onJumpToAnnotation={scrollToAnnotationInDiff}
+        />
 
         {/* Content */}
         {loading ? (

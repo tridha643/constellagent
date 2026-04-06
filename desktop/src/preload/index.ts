@@ -12,7 +12,7 @@ import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { PlanAgent } from '../shared/agent-plan-path'
 import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
 import type { GraphiteStackInfo } from '../shared/graphite-types'
-import type { HunkComment, HunkSessionContext, HunkSessionInfo, HunkVersionInfo } from '../shared/hunk-types'
+import type { ReviewComment } from '../shared/review-types'
 import type { ContextWindowData } from '../shared/context-window-types'
 
 const api = {
@@ -347,31 +347,24 @@ const api = {
       ipcRenderer.invoke(IPC.CLIPBOARD_SAVE_IMAGE) as Promise<string | null>,
   },
 
-  hunk: {
-    isAvailable: () =>
-      ipcRenderer.invoke(IPC.HUNK_AVAILABLE) as Promise<boolean>,
-    startSession: (worktreePath: string) =>
-      ipcRenderer.invoke(IPC.HUNK_START_SESSION, worktreePath) as Promise<void>,
-    stopSession: (worktreePath: string) =>
-      ipcRenderer.invoke(IPC.HUNK_STOP_SESSION, worktreePath) as Promise<void>,
-    getContext: (worktreePath: string) =>
-      ipcRenderer.invoke(IPC.HUNK_GET_CONTEXT, worktreePath) as Promise<HunkSessionContext | null>,
-    commentAdd: (worktreePath: string, file: string, newLine: number, summary: string, opts?: { rationale?: string; author?: string; focus?: boolean; oldLine?: number }) =>
-      ipcRenderer.invoke(IPC.HUNK_COMMENT_ADD, worktreePath, file, newLine, summary, opts) as Promise<void>,
+  review: {
+    commentAdd: (worktreePath: string, file: string, newLine: number, summary: string, opts?: { rationale?: string; author?: string; focus?: boolean; oldLine?: number; force?: boolean; lineEnd?: number; workspaceId?: string }) =>
+      ipcRenderer.invoke(IPC.REVIEW_COMMENT_ADD, worktreePath, file, newLine, summary, opts) as Promise<void>,
     commentList: (worktreePath: string, file?: string) =>
-      ipcRenderer.invoke(IPC.HUNK_COMMENT_LIST, worktreePath, file) as Promise<HunkComment[]>,
+      ipcRenderer.invoke(IPC.REVIEW_COMMENT_LIST, worktreePath, file) as Promise<ReviewComment[]>,
     commentRemove: (worktreePath: string, commentId: string) =>
-      ipcRenderer.invoke(IPC.HUNK_COMMENT_REMOVE, worktreePath, commentId) as Promise<void>,
+      ipcRenderer.invoke(IPC.REVIEW_COMMENT_REMOVE, worktreePath, commentId) as Promise<void>,
     commentClear: (worktreePath: string, file?: string) =>
-      ipcRenderer.invoke(IPC.HUNK_COMMENT_CLEAR, worktreePath, file) as Promise<void>,
-    navigate: (worktreePath: string, file: string, target: { hunk?: number; newLine?: number; oldLine?: number }) =>
-      ipcRenderer.invoke(IPC.HUNK_NAVIGATE, worktreePath, file, target) as Promise<void>,
-    reload: (worktreePath: string, command: string[]) =>
-      ipcRenderer.invoke(IPC.HUNK_RELOAD, worktreePath, command) as Promise<void>,
-    checkUpdate: () =>
-      ipcRenderer.invoke(IPC.HUNK_CHECK_UPDATE) as Promise<HunkVersionInfo>,
-    performUpdate: () =>
-      ipcRenderer.invoke(IPC.HUNK_PERFORM_UPDATE) as Promise<void>,
+      ipcRenderer.invoke(IPC.REVIEW_COMMENT_CLEAR, worktreePath, file) as Promise<void>,
+    commentResolve: (worktreePath: string, commentId: string, resolved: boolean) =>
+      ipcRenderer.invoke(IPC.REVIEW_COMMENT_RESOLVE, worktreePath, commentId, resolved) as Promise<void>,
+    onAnnotationsCleared: (callback: (data: { repoPath: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { repoPath: string }) => callback(data)
+      ipcRenderer.on(IPC.REVIEW_ANNOTATIONS_CLEARED, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.REVIEW_ANNOTATIONS_CLEARED, listener)
+      }
+    },
   },
 
   t3code: {

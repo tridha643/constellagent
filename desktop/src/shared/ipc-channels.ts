@@ -159,19 +159,14 @@ export const IPC = {
   // App file picker
   APP_SELECT_FILE: 'app:select-file',
 
-  // Hunk — review via hunk CLI sessions
-  HUNK_AVAILABLE: 'hunk:available',
-  HUNK_START_SESSION: 'hunk:start-session',
-  HUNK_STOP_SESSION: 'hunk:stop-session',
-  HUNK_GET_CONTEXT: 'hunk:get-context',
-  HUNK_COMMENT_ADD: 'hunk:comment-add',
-  HUNK_COMMENT_LIST: 'hunk:comment-list',
-  HUNK_COMMENT_REMOVE: 'hunk:comment-remove',
-  HUNK_COMMENT_CLEAR: 'hunk:comment-clear',
-  HUNK_NAVIGATE: 'hunk:navigate',
-  HUNK_RELOAD: 'hunk:reload',
-  HUNK_CHECK_UPDATE: 'hunk:check-update',
-  HUNK_PERFORM_UPDATE: 'hunk:perform-update',
+  // Review annotations (libSQL-backed, replaces hunk)
+  REVIEW_COMMENT_ADD: 'review:comment-add',
+  REVIEW_COMMENT_LIST: 'review:comment-list',
+  REVIEW_COMMENT_REMOVE: 'review:comment-remove',
+  REVIEW_COMMENT_CLEAR: 'review:comment-clear',
+  REVIEW_COMMENT_RESOLVE: 'review:comment-resolve',
+  /** Main → renderer: all annotations cleared after a PR merge */
+  REVIEW_ANNOTATIONS_CLEARED: 'review:annotations-cleared',
 
   // T3 Code server lifecycle
   T3CODE_START: 't3code:start',

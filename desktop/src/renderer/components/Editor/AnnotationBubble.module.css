@@ -1,9 +1,11 @@
+/* ── Annotation stack (container for multiple annotations on a line) ── */
+
 .annotationStack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
 .commitNote {
@@ -13,4 +15,354 @@
   background: var(--surface-1);
   border-radius: var(--radius-sm);
   margin-top: var(--space-2);
+}
+
+/* ── Comment Bubble (Pierre Diffs-inspired thread style) ── */
+
+.commentBubble {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 12px 14px;
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+  white-space: normal;
+  transition: border-color 200ms cubic-bezier(0.23, 1, 0.32, 1),
+              background-color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.commentBubble:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.commentThread {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.commentBubble:hover .avatar {
+  transform: scale(1.05);
+}
+
+.commentContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.commentMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.authorName {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.timestamp {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  line-height: 1;
+}
+
+.resolvedPill {
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  color: rgb(74, 222, 128);
+  background: rgba(74, 222, 128, 0.1);
+  padding: 1px 6px;
+  border-radius: 9999px;
+  line-height: 1.4;
+}
+
+.commentCheckbox {
+  margin-left: auto;
+  width: 14px;
+  height: 14px;
+  accent-color: rgb(59, 130, 246);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.commentBody {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.commentActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  padding-top: 4px;
+}
+
+.commentActionBtn {
+  font-size: 12px;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+              opacity 150ms ease;
+}
+
+.commentActionBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.commentActionBtn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.resolve {
+  color: rgba(74, 222, 128, 0.8);
+}
+.resolve:hover:not(:disabled) {
+  color: rgb(74, 222, 128);
+}
+
+.unresolve {
+  color: rgba(250, 204, 21, 0.8);
+}
+.unresolve:hover:not(:disabled) {
+  color: rgb(250, 204, 21);
+}
+
+.delete {
+  color: rgba(248, 113, 113, 0.7);
+}
+.delete:hover:not(:disabled) {
+  color: rgb(248, 113, 113);
+}
+
+/* ── Hunk Accept/Reject Action Bar (Pierre Diffs-inspired) ── */
+
+.hunkActionBar {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  overflow: visible;
+}
+
+.hunkActionGroup {
+  position: absolute;
+  top: 4px;
+  right: 12px;
+  display: flex;
+  gap: 4px;
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+}
+
+.hunkActionUndo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+              border-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+              color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+              transform 100ms ease-out;
+}
+
+.hunkActionUndo:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.hunkActionUndo:active {
+  transform: scale(0.97);
+}
+
+.hunkActionKeep {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: 6px;
+  background: rgba(74, 222, 128, 0.15);
+  color: rgb(74, 222, 128);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+              border-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+              transform 100ms ease-out;
+}
+
+.hunkActionKeep:hover {
+  background: rgba(74, 222, 128, 0.25);
+  border-color: rgba(74, 222, 128, 0.5);
+}
+
+.hunkActionKeep:active {
+  transform: scale(0.97);
+}
+
+.kbd {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.5;
+  letter-spacing: 0.02em;
+}
+
+/* ── Comment Composer ── */
+
+.composerBubble {
+  border-radius: 10px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: rgba(59, 130, 246, 0.04);
+  padding: 12px 14px;
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+  white-space: normal;
+}
+
+.composerLabel {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: rgba(255, 255, 255, 0.35);
+  margin-bottom: 8px;
+}
+
+.composerTextarea {
+  width: 100%;
+  min-height: 56px;
+  resize: none;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+              box-shadow 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.composerTextarea:focus {
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.composerTextarea::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.composerActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.composerSubmit {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 6px;
+  background: rgb(59, 130, 246);
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  cursor: pointer;
+  transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+              transform 100ms ease-out;
+}
+
+.composerSubmit:hover:not(:disabled) {
+  background: rgb(37, 99, 235);
+}
+
+.composerSubmit:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.composerSubmit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.composerCancel {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 12px;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  cursor: pointer;
+  transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.composerCancel:hover {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.composerHint {
+  margin-left: auto;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.2);
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+/* ── Highlight flash (triggered from AnnotationsSummary navigation) ── */
+
+@keyframes bubbleHighlight {
+  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); border-color: rgba(255, 255, 255, 0.07); }
+  15% { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35); border-color: rgba(59, 130, 246, 0.4); }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); border-color: rgba(255, 255, 255, 0.07); }
+}
+
+:global(.highlightFlash) {
+  animation: bubbleHighlight 1.2s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+/* ── Reduced motion ── */
+
+@media (prefers-reduced-motion: reduce) {
+  .commentBubble,
+  .commentBubble:hover .avatar,
+  .hunkActionUndo,
+  .hunkActionKeep,
+  .commentActionBtn {
+    transition: none;
+  }
+  :global(.highlightFlash) {
+    animation: none;
+  }
 }

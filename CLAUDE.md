@@ -1,22 +1,10 @@
 # Constellagent Cross-Agent Context
 
-Shared instructions for all coding agents — session context, Cachebro, context database, and **hunk review comments** — are in **`AGENTS.md`** at the repository root.
-
-**Hunk CLI skill:** upstream **[hunk-review](https://github.com/modem-dev/hunk/blob/main/skills/hunk-review/SKILL.md)** — installed into **`desktop/.claude/skills/hunk-review/SKILL.md`** by **`bun run setup`** or **`sh scripts/install-hunk-skill.sh`** (gitignored). The desktop app installs the **`hunk`** binary automatically when needed; see root **`AGENTS.md`**.
+Shared instructions for all coding agents — session context, Cachebro, context database, and **review annotations** — are in **`AGENTS.md`** at the repository root.
 
 ## Comment selection in Review Changes
 
 Human comments in the Review Changes panel (Cmd+Shift+R) are individually selectable via checkboxes. Only **selected** human comments are included in the text submitted to the agent. AI-authored comments (those with an `author` field) are **non-toggleable** — they are display-only context in the diff and are never included in the submission text.
-
-## Hunk annotations: time cost & discoverability
-
-**Why annotation takes a long time in automation:** each `comment add` needs a **`--new-line` inside that hunk’s new-side range**, so agents must **`navigate` + `context`** per file (often per hunk). Multi-file diffs mean many sequential CLI steps; wrong lines require retries; `hunk session list --json | jq` can **fail to parse** on large output — use **`scripts/hunk-agent.sh`** or the daemon **`curl`** flow documented in **`AGENTS.md`**.
-
-**Where comments “go”:** they are **not** stored as a normal file in git. They attach to the **hunk session’s loaded diff** in Review Changes. **Same workspace + active session + a diff with hunks** (reload after edits) or you won’t see them. **AI-authored** notes (`--author "claude-code"`, etc.) are **display-only** on the diff (see above).
-
-**Durable narrative** for humans searching later: **PR description** or **commit body** — don’t rely on hunk alone as a searchable archive.
-
-Full detail: **`AGENTS.md`** → *Hunk review comments* → *Why agent-side annotation takes a long time* / *Where comments live*.
 
 ## Plan policies
 
@@ -40,7 +28,7 @@ sendblue send +18258883809 "claude-code <plan-topic-name> is over"
 
 ## Mandatory AI annotations on code changes
 
-**After implementing any code changes, agents MUST leave hunk review comments explaining their rationale on key changed lines.** This is not optional — it is a required step before considering work complete.
+**After implementing any code changes, agents MUST leave review annotations explaining their rationale on key changed lines.** This is not optional — it is a required step before considering work complete.
 
 - Annotate **every source file you modified** with at least one comment on the most significant change (skip auto-generated files like `bun.lock`).
 - Comments should explain **why** the change was made, not just restate what the code does.
@@ -50,24 +38,14 @@ sendblue send +18258883809 "claude-code <plan-topic-name> is over"
 ### Annotation workflow (exact steps)
 
 ```bash
-# 1. Resolve session ID for this repo
-REPO="$(git rev-parse --show-toplevel)"
-SID="$(hunk session list --json | jq -r --arg repo "$REPO" '[.sessions[] | select(.repoRoot == $repo)][0].sessionId // empty')"
+# Single command — no session resolution, no daemon needed:
+constell-annotate add --file src/foo.ts --new-line 42 --summary "Why this change" --author "claude-code"
 
-# 2. Reload session so it sees your uncommitted changes
-hunk session reload "$SID" -- diff
+# Line range:
+constell-annotate add --file src/foo.ts --new-line 42-58 --summary "Refactored block" --author "claude-code"
 
-# 3. For each file, discover valid hunk line ranges BEFORE commenting.
-#    --new-line MUST fall within a hunk's "New range" or the command fails.
-#    Navigate to each hunk and read its range:
-hunk session navigate "$SID" --file <path> --hunk 1
-hunk session context "$SID"          # look at "New range: X..Y"
-
-# 4. Add comments using a line within the reported New range:
-hunk session comment add "$SID" \
-  --file <path> --new-line <line-within-range> \
-  --summary "<why this change was made>" \
-  --author "claude-code"
+# Force (skip diff validation):
+constell-annotate add --file src/foo.ts --new-line 42 --summary "Why" --author "claude-code" --force
 ```
 
-**Key gotcha:** `--new-line` must be inside a diff hunk's new-side range. Arbitrary file line numbers that fall outside changed hunks will be rejected with "No new diff hunk covers line N". Always discover ranges first via `navigate` + `context`.
+**Key point:** By default, `--new-line` must be inside a `git diff HEAD` hunk's new-side range. Use `--force` to skip validation when needed.

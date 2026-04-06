@@ -170,7 +170,7 @@ export const DEFAULT_SETTINGS: Settings = {
 export interface Toast {
   id: string
   message: string
-  type: 'error' | 'info'
+  type: 'error' | 'info' | 'warning'
   action?: { label: string; onClick: () => void }
 }
 

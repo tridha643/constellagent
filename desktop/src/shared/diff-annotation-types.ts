@@ -1,6 +1,6 @@
 /**
- * Shape for inline diff review notes in the UI. The app displays **hunk session** comments
- * (via the `hunk` CLI / daemon); this file only defines shared TypeScript types.
+ * Shape for inline diff review notes in the UI. Backed by libSQL review annotations
+ * (via `@tridha643/review-annotations`); this file only defines shared TypeScript types.
  */
 
 /** Matches @pierre/diffs AnnotationSide */

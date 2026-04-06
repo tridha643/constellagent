@@ -20,16 +20,20 @@ Agent tool calls and activity are recorded in `.constellagent/constellagent.db` 
 
 The `entries` table stores: workspace_id, agent_type, session_id, tool_name, tool_input, file_path, tool_response, timestamp.
 
-## Hunk review comments (human ↔ agent)
+## Review annotations (human ↔ agent)
 
-The **Review Changes** panel and the **Changes** diff use **hunk session** comments (the `hunk` CLI from **`hunkdiff`**). There is no separate annotations JSON file in the app.
+The **Review Changes** panel and the **Changes** diff use **review annotations** backed by a local libSQL database. The `constell-annotate` CLI (from `@tridha643/review-annotations`) is the agent-facing tool — no daemon, no session resolution needed.
 
-- **In the desktop UI:** After non-trivial edits, add review notes on the relevant **new-side** lines (or old-side when appropriate). The diff shows **what** changed; comments explain **why** something needs attention.
-- **In a terminal (Claude Code, Codex, Cursor, etc.):** Use **`hunk session *`** only (see upstream skill — do not drive the interactive `hunk diff` TUI from agents). Canonical source: **[modem-dev/hunk `hunk-review` skill](https://github.com/modem-dev/hunk/blob/main/skills/hunk-review/SKILL.md)**.
+```bash
+constell-annotate add --file src/foo.ts --new-line 42 --summary "Why this change" --author "gemini"
+constell-annotate add --file src/foo.ts --new-line 42-58 --summary "Refactored block" --author "gemini"
+constell-annotate list [--file <path>] [--json] [--include-stale]
+constell-annotate remove <id>
+constell-annotate clear [--file <path>]
+constell-annotate resolve <id>
+```
 
-**Local skill path (not committed; gitignored):** after **`bun run setup`** or **`sh scripts/install-hunk-skill.sh`**, the same upstream `SKILL.md` is present at **`desktop/.claude/skills/hunk-review/SKILL.md`**, with symlinks **`.cursor/skills/hunk-review`** and **`.gemini/skills/hunk-review`**. Override revision with **`HUNK_SKILL_REF`** when running the install script (defaults to `main`).
-
-Constellagent **ensures the `hunk` CLI** when you use workspaces / Review Changes; you do not need to install it by hand. **Recommended:** `hunk session list`, then `hunk session comment add <session-id> … --author "gemini"`. Optional: `sh scripts/hunk-agent.sh … --repo .` when you do not want to pick an id; or **`hunk session list --json` + `jq`** to resolve a session id without `curl` (see **CLI-only resolver** in root **`AGENTS.md`**). An active hunk session for that repo is required: Constellagent’s **Review Changes** starts one; otherwise ask the user to open Hunk per the upstream skill.
+Install: `npm i -g @tridha643/review-annotations`
 
 **AI annotations are non-toggleable:** Comments with an `author` field are display-only context in the Review Changes panel — they are never included in submission text sent to the agent. Only human comments (no `author`) have checkboxes and can be selected for submission.
 

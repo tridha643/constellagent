@@ -94,27 +94,35 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
 
   const loadAnnotations = useCallback(async () => {
     try {
-      const comments = await window.api.hunk.commentList(worktreePath)
+      const rows = await window.api.review.commentList(worktreePath)
       setAnnotations(
-        comments.map((c) => ({
-          id: c.id,
-          filePath: c.file,
-          side: 'additions' as const,
-          lineNumber: c.newLine ?? c.oldLine ?? 1,
-          body: c.summary,
-          createdAt: new Date().toISOString(),
-          resolved: false,
-          author: c.author,
+        rows.map((r) => ({
+          id: r.id,
+          filePath: r.file_path,
+          side: r.side === 'old' ? 'deletions' as const : 'additions' as const,
+          lineNumber: r.line_start,
+          lineEnd: r.line_end !== r.line_start ? r.line_end : undefined,
+          body: r.summary,
+          createdAt: r.created_at,
+          resolved: r.resolved,
+          author: r.author ?? undefined,
         })),
       )
     } catch (err) {
-      console.error('Failed to load hunk comments:', err)
+      console.error('Failed to load review annotations:', err)
       setAnnotations([])
     }
   }, [worktreePath])
 
   useEffect(() => {
     void loadAnnotations()
+  }, [loadAnnotations])
+
+  // Reload when annotations are cleared (e.g. after PR merge)
+  useEffect(() => {
+    return window.api.review.onAnnotationsCleared(() => {
+      void loadAnnotations()
+    })
   }, [loadAnnotations])
 
   // ── GitHub PR comment loading ──
