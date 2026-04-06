@@ -26,6 +26,7 @@ function isE2eRun(): boolean {
 }
 
 function createWindow(): void {
+  const useDevRenderer = !e2eIsolateUserData && !!process.env.ELECTRON_RENDERER_URL
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -58,8 +59,8 @@ function createWindow(): void {
   })
 
   // Load renderer
-  if (process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+  if (useDevRenderer) {
+    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL!)
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
@@ -151,7 +152,7 @@ if (!gotTheLock) {
 }
 
 app.whenReady().then(() => {
-  const isDev = !!process.env.ELECTRON_RENDERER_URL
+  const isDev = !e2eIsolateUserData && !!process.env.ELECTRON_RENDERER_URL
 
   // Custom menu: keep standard Edit shortcuts (copy/paste/undo) but remove
   // Cmd+W (close window) and Cmd+N (new window) so they reach the renderer

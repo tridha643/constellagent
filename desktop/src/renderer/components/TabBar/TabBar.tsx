@@ -378,7 +378,12 @@ export function TabBar() {
       </Tooltip>
 
       <Tooltip label="New terminal" shortcut="⌘T">
-        <button type="button" className={styles.newTabButton} onClick={createTerminalForActiveWorkspace}>
+        <button
+          type="button"
+          className={styles.newTabButton}
+          aria-label="New terminal"
+          onClick={createTerminalForActiveWorkspace}
+        >
           +
         </button>
       </Tooltip>

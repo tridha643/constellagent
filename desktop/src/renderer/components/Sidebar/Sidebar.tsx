@@ -375,7 +375,6 @@ export function Sidebar() {
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog);
   const toggleSettings = useAppStore((s) => s.toggleSettings);
   const toggleAutomations = useAppStore((s) => s.toggleAutomations);
-  const toggleContextHistory = useAppStore((s) => s.toggleContextHistory);
   const toggleHunkReview = useAppStore((s) => s.toggleHunkReview);
   const openLatestAgentPlan = useAppStore((s) => s.openLatestAgentPlan);
   const sidebarActionOrder = useAppStore((s) => s.sidebarActionOrder);
@@ -569,11 +568,6 @@ export function Sidebar() {
       // Pre-trust worktree in Claude Code if any command uses claude
       if (commands.some((c) => c.command.trim().startsWith("claude"))) {
         await window.api.claude.trustPath(worktreePath).catch(() => {});
-      }
-
-      // Initialize context repo if enabled
-      if (settings.contextCaptureEnabled) {
-        window.api.context.repoInit(worktreePath, wsId).catch(() => {});
       }
 
       if (commands.length === 0) {
@@ -1113,14 +1107,6 @@ export function Sidebar() {
       tooltipLabel: 'Automations',
       onClick: toggleAutomations,
     },
-    context: {
-      id: 'context',
-      icon: '↻',
-      label: 'Context',
-      tooltipLabel: 'Context history',
-      shortcut: '⇧⌘K',
-      onClick: toggleContextHistory,
-    },
     plans: {
       id: 'plans',
       icon: '≡',
@@ -1144,7 +1130,7 @@ export function Sidebar() {
       shortcut: '⌘,',
       onClick: toggleSettings,
     },
-  }), [isInitializingRepo, handleAddProject, toggleAutomations, toggleContextHistory, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
+  }), [isInitializingRepo, handleAddProject, toggleAutomations, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
 
   const orderedActions = useMemo(
     () => sidebarActionOrder.map((id) => actionButtonConfigs[id]),

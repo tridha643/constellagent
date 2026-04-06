@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { existsSync, realpathSync, mkdirSync } from 'fs'
+import { realpathSync } from 'fs'
 import { join } from 'path'
 import type { Client } from '@libsql/client'
 import {
@@ -57,9 +57,7 @@ async function getDb(projectDir: string): Promise<Client> {
   const existing = dbHandles.get(projectDir)
   if (existing) return existing
 
-  const dir = join(projectDir, '.constellagent')
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  const dbPath = join(dir, 'review-annotations.db')
+  const dbPath = join(projectDir, '.git', 'review-annotations.db')
   const client = await openAnnotationsDb(dbPath)
   dbHandles.set(projectDir, client)
   return client

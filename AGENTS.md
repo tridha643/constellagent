@@ -2,27 +2,21 @@
 
 These instructions apply to **any repository** where the constellagent app is in use — not just the constellagent codebase itself. They govern **all** coding agent harnesses (Cursor, Claude Code, Codex, Gemini, etc.).
 
-## Session & activity context
+## Workspace storage
 
-Read these files to see what other agents (and you) have been doing recently:
-
-- `.constellagent/context/sliding-window.md` — Compact table of last 20 agent actions across all agents
-- `.constellagent/context/agent-context.md` — Rich context summary (files touched, tool details, activity timeline)
-- `.constellagent/sessions/` — Session-end summaries with timestamps
+Constellagent no longer creates a workspace-level `.constellagent/` directory for context capture or session history.
 
 ## Cachebro (MCP — auto-configured)
 
 Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) instead of raw file reads to save tokens.
 
-## Context database
+## AgentFS database
 
-Agent tool calls and activity are recorded in `.constellagent/constellagent.db` (libSQL/SQLite via AgentFS).
-
-The `entries` table stores: workspace_id, agent_type, session_id, tool_name, tool_input, file_path, tool_response, timestamp.
+AgentFS-backed storage that still exists for app internals lives under the repo’s `.git/` directory instead of `.constellagent/`.
 
 ## Review annotations (human ↔ agent)
 
-The **Review Changes** panel and the **Changes** diff use **review annotations** backed by a local libSQL database (`.constellagent/review-annotations.db`). The `constell-annotate` CLI (from `@tridha643/review-annotations`) is the agent-facing tool.
+The **Review Changes** panel and the **Changes** diff use **review annotations** backed by a local libSQL database (`.git/review-annotations.db`). The `constell-annotate` CLI (from `@tridha643/review-annotations`) is the agent-facing tool.
 
 - **In the desktop UI:** After non-trivial edits, add review notes on the relevant **new-side** lines (or old-side when appropriate). The diff shows **what** changed; comments explain **why** something needs attention.
 - **In a terminal (Claude Code, Codex, Cursor, etc.):** Use `constell-annotate` — no daemon, no session resolution needed.
@@ -61,8 +55,8 @@ By default, `add` validates that the target line is inside a `git diff HEAD` hun
 
 ### Where comments are stored
 
-- In Constellagent-managed repos: `.constellagent/review-annotations.db` (same directory as AgentFS, separate file)
-- In standalone CLI use (no `.constellagent/` directory): `~/.local/share/constellagent/review-annotations.db`, scoped by `repo_root`
+- In Constellagent-managed repos: `.git/review-annotations.db`
+- In standalone CLI use: `~/.local/share/constellagent/review-annotations.db`, scoped by `repo_root`
 - Comments persist in SQLite — no daemon or watch process needed
 
 ### Author tagging (required)

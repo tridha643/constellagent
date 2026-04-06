@@ -138,8 +138,8 @@ test.describe('Terminal functionality', () => {
       const tabsBefore = await window.locator('[class*="tabTitle"]').count()
       expect(tabsBefore).toBe(1)
 
-      // Click "+" for new terminal
-      const newTabBtn = window.locator('[class*="newTabButton"]')
+      // "+" shares styling with other tab-bar actions; target by accessible name
+      const newTabBtn = window.getByRole('button', { name: 'New terminal' })
       await expect(newTabBtn).toBeVisible()
       await newTabBtn.click()
 

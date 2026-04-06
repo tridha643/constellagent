@@ -12,7 +12,6 @@ import { T3CodeView } from './components/T3CodeView/T3CodeView'
 import { RightPanel } from './components/RightPanel/RightPanel'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
 import { AutomationsPanel } from './components/Automations/AutomationsPanel'
-import { ContextHistoryPanel } from './components/ContextHistory/ContextHistoryPanel'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
 import { PlanPalette } from './components/PlanPalette/PlanPalette'
 import { HunkReview } from './components/HunkReview/HunkReview'
@@ -79,17 +78,6 @@ export function App() {
     })
   }, [])
 
-  // Codex: tab title from context DB (first UserPrompt in session) when OSC/user-write did not set one
-  useEffect(() => {
-    return window.api.context.onCodexTabTitleHint(({ workspaceId, title }) => {
-      console.log('[constellagent:tab-title] renderer IPC CONTEXT_CODEX_TAB_TITLE_HINT', {
-        workspaceId,
-        title: title.slice(0, 80),
-      })
-      useAppStore.getState().applyCodexContextTitleHint(workspaceId, title)
-    })
-  }, [])
-
   useEffect(() => {
     return window.api.git.onWorktreeSyncStatus((event) => {
       useAppStore.getState().setWorktreeSyncStatus(event.projectId, event.workspaces)
@@ -105,7 +93,6 @@ export function App() {
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const automationsOpen = useAppStore((s) => s.automationsOpen)
-  const contextHistoryOpen = useAppStore((s) => s.contextHistoryOpen)
   const quickOpenVisible = useAppStore((s) => s.quickOpenVisible)
   const planPaletteVisible = useAppStore((s) => s.planPaletteVisible)
   const hunkReviewOpen = useAppStore((s) => s.hunkReviewOpen)
@@ -139,8 +126,6 @@ export function App() {
           <SettingsPanel />
         ) : automationsOpen ? (
           <AutomationsPanel />
-        ) : contextHistoryOpen ? (
-          <ContextHistoryPanel />
         ) : (
           <ErrorBoundary
             fallback={

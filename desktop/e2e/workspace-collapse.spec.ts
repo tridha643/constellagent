@@ -137,25 +137,42 @@ test.describe('Workspace project sections should not auto-collapse', () => {
       await expect(wsA).toBeVisible()
       await expect(wsB).toBeVisible()
 
-      // ws-kb-b is active (added last). Use Ctrl+Shift+ArrowUp to go to previous workspace
-      await window.keyboard.press('Control+Shift+ArrowUp')
-      await window.waitForTimeout(300)
+      // ws-kb-b is active (added last). Workspace cycling uses ⌘⇧↑ (see useShortcuts).
+      // reconcileGitWorktreesForStore may insert primary repo worktrees named after branch "main",
+      // so one ⌘⇧↑ can land on that entry before the linked worktree — cycle until branch matches.
+      for (let i = 0; i < 6; i++) {
+        const branch = await window.evaluate(() => {
+          const s = (window as any).__store.getState()
+          const ws = s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)
+          return ws?.branch
+        })
+        if (branch === 'branch-kb-a') break
+        await window.keyboard.press('Meta+Shift+ArrowUp')
+        await window.waitForTimeout(250)
+      }
 
-      // Verify active workspace changed
-      const activeWsName = await window.evaluate(() => {
+      const activeBranch = await window.evaluate(() => {
         const s = (window as any).__store.getState()
         const ws = s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)
-        return ws?.name
+        return ws?.branch
       })
-      expect(activeWsName).toBe('ws-kb-a')
+      expect(activeBranch).toBe('branch-kb-a')
 
       // CRITICAL: both projects should still be expanded
       await expect(wsA).toBeVisible()
       await expect(wsB).toBeVisible()
 
-      // Cycle forward
-      await window.keyboard.press('Control+Shift+ArrowDown')
-      await window.waitForTimeout(300)
+      // Cycle forward to branch-kb-b (skip reconciled "main" worktrees if present)
+      for (let i = 0; i < 6; i++) {
+        const branch = await window.evaluate(() => {
+          const s = (window as any).__store.getState()
+          const ws = s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)
+          return ws?.branch
+        })
+        if (branch === 'branch-kb-b') break
+        await window.keyboard.press('Meta+Shift+ArrowDown')
+        await window.waitForTimeout(250)
+      }
 
       // Still both visible
       await expect(wsA).toBeVisible()

@@ -141,7 +141,6 @@ export interface Settings {
   favoriteEditorCustom: string
   mcpServers: McpServer[]
   agentMcpAssignments: AgentMcpAssignments
-  contextCaptureEnabled: boolean
   sessionResumeEnabled: boolean
   skills: SkillEntry[]
   subagents: SubagentEntry[]
@@ -160,7 +159,6 @@ export const DEFAULT_SETTINGS: Settings = {
   favoriteEditorCustom: '',
   mcpServers: [],
   agentMcpAssignments: { 'claude-code': [], 'codex': [], 'gemini': [], 'cursor': [], 'opencode': [] },
-  contextCaptureEnabled: false,
   sessionResumeEnabled: true,
   skills: [],
   subagents: [],
@@ -210,7 +208,6 @@ export interface AppState {
   settings: Settings
   settingsOpen: boolean
   automationsOpen: boolean
-  contextHistoryOpen: boolean
   confirmDialog: ConfirmDialogState | null
   toasts: Toast[]
   quickOpenVisible: boolean
@@ -302,8 +299,6 @@ export interface AppState {
   updateSettings: (partial: Partial<Settings>) => void
   toggleSettings: () => void
   toggleAutomations: () => void
-  toggleContextHistory: () => void
-  closeContextHistory: () => void
   showConfirmDialog: (dialog: ConfirmDialogState) => void
   updateConfirmDialog: (partial: Partial<ConfirmDialogState>) => void
   dismissConfirmDialog: () => void
@@ -330,8 +325,6 @@ export interface AppState {
   setActiveAgentWorkspaces: (entries: { wsId: string; agentType: string }[]) => void
   setTerminalAgentType: (ptyId: string, agentType: AgentType) => void
   updateTerminalTitle: (ptyId: string, title: string) => void
-  /** Apply context-derived title to Codex tabs that still use a generic label */
-  applyCodexContextTitleHint: (workspaceId: string, title: string) => void
 
   // Git file status actions
   setGitFileStatuses: (worktreePath: string, statuses: Map<string, string>) => void
@@ -369,12 +362,11 @@ export interface AppState {
   activeProject: () => Project | undefined
 }
 
-export type SidebarActionId = 'add-project' | 'automations' | 'context' | 'plans' | 'settings' | 'review'
+export type SidebarActionId = 'add-project' | 'automations' | 'plans' | 'settings' | 'review'
 
 export const DEFAULT_SIDEBAR_ACTION_ORDER: SidebarActionId[] = [
   'add-project',
   'automations',
-  'context',
   'plans',
   'review',
   'settings',
