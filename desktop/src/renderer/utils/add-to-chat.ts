@@ -14,6 +14,9 @@ export const CONSTELLAGENT_WORKSPACE_MIME = 'application/x-constellagent-workspa
 /** Drag-and-drop MIME for sidebar action button reorder */
 export const CONSTELLAGENT_ACTION_MIME = 'application/x-constellagent-action'
 
+/** Drag-and-drop MIME for project section reorder */
+export const CONSTELLAGENT_PROJECT_MIME = 'application/x-constellagent-project'
+
 export { wrapBracketedPaste }
 
 function formatSelectionAsContext(filePath: string, languageId: string, selection: string): string {

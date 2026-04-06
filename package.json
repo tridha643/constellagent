@@ -2,6 +2,9 @@
   "name": "constellagent-root",
   "private": true,
   "workspaces": ["packages/*", "desktop"],
+  "dependencies": {
+    "katex": "^0.16.45"
+  },
   "scripts": {
     "setup": "bun install && bun run --cwd desktop rebuild",
     "dev": "bun run --cwd desktop dev",

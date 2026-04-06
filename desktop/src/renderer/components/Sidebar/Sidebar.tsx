@@ -14,7 +14,7 @@ import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
 import { Tooltip } from "../Tooltip/Tooltip";
 import { GraphiteStack } from "./GraphiteStack";
-import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME } from "../../utils/add-to-chat";
+import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME, CONSTELLAGENT_PROJECT_MIME } from "../../utils/add-to-chat";
 import { ContextWindowIndicator } from "./ContextWindowIndicator";
 import styles from "./Sidebar.module.css";
 
@@ -384,6 +384,7 @@ export function Sidebar() {
   const activeClaudeWorkspaceIds = useAppStore((s) => s.activeClaudeWorkspaceIds);
   const renameWorkspace = useAppStore((s) => s.renameWorkspace);
   const reorderWorkspace = useAppStore((s) => s.reorderWorkspace);
+  const reorderProject = useAppStore((s) => s.reorderProject);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setPrStatuses = useAppStore((s) => s.setPrStatuses);
   const settings = useAppStore((s) => s.settings);
@@ -421,6 +422,9 @@ export function Sidebar() {
   const [pullingStackPrKey, setPullingStackPrKey] = useState<string | null>(null);
   const [projectPrSearch, setProjectPrSearch] = useState("");
   const draggingWorkspaceIdRef = useRef<string | null>(null);
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [dropTargetProjectId, setDropTargetProjectId] = useState<string | null>(null);
+  const draggingProjectIdRef = useRef<string | null>(null);
   const [draggedActionId, setDraggedActionId] = useState<SidebarActionId | null>(null);
   const [dropTargetActionId, setDropTargetActionId] = useState<SidebarActionId | null>(null);
   const draggingActionIdRef = useRef<SidebarActionId | null>(null);
@@ -1173,9 +1177,45 @@ export function Sidebar() {
           );
 
           return (
-            <div key={project.id} className={styles.projectSection}>
+            <div
+              key={project.id}
+              className={`${styles.projectSection} ${draggedProjectId === project.id ? styles.projectSectionDragging : ""} ${dropTargetProjectId === project.id && draggedProjectId !== project.id ? styles.projectSectionDropTarget : ""}`}
+              onDragOver={(e) => {
+                if (!draggingProjectIdRef.current) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setDropTargetProjectId(project.id);
+              }}
+              onDragLeave={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                setDropTargetProjectId((prev) => prev === project.id ? null : prev);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const fromId =
+                  e.dataTransfer.getData(CONSTELLAGENT_PROJECT_MIME)
+                  || e.dataTransfer.getData("text/plain");
+                if (fromId) reorderProject(fromId, project.id);
+                draggingProjectIdRef.current = null;
+                setDraggedProjectId(null);
+                setDropTargetProjectId(null);
+              }}
+            >
               <div
                 className={styles.projectHeader}
+                draggable
+                onDragStart={(e) => {
+                  draggingProjectIdRef.current = project.id;
+                  setDraggedProjectId(project.id);
+                  e.dataTransfer.setData(CONSTELLAGENT_PROJECT_MIME, project.id);
+                  e.dataTransfer.setData("text/plain", project.id);
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onDragEnd={() => {
+                  draggingProjectIdRef.current = null;
+                  setDraggedProjectId(null);
+                  setDropTargetProjectId(null);
+                }}
                 onClick={() => toggleProject(project.id)}
               >
                 <span
