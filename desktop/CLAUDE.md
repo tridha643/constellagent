@@ -47,40 +47,31 @@ Main Process (Node.js)          Preload (contextBridge)       Renderer (React)
 ├── git-service.ts                  exposes window.api        ├── store/app-store.ts (Zustand)
 ├── file-service.ts                 namespaces:               └── components/
 ├── agentfs-service.ts             git, pty, fs, app, state      Terminal, Editor, Sidebar...
-├── context-db.ts (AgentFS)
+├── annotation-service.ts
 └── ipc.ts (handler registry)
 ```
 
-## Context & Storage (AgentFS + Turso libSQL + Cachebro)
+## Storage (AgentFS + Turso libSQL + Cachebro)
 
-Cross-agent **memory** (context history, tool traces, skills metadata) lives in a **per-project embedded Turso database**: `agentfs-sdk` uses Turso’s **`@tursodatabase/database`** (libSQL) against a **local file**, not a remote `libsql://` URL. Same SQL semantics as Turso; persistence is `{project}/.constellagent/{id}.db` (default id `constellagent` → `constellagent.db`).
+Constellagent no longer writes workspace context capture files or creates `.constellagent/` directories. The remaining embedded Turso/libSQL files live under the repo’s `.git/` directory.
 
 ### AgentFS access pattern (main process)
 
-1. **`getAgentFS(projectDir, sessionId?)`** (`agentfs-service.ts`) — Lazily `AgentFS.open({ id, path })`, dedupes concurrent inits, caches instances in a `Map`. Ensures `.constellagent/` exists, runs schema migration for the `entries` table and indexes, drops legacy FTS5 artifacts (bundled libSQL has no FTS5). Starts a periodic **`PRAGMA wal_checkpoint(TRUNCATE)`** timer so the WAL does not grow without bound.
-2. **`agent.getDatabase()`** — Async libSQL API (`prepare` / `run` / `all` / `exec`). Primary structured store: **`entries`** (workspace_id, agent_type, session_id, tool_name, tool_input, file_path, project_head, event_type, tool_response, timestamp). **Search** in the UI is `LIKE` over several columns (no full-text index).
-3. **`agent.tools.record(...)`** — AgentFS tool analytics hook; **timestamps are Unix seconds**, not milliseconds. `ContextDb.insert` writes both SQL and `tools.record` (latter best-effort).
-4. **`agent.kv`** — Key-value namespace inside the same DB file: `skill:*`, `subagent:*`, and `entry:*` keys for fast recent retrieval (best-effort alongside SQL).
-
-**`ContextDb`** (`context-db.ts`) takes `projectDir`, calls `getAgentFS` internally, and is the façade for inserts, search, recent rows, session metadata, and **markdown context builders** (`buildAgentContext`, `buildGlobalContext`, etc.). **`getContextDb(projectDir)`** in `ipc.ts` memoizes one `ContextDb` per project dir for handlers.
+1. **`getAgentFS(projectDir, sessionId?)`** (`agentfs-service.ts`) — Lazily `AgentFS.open({ id, path })`, dedupes concurrent inits, caches instances in a `Map`, stores DB files in `.git/`, and starts a periodic **`PRAGMA wal_checkpoint(TRUNCATE)`** timer so the WAL does not grow without bound.
+2. **`agent.getDatabase()`** — Async libSQL API (`prepare` / `run` / `all` / `exec`) used for the remaining AgentFS-backed app data.
+3. **`agent.kv`** — Key-value namespace inside the same DB file for mirrored skill/subagent metadata.
 
 **`SkillsService`** — Files on disk are canonical; **KV** mirrors enabled skills/subagents (`skill:{name}`, `subagent:{name}`) for the app and symlinks expose them to Claude/Cursor/Codex/Gemini dirs.
 
-**External agents / CLI** — Hooks and skills can read **`.constellagent/context/*.md`** (debounced exports from `ContextDb`) and query the same file with **`sqlite3 .constellagent/constellagent.db "…"`** for raw memory.
+**Review annotations** — Stored in `.git/review-annotations.db` via `annotation-service.ts` and `constell-annotate`.
 
 ### Using AgentFS-style search (Turso model vs this repo)
 
 **Turso / AgentFS (product)** — When AgentFS is installed in an **isolated agent environment**, the database can be surfaced as a **POSIX-style tree of virtual files** mapped to tables or records. In that setup, standard **`grep`** on a virtual path, **shell globbing** (e.g. `*.txt`, `user_*`), and **`rg`** across the mounted tree are valid ways to search that filesystem view of the DB.
 
-**Constellagent** — The Electron app uses **`agentfs-sdk` in the main process only**; it does **not** expose a FUSE/virtual mount to the host workspace. Host-side assistants (Cursor, Claude Code in a normal shell, etc.) should treat memory as:
+**Constellagent** — The Electron app uses **`agentfs-sdk` in the main process only**; it does **not** expose a FUSE/virtual mount to the host workspace. Host-side assistants should treat this as internal app storage under `.git/`, not as user-facing context capture files.
 
-| Intent | Here |
-|--------|------|
-| **grep** / **rg** | Run on **text exports**: `.constellagent/context/**/*.md` (and `sessions/` if present). Avoid expecting line-oriented matches inside the raw `.db` blob. |
-| **glob** | List `.constellagent/*.db`, `.constellagent/context/*.md`, etc., to find shards and exports. |
-| **Table / row search** | **`sqlite3`** on `constellagent.db` with `LIKE` / `GLOB` on `entries` (and KV keys if you add queries) — same data the virtual-file story would map, but via SQL on the real libSQL file. |
-
-So: the **grep / glob / rg** story applies **literally** only where AgentFS provides that virtual filesystem; in this repository it applies to **exported markdown + glob discovery**, with **`sqlite3`** for structured grep over the Turso-backed file on disk.
+So: the **grep / glob / rg** story applies **literally** only where AgentFS provides that virtual filesystem. In this repository, use the app’s real files and explicit SQLite access under `.git/` when you need to inspect persistent app data.
 
 **Cachebro** — CLI-only MCP server (`cachebro serve`) auto-configured in `.claude.json` and `.cursor/mcp.json`. Provides `read_file`, `read_files`, `cache_status`, `cache_clear` tools that return diffs instead of full re-reads (~26% token savings).
 
@@ -124,18 +115,3 @@ E2e tests use Playwright's `_electron` adapter. Key conventions:
 - `contextBridge` freezes `window.api` — can't spy on methods, test behavior indirectly
 - CSS modules mangle class names — use `[class*="specificName"]` selectors
 - Tests run serially (`workers: 1`) due to window focus dependencies
-
-### Checkpoint restore (manual)
-
-Main process logs use prefix **`[constellagent:restore-checkpoint]`** when `context.restoreCheckpoint` runs (`ipc.ts`). Watch the terminal where `bun run dev` is running.
-
-**Quick test**
-
-1. Open a **git** project in Constellagent (worktree with `.git/`).
-2. Ensure context capture is active (`.constellagent/` exists; agent hooks have run at least once so `entries` have a `project_head` hash).
-3. Change the repo: add or edit a file (e.g. create `scratch.txt` with `before`).
-4. Open **Context History**, pick an **older** entry that shows a checkpoint hash, click **Restore** and confirm.
-5. **Expected logs** (in order): `start` → `resolved` (`objType`, `tree`) → `read-tree --reset done` → `checkout-index` → `clean -fd done` → `verify` (`verified: true` when worktree matches) → `fs-watch notify` (subscriber count ≥ 0) → `ok`.
-6. **Expected UI**: toast “Checkpoint restored and verified” (or “verification pending” if trees differ); **Changes** and **file tree** refresh; `scratch.txt` / edits reverted if that file wasn’t in the snapshot.
-
-**Note:** Restore runs against the workspace **worktree path**. If `verified` is false, compare `expectedTree` vs `worktreeTree` in the log (often line endings, `.gitattributes`, or timing); new captures from hooks use `save_checkpoint` in `agent-hooks/shared.sh`.

@@ -288,7 +288,6 @@ function SkillsSubagentsSection() {
 }
 
 function ClaudeHooksSection() {
-  const settings = useAppStore((s) => s.settings)
   const [installed, setInstalled] = useState<boolean | null>(null)
   const [installing, setInstalling] = useState(false)
 
@@ -301,7 +300,7 @@ function ClaudeHooksSection() {
   const handleInstall = async () => {
     setInstalling(true)
     try {
-      await window.api.claude.installHooks(settings.contextCaptureEnabled)
+      await window.api.claude.installHooks()
       setInstalled(true)
     } catch {
       setInstalled(false)
@@ -352,7 +351,6 @@ function ClaudeHooksSection() {
 }
 
 function CodexHooksSection() {
-  const settings = useAppStore((s) => s.settings)
   const [installed, setInstalled] = useState<boolean | null>(null)
   const [installing, setInstalling] = useState(false)
 
@@ -365,7 +363,7 @@ function CodexHooksSection() {
   const handleInstall = async () => {
     setInstalling(true)
     try {
-      await window.api.codex.installNotify(settings.contextCaptureEnabled)
+      await window.api.codex.installNotify()
       setInstalled(true)
     } catch {
       setInstalled(false)
@@ -391,7 +389,7 @@ function CodexHooksSection() {
       <div className={styles.rowText}>
         <div className={styles.rowLabel}>Codex hooks</div>
         <div className={styles.rowDescription}>
-          Notify on Codex turn completion and capture context when context capture is enabled
+          Notify on Codex turn completion
         </div>
       </div>
       {installed === true ? (
@@ -688,21 +686,9 @@ export function SettingsPanel() {
         </div>
 
         <div className={styles.section}>
-          <div className={styles.sectionTitle}>Agent Integrations</div>
-          <ClaudeHooksSection />
-          <CodexHooksSection />
-
-          <ToggleRow
-            label="Context capture"
-            description="Auto-capture agent tool usage and inject context into new sessions"
-            value={settings.contextCaptureEnabled}
-            onChange={(v) => {
-              update('contextCaptureEnabled', v)
-              // Re-install hooks with updated context capture setting
-              window.api.claude.installHooks(v).catch(() => {})
-              window.api.codex.installNotify(v).catch(() => {})
-            }}
-          />
+        <div className={styles.sectionTitle}>Agent Integrations</div>
+        <ClaudeHooksSection />
+        <CodexHooksSection />
 
           <ToggleRow
             label="Auto-resume sessions"

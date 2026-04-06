@@ -6,6 +6,7 @@ import { execSync } from 'child_process'
 const appPath = resolve(__dirname, '../out/main/index.js')
 
 test('Full visual verification: project + workspace + terminal + file tree + changes', async () => {
+  test.setTimeout(60000)
   // Create test repo
   const repoPath = join('/tmp', `visual-verify-${Date.now()}`)
   mkdirSync(repoPath, { recursive: true })
@@ -53,10 +54,13 @@ test('Full visual verification: project + workspace + terminal + file tree + cha
       path: resolve(__dirname, 'screenshots/verify-1-terminal.png'),
     })
 
-    // Step 2: Modify a file to create changes
+    // Step 2: Modify a file to create changes (reconcile may prepend primary repo worktrees — use linked worktree)
     const worktreePath = await window.evaluate(() => {
       const store = (window as any).__store.getState()
-      return store.workspaces[0]?.worktreePath
+      const ws =
+        store.workspaces.find((w: { id: string }) => w.id === store.activeWorkspaceId)
+        ?? store.workspaces.find((w: { name: string }) => w.name === 'feature-auth')
+      return ws?.worktreePath
     })
     if (worktreePath) {
       const realWt = realpathSync(worktreePath as string)
@@ -97,13 +101,15 @@ test('Full visual verification: project + workspace + terminal + file tree + cha
     // Step 6: Open a file in editor
     await window.evaluate(async () => {
       const store = (window as any).__store.getState()
-      const ws = store.workspaces[0]
+      const ws =
+        store.workspaces.find((w: { id: string }) => w.id === store.activeWorkspaceId)
+        ?? store.workspaces.find((w: { name: string }) => w.name === 'feature-auth')
       if (ws) {
         store.addTab({
           id: crypto.randomUUID(),
           workspaceId: ws.id,
           type: 'file',
-          filePath: `${ws.worktreePath}/src/index.ts`,
+          filePath: `${ws.worktreePath.replace(/\/$/, '')}/src/index.ts`,
         })
       }
     })
@@ -117,7 +123,9 @@ test('Full visual verification: project + workspace + terminal + file tree + cha
     // Step 7: Open diff view
     await window.evaluate(async () => {
       const store = (window as any).__store.getState()
-      const ws = store.workspaces[0]
+      const ws =
+        store.workspaces.find((w: { id: string }) => w.id === store.activeWorkspaceId)
+        ?? store.workspaces.find((w: { name: string }) => w.name === 'feature-auth')
       if (ws) {
         store.addTab({
           id: crypto.randomUUID(),

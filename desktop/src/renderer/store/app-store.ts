@@ -191,7 +191,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: { ...DEFAULT_SETTINGS },
   settingsOpen: false,
   automationsOpen: false,
-  contextHistoryOpen: false,
   confirmDialog: null,
   toasts: [],
   quickOpenVisible: false,
@@ -1224,10 +1223,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSettings: (partial) =>
     set((s) => ({ settings: { ...s.settings, ...partial } })),
 
-  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen, automationsOpen: false, contextHistoryOpen: false })),
-  toggleAutomations: () => set((s) => ({ automationsOpen: !s.automationsOpen, settingsOpen: false, contextHistoryOpen: false })),
-  toggleContextHistory: () => set((s) => ({ contextHistoryOpen: !s.contextHistoryOpen, settingsOpen: false, automationsOpen: false })),
-  closeContextHistory: () => set({ contextHistoryOpen: false }),
+  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen, automationsOpen: false })),
+  toggleAutomations: () => set((s) => ({ automationsOpen: !s.automationsOpen, settingsOpen: false })),
 
   showConfirmDialog: (dialog) => set({ confirmDialog: dialog }),
 
@@ -1370,30 +1367,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       })
       if (!changed) return {}
       console.log(TAB_TITLE_LOG, 'renderer updateTerminalTitle', { ptyId, title: title.slice(0, 80) })
-      return { tabs }
-    }),
-
-  applyCodexContextTitleHint: (workspaceId, title) =>
-    set((s) => {
-      let updated = 0
-      let skippedNonGeneric = 0
-      const tabs = s.tabs.map((tab) => {
-        if (tab.type !== 'terminal' || tab.workspaceId !== workspaceId || tab.agentType !== 'codex') return tab
-        if (!isGenericTerminalTitle(tab.title)) {
-          skippedNonGeneric++
-          return tab
-        }
-        if (tab.title === title) return tab
-        updated++
-        return { ...tab, title }
-      })
-      if (updated === 0) return {}
-      console.log(TAB_TITLE_LOG, 'renderer applyCodexContextTitleHint', {
-        workspaceId,
-        title: title.slice(0, 80),
-        tabsUpdated: updated,
-        skippedNonGeneric,
-      })
       return { tabs }
     }),
 

@@ -1,6 +1,6 @@
 import { ipcMain, dialog, app, BrowserWindow, clipboard, webContents, type WebContents } from 'electron'
-import { join, dirname, relative, resolve } from 'path'
-import { mkdir, writeFile, readFile, readdir, unlink } from 'fs/promises'
+import { join, relative } from 'path'
+import { mkdir, writeFile } from 'fs/promises'
 import { existsSync, mkdirSync, writeFileSync, realpathSync } from 'fs'
 import { tmpdir, homedir } from 'os'
 import { watch, type FSWatcher } from 'fs'
@@ -26,47 +26,19 @@ import { SkillsService } from './skills-service'
 import { GraphiteService } from './graphite-service'
 import { t3codeService } from './t3code-service.js'
 import { ContextWindowService } from './context-window-service'
-
-import { ContextDb } from './context-db'
-import { getAgentFS, closeAllAgentFS, checkpoint, checkpointAll } from './agentfs-service'
+import { closeAllAgentFS } from './agentfs-service'
 import { AnnotationService } from './annotation-service'
 import { emitAutomationEvent, onAutomationEvent } from './automation-event-bus'
-import { lookupPersistedProjectByRepoPath, lookupPersistedProjectRepo, lookupPersistedWorkspace } from './persisted-state'
+import { lookupPersistedProjectRepo } from './persisted-state'
 import { GithubPollService } from './github-poll-service'
 
 const ptyManager = new PtyManager()
 const worktreeSyncService = new WorktreeSyncService()
 
-// Wire up OSC title changes to persist session meta in AgentFS
-ptyManager.onTitleChanged = (ptyId, title, workspaceId, workingDir) => {
-  if (!workspaceId) {
-    console.log('[constellagent:tab-title] saveSessionMeta skipped (no workspaceId)', { ptyId, title: title.slice(0, 60) })
-    return
-  }
-  console.log('[constellagent:tab-title] saveSessionMeta', { ptyId, workspaceId, title: title.slice(0, 80) })
-  // Find the project dir for this workspace's working dir to access the correct ContextDb
-  // The workingDir is the worktree path; the project's repoPath is the root.
-  // We need a heuristic: walk up from workingDir to find .constellagent/ or use
-  // workingDir directly as projectDir (context-db lazily inits under it).
-  // ContextDb keys by projectDir; for worktrees the project root is the ancestor.
-  // Since we don't have the project mapping here, use workingDir — saveSessionMeta
-  // only needs the AgentFS KV which initializes under any dir.
-  const db = getContextDb(workingDir)
-  db.saveSessionMeta(workspaceId, {
-    sessionId: `pty-${ptyId}`,
-    agentType: 'terminal',
-    startedAt: new Date().toISOString(),
-    summary: title,
-  }).catch(() => {})
-}
-
 const automationEngine = new AutomationEngine(ptyManager)
 const githubPollService = new GithubPollService()
 const lspService = new LspService()
 
-// Cache of open context databases keyed by projectDir
-const contextDbs = new Map<string, ContextDb>()
-const pendingIndexerWatchers = new Map<string, FSWatcher>()
 const guestTabSwitchListeners = new Map<number, { inputListener: (...args: unknown[]) => void; destroyListener: () => void }>()
 // Clear all review annotations when a GitHub PR merges
 onAutomationEvent(async (event) => {
@@ -94,351 +66,6 @@ onAutomationEvent(async (event) => {
     console.error('[review-annotations] failed to clear after PR merge', err)
   }
 })
-
-/** Debounce bursts of pending files so the renderer refreshes context history once per tick */
-const contextEntriesUpdatedTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-function scheduleContextEntriesUpdated(projectDir: string, workspaceId: string): void {
-  if (!workspaceId) return
-  const key = `${projectDir}\0${workspaceId}`
-  const prev = contextEntriesUpdatedTimers.get(key)
-  if (prev) clearTimeout(prev)
-  contextEntriesUpdatedTimers.set(key, setTimeout(() => {
-    contextEntriesUpdatedTimers.delete(key)
-    const payload = { projectDir, workspaceId }
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send(IPC.CONTEXT_ENTRIES_UPDATED, payload)
-    }
-  }, 150))
-}
-
-function getContextDb(projectDir: string): ContextDb {
-  let db = contextDbs.get(projectDir)
-  if (!db) {
-    db = new ContextDb(projectDir)
-    contextDbs.set(projectDir, db)
-  }
-  return db
-}
-
-const SLIDING_WINDOW_LIMIT = 20
-const SLIDING_WINDOW_HEADER = '# Recent Agent Activity (last 20 actions)\n\n| Time | Agent | Tool | File/Summary |\n|------|-------|------|-------------|\n'
-
-// Debounced agent context file writers keyed by projectDir:wsId
-const contextWriteTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-/**
- * Schedule a debounced write of the rich agent context file.
- * This writes the full AgentFS context summary to a file that hook scripts
- * can read and inject into agents on SessionStart and UserPromptSubmit.
- */
-function scheduleContextFileWrite(projectDir: string, wsId: string): void {
-  const key = `${projectDir}:${wsId}`
-  const existing = contextWriteTimers.get(key)
-  if (existing) clearTimeout(existing)
-
-  contextWriteTimers.set(key, setTimeout(async () => {
-    contextWriteTimers.delete(key)
-    try {
-      const db = getContextDb(projectDir)
-      const contextDir = join(projectDir, '.constellagent', 'context')
-      await mkdir(contextDir, { recursive: true })
-
-      // Write per-workspace rich context
-      const wsContext = await db.buildAgentContext(wsId)
-      await writeFile(join(contextDir, `agent-context-${wsId}.md`), wsContext)
-
-      // Write global context (all workspaces)
-      const globalContext = await db.buildGlobalContext()
-      await writeFile(join(contextDir, 'agent-context.md'), globalContext)
-    } catch (err) { console.error('agentfs: context file generation failed', err) }
-  }, 500)) // 500ms debounce
-}
-
-function formatSlidingWindowLine(entry: { timestamp?: string; agentType?: string; toolName?: string; filePath?: string | null; toolInput?: string | null }): string {
-  const time = entry.timestamp?.replace('T', ' ').replace('Z', '') || '?'
-  const agent = entry.agentType || '?'
-  const tool = entry.toolName || '?'
-  let summary = entry.filePath || ''
-  if (!summary && entry.toolInput) {
-    try {
-      const parsed = JSON.parse(entry.toolInput)
-      summary = parsed.command || parsed.file_path || parsed.summary || JSON.stringify(parsed).slice(0, 60)
-    } catch {
-      summary = (entry.toolInput ?? '').slice(0, 60)
-    }
-  }
-  summary = summary.replace(/\|/g, '\\|').slice(0, 80)
-  return `| ${time} | ${agent} | ${tool} | ${summary} |`
-}
-
-async function appendAndTrimSlidingWindow(filePath: string, newLine: string): Promise<void> {
-  const contextDir = join(filePath, '..')
-  await mkdir(contextDir, { recursive: true })
-
-  let dataLines: string[] = []
-  try {
-    const existing = await readFile(filePath, 'utf-8')
-    // Extract only table data rows (skip header, blank lines, and the trailing blank)
-    dataLines = existing.split('\n').filter(l => l.startsWith('| ') && !l.startsWith('| Time') && !l.startsWith('|--'))
-  } catch { /* file doesn't exist yet */ }
-
-  dataLines.push(newLine)
-  // Keep only the last N entries
-  if (dataLines.length > SLIDING_WINDOW_LIMIT) {
-    dataLines = dataLines.slice(dataLines.length - SLIDING_WINDOW_LIMIT)
-  }
-
-  await writeFile(filePath, SLIDING_WINDOW_HEADER + dataLines.join('\n') + '\n')
-}
-
-/**
- * Attempt to repair truncated JSON (e.g. from shell `head -c` cutting mid-value).
- * Closes any unclosed strings, fills dangling keys with null, and closes unclosed braces/brackets.
- */
-function repairTruncatedJson(raw: string): string {
-  let inString = false
-  let escaped = false
-  const stack: string[] = []
-
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i]
-
-    if (escaped) {
-      escaped = false
-      continue
-    }
-
-    if (ch === '\\' && inString) {
-      escaped = true
-      continue
-    }
-
-    if (ch === '"') {
-      inString = !inString
-      continue
-    }
-
-    if (inString) continue
-
-    if (ch === '{' || ch === '[') {
-      stack.push(ch === '{' ? '}' : ']')
-    } else if (ch === '}' || ch === ']') {
-      if (stack.length) stack.pop()
-    }
-  }
-
-  // Nothing to repair
-  if (!inString && stack.length === 0) return raw
-
-  let repaired = raw
-
-  // Close unclosed string
-  if (inString) {
-    // If we were mid-escape, remove the dangling backslash
-    if (escaped) repaired = repaired.slice(0, -1)
-    repaired += '"'
-  }
-
-  // Handle trailing structural issues before closing braces
-  const trimmed = repaired.replace(/[\s]+$/, '')
-  if (trimmed.endsWith(':')) {
-    repaired = trimmed + 'null'
-  } else if (trimmed.endsWith(',')) {
-    repaired = trimmed.slice(0, -1)
-  }
-
-  // Close any unclosed braces/brackets in reverse order
-  while (stack.length > 0) {
-    repaired += stack.pop()
-  }
-
-  return repaired
-}
-
-const PENDING_PARSE_RETRIES = 3
-const PENDING_PARSE_RETRY_MS = 40
-
-function sleepMs(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-/** Read disk and parse pending JSON (sanitize + truncated repair). Throws SyntaxError if still invalid. */
-async function parsePendingJsonFromFile(filePath: string): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
-  let raw = await readFile(filePath, 'utf-8')
-  raw = raw.replace(/"input":,/g, '"input":null,')
-  raw = raw.replace(/"tool_response":,/g, '"tool_response":null,')
-
-  try {
-    return JSON.parse(raw)
-  } catch {
-    const sanitized = raw.replace(
-      /("(?:[^"\\]|\\.)*")/g,
-      (_match, strLiteral: string) => {
-        const inner = strLiteral.slice(1, -1)
-        const fixed = inner
-          .replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
-          .replace(/[\x00-\x1f]/g, (ch) => {
-            const hex = ch.charCodeAt(0).toString(16).padStart(4, '0')
-            return `\\u${hex}`
-          })
-        return `"${fixed}"`
-      }
-    )
-    try {
-      return JSON.parse(sanitized)
-    } catch {
-      const repaired = repairTruncatedJson(sanitized)
-      return JSON.parse(repaired)
-    }
-  }
-}
-
-async function processPendingFile(projectDir: string, pendingDir: string, fileName: string): Promise<void> {
-  if (!fileName.endsWith('.json')) return
-  const filePath = join(pendingDir, fileName)
-  const db = getContextDb(projectDir)
-
-  try {
-    let data: any // eslint-disable-line @typescript-eslint/no-explicit-any
-    for (let attempt = 0; attempt < PENDING_PARSE_RETRIES; attempt++) {
-      try {
-        data = await parsePendingJsonFromFile(filePath)
-        break
-      } catch (e) {
-        if (e instanceof SyntaxError && attempt < PENDING_PARSE_RETRIES - 1) {
-          await sleepMs(PENDING_PARSE_RETRY_MS)
-          continue
-        }
-        throw e
-      }
-    }
-
-    const toolInput = typeof data.input === 'string' ? data.input : data.input != null ? JSON.stringify(data.input) : undefined
-    const toolResponse = typeof data.tool_response === 'string' ? data.tool_response : data.tool_response != null ? JSON.stringify(data.tool_response) : undefined
-
-    await db.insert({
-      workspaceId: data.ws,
-      agentType: data.agent || 'claude-code',
-      sessionId: data.sid || undefined,
-      toolName: data.tool || 'unknown',
-      toolInput,
-      filePath: data.file || undefined,
-      projectHead: data.head || undefined,
-      eventType: data.event_type || undefined,
-      toolResponse,
-      timestamp: data.ts,
-    })
-
-    const workspaceMeta = data.ws ? lookupPersistedWorkspace(data.ws) : {}
-    const projectMeta = lookupPersistedProjectByRepoPath(projectDir)
-    const postToolEvents = new Set(['PostToolUse', 'postToolUse', 'AfterTool', 'afterTool', 'afterMCPExecution', 'afterShellExecution'])
-    if (data.ws && data.tool && postToolEvents.has(String(data.event_type ?? ''))) {
-      emitAutomationEvent({
-        type: 'agent:tool-used',
-        timestamp: Date.now(),
-        workspaceId: data.ws,
-        projectId: workspaceMeta.projectId ?? projectMeta?.id,
-        branch: workspaceMeta.branch,
-        agentType: data.agent || 'claude-code',
-        toolName: data.tool,
-      })
-    }
-    await unlink(filePath)
-
-    scheduleContextEntriesUpdated(projectDir, data.ws)
-
-    // Codex tab titles: suggest from first UserPrompt in context when capture lands (OSC often absent).
-    if (data.agent === 'codex' && data.ws && data.tool === 'UserPrompt') {
-      try {
-        console.log('[constellagent:tab-title] pending ingest: codex UserPrompt', {
-          workspaceId: data.ws,
-          sessionId: data.sid ? `${String(data.sid).slice(0, 16)}…` : null,
-        })
-        const titleHint = await db.getCodexTabTitleHint(data.ws)
-        if (titleHint) {
-          const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())
-          console.log('[constellagent:tab-title] → CONTEXT_CODEX_TAB_TITLE_HINT', {
-            workspaceId: data.ws,
-            title: titleHint.slice(0, 80),
-            windows: wins.length,
-          })
-          for (const win of wins) {
-            win.webContents.send(IPC.CONTEXT_CODEX_TAB_TITLE_HINT, { workspaceId: data.ws, title: titleHint })
-          }
-        } else {
-          console.log('[constellagent:tab-title] context hint empty after UserPrompt ingest', { workspaceId: data.ws })
-        }
-      } catch (err) {
-        console.warn('[constellagent:tab-title] context hint broadcast failed', err)
-      }
-    }
-
-    // Append to per-workspace and global sliding windows
-    const line = formatSlidingWindowLine({
-      timestamp: data.ts,
-      agentType: data.agent || 'claude-code',
-      toolName: data.tool || 'unknown',
-      filePath: data.file || null,
-      toolInput: toolInput ?? null,
-    })
-
-    const contextDir = join(projectDir, '.constellagent', 'context')
-    const globalPath = join(contextDir, 'sliding-window.md')
-    await appendAndTrimSlidingWindow(globalPath, line)
-
-    if (data.ws) {
-      const wsPath = join(contextDir, `sliding-window-${data.ws}.md`)
-      await appendAndTrimSlidingWindow(wsPath, line)
-
-      // Schedule rich agent context file generation (debounced)
-      scheduleContextFileWrite(projectDir, data.ws)
-    }
-  } catch (err: any) {
-    // ENOENT = file already processed & deleted by a previous indexer tick (race condition) — skip silently
-    if (err?.code === 'ENOENT') return
-    console.error(`agentfs: failed to process pending file ${fileName}`, err)
-    // If the file is corrupt (parse error), delete it so it doesn't retry endlessly
-    if (err instanceof SyntaxError) {
-      try { await unlink(filePath) } catch { /* already gone */ }
-      console.warn(`agentfs: deleted corrupt pending file ${fileName}`)
-    }
-  }
-}
-
-function startPendingIndexer(projectDir: string) {
-  if (pendingIndexerWatchers.has(projectDir)) return
-  const pendingDir = join(projectDir, '.constellagent', '.pending')
-
-  // Ensure the pending directory exists before watching
-  mkdirSync(pendingDir, { recursive: true })
-
-  // Process any existing pending files immediately
-  readdir(pendingDir).then(async (files) => {
-    for (const file of files) {
-      await processPendingFile(projectDir, pendingDir, file)
-    }
-  }).catch(() => { /* dir may not exist yet */ })
-
-  // Watch for new pending files and process them instantly
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null
-  const watcher = watch(pendingDir, (_event, filename) => {
-    if (!filename || !filename.endsWith('.json')) return
-    // Small debounce to batch rapid writes (e.g. multiple hooks firing at once)
-    if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(async () => {
-      debounceTimer = null
-      try {
-        const files = await readdir(pendingDir)
-        for (const file of files) {
-          await processPendingFile(projectDir, pendingDir, file)
-        }
-      } catch (err) { console.error('agentfs: pending indexer batch processing failed', err) }
-    }, 50)
-  })
-
-  pendingIndexerWatchers.set(projectDir, watcher)
-}
 
 interface FsWatchSubscriber {
   webContents: WebContents
@@ -1079,25 +706,16 @@ export function registerIpcHandlers(): void {
     return join(__dirname, '..', '..', 'codex-hooks', name)
   }
 
-  function getAgentHookPath(name: string): string {
-    if (app.isPackaged) {
-      return join(process.resourcesPath, 'agent-hooks', name)
-    }
-    return join(__dirname, '..', '..', 'agent-hooks', name)
-  }
-
-  // Stable identifiers to match our hook entries regardless of full path
-  const HOOK_IDENTIFIERS = [
+  const ACTIVE_CLAUDE_HOOK_IDENTIFIERS = [
     'claude-hooks/notify.sh',
     'claude-hooks/activity.sh',
+    'claude-hooks/session-save.sh',
+  ]
+
+  const LEGACY_CLAUDE_HOOK_IDENTIFIERS = [
     'claude-hooks/context-capture.sh',
     'claude-hooks/context-inject.sh',
-    'claude-hooks/session-save.sh',
     'agent-hooks/claude-capture.sh',
-    'agent-hooks/gemini-capture.sh',
-    'agent-hooks/cursor-capture.sh',
-    'agent-hooks/codex-capture.sh',
-    'codex-hooks/codex-combined.sh',
   ]
 
   function shellQuoteArg(value: string): string {
@@ -1105,8 +723,15 @@ export function registerIpcHandlers(): void {
     return `'${value.replace(/'/g, `'\"'\"'`)}'`
   }
 
-  function isOurHook(rule: { hooks?: Array<{ command?: string }> }): boolean {
-    return !!rule.hooks?.some((h) => HOOK_IDENTIFIERS.some((id) => h.command?.includes(id)))
+  function hasClaudeHookIdentifier(
+    rule: { hooks?: Array<{ command?: string }> },
+    identifiers: string[],
+  ): boolean {
+    return !!rule.hooks?.some((h) => identifiers.some((id) => h.command?.includes(id)))
+  }
+
+  function isManagedClaudeHook(rule: { hooks?: Array<{ command?: string }> }): boolean {
+    return hasClaudeHookIdentifier(rule, [...ACTIVE_CLAUDE_HOOK_IDENTIFIERS, ...LEGACY_CLAUDE_HOOK_IDENTIFIERS])
   }
 
   ipcMain.handle(IPC.CLAUDE_CHECK_HOOKS, async () => {
@@ -1114,33 +739,24 @@ export function registerIpcHandlers(): void {
     const hooks = settings.hooks as Record<string, unknown[]> | undefined
     if (!hooks) return { installed: false }
 
-    const hasStop = (hooks.Stop as Array<{ hooks?: Array<{ command?: string }> }> | undefined)?.some(isOurHook)
-    const hasNotification = (hooks.Notification as Array<{ hooks?: Array<{ command?: string }> }> | undefined)?.some(isOurHook)
-    const hasPromptSubmit = (hooks.UserPromptSubmit as Array<{ hooks?: Array<{ command?: string }> }> | undefined)?.some(isOurHook)
-    const hasPostToolUse = (hooks.PostToolUse as Array<{ hooks?: Array<{ command?: string }> }> | undefined)?.some(isOurHook)
-    const hasSessionStart = (hooks.SessionStart as Array<{ hooks?: Array<{ command?: string }> }> | undefined)?.some(isOurHook)
-    // Context capture hooks should be on PostToolUse, UserPromptSubmit, Stop, and SessionStart
-    const contextCaptureId = 'claude-hooks/context-capture.sh'
-    const agentCaptureId = 'agent-hooks/claude-capture.sh'
-    const hasCapture = (h?: { command?: string }) => h?.command?.includes(contextCaptureId) || h?.command?.includes(agentCaptureId)
-    const stopHasCapture = (hooks.Stop as Array<{ hooks?: Array<{ command?: string }> }> | undefined)?.some(
-      (rule) => rule.hooks?.some(hasCapture)
+    const hasStop = (hooks.Stop as Array<{ hooks?: Array<{ command?: string }> }> | undefined)?.some(
+      (rule) => hasClaudeHookIdentifier(rule, ['claude-hooks/notify.sh', 'claude-hooks/session-save.sh']),
     )
-    const promptHasCapture = (hooks.UserPromptSubmit as Array<{ hooks?: Array<{ command?: string }> }> | undefined)?.some(
-      (rule) => rule.hooks?.some(hasCapture)
+    const hasNotification = (hooks.Notification as Array<{ hooks?: Array<{ command?: string }> }> | undefined)?.some(
+      (rule) => hasClaudeHookIdentifier(rule, ['claude-hooks/notify.sh']),
+    )
+    const hasPromptSubmit = (hooks.UserPromptSubmit as Array<{ hooks?: Array<{ command?: string }> }> | undefined)?.some(
+      (rule) => hasClaudeHookIdentifier(rule, ['claude-hooks/activity.sh']),
     )
     return {
       installed: !!(hasStop && hasNotification && hasPromptSubmit),
-      contextHooksInstalled: !!(hasPostToolUse && hasSessionStart && stopHasCapture && promptHasCapture),
     }
   })
 
-  ipcMain.handle(IPC.CLAUDE_INSTALL_HOOKS, async (_e, contextEnabled: boolean) => {
+  ipcMain.handle(IPC.CLAUDE_INSTALL_HOOKS, async () => {
     const settings = await loadClaudeSettings()
     const notifyPath = getHookScriptPath('notify.sh')
     const activityPath = getHookScriptPath('activity.sh')
-    const contextCapturePath = getAgentHookPath('claude-capture.sh')
-    const contextInjectPath = getHookScriptPath('context-inject.sh')
     const sessionSavePath = getHookScriptPath('session-save.sh')
 
     const hooks = (settings.hooks ?? {}) as Record<string, unknown[]>
@@ -1148,7 +764,7 @@ export function registerIpcHandlers(): void {
     // Helper: strip all our hooks from an event, then add the specified ones
     function setHooks(event: string, entries: Array<{ scriptPath: string; matcher?: string }>) {
       const rules = (hooks[event] ?? []) as Array<Record<string, unknown>>
-      const filtered = rules.filter((rule) => !isOurHook(rule as { hooks?: Array<{ command?: string }> }))
+      const filtered = rules.filter((rule) => !isManagedClaudeHook(rule as { hooks?: Array<{ command?: string }> }))
       for (const entry of entries) {
         filtered.push({ matcher: entry.matcher ?? '', hooks: [{ type: 'command', command: shellQuoteArg(entry.scriptPath) }] })
       }
@@ -1157,29 +773,15 @@ export function registerIpcHandlers(): void {
     }
 
     setHooks('Notification', [{ scriptPath: notifyPath }])
-
-    // Context hooks gated on setting
-    if (contextEnabled) {
-      setHooks('Stop', [{ scriptPath: notifyPath }, { scriptPath: sessionSavePath }, { scriptPath: contextCapturePath }])
-      setHooks('UserPromptSubmit', [{ scriptPath: activityPath }, { scriptPath: contextCapturePath }, { scriptPath: contextInjectPath }])
-      setHooks('PostToolUse', [{ scriptPath: contextCapturePath, matcher: '' }])
-      setHooks('SessionStart', [{ scriptPath: contextInjectPath }, { scriptPath: contextCapturePath }])
-      setHooks('SessionEnd', [{ scriptPath: contextCapturePath }])
-      setHooks('PreToolUse', [{ scriptPath: contextCapturePath }])
-      setHooks('PostToolUseFailure', [{ scriptPath: contextCapturePath }])
-      setHooks('SubagentStart', [{ scriptPath: contextCapturePath }])
-      setHooks('SubagentStop', [{ scriptPath: contextCapturePath }])
-    } else {
-      setHooks('Stop', [{ scriptPath: notifyPath }, { scriptPath: sessionSavePath }])
-      setHooks('UserPromptSubmit', [{ scriptPath: activityPath }])
-      setHooks('PostToolUse', [])
-      setHooks('SessionStart', [])
-      setHooks('SessionEnd', [])
-      setHooks('PreToolUse', [])
-      setHooks('PostToolUseFailure', [])
-      setHooks('SubagentStart', [])
-      setHooks('SubagentStop', [])
-    }
+    setHooks('Stop', [{ scriptPath: notifyPath }, { scriptPath: sessionSavePath }])
+    setHooks('UserPromptSubmit', [{ scriptPath: activityPath }])
+    setHooks('PostToolUse', [])
+    setHooks('SessionStart', [])
+    setHooks('SessionEnd', [])
+    setHooks('PreToolUse', [])
+    setHooks('PostToolUseFailure', [])
+    setHooks('SubagentStart', [])
+    setHooks('SubagentStop', [])
 
     settings.hooks = hooks
 
@@ -1194,7 +796,7 @@ export function registerIpcHandlers(): void {
 
     function removeHook(event: string) {
       const rules = (hooks![event] ?? []) as Array<{ hooks?: Array<{ command?: string }> }>
-      hooks![event] = rules.filter((rule) => !isOurHook(rule))
+      hooks![event] = rules.filter((rule) => !isManagedClaudeHook(rule))
       if ((hooks![event] as unknown[]).length === 0) delete hooks![event]
     }
 
@@ -1214,317 +816,6 @@ export function registerIpcHandlers(): void {
     return { success: true }
   })
 
-  // ── Context repository handlers ──
-  const execFileAsyncCtx = promisify(execFile)
-
-  /** Serialize `.constellagent/` git bootstrap — concurrent `context:repo-init` races `git init` ("exclude: File exists"). */
-  const contextRepoBootstrapQueues = new Map<string, Promise<unknown>>()
-  async function enqueueContextRepoBootstrap<T>(key: string, task: () => Promise<T>): Promise<T> {
-    const prev = contextRepoBootstrapQueues.get(key) ?? Promise.resolve()
-    const next = prev.then(task, task) as Promise<T>
-    contextRepoBootstrapQueues.set(key, next)
-    next.finally(() => {
-      if (contextRepoBootstrapQueues.get(key) === next) contextRepoBootstrapQueues.delete(key)
-    })
-    return next
-  }
-
-  /** Remove refs/constellagent-cp/* older than 7 days (ref name starts with unix ts). */
-  async function pruneCheckpointRefs(projectDir: string): Promise<void> {
-    const cutoff = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60
-    const gitOpts = { cwd: projectDir, encoding: 'utf8' as const }
-    try {
-      const { stdout } = await execFileAsyncCtx('git', ['for-each-ref', '--format=%(refname)', 'refs/constellagent-cp/'], gitOpts)
-      for (const ref of stdout.trim().split('\n').filter(Boolean)) {
-        const base = ref.replace(/^refs\/constellagent-cp\//, '')
-        const tsStr = base.split('-')[0] ?? ''
-        const ts = parseInt(tsStr, 10)
-        if (!Number.isFinite(ts) || ts >= cutoff) continue
-        await execFileAsyncCtx('git', ['update-ref', '-d', ref], gitOpts).catch(() => {})
-      }
-    } catch {
-      /* not a git repo or no refs namespace */
-    }
-  }
-
-  ipcMain.handle(IPC.CONTEXT_REPO_INIT, async (_e, projectDir: string, wsId: string) => {
-    const repoDir = join(projectDir, '.constellagent')
-    const gitExists = existsSync(join(repoDir, '.git'))
-
-    if (!gitExists) {
-      const lockKey = (() => {
-        try {
-          return realpathSync(projectDir)
-        } catch {
-          return resolve(projectDir)
-        }
-      })()
-      await enqueueContextRepoBootstrap(lockKey, async () => {
-        if (existsSync(join(repoDir, '.git'))) return
-
-        await mkdir(join(repoDir, 'context'), { recursive: true })
-        await mkdir(join(repoDir, 'sessions'), { recursive: true })
-        await mkdir(join(repoDir, 'meta'), { recursive: true })
-
-        await writeFile(join(repoDir, 'README.md'), '# Agent Context Repository\n\nAuto-managed by Constellagent.\n')
-        await writeFile(join(repoDir, 'context', 'activity.md'), '# Recent Activity\n')
-        await writeFile(join(repoDir, 'context', 'files-touched.md'), '# Files Touched\n')
-        await writeFile(join(repoDir, 'meta', 'workspace.json'), JSON.stringify({ wsId, createdAt: new Date().toISOString() }, null, 2))
-
-        await execFileAsyncCtx('git', ['init'], { cwd: repoDir })
-        await execFileAsyncCtx('git', ['add', '-A'], { cwd: repoDir })
-        try {
-          await execFileAsyncCtx('git', ['-c', 'user.name=Constellagent', '-c', 'user.email=noreply@constellagent', 'commit', '--no-gpg-sign', '-m', 'init: context repository'], { cwd: repoDir })
-        } catch (e) {
-          const stderr = String((e as ExecFileException).stderr ?? '')
-          if (!stderr.includes('nothing to commit')) throw e
-        }
-
-        // Add .constellagent/ to project .gitignore
-        const gitignorePath = join(projectDir, '.gitignore')
-        const gitignore = existsSync(gitignorePath) ? await readFile(gitignorePath, 'utf-8') : ''
-        if (!gitignore.includes('.constellagent')) {
-          await writeFile(gitignorePath, gitignore.trimEnd() + '\n.constellagent/\n')
-        }
-      })
-    }
-
-    // Initialize context database for this project (lazy AgentFS init via ContextDb)
-    getContextDb(projectDir)
-    startPendingIndexer(projectDir)
-
-    if (existsSync(join(projectDir, '.git'))) {
-      await pruneCheckpointRefs(projectDir)
-    }
-
-    // Auto-configure agent hooks for context capture
-    const geminiCaptureScript = getAgentHookPath('gemini-capture.sh')
-    const cursorCaptureScript = getAgentHookPath('cursor-capture.sh')
-
-    // Gemini hooks: write .gemini/settings.json in project dir
-    const geminiDir = join(projectDir, '.gemini')
-    const geminiSettingsPath = join(geminiDir, 'settings.json')
-    try {
-      if (!existsSync(geminiSettingsPath)) {
-        await mkdir(geminiDir, { recursive: true })
-      }
-      const geminiSettings = existsSync(geminiSettingsPath)
-        ? JSON.parse(await readFile(geminiSettingsPath, 'utf-8'))
-        : {}
-      if (!geminiSettings.hooks) {
-        const quotedGemini = shellQuoteArg(geminiCaptureScript)
-        geminiSettings.hooks = {
-          AfterTool: [{ matcher: '.*', hooks: [{ type: 'command', command: quotedGemini }] }],
-          BeforeAgent: [{ matcher: '*', hooks: [{ type: 'command', command: quotedGemini }] }],
-          AfterAgent: [{ matcher: '*', hooks: [{ type: 'command', command: quotedGemini }] }],
-          SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: quotedGemini }] }],
-          SessionEnd: [{ matcher: '*', hooks: [{ type: 'command', command: quotedGemini }] }],
-        }
-        await writeFile(geminiSettingsPath, JSON.stringify(geminiSettings, null, 2))
-      }
-    } catch (err) { console.error('agentfs: Gemini hooks setup failed', err) }
-
-    // Cursor hooks: write .cursor/hooks.json in project dir (all 14 hooks)
-    const cursorDir = join(projectDir, '.cursor')
-    const cursorHooksPath = join(cursorDir, 'hooks.json')
-    try {
-      if (!existsSync(cursorHooksPath)) {
-        await mkdir(cursorDir, { recursive: true })
-      }
-      const cursorHooks = existsSync(cursorHooksPath)
-        ? JSON.parse(await readFile(cursorHooksPath, 'utf-8'))
-        : {}
-      if (!cursorHooks.hooks) {
-        const quotedCursor = shellQuoteArg(cursorCaptureScript)
-        const hookEntry = [{ command: quotedCursor }]
-        cursorHooks.version = 1
-        cursorHooks.hooks = {
-          beforeSubmitPrompt: hookEntry,
-          afterFileEdit: hookEntry,
-          beforeShellExecution: hookEntry,
-          afterShellExecution: hookEntry,
-          beforeReadFile: hookEntry,
-          beforeMCPExecution: hookEntry,
-          afterMCPExecution: hookEntry,
-          sessionStart: hookEntry,
-          sessionEnd: hookEntry,
-          preToolUse: hookEntry,
-          postToolUse: hookEntry,
-          subagentStop: hookEntry,
-          preCompact: hookEntry,
-          stop: hookEntry,
-        }
-        await writeFile(cursorHooksPath, JSON.stringify(cursorHooks, null, 2))
-      }
-    } catch (err) { console.error('agentfs: Cursor hooks setup failed', err) }
-
-    // Codex auto-configuration: add notify+capture to ~/.codex/config.toml
-    try {
-      const codexConfig = await loadCodexConfigText()
-      if (!hasOurCodexNotify(codexConfig)) {
-        const codexScriptName = 'codex-combined.sh'
-        const codexNotifyPath = getCodexHookScriptPath(codexScriptName)
-        const codexNotifyLine = `notify = ["${tomlEscape(codexNotifyPath)}"]`
-        let updatedConfig = stripNotifyAssignments(codexConfig)
-        updatedConfig = insertTopLevelNotify(updatedConfig, codexNotifyLine)
-        await saveCodexConfigText(updatedConfig)
-      }
-    } catch (err) { console.error('agentfs: Codex notify setup failed', err) }
-
-    return { success: true }
-  })
-
-  ipcMain.handle(IPC.CONTEXT_INSERT, async (_e, projectDir: string, entry: {
-    workspaceId: string; sessionId?: string; toolName: string;
-    toolInput?: string; filePath?: string; timestamp: string
-  }) => {
-    await getContextDb(projectDir).insert(entry)
-    return { success: true }
-  })
-
-  ipcMain.handle(IPC.CONTEXT_SEARCH, async (_e, projectDir: string, query: string, limit?: number) => {
-    startPendingIndexer(projectDir)
-    return await getContextDb(projectDir).search(query, limit)
-  })
-
-  ipcMain.handle(IPC.CONTEXT_GET_RECENT, async (_e, projectDir: string, workspaceId: string, limit?: number) => {
-    startPendingIndexer(projectDir)
-    return await getContextDb(projectDir).getRecent(workspaceId, limit)
-  })
-
-  ipcMain.handle(
-    IPC.CONTEXT_RESTORE_CHECKPOINT,
-    async (_e, projectDir: string, snapshotIdOrHash: string, _relativePaths?: string[]) => {
-    const logPrefix = '[constellagent:restore-checkpoint]'
-    const gitOpts = { cwd: projectDir, encoding: 'utf8' as const }
-    let verified = false
-
-    // Snapshot file: .constellagent/snapshots/<id>.json
-    const snapFile = join(projectDir, '.constellagent', 'snapshots', `${snapshotIdOrHash}.json`)
-    console.log(logPrefix, 'start', { projectDir, snapshotId: snapshotIdOrHash })
-
-    if (!existsSync(snapFile)) {
-      const msg = `No snapshot file found for "${snapshotIdOrHash}" — this entry may predate snapshot-based checkpoints`
-      console.error(logPrefix, 'not-found', { snapFile })
-      throw new Error(msg)
-    }
-
-    try {
-      const raw = await readFile(snapFile, 'utf8')
-      const snap = JSON.parse(raw) as { id: string; ts: string; patch: string; untracked: Record<string, string> }
-      console.log(logPrefix, 'loaded', { id: snap.id, patchLen: snap.patch.length, untrackedKeys: Object.keys(snap.untracked).length })
-
-      // 1. Reset worktree to HEAD (clean slate)
-      await execFileAsyncCtx('git', ['checkout', 'HEAD', '--', '.'], gitOpts)
-      await execFileAsyncCtx('git', ['clean', '-fd', '-e', '.constellagent'], gitOpts)
-      console.log(logPrefix, 'reset to HEAD done')
-
-      // 2. Apply the diff patch (tracked file changes relative to HEAD at snapshot time)
-      if (snap.patch && snap.patch.length > 0) {
-        const tmpPatch = join(tmpdir(), `csg-patch-${Date.now()}-${Math.random().toString(16).slice(2)}.patch`)
-        try {
-          await writeFile(tmpPatch, snap.patch, 'utf8')
-          await execFileAsyncCtx('git', ['apply', '--whitespace=nowarn', tmpPatch], gitOpts)
-          console.log(logPrefix, 'patch applied')
-        } finally {
-          await unlink(tmpPatch).catch(() => {})
-        }
-      }
-
-      // 3. Write untracked files from base64 content
-      const untrackedEntries = Object.entries(snap.untracked || {})
-      for (const [relPath, b64Content] of untrackedEntries) {
-        const absPath = join(projectDir, relPath)
-        // Ensure parent directory exists
-        await mkdir(dirname(absPath), { recursive: true })
-        const buf = Buffer.from(b64Content, 'base64')
-        await writeFile(absPath, buf)
-      }
-      if (untrackedEntries.length > 0) {
-        console.log(logPrefix, 'untracked files written', { count: untrackedEntries.length })
-      }
-
-      // 4. Verify: check that the current diff matches the snapshot patch
-      const { stdout: currentDiff } = await execFileAsyncCtx('git', ['diff', 'HEAD'], gitOpts)
-      const { stdout: untrackedNow } = await execFileAsyncCtx(
-        'git', ['ls-files', '--others', '--exclude-standard'], gitOpts,
-      )
-      const currentUntracked = new Set(untrackedNow.split('\n').map((l) => l.trim()).filter(Boolean))
-      const expectedUntracked = new Set(Object.keys(snap.untracked || {}))
-
-      // Patch content matches and untracked file sets match
-      const patchMatch = currentDiff.trimEnd() === snap.patch.trimEnd()
-      const untrackedMatch = currentUntracked.size === expectedUntracked.size &&
-        [...expectedUntracked].every((f) => currentUntracked.has(f))
-      verified = patchMatch && untrackedMatch
-
-      console.log(logPrefix, 'verify', { verified, patchMatch, untrackedMatch })
-
-      // 5. Notify fs watchers
-      let notifyCount = 0
-      for (const [dir, entry] of fsWatchers.entries()) {
-        if (!sameWorktreePath(dir, projectDir)) continue
-        for (const [, sub] of entry.subscribers) {
-          if (!sub.webContents.isDestroyed()) {
-            sub.webContents.send(IPC.FS_WATCH_CHANGED, dir)
-            notifyCount += 1
-          }
-        }
-      }
-      console.log(logPrefix, 'fs-watch notify', { projectDir, subscriberSends: notifyCount })
-
-      console.log(logPrefix, 'ok', { verified })
-      return { success: true, verified }
-    } catch (err: unknown) {
-      const ex = err as ExecFileException & { stderr?: string }
-      const msg = (typeof ex.stderr === 'string' ? ex.stderr.trim() : '') || ex?.message || 'Unknown error'
-      console.error(logPrefix, 'failed', { projectDir, snapshotId: snapshotIdOrHash, message: msg })
-      throw new Error(`Failed to restore snapshot: ${msg}`)
-    }
-  })
-
-  ipcMain.handle(IPC.CONTEXT_BUILD_SUMMARY, async (_e, projectDir: string, workspaceId: string) => {
-    const db = getContextDb(projectDir)
-    const contextDir = join(projectDir, '.constellagent', 'context')
-    await mkdir(contextDir, { recursive: true })
-
-    // Build and write per-workspace rich context
-    const wsContext = await db.buildAgentContext(workspaceId)
-    await writeFile(join(contextDir, `agent-context-${workspaceId}.md`), wsContext)
-
-    // Build and write global context
-    const globalContext = await db.buildGlobalContext()
-    await writeFile(join(contextDir, 'agent-context.md'), globalContext)
-
-    return { success: true, wsContext, globalContext }
-  })
-
-  // ── WAL checkpoint ──
-  ipcMain.handle(IPC.CONTEXT_WAL_CHECKPOINT, async (_e, projectDir?: string) => {
-    if (projectDir) {
-      await checkpoint(projectDir)
-    } else {
-      await checkpointAll()
-    }
-    return { success: true }
-  })
-
-  // ── Session context ──
-  ipcMain.handle(IPC.CONTEXT_SESSION_CONTEXT, async (_e, projectDir: string, sessionId: string, limit?: number) => {
-    return await getContextDb(projectDir).getSessionContext(sessionId, limit)
-  })
-
-  ipcMain.handle(IPC.CONTEXT_SESSION_META_SAVE, async (_e, projectDir: string, wsId: string, meta: {
-    sessionId: string; agentType: string; startedAt: string; summary?: string
-  }) => {
-    await getContextDb(projectDir).saveSessionMeta(wsId, meta)
-    return { success: true }
-  })
-
-  ipcMain.handle(IPC.CONTEXT_SESSION_META_GET, async (_e, projectDir: string, wsId: string, agentType?: string) => {
-    return await getContextDb(projectDir).getSessionMeta(wsId, agentType)
-  })
-
   // ── Session resume ──
   ipcMain.handle(IPC.SESSION_GET_LAST, async (_e, workspaceId: string, agentType: string) => {
     const sessionDir = join(tmpdir(), 'constellagent-sessions')
@@ -1537,7 +828,7 @@ export function registerIpcHandlers(): void {
 
   // ── Codex notify hook ──
   const CODEX_NOTIFY_IDENTIFIER = 'codex-hooks/notify.sh'
-  const CODEX_NOTIFY_CAPTURE_IDENTIFIER = 'codex-hooks/codex-combined.sh'
+  const LEGACY_CODEX_NOTIFY_IDENTIFIER = 'codex-hooks/codex-combined.sh'
   const TABLE_HEADER_RE = /^\s*\[[^\n]+\]\s*$/m
   const NOTIFY_ASSIGNMENT_RE = /^\s*notify\s*=/
 
@@ -1556,12 +847,11 @@ export function registerIpcHandlers(): void {
   }
 
   function hasOurCodexNotify(configText: string): boolean {
-    const top = topLevelSection(configText)
-    return top.includes(CODEX_NOTIFY_IDENTIFIER) || top.includes(CODEX_NOTIFY_CAPTURE_IDENTIFIER)
+    return topLevelSection(configText).includes(CODEX_NOTIFY_IDENTIFIER)
   }
 
-  function hasOurCodexCapture(configText: string): boolean {
-    return topLevelSection(configText).includes(CODEX_NOTIFY_CAPTURE_IDENTIFIER)
+  function hasLegacyCodexNotify(configText: string): boolean {
+    return topLevelSection(configText).includes(LEGACY_CODEX_NOTIFY_IDENTIFIER)
   }
 
   function stripNotifyAssignments(configText: string, shouldStrip: (assignment: string) => boolean = () => true): string {
@@ -1621,14 +911,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.CODEX_CHECK_NOTIFY, async () => {
     const config = await loadCodexConfigText()
     return {
-      installed: hasOurCodexNotify(config),
-      contextCaptureInstalled: hasOurCodexCapture(config),
+      installed: hasOurCodexNotify(config) || hasLegacyCodexNotify(config),
     }
   })
 
-  ipcMain.handle(IPC.CODEX_INSTALL_NOTIFY, async (_e, contextEnabled?: boolean) => {
-    const scriptName = contextEnabled ? 'codex-combined.sh' : 'notify.sh'
-    const notifyPath = getCodexHookScriptPath(scriptName)
+  ipcMain.handle(IPC.CODEX_INSTALL_NOTIFY, async () => {
+    const notifyPath = getCodexHookScriptPath('notify.sh')
     const notifyLine = `notify = ["${tomlEscape(notifyPath)}"]`
     let config = await loadCodexConfigText()
 
@@ -1643,9 +931,9 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.CODEX_UNINSTALL_NOTIFY, async () => {
     let config = await loadCodexConfigText()
-    if (!config.includes(CODEX_NOTIFY_IDENTIFIER) && !config.includes(CODEX_NOTIFY_CAPTURE_IDENTIFIER)) return { success: true }
+    if (!config.includes(CODEX_NOTIFY_IDENTIFIER) && !config.includes(LEGACY_CODEX_NOTIFY_IDENTIFIER)) return { success: true }
 
-    config = stripNotifyAssignments(config, (assignment) => assignment.includes(CODEX_NOTIFY_IDENTIFIER) || assignment.includes(CODEX_NOTIFY_CAPTURE_IDENTIFIER))
+    config = stripNotifyAssignments(config, (assignment) => assignment.includes(CODEX_NOTIFY_IDENTIFIER) || assignment.includes(LEGACY_CODEX_NOTIFY_IDENTIFIER))
     config = config.replace(/\n{3,}/g, '\n\n').trimEnd()
     if (config) config += '\n'
 
@@ -1931,11 +1219,6 @@ export function cleanupAll(): void {
   githubPollService.stop()
   lspService.shutdown()
   AnnotationService.cleanupAll()
-  for (const watcher of pendingIndexerWatchers.values()) watcher.close()
-  pendingIndexerWatchers.clear()
-  // Close AgentFS-backed context databases (async, best-effort on quit)
-  for (const db of contextDbs.values()) db.close().catch(() => {})
-  contextDbs.clear()
   t3codeService.stopAll()
   guestTabSwitchListeners.clear()
   closeAllAgentFS().catch(() => {})

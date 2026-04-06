@@ -209,8 +209,8 @@ const api = {
   claude: {
     trustPath: (dirPath: string) =>
       ipcRenderer.invoke(IPC.CLAUDE_TRUST_PATH, dirPath),
-    installHooks: (contextEnabled: boolean) =>
-      ipcRenderer.invoke(IPC.CLAUDE_INSTALL_HOOKS, contextEnabled),
+    installHooks: () =>
+      ipcRenderer.invoke(IPC.CLAUDE_INSTALL_HOOKS),
     uninstallHooks: () =>
       ipcRenderer.invoke(IPC.CLAUDE_UNINSTALL_HOOKS),
     checkHooks: () =>
@@ -234,8 +234,8 @@ const api = {
   },
 
   codex: {
-    installNotify: (contextEnabled?: boolean) =>
-      ipcRenderer.invoke(IPC.CODEX_INSTALL_NOTIFY, contextEnabled),
+    installNotify: () =>
+      ipcRenderer.invoke(IPC.CODEX_INSTALL_NOTIFY),
     uninstallNotify: () =>
       ipcRenderer.invoke(IPC.CODEX_UNINSTALL_NOTIFY),
     checkNotify: () =>
@@ -296,45 +296,6 @@ const api = {
       ipcRenderer.invoke(IPC.MCP_REMOVE_SERVER, serverName),
     getConfigPaths: () =>
       ipcRenderer.invoke(IPC.MCP_GET_CONFIG_PATHS) as Promise<Record<string, string>>,
-  },
-
-  context: {
-    repoInit: (projectDir: string, wsId: string) =>
-      ipcRenderer.invoke(IPC.CONTEXT_REPO_INIT, projectDir, wsId) as Promise<{ success: boolean }>,
-    search: (projectDir: string, query: string, limit?: number) =>
-      ipcRenderer.invoke(IPC.CONTEXT_SEARCH, projectDir, query, limit),
-    getRecent: (projectDir: string, workspaceId: string, limit?: number) =>
-      ipcRenderer.invoke(IPC.CONTEXT_GET_RECENT, projectDir, workspaceId, limit),
-    insert: (projectDir: string, entry: {
-      workspaceId: string; sessionId?: string; toolName: string;
-      toolInput?: string; filePath?: string; timestamp: string;
-    }) => ipcRenderer.invoke(IPC.CONTEXT_INSERT, projectDir, entry),
-    restoreCheckpoint: (projectDir: string, commitHash: string, relativePaths?: string[]) =>
-      ipcRenderer.invoke(IPC.CONTEXT_RESTORE_CHECKPOINT, projectDir, commitHash, relativePaths) as Promise<{ success: boolean; verified: boolean }>,
-    buildSummary: (projectDir: string, workspaceId: string) =>
-      ipcRenderer.invoke(IPC.CONTEXT_BUILD_SUMMARY, projectDir, workspaceId) as Promise<{ success: boolean; wsContext: string; globalContext: string }>,
-    walCheckpoint: (projectDir?: string) =>
-      ipcRenderer.invoke(IPC.CONTEXT_WAL_CHECKPOINT, projectDir) as Promise<{ success: boolean }>,
-    getSessionContext: (projectDir: string, sessionId: string, limit?: number) =>
-      ipcRenderer.invoke(IPC.CONTEXT_SESSION_CONTEXT, projectDir, sessionId, limit),
-    saveSessionMeta: (projectDir: string, wsId: string, meta: { sessionId: string; agentType: string; startedAt: string; summary?: string }) =>
-      ipcRenderer.invoke(IPC.CONTEXT_SESSION_META_SAVE, projectDir, wsId, meta) as Promise<{ success: boolean }>,
-    getSessionMeta: (projectDir: string, wsId: string, agentType?: string) =>
-      ipcRenderer.invoke(IPC.CONTEXT_SESSION_META_GET, projectDir, wsId, agentType) as Promise<{ sessionId: string; agentType: string; startedAt: string; summary?: string } | null>,
-    onCodexTabTitleHint: (callback: (data: { workspaceId: string; title: string }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, data: { workspaceId: string; title: string }) => callback(data)
-      ipcRenderer.on(IPC.CONTEXT_CODEX_TAB_TITLE_HINT, listener)
-      return () => {
-        ipcRenderer.removeListener(IPC.CONTEXT_CODEX_TAB_TITLE_HINT, listener)
-      }
-    },
-    onEntriesUpdated: (callback: (data: { projectDir: string; workspaceId: string }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, data: { projectDir: string; workspaceId: string }) => callback(data)
-      ipcRenderer.on(IPC.CONTEXT_ENTRIES_UPDATED, listener)
-      return () => {
-        ipcRenderer.removeListener(IPC.CONTEXT_ENTRIES_UPDATED, listener)
-      }
-    },
   },
 
   session: {

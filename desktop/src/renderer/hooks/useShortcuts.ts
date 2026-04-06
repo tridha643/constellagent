@@ -229,6 +229,14 @@ export function useShortcuts() {
         return
       }
 
+      // Cmd+1..9 — activate tab by index within the active workspace (1-based).
+      if (!shift && !alt && /^Digit[1-9]$/.test(e.code)) {
+        consume()
+        const n = Number(e.code.slice(5))
+        store.switchToTabByIndex(n - 1)
+        return
+      }
+
       // ── Panels ──
       // Cmd+B — toggle sidebar (left)
       if (!shift && !alt && e.key === 'b') {
@@ -294,14 +302,6 @@ export function useShortcuts() {
           const next = Math.max(8, Math.min(32, current + (e.key === '=' ? 1 : -1)))
           store.updateSettings({ [key]: next })
         }
-        return
-      }
-
-      // ── Context History ──
-      // Cmd+Shift+K — toggle context history
-      if (shift && !alt && e.code === 'KeyK') {
-        consume()
-        store.toggleContextHistory()
         return
       }
 

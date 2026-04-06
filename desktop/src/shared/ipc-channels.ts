@@ -121,22 +121,6 @@ export const IPC = {
   MCP_REMOVE_SERVER: 'mcp:remove-server',
   MCP_GET_CONFIG_PATHS: 'mcp:get-config-paths',
 
-  // Context repository
-  CONTEXT_REPO_INIT: 'context:repo-init',
-  CONTEXT_SEARCH: 'context:search',
-  CONTEXT_GET_RECENT: 'context:get-recent',
-  CONTEXT_INSERT: 'context:insert',
-  CONTEXT_RESTORE_CHECKPOINT: 'context:restore-checkpoint',
-  CONTEXT_BUILD_SUMMARY: 'context:build-summary',
-  CONTEXT_WAL_CHECKPOINT: 'context:wal-checkpoint',
-  CONTEXT_SESSION_CONTEXT: 'context:session-context',
-  CONTEXT_SESSION_META_SAVE: 'context:session-meta-save',
-  CONTEXT_SESSION_META_GET: 'context:session-meta-get',
-  /** Main → renderer: suggest tab title from first Codex UserPrompt in context DB */
-  CONTEXT_CODEX_TAB_TITLE_HINT: 'context:codex-tab-title-hint',
-  /** Main → renderer: AgentFS ingested new context entries from shell hooks */
-  CONTEXT_ENTRIES_UPDATED: 'context:entries-updated',
-
   // Session
   SESSION_GET_LAST: 'session:get-last',
 

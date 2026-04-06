@@ -1,6 +1,5 @@
 import { AgentFS } from 'agentfs-sdk'
 import { join } from 'path'
-import { mkdirSync, existsSync } from 'fs'
 
 const instances = new Map<string, AgentFS>()
 const pending = new Map<string, Promise<AgentFS>>()
@@ -17,40 +16,9 @@ export async function getAgentFS(projectDir: string, sessionId?: string): Promis
   if (pending.has(key)) return pending.get(key)!
 
   const init = (async () => {
-    const agentfsDir = join(projectDir, '.constellagent')
-    if (!existsSync(agentfsDir)) mkdirSync(agentfsDir, { recursive: true })
-
-    const dbPath = join(agentfsDir, `${sessionId || 'constellagent'}.db`)
+    const gitDir = join(projectDir, '.git')
+    const dbPath = join(gitDir, `${sessionId || 'constellagent'}.db`)
     const agent = await AgentFS.open({ id: sessionId || 'constellagent', path: dbPath })
-
-    // Create entries table for context tracking (no FTS5 — libSQL doesn't ship it)
-    const db = agent.getDatabase()
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS entries (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        workspace_id TEXT NOT NULL,
-        agent_type TEXT NOT NULL DEFAULT 'claude-code',
-        session_id TEXT,
-        tool_name TEXT NOT NULL,
-        tool_input TEXT,
-        file_path TEXT,
-        project_head TEXT,
-        event_type TEXT,
-        tool_response TEXT,
-        timestamp TEXT NOT NULL,
-        created_at TEXT DEFAULT (datetime('now'))
-      )
-    `)
-    await db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_ws ON entries(workspace_id)`)
-    await db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_ts ON entries(timestamp)`)
-    await db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_tool ON entries(tool_name)`)
-    await db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_file ON entries(file_path)`)
-
-    // Drop stale FTS5 artifacts from earlier versions (best-effort).
-    // NOTE: DROP TRIGGER is not supported by the bundled libSQL without --experimental-triggers,
-    // so we only attempt to drop the FTS table. Stale triggers are harmless (they reference a
-    // non-existent table and will error silently on INSERT).
-    try { await db.exec(`DROP TABLE IF EXISTS entries_fts`) } catch (err) { console.error('agentfs: FTS5 cleanup table drop failed', err) }
 
     instances.set(key, agent)
     // Start periodic WAL checkpoint timer when first instance is created

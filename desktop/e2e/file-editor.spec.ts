@@ -109,14 +109,19 @@ test.describe('File tree & editor integration', () => {
       // Wait for file tree to load
       await window.waitForTimeout(2000)
 
-      // Click README.md in file tree
-      const readmeItem = window.locator('[class*="treeNode"]', { hasText: 'README.md' }).first()
-      await expect(readmeItem).toBeVisible({ timeout: 5000 })
-      await readmeItem.click()
+      // Open a non-markdown file — .md opens in preview by default, not the Monaco editor.
+      // Folders start collapsed (openByDefault=false); expand `src` before leaf `index.ts` is visible.
+      const srcFolder = window.locator('[class*="treeNode"]', { hasText: 'src' }).first()
+      await expect(srcFolder).toBeVisible({ timeout: 5000 })
+      await srcFolder.click()
+      await window.waitForTimeout(400)
+      const fileItem = window.locator('[class*="treeNode"]', { hasText: 'index.ts' }).first()
+      await expect(fileItem).toBeVisible({ timeout: 5000 })
+      await fileItem.click()
       await window.waitForTimeout(3000)
 
-      // A new tab should appear with README.md
-      const tab = window.locator('[class*="tabTitle"]', { hasText: 'README.md' })
+      // A new tab should appear with index.ts
+      const tab = window.locator('[class*="tabTitle"]', { hasText: 'index.ts' })
       await expect(tab).toBeVisible({ timeout: 5000 })
 
       // Monaco editor should be rendered
@@ -140,22 +145,30 @@ test.describe('File tree & editor integration', () => {
       const worktreePath = await setupWorkspace(window, repoPath, 'save')
       await window.waitForTimeout(1000)
 
-      // Open README.md via store (bypass file tree click)
-      await window.evaluate(async (wt: string) => {
+      // Open a source file — README.md defaults to preview mode, so Cmd+S would not hit Monaco.
+      // Build path from active workspace (reconcile may append extra worktrees; [0] is not always active).
+      await window.evaluate(() => {
         const store = (window as any).__store.getState()
-        const ws = store.workspaces[0]
+        const ws = store.workspaces.find((w: any) => w.id === store.activeWorkspaceId)
+        if (!ws) throw new Error('no active workspace')
+        const base = ws.worktreePath.replace(/\/$/, '')
         store.addTab({
           id: crypto.randomUUID(),
           workspaceId: ws.id,
           type: 'file',
-          filePath: `${wt}/README.md`,
+          filePath: `${base}/src/index.ts`,
         })
-      }, worktreePath)
+      })
 
       await window.waitForTimeout(2000)
 
+      await expect(window.locator('[class*="tabTitle"]', { hasText: 'index.ts' })).toBeVisible({
+        timeout: 10000,
+      })
+
       // Type new content into Monaco
-      const monacoEditor = window.locator('.monaco-editor .view-lines').first()
+      const monacoEditor = window.locator('.monaco-editor').first()
+      await expect(monacoEditor).toBeVisible({ timeout: 15000 })
       await monacoEditor.click()
 
       // Select all and type new content
@@ -169,7 +182,7 @@ test.describe('File tree & editor integration', () => {
 
       // Verify file on disk was updated (resolve symlinks for macOS)
       const realWt = realpathSync(worktreePath)
-      const content = readFileSync(join(realWt, 'README.md'), 'utf-8')
+      const content = readFileSync(join(realWt, 'src/index.ts'), 'utf-8')
       expect(content).toContain('Updated Content')
 
       await window.screenshot({
