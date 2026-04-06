@@ -23,6 +23,14 @@ CREATE INDEX IF NOT EXISTS idx_ra_repo    ON review_annotations(repo_root);
 `;
 export async function ensureReviewAnnotationsSchema(db) {
     await db.executeMultiple(SCHEMA_SQL);
+    // Migration: add branch column (nullable, safe to re-run)
+    try {
+        await db.execute('ALTER TABLE review_annotations ADD COLUMN branch TEXT');
+    }
+    catch {
+        // Column already exists — ignore
+    }
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_ra_branch ON review_annotations(branch)');
 }
 // ── DB open ──
 export async function openAnnotationsDb(dbPath) {
@@ -38,19 +46,25 @@ export function parseUnifiedDiff(diffText) {
     if (!diffText)
         return [];
     const results = [];
+    const byPath = new Map();
     const segments = diffText.split(/^(?=diff --git )/m).filter(Boolean);
     for (const segment of segments) {
         const fileMatch = DIFF_FILE_HEADER.exec(segment);
         if (!fileMatch)
             continue;
         const filePath = fileMatch[2];
-        const hunks = [];
+        let fileEntry = byPath.get(filePath);
+        if (!fileEntry) {
+            fileEntry = { filePath, hunks: [] };
+            byPath.set(filePath, fileEntry);
+            results.push(fileEntry);
+        }
         let searchFrom = 0;
         while (true) {
             const hunkMatch = HUNK_HEADER.exec(segment.slice(searchFrom));
             if (!hunkMatch)
                 break;
-            hunks.push({
+            fileEntry.hunks.push({
                 oldStart: parseInt(hunkMatch[1], 10),
                 oldCount: hunkMatch[2] !== undefined ? parseInt(hunkMatch[2], 10) : 1,
                 newStart: parseInt(hunkMatch[3], 10),
@@ -58,7 +72,6 @@ export function parseUnifiedDiff(diffText) {
             });
             searchFrom += hunkMatch.index + hunkMatch[0].length;
         }
-        results.push({ filePath, hunks });
     }
     return results;
 }
@@ -105,6 +118,7 @@ function rowToAnnotation(row) {
         rationale: row.rationale ?? null,
         author: row.author ?? null,
         head_sha: row.head_sha ?? null,
+        branch: row.branch ?? null,
         resolved: !!row.resolved,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -129,8 +143,8 @@ export async function addAnnotation(db, input, opts) {
     await db.execute({
         sql: `INSERT INTO review_annotations
       (id, workspace_id, repo_root, worktree_path, file_path, side, line_start, line_end,
-       summary, rationale, author, head_sha, resolved, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+       summary, rationale, author, head_sha, branch, resolved, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
         args: [
             id,
             input.workspace_id ?? null,
@@ -144,6 +158,7 @@ export async function addAnnotation(db, input, opts) {
             input.rationale ?? null,
             input.author ?? null,
             input.head_sha ?? null,
+            input.branch ?? null,
             now,
             now,
         ],
@@ -161,6 +176,7 @@ export async function addAnnotation(db, input, opts) {
         rationale: input.rationale ?? null,
         author: input.author ?? null,
         head_sha: input.head_sha ?? null,
+        branch: input.branch ?? null,
         resolved: false,
         created_at: now,
         updated_at: now,
@@ -180,6 +196,10 @@ export async function listAnnotations(db, filters) {
     if (filters?.file_path) {
         conditions.push('file_path = ?');
         args.push(filters.file_path);
+    }
+    if (filters?.branch) {
+        conditions.push('branch = ?');
+        args.push(filters.branch);
     }
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
     const result = await db.execute({
@@ -205,6 +225,10 @@ export async function clearAnnotations(db, filters) {
     if (filters?.file_path) {
         conditions.push('file_path = ?');
         args.push(filters.file_path);
+    }
+    if (filters?.branch) {
+        conditions.push('branch = ?');
+        args.push(filters.branch);
     }
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
     await db.execute({ sql: `DELETE FROM review_annotations${where}`, args });

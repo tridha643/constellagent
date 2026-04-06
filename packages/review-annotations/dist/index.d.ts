@@ -13,6 +13,7 @@ export interface ReviewAnnotation {
     rationale: string | null;
     author: string | null;
     head_sha: string | null;
+    branch: string | null;
     resolved: boolean;
     created_at: string;
     updated_at: string;
@@ -44,11 +45,13 @@ export interface AddAnnotationInput {
     rationale?: string | null;
     author?: string | null;
     head_sha?: string | null;
+    branch?: string | null;
 }
 export interface ListAnnotationFilters {
     workspace_id?: string | null;
     repo_root?: string;
     file_path?: string;
+    branch?: string;
 }
 export declare function ensureReviewAnnotationsSchema(db: Client): Promise<void>;
 export declare function openAnnotationsDb(dbPath: string): Promise<Client>;

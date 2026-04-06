@@ -16,6 +16,7 @@ export interface ReviewAnnotation {
   rationale: string | null
   author: string | null
   head_sha: string | null
+  branch: string | null
   resolved: boolean
   created_at: string
   updated_at: string
@@ -51,12 +52,14 @@ export interface AddAnnotationInput {
   rationale?: string | null
   author?: string | null
   head_sha?: string | null
+  branch?: string | null
 }
 
 export interface ListAnnotationFilters {
   workspace_id?: string | null
   repo_root?: string
   file_path?: string
+  branch?: string
 }
 
 // ── Schema ──
@@ -86,6 +89,13 @@ CREATE INDEX IF NOT EXISTS idx_ra_repo    ON review_annotations(repo_root);
 
 export async function ensureReviewAnnotationsSchema(db: Client): Promise<void> {
   await db.executeMultiple(SCHEMA_SQL)
+  // Migration: add branch column (nullable, safe to re-run)
+  try {
+    await db.execute('ALTER TABLE review_annotations ADD COLUMN branch TEXT')
+  } catch {
+    // Column already exists — ignore
+  }
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_ra_branch ON review_annotations(branch)')
 }
 
 // ── DB open ──
@@ -105,6 +115,7 @@ const HUNK_HEADER = /@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 export function parseUnifiedDiff(diffText: string): ParsedFileDiff[] {
   if (!diffText) return []
   const results: ParsedFileDiff[] = []
+  const byPath = new Map<string, ParsedFileDiff>()
   const segments = diffText.split(/^(?=diff --git )/m).filter(Boolean)
 
   for (const segment of segments) {
@@ -112,13 +123,18 @@ export function parseUnifiedDiff(diffText: string): ParsedFileDiff[] {
     if (!fileMatch) continue
 
     const filePath = fileMatch[2]
-    const hunks: HunkRange[] = []
+    let fileEntry = byPath.get(filePath)
+    if (!fileEntry) {
+      fileEntry = { filePath, hunks: [] }
+      byPath.set(filePath, fileEntry)
+      results.push(fileEntry)
+    }
     let searchFrom = 0
 
     while (true) {
       const hunkMatch = HUNK_HEADER.exec(segment.slice(searchFrom))
       if (!hunkMatch) break
-      hunks.push({
+      fileEntry.hunks.push({
         oldStart: parseInt(hunkMatch[1], 10),
         oldCount: hunkMatch[2] !== undefined ? parseInt(hunkMatch[2], 10) : 1,
         newStart: parseInt(hunkMatch[3], 10),
@@ -126,8 +142,6 @@ export function parseUnifiedDiff(diffText: string): ParsedFileDiff[] {
       })
       searchFrom += hunkMatch.index! + hunkMatch[0].length
     }
-
-    results.push({ filePath, hunks })
   }
 
   return results
@@ -189,6 +203,7 @@ function rowToAnnotation(row: Record<string, unknown>): ReviewAnnotation {
     rationale: (row.rationale as string) ?? null,
     author: (row.author as string) ?? null,
     head_sha: (row.head_sha as string) ?? null,
+    branch: (row.branch as string) ?? null,
     resolved: !!(row.resolved as number),
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
@@ -221,8 +236,8 @@ export async function addAnnotation(
   await db.execute({
     sql: `INSERT INTO review_annotations
       (id, workspace_id, repo_root, worktree_path, file_path, side, line_start, line_end,
-       summary, rationale, author, head_sha, resolved, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+       summary, rationale, author, head_sha, branch, resolved, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
     args: [
       id,
       input.workspace_id ?? null,
@@ -236,6 +251,7 @@ export async function addAnnotation(
       input.rationale ?? null,
       input.author ?? null,
       input.head_sha ?? null,
+      input.branch ?? null,
       now,
       now,
     ],
@@ -254,6 +270,7 @@ export async function addAnnotation(
     rationale: input.rationale ?? null,
     author: input.author ?? null,
     head_sha: input.head_sha ?? null,
+    branch: input.branch ?? null,
     resolved: false,
     created_at: now,
     updated_at: now,
@@ -278,6 +295,10 @@ export async function listAnnotations(
   if (filters?.file_path) {
     conditions.push('file_path = ?')
     args.push(filters.file_path)
+  }
+  if (filters?.branch) {
+    conditions.push('branch = ?')
+    args.push(filters.branch)
   }
 
   const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : ''
@@ -308,6 +329,10 @@ export async function clearAnnotations(db: Client, filters?: ListAnnotationFilte
   if (filters?.file_path) {
     conditions.push('file_path = ?')
     args.push(filters.file_path)
+  }
+  if (filters?.branch) {
+    conditions.push('branch = ?')
+    args.push(filters.branch)
   }
 
   const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : ''

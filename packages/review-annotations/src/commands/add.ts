@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process'
 import { addAnnotation, type Client } from '../index.js'
+import { getAnnotationDiffText, getCurrentBranchSync } from '../graphite.js'
 
 function parseLineRange(value: string): { start: number; end: number } {
   const parts = value.split('-')
@@ -29,6 +30,7 @@ export async function runAdd(
   let summary: string | undefined
   let author: string | undefined
   let rationale: string | undefined
+  let branch: string | undefined
   let force = false
 
   for (let i = 0; i < args.length; i++) {
@@ -39,6 +41,7 @@ export async function runAdd(
       case '--summary': summary = args[++i]; break
       case '--author': author = args[++i]; break
       case '--rationale': rationale = args[++i]; break
+      case '--branch': branch = args[++i]; break
       case '--force': force = true; break
       default:
         throw new Error(`Unknown option: ${args[i]}`)
@@ -52,14 +55,13 @@ export async function runAdd(
   const side: 'new' | 'old' = oldLine && !newLine ? 'old' : 'new'
   const range = parseLineRange((side === 'old' ? oldLine : newLine)!)
 
+  // Auto-detect branch and Graphite-aware diff coverage
+  const detectedBranch = branch ?? getCurrentBranchSync(ctx.repoRoot)
+
   let diffText: string | undefined
   let headSha: string | undefined
   if (!force) {
-    try {
-      diffText = execSync('git diff HEAD', { cwd: ctx.repoRoot, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 })
-    } catch {
-      diffText = ''
-    }
+    diffText = getAnnotationDiffText(ctx.repoRoot, detectedBranch)
   }
   try {
     headSha = execSync('git rev-parse HEAD', { cwd: ctx.repoRoot, encoding: 'utf-8' }).trim()
@@ -78,6 +80,7 @@ export async function runAdd(
       rationale: rationale ?? null,
       author: author ?? null,
       head_sha: headSha ?? null,
+      branch: detectedBranch ?? null,
     },
     { force, diffText },
   )
