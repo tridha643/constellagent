@@ -49,6 +49,17 @@ constell-annotate resolve <id>
 constell-annotate unresolve <id>
 ```
 
+**Repo-scoped memories** (same global `--db` / `--workspace-id` as above; full flags in `packages/review-annotations/README.md`):
+
+```bash
+constell-annotate add-memory --summary "..." [--details "..." --key ... --author ... --branch ... --worktree ...]
+constell-annotate list-memories [--key ... --author ... --branch ... --worktree ...] [--json]
+constell-annotate search-memories --query "..." [--key ... --author ... --branch ... --worktree ...] [--json]
+constell-annotate remove-memory <id>
+```
+
+`search-memories` uses **FTS5** token search over memory text when the SQLite build supports it, with **`LIKE` fallback** documented in the package README. This is the same **`constell-annotate`** binary used for **review annotations** (`add`, `list`, `remove`, …) on code changes.
+
 ### Validation
 
 By default, `add` validates that the target line is inside a `git diff HEAD` hunk. Use `--force` to bypass (e.g. for bulk notes or when the diff base differs).

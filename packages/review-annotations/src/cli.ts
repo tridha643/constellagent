@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { parseArgs } from 'node:util'
 import { execSync } from 'node:child_process'
 import { existsSync, mkdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,6 +12,10 @@ import { runRemove } from './commands/remove.js'
 import { runClear } from './commands/clear.js'
 import { runResolve } from './commands/resolve.js'
 import { runCleanDeleted } from './commands/clean-deleted.js'
+import { runAddMemory } from './commands/add-memory.js'
+import { runListMemories } from './commands/list-memories.js'
+import { runSearchMemories } from './commands/search-memories.js'
+import { runRemoveMemory } from './commands/remove-memory.js'
 
 function getRepoRoot(): string | null {
   try {
@@ -44,12 +47,40 @@ function getWorkspaceId(): string {
   return process.env.CONSTELLAGENT_WORKSPACE_ID || 'cli-local'
 }
 
+/** Pull `--db` / `--workspace-id` out of argv so they work before or after the subcommand. */
+function extractGlobalFlags(argv: string[]): {
+  dbFlag?: string
+  wsFlag?: string
+  rest: string[]
+} {
+  const rest: string[] = []
+  let dbFlag: string | undefined
+  let wsFlag: string | undefined
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a === '--db' && argv[i + 1]) {
+      dbFlag = argv[++i]
+      continue
+    }
+    if (a === '--workspace-id' && argv[i + 1]) {
+      wsFlag = argv[++i]
+      continue
+    }
+    rest.push(a)
+  }
+  return { dbFlag, wsFlag, rest }
+}
+
 const USAGE = `Usage: constell-annotate <command> [options]
 
 Commands:
   add            Add a review annotation
+  add-memory     Add a repo-scoped memory row
   list           List annotations
+  list-memories  List memory rows
+  search-memories  Search memory rows (FTS5 full-text)
   remove         Remove an annotation by id
+  remove-memory  Remove a memory row by id
   clear          Clear annotations
   clean-deleted  Remove annotations for deleted files
   resolve        Mark annotation as resolved
@@ -62,33 +93,20 @@ Global options:
 `
 
 async function main() {
-  const args = process.argv.slice(2)
-  if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
+  const { dbFlag, wsFlag, rest } = extractGlobalFlags(process.argv.slice(2))
+  if (rest.length === 0 || rest[0] === '--help' || rest[0] === '-h') {
     console.log(USAGE)
     process.exit(0)
   }
 
-  const command = args[0]
-  const rest = args.slice(1)
-
-  let dbFlag: string | undefined
-  let wsFlag: string | undefined
-  const cleaned: string[] = []
-  for (let i = 0; i < rest.length; i++) {
-    if (rest[i] === '--db' && rest[i + 1]) {
-      dbFlag = rest[++i]
-    } else if (rest[i] === '--workspace-id' && rest[i + 1]) {
-      wsFlag = rest[++i]
-    } else {
-      cleaned.push(rest[i])
-    }
-  }
+  const command = rest[0]
+  const cleaned = rest.slice(1)
 
   const dbPath = resolveDbPath(dbFlag)
   const workspaceId = wsFlag || getWorkspaceId()
   const repoRoot = getRepoRoot()
 
-  if (!repoRoot && (command === 'add' || command === 'clean-deleted')) {
+  if (!repoRoot && (command === 'add' || command === 'clean-deleted' || command === 'add-memory')) {
     console.error('Error: not inside a git repository')
     process.exit(1)
   }
@@ -100,11 +118,23 @@ async function main() {
       case 'add':
         await runAdd(db, cleaned, { workspaceId, repoRoot: repoRoot! })
         break
+      case 'add-memory':
+        await runAddMemory(db, cleaned, { workspaceId, repoRoot: repoRoot!, worktreePath: repoRoot! })
+        break
       case 'list':
         await runList(db, cleaned, { workspaceId, repoRoot })
         break
+      case 'list-memories':
+        await runListMemories(db, cleaned, { workspaceId, repoRoot })
+        break
+      case 'search-memories':
+        await runSearchMemories(db, cleaned, { workspaceId, repoRoot })
+        break
       case 'remove':
         await runRemove(db, cleaned)
+        break
+      case 'remove-memory':
+        await runRemoveMemory(db, cleaned)
         break
       case 'clear':
         await runClear(db, cleaned, { workspaceId, repoRoot })

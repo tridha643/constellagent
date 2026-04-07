@@ -2,7 +2,7 @@
 
 These instructions apply to **any repository** where the constellagent app is in use. They govern all coding agents regardless of which codebase is being worked on.
 
-Shared instructions for all coding agents — session context, Cachebro, context database, and **review annotations** — are in **`AGENTS.md`** at the constellagent repository root (when available).
+Shared instructions for all coding agents — session context, Cachebro, AgentFS, and **review annotations** — are in **`AGENTS.md`** at the repository root (when available).
 
 ## Comment selection in Review Changes
 
@@ -13,6 +13,14 @@ Human comments in the Review Changes panel (Cmd+Shift+R) are individually select
 1. **AI annotations in plans**: All plans must include AI annotation instructions — agents leave review comments on their own changes explaining rationale (`--author "<agent-name>"`).
 2. **Verification loops**: Every plan must include a verification section with both automated tests (`bun run test`, specific test files) and manual test steps.
 3. **Sendblue notifications**: Every plan must include the required Sendblue CLI notification step for both `plan created` and `task over`.
+
+## `constell-annotate` (review annotations + memories)
+
+The **`constell-annotate`** CLI (from `@tridha643/review-annotations`) covers **inline review annotations** on diffs and **repo-scoped memory** rows. Global flags: **`--db`**, **`--workspace-id`** (see **`AGENTS.md`** and **`packages/review-annotations/README.md`**).
+
+**Review annotations:** `add`, `list`, `remove`, `clear`, `resolve`, `unresolve`, `clean-deleted`, etc.
+
+**Memories:** `add-memory`, `list-memories`, **`search-memories`** (FTS5 token search with `LIKE` fallback per README), `remove-memory`.
 
 ## Mandatory Sendblue CLI notifications
 
@@ -54,3 +62,11 @@ constell-annotate add --file src/foo.ts --new-line 42 --summary "Why" --author "
 ```
 
 **Key point:** By default, `--new-line` must be inside a `git diff HEAD` hunk's new-side range. Use `--force` to skip validation when needed.
+
+## Session & activity context (optional)
+
+In repositories that still ship workspace context files, read **`.constellagent/context/sliding-window.md`**, **`.constellagent/context/agent-context.md`**, and **`.constellagent/sessions/`** when present. Constellagent may store AgentFS-backed data under **`.git/`** instead of `.constellagent/` — see **`AGENTS.md`**.
+
+## Cachebro (MCP — auto-configured)
+
+Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) instead of raw file reads to save tokens.
