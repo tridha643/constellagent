@@ -63,7 +63,7 @@ export function App() {
     return unsub
   }, [])
 
-  // Listen for agent type detection from PTY (claude, codex, gemini, cursor)
+  // Listen for agent type detection from PTY (claude, codex, gemini, cursor, opencode)
   useEffect(() => {
     return window.api.pty.onAgentDetected(({ ptyId, agentType }) => {
       useAppStore.getState().setTerminalAgentType(ptyId, agentType as import('./store/types').AgentType)

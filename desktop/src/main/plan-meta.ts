@@ -3,7 +3,7 @@ import yaml from 'js-yaml'
 import type { PlanAgent, PlanMeta } from '../shared/agent-plan-path'
 import { PLAN_META_DEFAULTS } from '../shared/agent-plan-path'
 
-const PLAN_AGENT_KEYS = new Set<PlanAgent>(['cursor', 'claude-code', 'codex', 'gemini'])
+const PLAN_AGENT_KEYS = new Set<PlanAgent>(['cursor', 'claude-code', 'codex', 'gemini', 'opencode'])
 
 function parsePlanAgent(v: unknown): PlanAgent | null {
   if (typeof v !== 'string') return null

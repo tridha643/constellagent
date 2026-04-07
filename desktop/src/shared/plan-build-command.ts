@@ -6,6 +6,7 @@ export const BUILD_HARNESS_OPTIONS: { agent: PlanAgent; label: string }[] = [
   { agent: 'codex', label: 'Codex' },
   { agent: 'gemini', label: 'Gemini' },
   { agent: 'cursor', label: 'Cursor' },
+  { agent: 'opencode', label: 'OpenCode' },
 ]
 
 export interface ModelPreset {
@@ -159,6 +160,14 @@ export const PLAN_MODEL_PRESETS: Record<PlanAgent, ModelPreset[]> = {
     { label: 'GPT-5 Mini', cliModel: 'gpt-5-mini' },
     { label: 'Kimi K2.5', cliModel: 'kimi-k2.5' },
   ],
+  // OpenCode exposes a generic `--model` flag; keep presets conservative and let custom ids work.
+  opencode: [
+    { label: 'GPT-5.4', cliModel: 'gpt-5.4' },
+    { label: 'GPT-5.4 mini', cliModel: 'gpt-5.4-mini' },
+    { label: 'Claude Sonnet 4.6', cliModel: 'claude-sonnet-4-6' },
+    { label: 'Claude Opus 4.6', cliModel: 'claude-opus-4-6' },
+    { label: 'Gemini 2.5 Pro', cliModel: 'gemini-2.5-pro' },
+  ],
 }
 
 /** Plan frontmatter from older builds used these labels; map to current cliModel ids. */
@@ -183,6 +192,7 @@ const AGENT_CLI: Record<PlanAgent, string> = {
   codex: 'codex',
   gemini: 'gemini',
   cursor: 'cursor-agent',
+  opencode: 'opencode',
 }
 
 function shellEscape(s: string): string {
