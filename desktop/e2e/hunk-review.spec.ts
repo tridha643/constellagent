@@ -43,6 +43,38 @@ function cleanupTestRepo(repoPath: string): void {
   } catch { /* best effort */ }
 }
 
+async function setupWorkspaceWithAgent(window: Page, repoPath: string, suffix: string) {
+  return await window.evaluate(async ({ repo, sfx }: { repo: string; sfx: string }) => {
+    const store = (window as any).__store.getState()
+    store.hydrateState({ projects: [], workspaces: [], settings: {} })
+
+    const projectId = crypto.randomUUID()
+    store.addProject({ id: projectId, name: 'review-test-repo', repoPath: repo })
+
+    const worktreePath = await (window as any).api.git.createWorktree(repo, `review-${sfx}`, `review-${sfx}`, true)
+    const wsId = crypto.randomUUID()
+    store.addWorkspace({
+      id: wsId,
+      name: `review-${sfx}`,
+      branch: `review-${sfx}`,
+      worktreePath,
+      projectId,
+    })
+
+    const ptyId = await (window as any).api.pty.create(worktreePath)
+    store.addTab({
+      id: crypto.randomUUID(),
+      workspaceId: wsId,
+      type: 'terminal',
+      title: 'Codex',
+      ptyId,
+      agentType: 'codex',
+    })
+
+    return { wsId, worktreePath, ptyId }
+  }, { repo: repoPath, sfx: suffix })
+}
+
 test.describe('Review annotations IPC integration', () => {
   test('full comment lifecycle via IPC: add/list/remove/clear', async () => {
     const repoPath = createTestRepo('review-ipc')
@@ -171,6 +203,52 @@ test.describe('Review annotations IPC integration', () => {
       expect(c).toHaveProperty('resolved')
       expect(c).toHaveProperty('created_at')
       expect(c.author).toBe('tester')
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('review drawer resizes and persists width across reopen', async () => {
+    const repoPath = createTestRepo('review-drawer')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const { worktreePath } = await setupWorkspaceWithAgent(window, realRepo, 'drawer')
+      writeFileSync(join(worktreePath, 'README.md'), '# Modified\nDrag me\n')
+
+      await window.waitForTimeout(1200)
+      await window.keyboard.press('Meta+Shift+R')
+
+      const panel = window.getByTestId('hunk-review-panel')
+      const handle = window.getByTestId('hunk-review-resize-handle')
+      await expect(panel).toBeVisible()
+      await expect(handle).toBeVisible()
+
+      const beforeBox = await panel.boundingBox()
+      if (!beforeBox) throw new Error('Missing review panel bounds before resize')
+
+      await handle.hover()
+      await window.mouse.down()
+      await window.mouse.move(beforeBox.x - 220, beforeBox.y + 24, { steps: 12 })
+      await window.mouse.up()
+      await window.waitForTimeout(250)
+
+      const afterResizeBox = await panel.boundingBox()
+      if (!afterResizeBox) throw new Error('Missing review panel bounds after resize')
+      expect(afterResizeBox.width).toBeGreaterThan(beforeBox.width + 150)
+
+      await window.keyboard.press('Escape')
+      await expect(panel).toBeHidden()
+
+      await window.keyboard.press('Meta+Shift+R')
+      await expect(panel).toBeVisible()
+      await window.waitForTimeout(200)
+
+      const afterReopenBox = await panel.boundingBox()
+      if (!afterReopenBox) throw new Error('Missing review panel bounds after reopen')
+      expect(Math.abs(afterReopenBox.width - afterResizeBox.width)).toBeLessThanOrEqual(2)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
