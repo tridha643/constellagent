@@ -88,8 +88,10 @@ export interface DiffFileSectionProps {
   worktreeAnnotations: DiffAnnotation[]
   onAnnotationsChanged: () => void
   showPatchAnchorNote: boolean
+  activeTourAnnotationId?: string
   selectedCommentIds?: Set<string>
   onToggleComment?: (id: string) => void
+  tourMode?: boolean
   enableAcceptReject?: boolean
   onHunkAccepted?: (filePath: string, hunkIndex: number) => void
   onHunkRejected?: (filePath: string, hunkIndex: number) => void
@@ -105,8 +107,10 @@ export const DiffFileSection = memo(function DiffFileSection({
   worktreeAnnotations,
   onAnnotationsChanged,
   showPatchAnchorNote,
+  activeTourAnnotationId,
   selectedCommentIds,
   onToggleComment,
+  tourMode,
   enableAcceptReject,
   onHunkAccepted,
   onHunkRejected,
@@ -313,6 +317,7 @@ export const DiffFileSection = memo(function DiffFileSection({
               annotation={a}
               worktreePath={worktreePath}
               onChanged={onAnnotationsChanged}
+              tourState={tourMode ? (a.id === activeTourAnnotationId ? 'active' : 'inactive') : 'off'}
               selected={selectedCommentIds?.has(a.id)}
               onToggle={onToggleComment}
             />
@@ -342,6 +347,8 @@ export const DiffFileSection = memo(function DiffFileSection({
       clearSelectionAndComposer,
       selectedCommentIds,
       onToggleComment,
+      tourMode,
+      activeTourAnnotationId,
       handleAcceptHunk,
       handleRejectHunk,
     ],

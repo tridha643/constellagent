@@ -16,6 +16,7 @@ export interface DiffAnnotation {
   /** Last line of the range (inclusive). Omit when the comment is a single line. */
   lineEnd?: number
   body: string
+  rationale?: string
   createdAt: string
   resolved: boolean
   /** Set by coding agents (e.g. "constellagent"). Absent for human-authored comments. */
