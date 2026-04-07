@@ -1,15 +1,12 @@
 .backdrop {
   position: fixed;
   inset: 0;
+  width: 100%;
+  padding: 0;
+  border: none;
   background: rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(8px);
   z-index: 100;
-  animation: backdropIn 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
-}
-
-@keyframes backdropIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 .panel {
@@ -25,12 +22,45 @@
   z-index: 101;
   display: flex;
   flex-direction: column;
-  animation: panelSlideIn 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  max-width: 100vw;
 }
 
-@keyframes panelSlideIn {
-  from { transform: translateX(20px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.resizeGrip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 64px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--border-strong) 85%, transparent);
+  transform: translate(-50%, -50%);
+  transition: background-color var(--motion-fast), opacity var(--motion-fast);
+  opacity: 0.5;
+}
+
+.resizeHandle:hover .resizeGrip,
+.resizeHandle:focus-visible .resizeGrip,
+.resizeHandleActive .resizeGrip {
+  background: var(--accent-blue);
+  opacity: 0.9;
+}
+
+.resizeHandle:focus-visible {
+  outline: none;
 }
 
 /* ── Header ── */
@@ -202,8 +232,5 @@
 /* ── Reduced motion ── */
 
 @media (prefers-reduced-motion: reduce) {
-  .backdrop,
-  .panel {
-    animation: none;
-  }
+  .resizeGrip { transition: none; }
 }

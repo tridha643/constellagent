@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, type PointerEvent as ReactPointerEvent } from 'react'
 import type { DiffAnnotation } from '@shared/diff-annotation-types'
 import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
@@ -7,6 +7,9 @@ import { DiffFileSection, FileStrip, type DiffFileData } from '../Editor/DiffFil
 import { AnnotationsSummary } from './AnnotationsSummary'
 import { resolveAnnotationPathForDiff } from '../../utils/annotation-diff-path'
 import styles from './HunkReview.module.css'
+
+const MIN_PANEL_WIDTH = 480
+const FALLBACK_VIEWPORT_WIDTH = 1440
 
 interface FileStatus {
   path: string
@@ -34,13 +37,30 @@ function reviewToDiffAnnotations(
   }))
 }
 
+function getViewportWidth() {
+  return typeof window === 'undefined' ? FALLBACK_VIEWPORT_WIDTH : window.innerWidth
+}
+
+function getDefaultPanelWidth(viewportWidth = getViewportWidth()) {
+  return Math.min(viewportWidth, 900, Math.round(viewportWidth * 0.65))
+}
+
+function clampPanelWidth(width: number, viewportWidth = getViewportWidth()) {
+  const minWidth = Math.min(MIN_PANEL_WIDTH, viewportWidth)
+  return Math.max(minWidth, Math.min(width, viewportWidth))
+}
+
 export function HunkReview({ worktreePath }: Props) {
   const [files, setFiles] = useState<DiffFileData[]>([])
   const [loading, setLoading] = useState(true)
   const [annotations, setAnnotations] = useState<DiffAnnotation[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
+  const [draftWidth, setDraftWidth] = useState<number | null>(null)
+  const [isResizing, setIsResizing] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const draftWidthRef = useRef<number | null>(null)
 
   const settings = useAppStore((s) => s.settings)
   const updateSettings = useAppStore((s) => s.updateSettings)
@@ -50,6 +70,8 @@ export function HunkReview({ worktreePath }: Props) {
   const submitHunkReview = useAppStore((s) => s.submitHunkReview)
   const addToast = useAppStore((s) => s.addToast)
   const inline = settings.diffInline
+  const persistedWidth = settings.hunkReviewWidthPx ?? getDefaultPanelWidth()
+  const panelWidth = clampPanelWidth(draftWidth ?? persistedWidth)
 
   // ── Comment selection state ──
 
@@ -89,6 +111,68 @@ export function HunkReview({ worktreePath }: Props) {
   useEffect(() => {
     panelRef.current?.focus()
   }, [])
+
+  useEffect(() => {
+    setDraftWidth(null)
+    draftWidthRef.current = null
+  }, [settings.hunkReviewWidthPx, worktreePath])
+
+  useEffect(() => {
+    if (!isResizing) return
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const dragState = dragStateRef.current
+      if (!dragState) return
+      const nextWidth = clampPanelWidth(dragState.startWidth + (dragState.startX - event.clientX))
+      draftWidthRef.current = nextWidth
+      setDraftWidth(nextWidth)
+    }
+
+    const finishResize = () => {
+      const nextWidth = draftWidthRef.current ?? persistedWidth
+      dragStateRef.current = null
+      draftWidthRef.current = null
+      setIsResizing(false)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      setDraftWidth(null)
+      if (nextWidth !== settings.hunkReviewWidthPx) {
+        updateSettings({ hunkReviewWidthPx: nextWidth })
+      }
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', finishResize)
+    window.addEventListener('pointercancel', finishResize)
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', finishResize)
+      window.removeEventListener('pointercancel', finishResize)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      dragStateRef.current = null
+      draftWidthRef.current = null
+    }
+  }, [isResizing, persistedWidth, settings.hunkReviewWidthPx, updateSettings])
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (draftWidth !== null) {
+        const clamped = clampPanelWidth(draftWidth)
+        draftWidthRef.current = clamped
+        setDraftWidth(clamped)
+        return
+      }
+      if (settings.hunkReviewWidthPx == null) return
+      const clamped = clampPanelWidth(settings.hunkReviewWidthPx)
+      if (clamped !== settings.hunkReviewWidthPx) {
+        updateSettings({ hunkReviewWidthPx: clamped })
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [draftWidth, settings.hunkReviewWidthPx, updateSettings])
 
   const openFileFromDiff = useCallback(
     (fullPath: string) => {
@@ -312,16 +396,37 @@ export function HunkReview({ worktreePath }: Props) {
     return () => observer.disconnect()
   }, [files])
 
+  const handleResizeStart = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    dragStateRef.current = { startX: event.clientX, startWidth: panelWidth }
+    draftWidthRef.current = panelWidth
+    setDraftWidth(panelWidth)
+    setIsResizing(true)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [panelWidth])
+
   return (
     <>
       {/* Backdrop */}
-      <div className={styles.backdrop} onClick={closeHunkReview} />
+      <button
+        type="button"
+        className={styles.backdrop}
+        aria-label="Close review panel"
+        onClick={closeHunkReview}
+      />
 
       {/* Panel */}
       <div
         className={styles.panel}
         ref={panelRef}
         tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Review Changes"
+        data-testid="hunk-review-panel"
+        style={{ width: panelWidth }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
             e.stopPropagation()
@@ -329,6 +434,15 @@ export function HunkReview({ worktreePath }: Props) {
           }
         }}
       >
+        <button
+          type="button"
+          className={`${styles.resizeHandle} ${isResizing ? styles.resizeHandleActive : ''}`}
+          aria-label="Resize review panel"
+          data-testid="hunk-review-resize-handle"
+          onPointerDown={handleResizeStart}
+        >
+          <span className={styles.resizeGrip} aria-hidden="true" />
+        </button>
         {/* Header */}
         <div className={styles.header}>
           <span className={styles.title}>Review Changes</span>

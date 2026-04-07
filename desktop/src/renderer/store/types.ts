@@ -135,6 +135,7 @@ export interface Settings {
   defaultShell: string
   restoreWorkspace: boolean
   diffInline: boolean
+  hunkReviewWidthPx?: number
   terminalFontSize: number
   editorFontSize: number
   favoriteEditor: FavoriteEditor
@@ -153,6 +154,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultShell: '',
   restoreWorkspace: true,
   diffInline: false,
+  hunkReviewWidthPx: undefined,
   terminalFontSize: 14,
   editorFontSize: 13,
   favoriteEditor: 'cursor',
