@@ -13,8 +13,8 @@ export interface SubagentInfo {
   tools?: string
 }
 
-const AGENT_SKILL_DIRS = ['.claude/skills', '.cursor/skills', '.codex/skills', '.gemini/skills']
-const AGENT_SUBAGENT_DIRS = ['.claude/agents', '.cursor/agents', '.codex/agents', '.gemini/agents']
+const AGENT_SKILL_DIRS = ['.claude/skills', '.cursor/skills', '.codex/skills', '.gemini/skills', '.opencode/skills']
+const AGENT_SUBAGENT_DIRS = ['.claude/agents', '.cursor/agents', '.codex/agents', '.gemini/agents', '.opencode/agents']
 
 function parseYamlFrontmatter(content: string): Record<string, string> {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)

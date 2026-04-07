@@ -630,6 +630,8 @@ export function Sidebar() {
               finalCmd = finalCmd.replace(/^codex\b/, 'codex resume --last');
             } else if (finalCmd.startsWith('gemini')) {
               finalCmd = finalCmd.replace(/^gemini\b/, 'gemini --resume');
+            } else if (finalCmd.startsWith('opencode')) {
+              finalCmd = finalCmd.replace(/^opencode\b/, 'opencode resume --last');
             }
           }
           return finalCmd;
@@ -975,7 +977,7 @@ export function Sidebar() {
   );
 
   const handleResumeAgent = useCallback(
-    async (wsId: string, agent: 'claude' | 'codex' | 'gemini') => {
+    async (wsId: string, agent: 'claude' | 'codex' | 'gemini' | 'opencode') => {
       setContextMenu(null);
       // Find an active terminal tab for this workspace
       const tabs = useAppStore.getState().tabs;
@@ -996,6 +998,8 @@ export function Sidebar() {
         window.api.pty.write(termTab.ptyId, `claude --resume ${sessionId}\n`);
       } else if (agent === 'codex') {
         window.api.pty.write(termTab.ptyId, 'codex resume --last\n');
+      } else if (agent === 'opencode') {
+        window.api.pty.write(termTab.ptyId, 'opencode resume --last\n');
       } else {
         window.api.pty.write(termTab.ptyId, 'gemini --resume\n');
       }
@@ -1757,6 +1761,13 @@ export function Sidebar() {
               onClick={() => handleResumeAgent(contextMenu.wsId, 'gemini')}
             >
               Gemini
+            </button>
+            <button
+              className={styles.actionButton}
+              style={{ width: '100%', textAlign: 'left', borderRadius: 0 }}
+              onClick={() => handleResumeAgent(contextMenu.wsId, 'opencode')}
+            >
+              OpenCode
             </button>
           </div>
         </div>

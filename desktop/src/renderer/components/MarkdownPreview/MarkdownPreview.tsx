@@ -30,6 +30,7 @@ const RELOCATE_TARGETS: { agent: PlanAgent; label: string }[] = [
   { agent: 'claude-code', label: 'Claude' },
   { agent: 'codex', label: 'Codex' },
   { agent: 'gemini', label: 'Gemini' },
+  { agent: 'opencode', label: 'OpenCode' },
 ]
 
 interface Props {

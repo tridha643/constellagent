@@ -11,7 +11,7 @@ A macOS desktop app for running multiple AI agents in parallel. Each agent gets 
 - Create workspaces from new branches, existing branches, PR refs, or open GitHub PRs
 - Project startup commands that can open and orchestrate multiple terminal tabs on workspace creation
 - Full terminal emulator (`xterm.js` + `node-pty`) with persistent PTY state and split panes
-- Agent-aware terminals for Claude, Codex, Gemini, and Cursor, including last-session resume flows
+- Agent-aware terminals for Claude, Codex, Gemini, Cursor, and OpenCode, including last-session resume flows
 - Monaco file editing with markdown preview, diff views, and Quick Open
 - File tree with git-aware status styling, split-open actions, and markdown-first preview behavior
 - Git changes panel for staging, unstaging, discarding, committing, and inspecting diffs
