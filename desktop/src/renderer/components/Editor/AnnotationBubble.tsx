@@ -44,12 +44,14 @@ export function CommentBubble({
   annotation,
   worktreePath,
   onChanged,
+  tourState = 'off',
   selected,
   onToggle,
 }: {
   annotation: DiffAnnotation
   worktreePath: string
   onChanged: () => void
+  tourState?: 'off' | 'active' | 'inactive'
   selected?: boolean
   onToggle?: (id: string) => void
 }) {
@@ -102,9 +104,17 @@ export function CommentBubble({
   const initial = displayName.charAt(0).toUpperCase()
   const avatarStyle = useMemo(() => getAvatarStyle(displayName), [displayName])
   const timeAgo = useMemo(() => formatTimeAgo(annotation.createdAt), [annotation.createdAt])
+  const showTourDetails = tourState === 'active' && !!annotation.rationale
 
   return (
-    <div className={styles.commentBubble} data-annotation-id={annotation.id}>
+    <div
+      className={[
+        styles.commentBubble,
+        tourState === 'active' ? styles.commentBubbleTourActive : '',
+        tourState === 'inactive' ? styles.commentBubbleTourInactive : '',
+      ].filter(Boolean).join(' ')}
+      data-annotation-id={annotation.id}
+    >
       <div className={styles.commentThread}>
         <div
           className={styles.avatar}
@@ -118,6 +128,9 @@ export function CommentBubble({
               {displayName}
             </span>
             {timeAgo && <span className={styles.timestamp}>{timeAgo}</span>}
+            {tourState === 'active' && isAgent && (
+              <span className={styles.tourStepPill}>Code Tour</span>
+            )}
             {annotation.resolved && <span className={styles.resolvedPill}>Resolved</span>}
             {!isAgent && !isGithub && onToggle && (
               <input
@@ -129,6 +142,7 @@ export function CommentBubble({
             )}
           </div>
           <p className={styles.commentBody}>{annotation.body}</p>
+          {showTourDetails && <p className={styles.commentRationale}>{annotation.rationale}</p>}
           {!isGithub && (
             <div className={styles.commentActions}>
               <button

@@ -5,6 +5,7 @@ import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import { DiffFileSection, FileStrip, type DiffFileData } from '../Editor/DiffFileSection'
 import { AnnotationsSummary } from './AnnotationsSummary'
+import { TourRail } from './TourRail'
 import { resolveAnnotationPathForDiff } from '../../utils/annotation-diff-path'
 import styles from './HunkReview.module.css'
 
@@ -21,6 +22,17 @@ interface Props {
   worktreePath: string
 }
 
+type ReviewMode = 'annotations' | 'tour'
+
+interface TourStep {
+  id: string
+  annotation: DiffAnnotation
+}
+
+function isGithubAnnotation(annotation: DiffAnnotation) {
+  return annotation.id.startsWith('PRR') || annotation.id.startsWith('IC_')
+}
+
 function reviewToDiffAnnotations(
   rows: Awaited<ReturnType<typeof window.api.review.commentList>>,
 ): DiffAnnotation[] {
@@ -31,6 +43,7 @@ function reviewToDiffAnnotations(
     lineNumber: r.line_start,
     lineEnd: r.line_end !== r.line_start ? r.line_end : undefined,
     body: r.summary,
+    rationale: r.rationale ?? undefined,
     createdAt: r.created_at,
     resolved: r.resolved,
     author: r.author ?? undefined,
@@ -54,6 +67,8 @@ export function HunkReview({ worktreePath }: Props) {
   const [files, setFiles] = useState<DiffFileData[]>([])
   const [loading, setLoading] = useState(true)
   const [annotations, setAnnotations] = useState<DiffAnnotation[]>([])
+  const [reviewMode, setReviewMode] = useState<ReviewMode>('annotations')
+  const [activeTourStepId, setActiveTourStepId] = useState<string | null>(null)
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [draftWidth, setDraftWidth] = useState<number | null>(null)
   const [isResizing, setIsResizing] = useState(false)
@@ -82,10 +97,39 @@ export function HunkReview({ worktreePath }: Props) {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
+  const tourSteps = useMemo(
+    () => annotations
+      .filter((a) => a.author && !isGithubAnnotation(a))
+      .sort((a, b) => {
+        if (a.filePath !== b.filePath) return a.filePath.localeCompare(b.filePath)
+        if (a.lineNumber !== b.lineNumber) return a.lineNumber - b.lineNumber
+        return a.createdAt.localeCompare(b.createdAt)
+      })
+      .map((annotation) => ({ id: annotation.id, annotation })),
+    [annotations],
+  )
+
+  const activeTourIndex = useMemo(
+    () => tourSteps.findIndex((step) => step.id === activeTourStepId),
+    [tourSteps, activeTourStepId],
+  )
+  const activeTourStep = activeTourIndex >= 0 ? tourSteps[activeTourIndex] : null
+
   // Auto-select all human comments when annotations load/change
   useEffect(() => {
     setSelectedIds(new Set(humanAnnotations.map((a) => a.id)))
   }, [humanAnnotations])
+
+  useEffect(() => {
+    if (reviewMode !== 'tour') return
+    if (tourSteps.length === 0) {
+      setActiveTourStepId(null)
+      return
+    }
+    if (!activeTourStepId || !tourSteps.some((step) => step.id === activeTourStepId)) {
+      setActiveTourStepId(tourSteps[0]!.id)
+    }
+  }, [reviewMode, tourSteps, activeTourStepId])
 
   const toggleComment = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -107,6 +151,17 @@ export function HunkReview({ worktreePath }: Props) {
   }, [allSelected, humanAnnotations])
 
   const selectedCount = selectedIds.size
+
+  const handleSelectTourStep = useCallback((stepId: string) => {
+    setActiveTourStepId(stepId)
+  }, [])
+
+  const handleAdvanceTour = useCallback((direction: -1 | 1) => {
+    if (tourSteps.length === 0) return
+    const baseIndex = activeTourIndex >= 0 ? activeTourIndex : 0
+    const nextIndex = Math.max(0, Math.min(tourSteps.length - 1, baseIndex + direction))
+    setActiveTourStepId(tourSteps[nextIndex]!.id)
+  }, [tourSteps, activeTourIndex])
 
   useEffect(() => {
     panelRef.current?.focus()
@@ -370,6 +425,11 @@ export function HunkReview({ worktreePath }: Props) {
     [files, addToast],
   )
 
+  useEffect(() => {
+    if (reviewMode !== 'tour' || !activeTourStep) return
+    scrollToAnnotationInDiff(activeTourStep.annotation)
+  }, [reviewMode, activeTourStep, scrollToAnnotationInDiff])
+
   // IntersectionObserver to highlight active file in strip
   useEffect(() => {
     if (!scrollAreaRef.current || files.length === 0) return
@@ -451,12 +511,26 @@ export function HunkReview({ worktreePath }: Props) {
               {files.length} file{files.length !== 1 ? 's' : ''}
             </span>
           )}
-          {humanAnnotations.length > 0 && (
+          {reviewMode === 'annotations' && humanAnnotations.length > 0 && (
             <button className={styles.selectAllBtn} onClick={toggleAll}>
               {allSelected ? 'Deselect all' : 'Select all'}
             </button>
           )}
           <div className={styles.headerSpacer} />
+          <div className={styles.toggleGroup}>
+            <button
+              className={`${styles.toggleOption} ${reviewMode === 'annotations' ? styles.active : ''}`}
+              onClick={() => setReviewMode('annotations')}
+            >
+              Annotations
+            </button>
+            <button
+              className={`${styles.toggleOption} ${reviewMode === 'tour' ? styles.active : ''}`}
+              onClick={() => setReviewMode('tour')}
+            >
+              Code Tour
+            </button>
+          </div>
           <div className={styles.toggleGroup}>
             <button
               className={`${styles.toggleOption} ${!inline ? styles.active : ''}`}
@@ -471,13 +545,15 @@ export function HunkReview({ worktreePath }: Props) {
               Inline
             </button>
           </div>
-          <button
-            className={styles.submitBtn}
-            disabled={selectedCount === 0}
-            onClick={() => void submitHunkReview(selectedIds)}
-          >
-            Submit Review{selectedCount > 0 ? ` (${selectedCount})` : ''}
-          </button>
+          {reviewMode === 'annotations' && (
+            <button
+              className={styles.submitBtn}
+              disabled={selectedCount === 0}
+              onClick={() => void submitHunkReview(selectedIds)}
+            >
+              Submit Review{selectedCount > 0 ? ` (${selectedCount})` : ''}
+            </button>
+          )}
           <button className={styles.closeBtn} onClick={closeHunkReview}>
             &times;
           </button>
@@ -485,22 +561,33 @@ export function HunkReview({ worktreePath }: Props) {
 
         {/* Hint */}
         <p className={styles.hint}>
-          Hover a line and click + to comment, or drag across line numbers for a range.
-          Submit sends selected comments to the agent.
+          {reviewMode === 'tour'
+            ? 'Walk the key agent-authored changes step by step. Click any step to sync the diff with the tour.'
+            : 'Hover a line and click + to comment, or drag across line numbers for a range. Submit sends selected comments to the agent.'}
         </p>
 
         {/* File strip */}
         {files.length > 0 && <FileStrip files={files} activeFile={activeFile} />}
 
         {/* Annotations summary from constell-annotate SQLite DB */}
-        <AnnotationsSummary
-          annotations={annotations}
-          worktreePath={worktreePath}
-          onAnnotationsChanged={loadAnnotations}
-          selectedIds={selectedIds}
-          onToggleComment={toggleComment}
-          onJumpToAnnotation={scrollToAnnotationInDiff}
-        />
+        {reviewMode === 'tour' ? (
+          <TourRail
+            steps={tourSteps}
+            activeStepId={activeTourStepId}
+            onSelectStep={handleSelectTourStep}
+            onPrevious={() => handleAdvanceTour(-1)}
+            onNext={() => handleAdvanceTour(1)}
+          />
+        ) : (
+          <AnnotationsSummary
+            annotations={annotations}
+            worktreePath={worktreePath}
+            onAnnotationsChanged={loadAnnotations}
+            selectedIds={selectedIds}
+            onToggleComment={toggleComment}
+            onJumpToAnnotation={scrollToAnnotationInDiff}
+          />
+        )}
 
         {/* Content */}
         {loading ? (
@@ -524,6 +611,8 @@ export function HunkReview({ worktreePath }: Props) {
                 worktreeAnnotations={annotations}
                 onAnnotationsChanged={loadAnnotations}
                 showPatchAnchorNote={false}
+                activeTourAnnotationId={reviewMode === 'tour' ? activeTourStepId : undefined}
+                tourMode={reviewMode === 'tour'}
                 selectedCommentIds={selectedIds}
                 onToggleComment={toggleComment}
                 enableAcceptReject
