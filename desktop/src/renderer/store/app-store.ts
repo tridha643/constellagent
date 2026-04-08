@@ -40,6 +40,7 @@ import {
   type AutomationConfigLike,
   type AutomationTrigger,
 } from '../../shared/automation-types'
+import { normalizeWorktreeCredentialRules } from '../../shared/worktree-credentials'
 
 const DEFAULT_PR_LINK_PROVIDER = 'github' as const
 
@@ -1626,7 +1627,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const k of LEGACY_PHONE_CONTROL_SETTING_KEYS) {
       delete (settingsMerged as Record<string, unknown>)[k]
     }
-    const settings = settingsMerged
+    const settings = {
+      ...settingsMerged,
+      worktreeCredentialRules: normalizeWorktreeCredentialRules(settingsMerged.worktreeCredentialRules),
+    }
     const activeWorkspaceId = settings.restoreWorkspace
       ? ((saved && workspaces.some((w) => w.id === saved) ? saved : workspaces[0]?.id) ?? null)
       : null

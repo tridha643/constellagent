@@ -9,6 +9,7 @@ import { promisify } from 'util'
 import { IPC } from '../shared/ipc-channels'
 import type { PlanAgent } from '../shared/agent-plan-path'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
+import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import { PtyManager, type PtyWriteOpts } from './pty-manager'
 import { GitService } from './git-service'
 import { WorktreeSyncService } from './worktree-sync-service'
@@ -257,7 +258,7 @@ export function registerIpcHandlers(): void {
     return GitService.initRepo(dirPath)
   })
 
-  ipcMain.handle(IPC.GIT_CREATE_WORKTREE, async (_e, repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean, requestId?: string) => {
+  ipcMain.handle(IPC.GIT_CREATE_WORKTREE, async (_e, repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[]) => {
     return GitService.createWorktree(
       repoPath,
       name,
@@ -268,11 +269,12 @@ export function registerIpcHandlers(): void {
       (progress) => {
         const payload: CreateWorktreeProgressEvent = { requestId, ...progress }
         _e.sender.send(IPC.GIT_CREATE_WORKTREE_PROGRESS, payload)
-      }
+      },
+      credentialRules,
     )
   })
 
-  ipcMain.handle(IPC.GIT_CREATE_WORKTREE_FROM_PR, async (_e, repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string) => {
+  ipcMain.handle(IPC.GIT_CREATE_WORKTREE_FROM_PR, async (_e, repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[]) => {
     return GitService.createWorktreeFromPr(
       repoPath,
       name,
@@ -282,7 +284,8 @@ export function registerIpcHandlers(): void {
       (progress) => {
         const payload: CreateWorktreeProgressEvent = { requestId, ...progress }
         _e.sender.send(IPC.GIT_CREATE_WORKTREE_PROGRESS, payload)
-      }
+      },
+      credentialRules,
     )
   })
 
@@ -390,8 +393,8 @@ export function registerIpcHandlers(): void {
     return GraphiteService.checkoutBranch(worktreePath, branch)
   })
 
-  ipcMain.handle(IPC.GRAPHITE_CLONE_STACK, async (_e, repoPath: string, name: string, prBranches: { name: string; parent: string | null }[]) => {
-    return GraphiteService.cloneStack(repoPath, name, prBranches)
+  ipcMain.handle(IPC.GRAPHITE_CLONE_STACK, async (_e, repoPath: string, name: string, prBranches: { name: string; parent: string | null }[], credentialRules?: WorktreeCredentialRule[]) => {
+    return GraphiteService.cloneStack(repoPath, name, prBranches, credentialRules)
   })
 
   ipcMain.handle(IPC.GRAPHITE_GET_STACK_FOR_PR, async (_e, repoPath: string, prBranch: string) => {

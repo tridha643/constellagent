@@ -88,6 +88,14 @@
   margin-bottom: var(--space-4);
 }
 
+.sectionHint {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  line-height: 1.5;
+  padding: 0 var(--space-4);
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -490,6 +498,33 @@
 .mcpAgentSelect {
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.sectionActions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--space-4);
+}
+
+.ruleForm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+}
+
+.rulePatternInput {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+.formHint {
+  font-size: var(--text-xs);
+  color: var(--text-ghost);
+  font-family: var(--font-ui);
+  line-height: 1.5;
+  padding: 0 var(--space-4);
 }
 
 /* Skills & Subagents entries */

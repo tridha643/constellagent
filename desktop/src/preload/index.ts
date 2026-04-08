@@ -14,6 +14,7 @@ import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
 import type { GraphiteStackInfo } from '../shared/graphite-types'
 import type { ReviewComment } from '../shared/review-types'
 import type { ContextWindowData } from '../shared/context-window-types'
+import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 
 const api = {
   git: {
@@ -23,10 +24,10 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_CHECK_IS_REPO, dirPath) as Promise<boolean>,
     initRepo: (dirPath: string) =>
       ipcRenderer.invoke(IPC.GIT_INIT_REPO, dirPath) as Promise<void>,
-    createWorktree: (repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean, requestId?: string) =>
-      ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE, repoPath, name, branch, newBranch, baseBranch, force, requestId),
-    createWorktreeFromPr: (repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string) =>
-      ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE_FROM_PR, repoPath, name, prNumber, localBranch, force, requestId) as Promise<{ worktreePath: string; branch: string }>,
+    createWorktree: (repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[]) =>
+      ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE, repoPath, name, branch, newBranch, baseBranch, force, requestId, credentialRules),
+    createWorktreeFromPr: (repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[]) =>
+      ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE_FROM_PR, repoPath, name, prNumber, localBranch, force, requestId, credentialRules) as Promise<{ worktreePath: string; branch: string }>,
     onCreateWorktreeProgress: (callback: (progress: CreateWorktreeProgressEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, progress: CreateWorktreeProgressEvent) => callback(progress)
       ipcRenderer.on(IPC.GIT_CREATE_WORKTREE_PROGRESS, listener)
@@ -83,8 +84,8 @@ const api = {
       ipcRenderer.invoke(IPC.GRAPHITE_GET_STACK, repoPath, worktreePath) as Promise<GraphiteStackInfo | null>,
     checkoutBranch: (worktreePath: string, branch: string) =>
       ipcRenderer.invoke(IPC.GRAPHITE_CHECKOUT_BRANCH, worktreePath, branch) as Promise<string>,
-    cloneStack: (repoPath: string, name: string, prBranches: { name: string; parent: string | null }[]) =>
-      ipcRenderer.invoke(IPC.GRAPHITE_CLONE_STACK, repoPath, name, prBranches) as Promise<{ worktreePath: string; branch: string }>,
+    cloneStack: (repoPath: string, name: string, prBranches: { name: string; parent: string | null }[], credentialRules?: WorktreeCredentialRule[]) =>
+      ipcRenderer.invoke(IPC.GRAPHITE_CLONE_STACK, repoPath, name, prBranches, credentialRules) as Promise<{ worktreePath: string; branch: string }>,
     getStackForPr: (repoPath: string, prBranch: string) =>
       ipcRenderer.invoke(IPC.GRAPHITE_GET_STACK_FOR_PR, repoPath, prBranch) as Promise<{ name: string; parent: string | null }[] | null>,
   },

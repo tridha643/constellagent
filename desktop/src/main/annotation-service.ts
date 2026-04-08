@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { realpathSync } from 'fs'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import type { Client } from '@libsql/client'
 import {
   openAnnotationsDb,
@@ -32,6 +32,13 @@ async function gitRepoRoot(worktreePath: string): Promise<string> {
   return realpathSync(stdout.trim())
 }
 
+async function gitCommonDir(worktreePath: string): Promise<string> {
+  const { stdout } = await execFileAsync('git', ['rev-parse', '--git-common-dir'], {
+    cwd: worktreePath,
+  })
+  return realpathSync(resolve(worktreePath, stdout.trim()))
+}
+
 async function gitHead(worktreePath: string): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: worktreePath })
@@ -53,13 +60,14 @@ async function gitDiffHead(worktreePath: string): Promise<string> {
   }
 }
 
-async function getDb(projectDir: string): Promise<Client> {
-  const existing = dbHandles.get(projectDir)
+async function getDb(worktreePath: string): Promise<Client> {
+  const commonDir = await gitCommonDir(worktreePath)
+  const existing = dbHandles.get(commonDir)
   if (existing) return existing
 
-  const dbPath = join(projectDir, '.git', 'review-annotations.db')
+  const dbPath = join(commonDir, 'review-annotations.db')
   const client = await openAnnotationsDb(dbPath)
-  dbHandles.set(projectDir, client)
+  dbHandles.set(commonDir, client)
   return client
 }
 
@@ -80,7 +88,7 @@ export const AnnotationService = {
     },
   ): Promise<void> {
     const repoRoot = await gitRepoRoot(worktreePath)
-    const db = await getDb(repoRoot)
+    const db = await getDb(worktreePath)
 
     const side: 'new' | 'old' = opts?.oldLine != null && newLine === 0 ? 'old' : 'new'
     const lineStart = side === 'old' ? opts!.oldLine! : newLine
@@ -115,7 +123,7 @@ export const AnnotationService = {
   async listComments(worktreePath: string, file?: string): Promise<ReviewAnnotation[]> {
     try {
       const repoRoot = await gitRepoRoot(worktreePath)
-      const db = await getDb(repoRoot)
+      const db = await getDb(worktreePath)
       return await listAnnotations(db, {
         repo_root: repoRoot,
         file_path: file,
@@ -126,20 +134,18 @@ export const AnnotationService = {
   },
 
   async removeComment(worktreePath: string, commentId: string): Promise<void> {
-    const repoRoot = await gitRepoRoot(worktreePath)
-    const db = await getDb(repoRoot)
+    const db = await getDb(worktreePath)
     await removeAnnotation(db, commentId)
   },
 
   async clearComments(worktreePath: string, file?: string): Promise<void> {
     const repoRoot = await gitRepoRoot(worktreePath)
-    const db = await getDb(repoRoot)
+    const db = await getDb(worktreePath)
     await clearAnnotations(db, { repo_root: repoRoot, file_path: file })
   },
 
   async setResolved(worktreePath: string, commentId: string, resolved: boolean): Promise<void> {
-    const repoRoot = await gitRepoRoot(worktreePath)
-    const db = await getDb(repoRoot)
+    const db = await getDb(worktreePath)
     await setResolved(db, commentId, resolved)
   },
 

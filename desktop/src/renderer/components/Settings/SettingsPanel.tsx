@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type { Settings, FavoriteEditor, McpServer, AgentType, SkillEntry, SubagentEntry } from '../../store/types'
+import {
+  getDefaultWorktreeCredentialRules,
+  normalizeWorktreeCredentialPattern,
+  type WorktreeCredentialRuleKind,
+} from '../../../shared/worktree-credentials'
 import { Tooltip } from '../Tooltip/Tooltip'
 import styles from './SettingsPanel.module.css'
 
@@ -283,6 +288,169 @@ function SkillsSubagentsSection() {
         </div>
       ))}
       <button className={styles.addEntryBtn} onClick={handleAddSubagent}>+ Add Subagent</button>
+    </div>
+  )
+}
+
+function describeCredentialRule(kind: WorktreeCredentialRuleKind): string {
+  if (kind === 'directory') return 'Directory rule'
+  if (kind === 'file') return 'File rule'
+  return 'Glob rule'
+}
+
+function WorktreeCredentialsSection() {
+  const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+  const addToast = useAppStore((s) => s.addToast)
+  const [newPattern, setNewPattern] = useState('')
+  const [newKind, setNewKind] = useState<WorktreeCredentialRuleKind>('file')
+
+  const rules = settings.worktreeCredentialRules
+  const builtInRules = rules.filter((rule) => rule.builtIn)
+  const customRules = rules.filter((rule) => !rule.builtIn)
+
+  const updateRules = (nextRules: typeof rules) => {
+    updateSettings({ worktreeCredentialRules: nextRules })
+  }
+
+  const handleToggleRule = (id: string) => {
+    updateRules(
+      rules.map((rule) => (
+        rule.id === id
+          ? { ...rule, enabled: !rule.enabled }
+          : rule
+      )),
+    )
+  }
+
+  const handleRemoveRule = (id: string) => {
+    updateRules(rules.filter((rule) => rule.id !== id))
+  }
+
+  const handleAddRule = () => {
+    const pattern = normalizeWorktreeCredentialPattern(newPattern)
+    if (!pattern) {
+      addToast({
+        id: crypto.randomUUID(),
+        message: 'Credential rule pattern cannot be empty',
+        type: 'error',
+      })
+      return
+    }
+
+    const duplicate = rules.some((rule) => (
+      rule.kind === newKind
+      && normalizeWorktreeCredentialPattern(rule.pattern) === pattern
+    ))
+    if (duplicate) {
+      addToast({
+        id: crypto.randomUUID(),
+        message: 'That credential rule already exists',
+        type: 'error',
+      })
+      return
+    }
+
+    updateRules([
+      ...rules,
+      {
+        id: crypto.randomUUID(),
+        label: pattern,
+        pattern,
+        kind: newKind,
+        enabled: true,
+      },
+    ])
+    setNewPattern('')
+    setNewKind('file')
+  }
+
+  const handleResetBuiltIns = () => {
+    updateRules([
+      ...getDefaultWorktreeCredentialRules(),
+      ...customRules,
+    ])
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Worktree Credentials</div>
+      <div className={styles.sectionHint}>
+        Repo-local credential files and directories copied into new worktrees when the destination path is missing.
+      </div>
+
+      <div className={styles.subsectionLabel}>Built-in rules</div>
+      {builtInRules.map((rule) => (
+        <div key={rule.id} className={styles.entryRow}>
+          <div className={styles.rowText}>
+            <div className={styles.rowLabel}>{rule.label}</div>
+            <div className={styles.rowDescription}>{describeCredentialRule(rule.kind)}</div>
+          </div>
+          <button
+            className={`${styles.toggle} ${rule.enabled ? styles.toggleOn : ''}`}
+            onClick={() => handleToggleRule(rule.id)}
+          >
+            <span className={styles.toggleKnob} />
+          </button>
+        </div>
+      ))}
+
+      <div className={styles.sectionActions}>
+        <button className={styles.actionBtn} onClick={handleResetBuiltIns}>
+          Reset built-ins
+        </button>
+      </div>
+
+      <div className={styles.subsectionLabel} style={{ marginTop: 16 }}>Custom rules</div>
+      {customRules.length === 0 && (
+        <div className={styles.emptyHint}>
+          No custom rules yet. Add exact repo-relative files, directories, or simple globs.
+        </div>
+      )}
+      {customRules.map((rule) => (
+        <div key={rule.id} className={styles.entryRow}>
+          <div className={styles.rowText}>
+            <div className={styles.rowLabel}>{rule.label}</div>
+            <div className={styles.rowDescription}>{describeCredentialRule(rule.kind)}</div>
+          </div>
+          <button
+            className={`${styles.toggle} ${rule.enabled ? styles.toggleOn : ''}`}
+            onClick={() => handleToggleRule(rule.id)}
+          >
+            <span className={styles.toggleKnob} />
+          </button>
+          <button className={styles.removeEntryBtn} onClick={() => handleRemoveRule(rule.id)} title="Remove">
+            ✕
+          </button>
+        </div>
+      ))}
+
+      <div className={styles.ruleForm}>
+        <input
+          className={`${styles.textInput} ${styles.rulePatternInput}`}
+          value={newPattern}
+          onChange={(e) => setNewPattern(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleAddRule()
+          }}
+          placeholder="apps/web/.env.local"
+        />
+        <select
+          className={styles.selectInput}
+          value={newKind}
+          onChange={(e) => setNewKind(e.target.value as WorktreeCredentialRuleKind)}
+        >
+          <option value="file">File</option>
+          <option value="directory">Directory</option>
+          <option value="glob">Glob</option>
+        </select>
+        <button className={styles.actionBtn} onClick={handleAddRule}>
+          Add rule
+        </button>
+      </div>
+      <div className={styles.formHint}>
+        Use exact repo-relative paths for file and directory rules. Globs support `*`, `?`, and `**`.
+      </div>
     </div>
   )
 }
@@ -697,6 +865,8 @@ export function SettingsPanel() {
             onChange={(v) => update('sessionResumeEnabled', v)}
           />
         </div>
+
+        <WorktreeCredentialsSection />
 
         <SkillsSubagentsSection />
 

@@ -62,7 +62,7 @@
     },
     "packages/review-annotations": {
       "name": "@tridha643/review-annotations",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "bin": {
         "constell-annotate": "dist/cli.js",
       },
