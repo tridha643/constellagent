@@ -1,13 +1,14 @@
 import { execFile } from 'child_process'
 import { existsSync } from 'fs'
-import { copyFile, mkdir, readdir, realpath, rm, writeFile } from 'fs/promises'
+import { readdir, realpath, rm, writeFile } from 'fs/promises'
 import { homedir } from 'os'
 import { promisify } from 'util'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import type { CreateWorktreeProgress } from '../shared/workspace-creation'
 import type { GitLogEntry, WorktreeInfo } from '../shared/git-types'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
-import { SKIP_DIRS as FILE_SKIP_DIRS } from './file-service'
+import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
+import { copyWorktreeCredentialArtifacts } from './worktree-credential-copy'
 
 const execFileAsync = promisify(execFile)
 
@@ -90,7 +91,6 @@ function ensureWithinParent(parentDir: string, candidatePath: string): void {
   }
 }
 
-const SKIP_DIRS = new Set([...FILE_SKIP_DIRS, 'out'])
 const DEFAULT_GITIGNORE = [
   'node_modules/',
   'dist/',
@@ -100,24 +100,6 @@ const DEFAULT_GITIGNORE = [
   '.DS_Store',
   '*.log',
 ].join('\n') + '\n'
-
-async function copyEnvFiles(dir: string, destRoot: string, srcRoot: string): Promise<void> {
-  try {
-    const entries = await readdir(dir, { withFileTypes: true })
-    for (const entry of entries) {
-      if (entry.isDirectory() && !SKIP_DIRS.has(entry.name)) {
-        await copyEnvFiles(join(dir, entry.name), destRoot, srcRoot)
-      } else if (entry.isFile() && entry.name.startsWith('.env')) {
-        const rel = join(dir, entry.name).slice(srcRoot.length + 1)
-        const dest = join(destRoot, rel)
-        if (!existsSync(dest)) {
-          await mkdir(dirname(dest), { recursive: true }).catch(() => {})
-          await copyFile(join(dir, entry.name), dest).catch(() => {})
-        }
-      }
-    }
-  } catch {}
-}
 
 function reportCreateWorktreeProgress(
   onProgress: CreateWorktreeProgressReporter | undefined,
@@ -340,7 +322,8 @@ export class GitService {
     newBranch: boolean,
     baseBranch?: string,
     force = false,
-    onProgress?: CreateWorktreeProgressReporter
+    onProgress?: CreateWorktreeProgressReporter,
+    credentialRules?: WorktreeCredentialRule[],
   ): Promise<string> {
     const requestedBranch = branch.trim()
     branch = GitService.sanitizeBranchName(requestedBranch)
@@ -465,12 +448,12 @@ export class GitService {
       await git(['pull', '--ff-only'], worktreePath).catch(() => {})
     }
 
-    // Copy .env files that are missing from the worktree (gitignored) from the main repo
+    // Copy repo-local credential artifacts that are missing from the worktree.
     reportCreateWorktreeProgress(onProgress, {
       stage: 'copy-env-files',
-      message: 'Copying env files...',
+      message: 'Copying credential files...',
     })
-    await copyEnvFiles(repoPath, worktreePath, repoPath)
+    await copyWorktreeCredentialArtifacts(repoPath, worktreePath, credentialRules)
 
     return worktreePath
   }
@@ -481,7 +464,8 @@ export class GitService {
     prNumber: number,
     localBranch: string,
     force = false,
-    onProgress?: CreateWorktreeProgressReporter
+    onProgress?: CreateWorktreeProgressReporter,
+    credentialRules?: WorktreeCredentialRule[],
   ): Promise<PrWorktreeResult> {
     const parsedPrNumber = Number(prNumber)
     if (!Number.isInteger(parsedPrNumber) || parsedPrNumber <= 0) {
@@ -559,9 +543,9 @@ export class GitService {
 
     reportCreateWorktreeProgress(onProgress, {
       stage: 'copy-env-files',
-      message: 'Copying env files...',
+      message: 'Copying credential files...',
     })
-    await copyEnvFiles(repoPath, worktreePath, repoPath)
+    await copyWorktreeCredentialArtifacts(repoPath, worktreePath, credentialRules)
 
     return { worktreePath, branch }
   }

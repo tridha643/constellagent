@@ -731,6 +731,7 @@ export function Sidebar() {
           baseBranch,
           force,
           requestId,
+          settings.worktreeCredentialRules,
         );
         setWorkspaceCreation((prev) => {
           if (!prev || prev.requestId !== requestId) return prev;
@@ -781,6 +782,7 @@ export function Sidebar() {
       showConfirmDialog,
       dismissConfirmDialog,
       openWorkspaceDialog,
+      settings.worktreeCredentialRules,
     ],
   );
 
@@ -873,6 +875,7 @@ export function Sidebar() {
             localBranch,
             force,
             requestId,
+            settings.worktreeCredentialRules,
           );
         setWorkspaceCreation((prev) => {
           if (!prev || prev.requestId !== requestId) return prev;
@@ -916,6 +919,7 @@ export function Sidebar() {
       showConfirmDialog,
       dismissConfirmDialog,
       addToast,
+      settings.worktreeCredentialRules,
     ],
   );
 
@@ -952,6 +956,7 @@ export function Sidebar() {
           project.repoPath,
           stackName,
           stackBranches,
+          settings.worktreeCredentialRules,
         );
 
         await finishCreateWorkspace(project, stackName, branch, worktreePath);
@@ -973,6 +978,7 @@ export function Sidebar() {
       finishCreateWorkspace,
       closeProjectPrModal,
       addToast,
+      settings.worktreeCredentialRules,
     ],
   );
 

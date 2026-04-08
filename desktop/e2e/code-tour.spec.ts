@@ -145,4 +145,62 @@ test.describe('Code Tour happy path', () => {
       cleanupTestRepo(repoPath)
     }
   })
+
+  test('loads annotations for git worktrees that use a shared common .git dir', async () => {
+    const repoPath = createTestRepo('code-tour-worktree')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const worktreePath = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.git.createWorktree(
+          repo,
+          'tour-linked-worktree',
+          'tour-linked-branch',
+          true,
+        )
+      }, realRepo)
+
+      writeFileSync(
+        join(worktreePath, 'README.md'),
+        '# Worktree Tour Test\n\nLinked worktree change\n',
+      )
+
+      await window.evaluate(async ({ repo, worktree }: { repo: string; worktree: string }) => {
+        const store = (window as any).__store.getState()
+        store.hydrateState({ projects: [], workspaces: [], settings: {} })
+
+        const projectId = crypto.randomUUID()
+        const workspaceId = crypto.randomUUID()
+        store.addProject({ id: projectId, name: 'worktree-tour-repo', repoPath: repo })
+        store.addWorkspace({
+          id: workspaceId,
+          name: 'tour-linked-worktree',
+          branch: 'tour-linked-branch',
+          worktreePath: worktree,
+          projectId,
+        })
+
+        await (window as any).api.review.commentAdd(
+          worktree,
+          'README.md',
+          1,
+          'Worktree annotations use the shared review DB',
+          {
+            author: 'codex',
+            rationale: 'Git worktrees store review annotations under the common .git directory, so the app has to resolve git-common-dir instead of assuming worktree/.git is a folder.',
+            force: true,
+          },
+        )
+
+        return await (window as any).api.review.commentList(worktree, 'README.md')
+      }, { repo: realRepo, worktree: worktreePath }).then((rows: Array<{ summary: string; rationale: string | null }>) => {
+        expect(rows.some((row) => row.summary === 'Worktree annotations use the shared review DB')).toBe(true)
+        expect(rows.some((row) => row.rationale?.includes('git-common-dir'))).toBe(true)
+      })
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
 })

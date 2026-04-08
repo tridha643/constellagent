@@ -4,6 +4,8 @@ import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
 import type { GraphiteStackInfo } from '@shared/graphite-types'
 import type { ContextWindowData } from '@shared/context-window-types'
 import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '../../shared/automation-types'
+import type { WorktreeCredentialRule } from '../../shared/worktree-credentials'
+import { getDefaultWorktreeCredentialRules } from '../../shared/worktree-credentials'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
 export type WaitCondition =
@@ -143,6 +145,7 @@ export interface Settings {
   mcpServers: McpServer[]
   agentMcpAssignments: AgentMcpAssignments
   sessionResumeEnabled: boolean
+  worktreeCredentialRules: WorktreeCredentialRule[]
   skills: SkillEntry[]
   subagents: SubagentEntry[]
   t3CodeCollapseSidePanels: boolean
@@ -162,6 +165,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mcpServers: [],
   agentMcpAssignments: { 'claude-code': [], 'codex': [], 'gemini': [], 'cursor': [], 'opencode': [] },
   sessionResumeEnabled: true,
+  worktreeCredentialRules: getDefaultWorktreeCredentialRules(),
   skills: [],
   subagents: [],
   t3CodeCollapseSidePanels: false,
