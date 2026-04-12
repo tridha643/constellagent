@@ -81,7 +81,7 @@ No `better-sqlite3` — all SQLite access goes through AgentFS / Turso libSQL.
 
 **GitHub PR integration**: `github-service.ts` uses the `gh` CLI (same `execFileAsync` pattern as `GitService`) to fetch PR status per branch. Polls every 90s via `usePrStatusPoller` hook. Ephemeral state in Zustand (`prStatusMap`, `ghAvailability`) — not persisted to disk. Degrades silently when `gh` is missing, not authenticated, or repo isn't on GitHub.
 
-**Shared code**: `src/shared/ipc-channels.ts` defines channel name constants used by both main and preload. The `@shared` alias resolves to `src/shared/` across all three processes (configured in `electron-vite.config.ts`). Shared types live in `src/shared/` (e.g., `github-types.ts`).
+**Shared code**: `src/shared/ipc-channels.ts` defines channel name constants used by both main and preload. The `@shared` alias resolves to `src/shared/` across all three processes (configured in `electron.vite.config.ts`). Shared types live in `src/shared/` (e.g., `github-types.ts`).
 
 ## State Management
 

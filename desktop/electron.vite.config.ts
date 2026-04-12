@@ -18,9 +18,6 @@ export default defineConfig({
     }
   },
   renderer: {
-    server: {
-      port: process.env.CONSTELL_PORT ? Number(process.env.CONSTELL_PORT) : undefined,
-    },
     plugins: [tailwindcss()],
     resolve: {
       alias: {
@@ -31,7 +28,9 @@ export default defineConfig({
       strictPort: false,
       ...(process.env.CONSTELLAGENT_VITE_PORT
         ? { port: Number.parseInt(process.env.CONSTELLAGENT_VITE_PORT, 10) || 5173 }
-        : {}),
+        : process.env.CONSTELL_PORT
+          ? { port: Number(process.env.CONSTELL_PORT) }
+          : {}),
     },
   }
 })
