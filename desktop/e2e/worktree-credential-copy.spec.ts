@@ -33,7 +33,8 @@ function createRepoWithCredentialFixtures(name: string): { basePath: string; rep
   execSync('git config user.email "test@test.com"', { cwd: repoPath })
   execSync('git config user.name "Test"', { cwd: repoPath })
   writeFileSync(join(repoPath, 'README.md'), '# Test Repo\n')
-  execSync('git add README.md', { cwd: repoPath })
+  writeFileSync(join(repoPath, '.gitignore'), '.env*\n')
+  execSync('git add README.md .gitignore', { cwd: repoPath })
   execSync('git commit -m "initial commit"', { cwd: repoPath })
 
   execSync('git checkout -b tracked-creds', { cwd: repoPath })
@@ -41,7 +42,7 @@ function createRepoWithCredentialFixtures(name: string): { basePath: string; rep
   writeFileSync(join(repoPath, '.env'), 'TRACKED_SECRET=0\n')
   writeFileSync(join(repoPath, 'apps', 'web', '.env.local'), 'TRACKED_WEB_SECRET=0\n')
   writeFileSync(join(repoPath, '.npmrc'), 'tracked-registry=https://tracked.example\n')
-  execSync('git add .env apps/web/.env.local .npmrc', { cwd: repoPath })
+  execSync('git add -f .env apps/web/.env.local .npmrc', { cwd: repoPath })
   execSync('git commit -m "add tracked credentials"', { cwd: repoPath })
   execSync('git checkout main', { cwd: repoPath })
 
@@ -54,6 +55,33 @@ function createRepoWithCredentialFixtures(name: string): { basePath: string; rep
   writeFileSync(join(repoPath, '.claude', 'settings.json'), '{"profile":"local"}\n')
 
   return { basePath, repoPath }
+}
+
+async function mountWorkspace(window: Page, repoPath: string, worktreePath: string, branch: string, name: string): Promise<void> {
+  await window.evaluate(async ({ repo, worktree, worktreeBranch, workspaceName }: {
+    repo: string
+    worktree: string
+    worktreeBranch: string
+    workspaceName: string
+  }) => {
+    const store = (window as any).__store.getState()
+    store.hydrateState({ projects: [], workspaces: [] })
+
+    const projectId = crypto.randomUUID()
+    store.addProject({ id: projectId, name: 'credential-repo', repoPath: repo })
+    store.addWorkspace({
+      id: crypto.randomUUID(),
+      name: workspaceName,
+      branch: worktreeBranch,
+      worktreePath: worktree,
+      projectId,
+    })
+  }, {
+    repo: repoPath,
+    worktree: worktreePath,
+    worktreeBranch: branch,
+    workspaceName: name,
+  })
 }
 
 function createGraphiteRepoWithRemote(name: string): { basePath: string; repoPath: string } {
@@ -114,6 +142,42 @@ test.describe('Worktree credential copy', () => {
       expect(readFileSync(join(worktreePath, 'credentials.json'), 'utf8')).toBe('{"token":"local"}\n')
       expect(readFileSync(join(worktreePath, '.claude', 'settings.json'), 'utf8')).toBe('{"profile":"local"}\n')
       expect(readFileSync(join(worktreePath, '.npmrc'), 'utf8')).toBe('tracked-registry=https://tracked.example\n')
+    } finally {
+      await app.close()
+      cleanupPath(basePath)
+    }
+  })
+
+  test('copied env files appear in the file tree and open in the editor', async () => {
+    const { basePath, repoPath } = createRepoWithCredentialFixtures('sidebar-env')
+    const { app, window } = await launchApp()
+
+    try {
+      const worktreePath = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.git.createWorktree(
+          repo,
+          'env-visible',
+          'tracked-creds',
+          false,
+        )
+      }, repoPath)
+
+      await mountWorkspace(window, repoPath, worktreePath, 'tracked-creds', 'env-visible')
+      await window.waitForTimeout(1500)
+
+      const rootEnv = window.locator('[class*="treeName"]', { hasText: /^\.env$/ }).first()
+      await expect(rootEnv).toBeVisible({ timeout: 10000 })
+      await rootEnv.click()
+
+      await expect(window.locator('[class*="tabTitle"]', { hasText: /^\.env$/ })).toBeVisible({ timeout: 10000 })
+      await expect(window.locator('.monaco-editor').first()).toBeVisible({ timeout: 10000 })
+
+      const appsFolder = window.locator('[class*="treeName"]', { hasText: /^apps$/ }).first()
+      await appsFolder.click()
+      const webFolder = window.locator('[class*="treeName"]', { hasText: /^web$/ }).first()
+      await webFolder.click()
+
+      await expect(window.locator('[class*="treeName"]', { hasText: /^\.env\.local$/ }).first()).toBeVisible({ timeout: 10000 })
     } finally {
       await app.close()
       cleanupPath(basePath)
