@@ -1154,14 +1154,10 @@ export function Sidebar() {
       <div className={styles.projectList}>
         {projects.length === 0 && (
           <div className={styles.emptyState}>
-            <span
-              style={{
-                color: "var(--text-tertiary)",
-                fontSize: "var(--text-sm)",
-                padding: "0 var(--space-6)",
-              }}
-            >
-              No projects yet. Add a directory or git repository to get started.
+            <span className={styles.emptyIcon}>✦</span>
+            <span className={styles.emptyTitle}>No projects yet</span>
+            <span className={styles.emptyCopy}>
+              Add a directory or git repository to start building parallel workspaces.
             </span>
           </div>
         )}

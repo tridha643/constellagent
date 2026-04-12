@@ -50,6 +50,8 @@ const SOURCES: { key: SourceFilter; label: string }[] = [
   { key: 'home', label: 'Home (~)' },
 ]
 
+const PLAN_PALETTE_CACHE = new Map<string, PlanEntry[]>()
+
 function basename(p: string): string {
   const i = p.lastIndexOf('/')
   return i >= 0 ? p.slice(i + 1) : p
@@ -154,11 +156,17 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
 
   useEffect(() => {
     let cancelled = false
+    const cached = PLAN_PALETTE_CACHE.get(scanKey)
+    if (cached) setPlans(cached)
+
     window.api.fs.listAgentPlanMarkdowns(pathsToScan).then((entries) => {
-      if (!cancelled) setPlans(entries)
+      if (cancelled) return
+      PLAN_PALETTE_CACHE.set(scanKey, entries)
+      setPlans(entries)
     }).catch(() => {})
+
     return () => { cancelled = true }
-  }, [scanKey])
+  }, [scanKey, pathsToScan])
 
   const filtered = useMemo(() => {
     let list = plans

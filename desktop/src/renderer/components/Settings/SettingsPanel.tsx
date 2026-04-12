@@ -779,7 +779,10 @@ export function SettingsPanel() {
             <Tooltip label="Back" shortcut="⌘,">
               <button className={styles.backBtn} onClick={toggleSettings}>‹</button>
             </Tooltip>
-            <h2 className={styles.title}>Settings</h2>
+            <div className={styles.headerText}>
+              <h2 className={styles.title}>Settings</h2>
+              <p className={styles.subtitle}>Tune appearance, integrations, shortcuts, and worktree defaults.</p>
+            </div>
           </div>
         </div>
       </div>

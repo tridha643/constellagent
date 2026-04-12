@@ -56,7 +56,7 @@
   font-size: var(--text-sm);
   border-right: 1px solid var(--border-subtle);
   position: relative;
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: color var(--motion-fast), background-color var(--motion-fast);
   -webkit-app-region: no-drag;
 }
 
@@ -64,9 +64,11 @@
   cursor: grab;
 }
 
-.tab:hover {
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.02);
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.02);
+  }
 }
 
 .tab.active {
@@ -143,14 +145,7 @@
 
 /* ── Save Flash ── */
 
-.savedFlash {
-  animation: savedPulse 1.2s ease-out forwards;
-}
-
-@keyframes savedPulse {
-  0% { color: var(--accent-green); }
-  100% { color: inherit; }
-}
+.savedFlash {}
 
 /* ── Close Button ── */
 
@@ -167,18 +162,28 @@
   font-size: 10px;
   cursor: pointer;
   opacity: 0;
-  transition: opacity var(--motion-fast), background-color var(--motion-fast), color var(--motion-fast);
+  transition: opacity var(--motion-fast), background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
   flex-shrink: 0;
 }
 
-.tab:hover .closeButton,
 .tab.active .closeButton {
   opacity: 1;
 }
 
-.closeButton:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary);
+.closeButton:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover .closeButton,
+  .closeButton:hover {
+    opacity: 1;
+  }
+
+  .closeButton:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+  }
 }
 
 /* ── Git Status Badge ── */
@@ -237,13 +242,19 @@
   color: var(--text-tertiary);
   font-size: var(--text-lg);
   cursor: pointer;
-  transition: color var(--transition-fast);
+  transition: color var(--motion-fast), transform 100ms var(--ease-out);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
 
-.newTabButton:hover {
-  color: var(--text-primary);
+.newTabButton:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .newTabButton:hover {
+    color: var(--text-primary);
+  }
 }
 
 /* Muted tab-bar action when no workspace (avoid real `disabled` so Tooltip still receives hover) */
@@ -276,16 +287,22 @@
   background: none;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: color var(--motion-fast), background-color var(--motion-fast), transform 100ms var(--ease-out);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
   opacity: 0.5;
 }
 
-.cursorButton:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
-  opacity: 1;
+.cursorButton:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cursorButton:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.06);
+    opacity: 1;
+  }
 }
 
 .cursorIcon {

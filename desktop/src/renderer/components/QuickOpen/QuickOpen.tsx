@@ -20,6 +20,8 @@ interface Props {
   worktreePath: string
 }
 
+const QUICK_OPEN_CACHE = new Map<string, FileEntry[]>()
+
 function flattenTree(nodes: FileNode[], basePath: string): FileEntry[] {
   const result: FileEntry[] = []
   function walk(list: FileNode[]) {
@@ -98,12 +100,19 @@ export function QuickOpen({ worktreePath }: Props) {
     [openFileTab, openMarkdownPreview],
   )
 
-  // Load file tree on mount
+  // Load file tree on mount, but show a cached index immediately when available.
   useEffect(() => {
     let cancelled = false
+    const cached = QUICK_OPEN_CACHE.get(worktreePath)
+    if (cached) setFiles(cached)
+
     window.api.fs.getTree(worktreePath).then((nodes: FileNode[]) => {
-      if (!cancelled) setFiles(flattenTree(nodes, worktreePath))
+      if (cancelled) return
+      const next = flattenTree(nodes, worktreePath)
+      QUICK_OPEN_CACHE.set(worktreePath, next)
+      setFiles(next)
     }).catch(() => {})
+
     return () => { cancelled = true }
   }, [worktreePath])
 
