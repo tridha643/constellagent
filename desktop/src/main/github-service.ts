@@ -135,6 +135,43 @@ interface UnresolvedThreadCacheEntry {
 
 class GithubAuthError extends Error {}
 
+function ghErrorMessage(err: unknown, fallback: string): string {
+  const stderr =
+    typeof err === 'object' && err !== null && 'stderr' in err
+      ? String((err as { stderr?: unknown }).stderr ?? '')
+      : ''
+  const stdout =
+    typeof err === 'object' && err !== null && 'stdout' in err
+      ? String((err as { stdout?: unknown }).stdout ?? '')
+      : ''
+  const combined = `${stderr}\n${stdout}`.trim()
+  const message = combined || (err instanceof Error ? err.message : String(err || ''))
+
+  if (!message) return fallback
+  if (message.includes('not logged into any GitHub hosts')) return 'GitHub CLI is not authenticated.'
+  if (message.includes('already exists')) return 'A pull request already exists for this branch.'
+  if (message.includes('No commits between')) return 'There are no commits to open in a pull request.'
+  if (message.includes('is in clean status')) return 'There are no local commits to push.'
+  if (message.includes('pull request is in state')) return 'Only closed pull requests can be reopened.'
+  if (message.includes('was already merged')) return 'Merged pull requests cannot be reopened.'
+
+  const cleaned = message
+    .split('\n')
+    .map((line) => line.replace(/^gh:\s*/, '').trim())
+    .filter(Boolean)
+  return cleaned[0] || fallback
+}
+
+function parsePrUrl(raw: string): { url: string; number: number | null } | null {
+  const url = raw
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .find((part) => /^https?:\/\//.test(part))
+  if (!url) return null
+  const number = Number(url.match(/\/pull\/(\d+)(?:$|[?#/])/i)?.[1] ?? '')
+  return { url, number: Number.isFinite(number) ? number : null }
+}
+
 export class GithubService {
   private static AUTH_TOKEN_REFRESH_MS = 60_000
   private static OPEN_PR_LIST_LIMIT = 50
@@ -309,6 +346,91 @@ export class GithubService {
     }
   }
 
+  static async createPr(
+    repoPath: string,
+    headBranch: string,
+    baseBranch: string,
+  ): Promise<{ number: number; url: string }> {
+    if (!(await this.isGhAvailable())) {
+      throw new Error('GitHub CLI is not installed.')
+    }
+    const repoInfo = await this.getGithubRepoInfo(repoPath)
+    if (!repoInfo) {
+      throw new Error('Origin remote is not a GitHub repo.')
+    }
+    const token = await this.getAuthToken()
+    if (!token) {
+      throw new Error('GitHub CLI is not authenticated.')
+    }
+
+    try {
+      const { stdout } = await execFileAsync(
+        'gh',
+        ['pr', 'create', '--fill', '--head', headBranch, '--base', baseBranch],
+        { cwd: repoPath, timeout: 30_000 },
+      )
+      const parsed = parsePrUrl(stdout.trim())
+
+      try {
+        const { stdout: viewStdout } = await execFileAsync(
+          'gh',
+          ['pr', 'view', '--json', 'url,number'],
+          { cwd: repoPath, timeout: 15_000 },
+        )
+        const view = JSON.parse(viewStdout.trim()) as { url?: string; number?: number }
+        if (view.url && typeof view.number === 'number') {
+          this.invalidatePrCaches()
+          return { number: view.number, url: view.url }
+        }
+      } catch {
+        // Fallback to parsing create output below.
+      }
+
+      if (parsed?.url) {
+        this.invalidatePrCaches()
+        return { number: parsed.number ?? 0, url: parsed.url }
+      }
+
+      throw new Error('Pull request created, but the URL could not be determined.')
+    } catch (err) {
+      throw new Error(ghErrorMessage(err, 'Failed to create pull request.'))
+    }
+  }
+
+  static async reopenPr(
+    repoPath: string,
+    prNumber: number,
+  ): Promise<{ number: number; url: string }> {
+    if (!(await this.isGhAvailable())) {
+      throw new Error('GitHub CLI is not installed.')
+    }
+    const repoInfo = await this.getGithubRepoInfo(repoPath)
+    if (!repoInfo) {
+      throw new Error('Origin remote is not a GitHub repo.')
+    }
+    const token = await this.getAuthToken()
+    if (!token) {
+      throw new Error('GitHub CLI is not authenticated.')
+    }
+
+    try {
+      await execFileAsync('gh', ['pr', 'reopen', String(prNumber)], { cwd: repoPath, timeout: 20_000 })
+      const { stdout } = await execFileAsync(
+        'gh',
+        ['pr', 'view', String(prNumber), '--json', 'url,number'],
+        { cwd: repoPath, timeout: 15_000 },
+      )
+      const parsed = JSON.parse(stdout.trim()) as { url?: string; number?: number }
+      if (!parsed.url || typeof parsed.number !== 'number') {
+        throw new Error('Pull request reopened, but the URL could not be determined.')
+      }
+      this.invalidatePrCaches()
+      return { number: parsed.number, url: parsed.url }
+    } catch (err) {
+      throw new Error(ghErrorMessage(err, `Failed to reopen PR #${prNumber}.`))
+    }
+  }
+
   private static async getAuthToken(): Promise<string | null> {
     const now = Date.now()
     if (
@@ -370,6 +492,11 @@ export class GithubService {
     this.authToken = null
     this.authTokenChecked = false
     this.authTokenFetchedAt = 0
+  }
+
+  private static invalidatePrCaches(): void {
+    this.responseCache.clear()
+    this.openPrListCache.clear()
   }
 
   private static setCachedResponse(

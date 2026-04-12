@@ -15,6 +15,7 @@ export const IPC = {
   GIT_UNSTAGE: 'git:unstage',
   GIT_DISCARD: 'git:discard',
   GIT_COMMIT: 'git:commit',
+  GIT_PUSH_CURRENT_BRANCH: 'git:push-current-branch',
   GIT_GET_CURRENT_BRANCH: 'git:get-current-branch',
   GIT_GET_DEFAULT_BRANCH: 'git:get-default-branch',
   GIT_SHOW_FILE_AT_HEAD: 'git:show-file-at-head',
@@ -107,6 +108,8 @@ export const IPC = {
   GITHUB_GET_PR_STATUSES: 'github:get-pr-statuses',
   GITHUB_LIST_OPEN_PRS: 'github:list-open-prs',
   GITHUB_RESOLVE_PR: 'github:resolve-pr',
+  GITHUB_CREATE_PR: 'github:create-pr',
+  GITHUB_REOPEN_PR: 'github:reopen-pr',
   GITHUB_GET_PR_REVIEW_COMMENTS: 'github:get-pr-review-comments',
 
   // LSP operations

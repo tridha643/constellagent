@@ -709,6 +709,14 @@ export class GitService {
     await git(['commit', '-m', message], worktreePath)
   }
 
+  static async pushCurrentBranch(worktreePath: string): Promise<void> {
+    try {
+      await git(['push', '--set-upstream', 'origin', 'HEAD'], worktreePath)
+    } catch (err) {
+      throw new Error(friendlyGitError(err, 'Failed to push current branch'))
+    }
+  }
+
   static async showFileAtHead(worktreePath: string, filePath: string): Promise<string | null> {
     try {
       return await git(['show', 'HEAD:' + filePath], worktreePath)

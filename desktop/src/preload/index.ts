@@ -53,6 +53,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_DISCARD, worktreePath, paths, untracked),
     commit: (worktreePath: string, message: string) =>
       ipcRenderer.invoke(IPC.GIT_COMMIT, worktreePath, message),
+    pushCurrentBranch: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.GIT_PUSH_CURRENT_BRANCH, worktreePath) as Promise<void>,
     getCurrentBranch: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_CURRENT_BRANCH, worktreePath) as Promise<string>,
     getDefaultBranch: (repoPath: string) =>
@@ -279,6 +281,10 @@ const api = {
       ipcRenderer.invoke(IPC.GITHUB_LIST_OPEN_PRS, repoPath),
     resolvePr: (repoPath: string, prNumber: number, repoSlug?: string) =>
       ipcRenderer.invoke(IPC.GITHUB_RESOLVE_PR, repoPath, prNumber, repoSlug) as Promise<{ branch: string; title: string; number: number }>,
+    createPr: (repoPath: string, headBranch: string, baseBranch: string) =>
+      ipcRenderer.invoke(IPC.GITHUB_CREATE_PR, repoPath, headBranch, baseBranch) as Promise<{ number: number; url: string }>,
+    reopenPr: (repoPath: string, prNumber: number) =>
+      ipcRenderer.invoke(IPC.GITHUB_REOPEN_PR, repoPath, prNumber) as Promise<{ number: number; url: string }>,
     getPrReviewComments: (repoPath: string, prNumber: number) =>
       ipcRenderer.invoke(IPC.GITHUB_GET_PR_REVIEW_COMMENTS, repoPath, prNumber) as Promise<import('../main/github-service').PrReviewComment[]>,
   },
