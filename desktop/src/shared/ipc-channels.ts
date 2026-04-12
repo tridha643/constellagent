@@ -177,4 +177,11 @@ export const IPC = {
   STATE_SAVE: 'state:save',
   STATE_SAVE_SYNC: 'state:save-sync',
   STATE_LOAD: 'state:load',
+
+  // External project startup settings
+  PROJECT_STARTUP_SETTINGS_LOAD_ALL: 'project-startup-settings:load-all',
+  PROJECT_STARTUP_SETTINGS_GET: 'project-startup-settings:get',
+  PROJECT_STARTUP_SETTINGS_SET: 'project-startup-settings:set',
+  PROJECT_STARTUP_SETTINGS_DELETE: 'project-startup-settings:delete',
+  PROJECT_STARTUP_SETTINGS_PATH: 'project-startup-settings:path',
 } as const

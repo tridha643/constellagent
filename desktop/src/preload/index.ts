@@ -373,6 +373,19 @@ const api = {
     load: () =>
       ipcRenderer.invoke(IPC.STATE_LOAD),
   },
+
+  projectStartupSettings: {
+    loadAll: () =>
+      ipcRenderer.invoke(IPC.PROJECT_STARTUP_SETTINGS_LOAD_ALL) as Promise<Record<string, { name: string; command: string }[]>>,
+    get: (repoPath: string) =>
+      ipcRenderer.invoke(IPC.PROJECT_STARTUP_SETTINGS_GET, repoPath) as Promise<Array<{ name: string; command: string }> | null>,
+    set: (repoPath: string, startupCommands: Array<{ name: string; command: string }>) =>
+      ipcRenderer.invoke(IPC.PROJECT_STARTUP_SETTINGS_SET, repoPath, startupCommands) as Promise<Array<{ name: string; command: string }>>,
+    delete: (repoPath: string) =>
+      ipcRenderer.invoke(IPC.PROJECT_STARTUP_SETTINGS_DELETE, repoPath) as Promise<void>,
+    path: () =>
+      ipcRenderer.invoke(IPC.PROJECT_STARTUP_SETTINGS_PATH) as Promise<string>,
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

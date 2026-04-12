@@ -33,6 +33,13 @@ import { emitAutomationEvent, onAutomationEvent } from './automation-event-bus'
 import { lookupPersistedProjectRepo } from './persisted-state'
 import { GithubPollService } from './github-poll-service'
 import { listPiModels } from './pi-models'
+import {
+  deleteProjectStartupCommands,
+  getProjectStartupCommands,
+  getProjectStartupSettingsPath,
+  listProjectStartupSettings,
+  setProjectStartupCommands,
+} from './project-startup-settings'
 
 const ptyManager = new PtyManager()
 const worktreeSyncService = new WorktreeSyncService()
@@ -1240,6 +1247,26 @@ export function registerIpcHandlers(): void {
       }
     }
     return sanitized.data
+  })
+
+  ipcMain.handle(IPC.PROJECT_STARTUP_SETTINGS_LOAD_ALL, async () => {
+    return await listProjectStartupSettings()
+  })
+
+  ipcMain.handle(IPC.PROJECT_STARTUP_SETTINGS_GET, async (_e, repoPath: string) => {
+    return await getProjectStartupCommands(repoPath)
+  })
+
+  ipcMain.handle(IPC.PROJECT_STARTUP_SETTINGS_SET, async (_e, repoPath: string, startupCommands: unknown) => {
+    return await setProjectStartupCommands(repoPath, startupCommands)
+  })
+
+  ipcMain.handle(IPC.PROJECT_STARTUP_SETTINGS_DELETE, async (_e, repoPath: string) => {
+    await deleteProjectStartupCommands(repoPath)
+  })
+
+  ipcMain.handle(IPC.PROJECT_STARTUP_SETTINGS_PATH, async () => {
+    return getProjectStartupSettingsPath()
   })
 }
 

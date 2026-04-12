@@ -56,6 +56,13 @@
   margin-top: calc(-1 * var(--space-2));
 }
 
+.storageHint {
+  font-size: var(--text-xs);
+  color: var(--text-ghost);
+  font-family: var(--font-ui);
+  margin-top: calc(-1 * var(--space-2));
+}
+
 .sectionToggle {
   display: flex;
   align-items: center;

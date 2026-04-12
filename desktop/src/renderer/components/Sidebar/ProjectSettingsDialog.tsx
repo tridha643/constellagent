@@ -172,6 +172,7 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
   )
   const [startupOpen, setStartupOpen] = useState(() => (project.startupCommands?.length ?? 0) > 0)
   const [syncing, setSyncing] = useState(false)
+  const [startupSettingsPath, setStartupSettingsPath] = useState('')
   const [prLinkProvider, setPrLinkProvider] = useState<PrLinkProvider>(
     project.prLinkProvider ?? 'github'
   )
@@ -339,6 +340,18 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
 
   const configuredStartupCount = commands.filter((c) => c.command.trim()).length
 
+  useEffect(() => {
+    let cancelled = false
+    void window.api.projectStartupSettings.path().then((value) => {
+      if (!cancelled) setStartupSettingsPath(value)
+    }).catch(() => {
+      if (!cancelled) setStartupSettingsPath('')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   return (
     <div className={styles.overlay} onClick={onCancel}>
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
@@ -365,6 +378,10 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
               Each row opens its own tab. To run steps in order in one tab, use{' '}
               <code className={styles.inlineCode}>&&</code> (for example{' '}
               <code className={styles.inlineCode}>pnpm install && pnpm dev</code>).
+            </div>
+            <div className={styles.storageHint}>
+              Saved outside the repo in{' '}
+              <code className={styles.inlineCode}>{startupSettingsPath || '~/Desktop/.constellagent-project-settings.json'}</code>.
             </div>
 
             <div className={styles.commandList}>

@@ -110,8 +110,13 @@ app.setName('Constellagent')
 // Isolate test data so e2e tests never touch real app state.
 // Playwright may not always propagate env to the Electron main process; also accept --constell-e2e.
 const e2eIsolateUserData = isE2eRun()
+const explicitUserDataPath = process.env.CONSTELLAGENT_USER_DATA_PATH?.trim()
 
-if (e2eIsolateUserData) {
+if (explicitUserDataPath) {
+  app.setPath('userData', explicitUserDataPath)
+  process.env.CONSTELLAGENT_NOTIFY_DIR ||= join(explicitUserDataPath, 'notify')
+  process.env.CONSTELLAGENT_ACTIVITY_DIR ||= join(explicitUserDataPath, 'activity')
+} else if (e2eIsolateUserData) {
   const { mkdtempSync } = require('fs')
   const { join } = require('path')
   const testData = mkdtempSync(join(require('os').tmpdir(), 'constellagent-test-'))
