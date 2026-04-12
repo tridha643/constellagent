@@ -31,6 +31,14 @@ export const SKIP_DIRS = new Set([
   'coverage', '.nyc_output',
 ])
 
+function toPosixPath(pathValue: string): string {
+  return pathValue.replace(/\\/g, '/')
+}
+
+function isAlwaysVisibleFileName(name: string): boolean {
+  return name === '.gitignore' || name.startsWith('.env')
+}
+
 export class FileService {
   static async getTree(dirPath: string, depth = 0): Promise<FileNode[]> {
     if (depth > 8) return [] // prevent infinite recursion
@@ -48,7 +56,7 @@ export class FileService {
     const nodes: FileNode[] = []
 
     const sorted = entries
-      .filter((e) => !e.name.startsWith('.') || e.name === '.gitignore')
+      .filter((e) => !e.name.startsWith('.') || isAlwaysVisibleFileName(e.name))
       .filter((e) => !SKIP_DIRS.has(e.name))
       .sort((a, b) => {
         // Directories first, then alphabetical
@@ -80,20 +88,57 @@ export class FileService {
   }
 
   private static async getGitTree(dirPath: string): Promise<FileNode[]> {
-    const { stdout } = await execFileAsync(
-      'git',
-      ['ls-files', '--others', '--cached', '--exclude-standard'],
-      { cwd: dirPath }
-    )
+    const [{ stdout }, alwaysVisibleFiles] = await Promise.all([
+      execFileAsync(
+        'git',
+        ['ls-files', '--others', '--cached', '--exclude-standard'],
+        { cwd: dirPath }
+      ),
+      this.collectAlwaysVisibleFiles(dirPath),
+    ])
 
     const files = stdout.trim().split('\n').filter(Boolean)
-    return this.buildTreeFromPaths(dirPath, files)
+    return this.buildTreeFromPaths(dirPath, [...files, ...alwaysVisibleFiles])
+  }
+
+  private static async collectAlwaysVisibleFiles(
+    basePath: string,
+    relativeDir = '',
+    depth = 0,
+  ): Promise<string[]> {
+    if (depth > 8) return []
+
+    const absoluteDir = relativeDir ? join(basePath, relativeDir) : basePath
+    let entries: import('fs').Dirent[]
+    try {
+      entries = await readdir(absoluteDir, { withFileTypes: true }) as import('fs').Dirent[]
+    } catch {
+      return []
+    }
+
+    const files: string[] = []
+    for (const entry of entries) {
+      if (SKIP_DIRS.has(entry.name)) continue
+
+      const nextRelativePath = relativeDir ? join(relativeDir, entry.name) : entry.name
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith('.')) continue
+        files.push(...await this.collectAlwaysVisibleFiles(basePath, nextRelativePath, depth + 1))
+        continue
+      }
+
+      if (entry.isFile() && isAlwaysVisibleFileName(entry.name)) {
+        files.push(toPosixPath(nextRelativePath))
+      }
+    }
+
+    return files
   }
 
   private static buildTreeFromPaths(basePath: string, paths: string[]): FileNode[] {
     const root: FileNode = { name: '', path: basePath, type: 'directory', children: [] }
 
-    for (const filePath of paths) {
+    for (const filePath of new Set(paths.map((value) => toPosixPath(value)).filter(Boolean))) {
       const parts = filePath.split('/')
       let current = root
 

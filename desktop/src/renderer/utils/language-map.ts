@@ -19,7 +19,10 @@ const EXT_MAP: Record<string, string> = {
 }
 
 export function getLanguage(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase()
+  const fileName = path.split(/[\\/]/).pop()?.toLowerCase() || ''
+  if (fileName === '.env' || fileName.startsWith('.env.')) return 'dotenv'
+
+  const ext = fileName.split('.').pop()?.toLowerCase()
   return EXT_MAP[ext || ''] || 'plaintext'
 }
 
