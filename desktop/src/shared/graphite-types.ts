@@ -20,3 +20,9 @@ export interface GraphiteCreateOptions {
   trunks: string[]
   branches: GraphiteCreateBranchOption[]
 }
+
+export type GraphiteStackAction = 'start-stack' | 'add-to-stack' | 'submit-stack'
+
+export interface GraphiteStackActionResult {
+  branch: string
+}

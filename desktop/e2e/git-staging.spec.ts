@@ -375,6 +375,65 @@ test.describe('Git staging functionality', () => {
     }
   })
 
+  test('feature worktree shows Submit Stack button even with no working tree changes', async () => {
+    const repoPath = createTestRepo('staging-graphite-submit-visible')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const worktreePath = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.git.createWorktree(repo, 'graphite-submit', 'feature/graphite-submit', true, 'main')
+      }, realRepo)
+
+      await mountWorkspace(window, realRepo, worktreePath as string, 'feature/graphite-submit', 'graphite-submit')
+      await window.locator('button', { hasText: 'Changes' }).click()
+      await window.waitForTimeout(1200)
+
+      await expect(window.locator('button', { hasText: 'Submit Stack' })).toBeVisible({ timeout: 5000 })
+      await expect(window.locator('[class*="emptyText"]', { hasText: 'No changes in this worktree' })).toBeVisible()
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('staged changes select Start Stack on trunk and Add to Stack on feature branches', async () => {
+    const repoPath = createTestRepo('staging-graphite-labels')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      writeFileSync(join(realRepo, 'README.md'), '# Start stack\n')
+      await window.evaluate(async (repo: string) => {
+        await (window as any).api.git.stage(repo, ['README.md'])
+      }, realRepo)
+
+      await mountWorkspace(window, realRepo, realRepo, 'main', 'main')
+      await window.locator('button', { hasText: 'Changes' }).click()
+      await window.waitForTimeout(1200)
+
+      await expect(window.locator('button', { hasText: 'Start Stack' })).toBeVisible({ timeout: 5000 })
+
+      const worktreePath = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.git.createWorktree(repo, 'graphite-add', 'feature/graphite-add', true, 'main')
+      }, realRepo)
+
+      writeFileSync(join(worktreePath as string, 'src/index.ts'), 'console.log(\"graphite\")\n')
+      await window.evaluate(async (worktree: string) => {
+        await (window as any).api.git.stage(worktree, ['src/index.ts'])
+      }, worktreePath)
+
+      await mountWorkspace(window, realRepo, worktreePath as string, 'feature/graphite-add', 'graphite-add')
+      await window.locator('button', { hasText: 'Changes' }).click()
+      await window.waitForTimeout(1200)
+
+      await expect(window.locator('button', { hasText: 'Add to Stack' })).toBeVisible({ timeout: 5000 })
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
   test('open PR hides the PR action for a worktree branch', async () => {
     const repoPath = createTestRepo('staging-pr-open-hidden')
     const realRepo = realpathSync(repoPath)

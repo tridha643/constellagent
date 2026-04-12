@@ -10,6 +10,7 @@ import { IPC } from '../shared/ipc-channels'
 import type { PlanAgent } from '../shared/agent-plan-path'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
+import type { GraphiteStackAction } from '../shared/graphite-types'
 import { PtyManager, type PtyWriteOpts } from './pty-manager'
 import { GitService } from './git-service'
 import { WorktreeSyncService } from './worktree-sync-service'
@@ -420,6 +421,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.GRAPHITE_GET_STACK_FOR_PR, async (_e, repoPath: string, prBranch: string) => {
     return GraphiteService.getStackForPr(repoPath, prBranch)
   })
+
+  ipcMain.handle(
+    IPC.GRAPHITE_RUN_STACK_ACTION,
+    async (_e, repoPath: string, worktreePath: string, action: GraphiteStackAction, commitMessage: string, defaultBranch: string) => {
+      return GraphiteService.runStackAction(repoPath, worktreePath, action, commitMessage, defaultBranch)
+    },
+  )
 
   ipcMain.handle(IPC.GRAPHITE_GET_CREATE_OPTIONS, async (_e, repoPath: string) => {
     return GraphiteService.getCreateOptions(repoPath)

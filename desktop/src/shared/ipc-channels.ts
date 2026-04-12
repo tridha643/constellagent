@@ -39,6 +39,7 @@ export const IPC = {
   GRAPHITE_CHECKOUT_BRANCH: 'graphite:checkout-branch',
   GRAPHITE_CLONE_STACK: 'graphite:clone-stack',
   GRAPHITE_GET_STACK_FOR_PR: 'graphite:get-stack-for-pr',
+  GRAPHITE_RUN_STACK_ACTION: 'graphite:run-stack-action',
   GRAPHITE_GET_CREATE_OPTIONS: 'graphite:get-create-options',
   GRAPHITE_SET_BRANCH_PARENT: 'graphite:set-branch-parent',
 

@@ -12,7 +12,7 @@ import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { PlanAgent } from '../shared/agent-plan-path'
 import type { PiModelOption } from '../shared/plan-build-command'
 import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
-import type { GraphiteCreateOptions, GraphiteStackInfo } from '../shared/graphite-types'
+import type { GraphiteCreateOptions, GraphiteStackAction, GraphiteStackActionResult, GraphiteStackInfo } from '../shared/graphite-types'
 import type { ReviewComment } from '../shared/review-types'
 import type { ContextWindowData } from '../shared/context-window-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
@@ -91,6 +91,8 @@ const api = {
       ipcRenderer.invoke(IPC.GRAPHITE_CLONE_STACK, repoPath, name, prBranches, credentialRules) as Promise<{ worktreePath: string; branch: string }>,
     getStackForPr: (repoPath: string, prBranch: string) =>
       ipcRenderer.invoke(IPC.GRAPHITE_GET_STACK_FOR_PR, repoPath, prBranch) as Promise<{ name: string; parent: string | null }[] | null>,
+    runStackAction: (repoPath: string, worktreePath: string, action: GraphiteStackAction, commitMessage: string, defaultBranch: string) =>
+      ipcRenderer.invoke(IPC.GRAPHITE_RUN_STACK_ACTION, repoPath, worktreePath, action, commitMessage, defaultBranch) as Promise<GraphiteStackActionResult>,
     getCreateOptions: (repoPath: string) =>
       ipcRenderer.invoke(IPC.GRAPHITE_GET_CREATE_OPTIONS, repoPath) as Promise<GraphiteCreateOptions | null>,
     setBranchParent: (repoPath: string, branch: string, parent: string) =>
