@@ -325,6 +325,10 @@ export function registerIpcHandlers(): void {
     return GitService.commit(worktreePath, message)
   })
 
+  ipcMain.handle(IPC.GIT_PUSH_CURRENT_BRANCH, async (_e, worktreePath: string) => {
+    return GitService.pushCurrentBranch(worktreePath)
+  })
+
   ipcMain.handle(IPC.GIT_GET_CURRENT_BRANCH, async (_e, worktreePath: string) => {
     return GitService.getCurrentBranch(worktreePath)
   })
@@ -378,6 +382,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.GITHUB_RESOLVE_PR, async (_e, repoPath: string, prNumber: number, repoSlug?: string) => {
     return GithubService.resolvePr(repoPath, prNumber, repoSlug)
+  })
+
+  ipcMain.handle(IPC.GITHUB_CREATE_PR, async (_e, repoPath: string, headBranch: string, baseBranch: string) => {
+    return GithubService.createPr(repoPath, headBranch, baseBranch)
+  })
+
+  ipcMain.handle(IPC.GITHUB_REOPEN_PR, async (_e, repoPath: string, prNumber: number) => {
+    return GithubService.reopenPr(repoPath, prNumber)
   })
 
   ipcMain.handle(IPC.GITHUB_GET_PR_REVIEW_COMMENTS, async (_e, repoPath: string, prNumber: number) => {

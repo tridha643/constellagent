@@ -49,6 +49,29 @@ function cleanupTestRepo(repoPath: string): void {
   }
 }
 
+
+async function mountWorkspace(
+  window: Page,
+  repoPath: string,
+  worktreePath: string,
+  branch: string,
+  workspaceName = 'feature-ws',
+): Promise<void> {
+  await window.evaluate(async ({ repo, worktree, branchName, workspaceName }) => {
+    const store = (window as any).__store.getState()
+    store.hydrateState({ projects: [], workspaces: [] })
+    const projectId = 'proj-pr-button'
+    store.addProject({ id: projectId, name: 'pr-button-test', repoPath: repo })
+    store.addWorkspace({
+      id: 'ws-pr-button',
+      name: workspaceName,
+      branch: branchName,
+      worktreePath: worktree,
+      projectId,
+    })
+  }, { repo: repoPath, worktree: worktreePath, branchName: branch, workspaceName })
+}
+
 test.describe('Git staging functionality', () => {
   test('stage and unstage a file via IPC', async () => {
     const repoPath = createTestRepo('staging-ipc')
@@ -240,7 +263,9 @@ test.describe('Git staging functionality', () => {
 
       // Create changes: one staged, one unstaged
       writeFileSync(join(realRepo, 'README.md'), '# Staged\n')
-      execSync('git add README.md', { cwd: realRepo })
+      await window.evaluate(async (repo: string) => {
+        await (window as any).api.git.stage(repo, ['README.md'])
+      }, realRepo)
       writeFileSync(join(realRepo, 'newfile.txt'), 'unstaged\n')
 
       // Switch to Changes mode
@@ -327,4 +352,116 @@ test.describe('Git staging functionality', () => {
       cleanupTestRepo(repoPath)
     }
   })
+
+  test('feature worktree shows Create PR button even with no working tree changes', async () => {
+    const repoPath = createTestRepo('staging-pr-create-visible')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const worktreePath = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.git.createWorktree(repo, 'pr-visible', 'feature/pr-visible', true, 'main')
+      }, realRepo)
+
+      await mountWorkspace(window, realRepo, worktreePath as string, 'feature/pr-visible', 'pr-visible')
+      await window.locator('button', { hasText: 'Changes' }).click()
+      await window.waitForTimeout(1200)
+
+      await expect(window.locator('button', { hasText: 'Create PR' })).toBeVisible({ timeout: 5000 })
+      await expect(window.locator('[class*="emptyText"]', { hasText: 'No changes in this worktree' })).toBeVisible()
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('open PR hides the PR action for a worktree branch', async () => {
+    const repoPath = createTestRepo('staging-pr-open-hidden')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const worktreePath = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.git.createWorktree(repo, 'pr-open', 'feature/pr-open', true, 'main')
+      }, realRepo)
+
+      await mountWorkspace(window, realRepo, worktreePath as string, 'feature/pr-open', 'pr-open')
+      await window.waitForTimeout(600)
+
+      await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        store.setGhAvailability('proj-pr-button', true)
+        store.setPrStatuses('proj-pr-button', {
+          'feature/pr-open': {
+            number: 18,
+            state: 'open',
+            title: 'Already open',
+            url: 'https://github.com/test/repo/pull/18',
+            checkStatus: 'passing',
+            hasPendingComments: false,
+            pendingCommentCount: 0,
+            isBlockedByCi: false,
+            isApproved: false,
+            isChangesRequested: false,
+            updatedAt: new Date().toISOString(),
+          },
+        })
+      })
+
+      await window.locator('button', { hasText: 'Changes' }).click()
+      await window.waitForTimeout(1200)
+
+      await expect(window.locator('button', { hasText: 'Create PR' })).toHaveCount(0)
+      await expect(window.locator('button', { hasText: 'Reopen PR' })).toHaveCount(0)
+      await expect(window.locator('[class*="emptyText"]', { hasText: 'No changes' })).toBeVisible()
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('closed PR shows Reopen PR for a worktree branch', async () => {
+    const repoPath = createTestRepo('staging-pr-reopen-visible')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const worktreePath = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.git.createWorktree(repo, 'pr-reopen', 'feature/pr-reopen', true, 'main')
+      }, realRepo)
+
+      await mountWorkspace(window, realRepo, worktreePath as string, 'feature/pr-reopen', 'pr-reopen')
+      await window.waitForTimeout(600)
+
+      await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        store.setGhAvailability('proj-pr-button', true)
+        store.setPrStatuses('proj-pr-button', {
+          'feature/pr-reopen': {
+            number: 24,
+            state: 'closed',
+            title: 'Closed PR',
+            url: 'https://github.com/test/repo/pull/24',
+            checkStatus: 'none',
+            hasPendingComments: false,
+            pendingCommentCount: 0,
+            isBlockedByCi: false,
+            isApproved: false,
+            isChangesRequested: false,
+            updatedAt: new Date().toISOString(),
+          },
+        })
+      })
+
+      await window.locator('button', { hasText: 'Changes' }).click()
+      await window.waitForTimeout(1200)
+
+      await expect(window.locator('button', { hasText: 'Reopen PR' })).toBeVisible({ timeout: 5000 })
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+
 })

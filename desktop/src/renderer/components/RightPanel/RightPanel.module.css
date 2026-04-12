@@ -176,17 +176,35 @@
   color: var(--text-tertiary);
 }
 
+.commitActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .commitButton {
+  min-height: 30px;
   padding: var(--space-2) var(--space-4);
   background: var(--accent-blue);
-  border: none;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  color: var(--text-primary);
+  color: white;
   font-size: var(--text-sm);
   font-family: var(--font-ui);
   font-weight: var(--weight-medium);
   cursor: pointer;
-  transition: opacity var(--transition-fast), transform 100ms var(--ease-out);
+  transition: background-color 140ms var(--ease-out), opacity 140ms var(--ease-out), transform 100ms var(--ease-out), border-color 140ms var(--ease-out);
+}
+
+.commitButtonSecondary {
+  background: var(--surface-3);
+  border-color: var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.prActionButton {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-blue) 92%, white 8%) 0%, var(--accent-blue) 100%);
 }
 
 .commitButton:active:not(:disabled) {
@@ -194,12 +212,22 @@
 }
 
 .commitButton:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .commitButton:not(:disabled):hover {
-  opacity: 0.85;
+  opacity: 0.92;
+}
+
+.commitButtonSecondary:not(:disabled):hover {
+  background: var(--surface-4);
+  opacity: 1;
+}
+
+.prActionButton:not(:disabled):hover {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-blue) 96%, white 4%) 0%, color-mix(in srgb, var(--accent-blue) 88%, black 12%) 100%);
+  opacity: 1;
 }
 
 /* ── Change Sections ── */
