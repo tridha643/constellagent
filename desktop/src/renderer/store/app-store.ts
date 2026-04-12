@@ -43,6 +43,7 @@ import {
 import { normalizeWorktreeCredentialRules } from '../../shared/worktree-credentials'
 
 const DEFAULT_PR_LINK_PROVIDER = 'github' as const
+const DEFAULT_GRAPHITE_NEW_BRANCH_SOURCE = 'trunk' as const
 
 /** Removed Phone Control settings — strip from persisted JSON so old installs do not re-save them. */
 const LEGACY_PHONE_CONTROL_SETTING_KEYS = [
@@ -64,6 +65,19 @@ function normalizeHydratedStartupCommands(raw: Project['startupCommands']): Star
     out.push({ name: typeof c.name === 'string' ? c.name : '', command })
   }
   return out.length > 0 ? out : undefined
+}
+
+function normalizeProject(project: Project): Project {
+  const preferredTrunk = typeof project.graphitePreferredTrunk === 'string'
+    ? project.graphitePreferredTrunk.trim() || null
+    : null
+  return {
+    ...project,
+    prLinkProvider: project.prLinkProvider ?? DEFAULT_PR_LINK_PROVIDER,
+    graphiteNewBranchSource: project.graphiteNewBranchSource ?? DEFAULT_GRAPHITE_NEW_BRANCH_SOURCE,
+    graphitePreferredTrunk: preferredTrunk,
+    startupCommands: normalizeHydratedStartupCommands(project.startupCommands),
+  }
 }
 
 const TAB_TITLE_LOG = '[constellagent:tab-title]'
@@ -217,10 +231,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       projects: [
         ...s.projects,
-        {
-          ...project,
-          prLinkProvider: project.prLinkProvider ?? DEFAULT_PR_LINK_PROVIDER,
-        },
+        normalizeProject(project),
       ],
     }))
     void window.api.git.startSyncPolling(project.id, project.repoPath)
@@ -1617,11 +1628,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   hydrateState: (data) => {
-    const projects = (data.projects ?? []).map((project) => ({
-      ...project,
-      prLinkProvider: project.prLinkProvider ?? DEFAULT_PR_LINK_PROVIDER,
-      startupCommands: normalizeHydratedStartupCommands(project.startupCommands),
-    }))
+    const projects = (data.projects ?? []).map((project) => normalizeProject(project))
     const workspaces = data.workspaces ?? []
     const saved = data.activeWorkspaceId
     const settingsMerged = data.settings ? { ...DEFAULT_SETTINGS, ...data.settings } : { ...DEFAULT_SETTINGS }

@@ -123,6 +123,62 @@ test.describe('Graphite stack metadata parsing', () => {
     }
   })
 
+
+  test('lists Graphite trunks and source branches for new worktree creation', async () => {
+    const repoPath = createGraphiteRepo('create-options')
+    writeGraphiteSqliteDb(repoPath, [
+      { name: 'feat-a', parent: 'main' },
+      { name: 'feat-b', parent: 'feat-a' },
+      { name: 'hotfix-a', parent: 'release-v10' },
+    ])
+
+    const { app, window } = await launchApp()
+    try {
+      const options = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.graphite.getCreateOptions(repo)
+      }, repoPath)
+
+      expect(options).not.toBeNull()
+      expect(options.trunks).toEqual(['main', 'release-v10'])
+      expect(options.branches.map((branch: { name: string }) => branch.name)).toEqual(['feat-a', 'feat-b', 'hotfix-a'])
+      expect(options.branches.find((branch: { name: string }) => branch.name === 'feat-b')).toMatchObject({
+        parent: 'feat-a',
+        trunk: 'main',
+      })
+    } finally {
+      await app.close()
+      cleanupRepo(repoPath)
+    }
+  })
+
+  test('writes branch parent metadata for newly created Graphite children', async () => {
+    const repoPath = createGraphiteRepo('set-parent')
+    writeGraphiteSqliteDb(repoPath, [
+      { name: 'feat-a', parent: 'main' },
+      { name: 'feat-b', parent: 'feat-a' },
+    ])
+
+    const { app, window } = await launchApp()
+    try {
+      await window.evaluate(async (repo: string) => {
+        await (window as any).api.graphite.setBranchParent(repo, 'feat-c', 'feat-b')
+      }, repoPath)
+
+      const options = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.graphite.getCreateOptions(repo)
+      }, repoPath)
+
+      expect(options).not.toBeNull()
+      expect(options.branches.find((branch: { name: string }) => branch.name === 'feat-c')).toMatchObject({
+        parent: 'feat-b',
+        trunk: 'main',
+      })
+    } finally {
+      await app.close()
+      cleanupRepo(repoPath)
+    }
+  })
+
   test('returns null when no graphite metadata exists', async () => {
     const repoPath = createGraphiteRepo('empty')
 
