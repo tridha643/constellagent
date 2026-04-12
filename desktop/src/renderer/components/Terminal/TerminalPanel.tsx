@@ -11,7 +11,7 @@ const TAB_TITLE_LOG = '[constellagent:tab-title]'
 
 const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
 const PR_POLL_HINT_COMMAND_RE =
-  /^(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+)*(?:sudo\s+)?(?:(?:git\s+push)|(?:gh\s+pr\s+(?:create|ready|reopen|merge)))(?:\s|$)/
+  /^(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+)*(?:sudo\s+)?(?:(?:git\s+push)|(?:gh\s+pr\s+(?:create|ready|reopen|merge))|(?:gt\s+(?:submit|ss)))(?:\s|$)/
 
 interface Props {
   ptyId: string

@@ -7,6 +7,8 @@ import type {
   GraphiteBranchInfo,
   GraphiteCreateBranchOption,
   GraphiteCreateOptions,
+  GraphiteStackAction,
+  GraphiteStackActionResult,
   GraphiteStackInfo,
 } from '../shared/graphite-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
@@ -20,6 +22,48 @@ async function git(args: string[], cwd: string): Promise<string> {
     maxBuffer: 10 * 1024 * 1024,
   })
   return stdout.trimEnd()
+}
+
+async function graphite(args: string[], cwd: string): Promise<string> {
+  const { stdout } = await execFileAsync('gt', args, {
+    cwd,
+    maxBuffer: 10 * 1024 * 1024,
+    timeout: 120_000,
+  })
+  return stdout.trimEnd()
+}
+
+function graphiteErrorMessage(err: unknown, fallback: string): string {
+  const stderr =
+    typeof err === 'object' && err !== null && 'stderr' in err
+      ? String((err as { stderr?: unknown }).stderr ?? '')
+      : ''
+  const stdout =
+    typeof err === 'object' && err !== null && 'stdout' in err
+      ? String((err as { stdout?: unknown }).stdout ?? '')
+      : ''
+  const combined = `${stderr}\n${stdout}`.trim()
+  const message = combined || (err instanceof Error ? err.message : String(err || ''))
+  if (!message) return fallback
+
+  const lower = message.toLowerCase()
+  if (lower.includes('command not found') || lower.includes('spawn gt enoent')) {
+    return 'Graphite CLI is not installed.'
+  }
+  if (lower.includes('not initialized') || lower.includes('run gt init')) {
+    return 'Graphite is not initialized for this repository.'
+  }
+  if (lower.includes('not authenticated') || lower.includes('log in')) {
+    return 'Graphite CLI is not authenticated.'
+  }
+  if (lower.includes('nothing to submit')) {
+    return 'There is nothing new to submit in this stack.'
+  }
+
+  return message
+    .split('\n')
+    .map((line) => line.replace(/^error:\s*/i, '').trim())
+    .filter(Boolean)[0] || fallback
 }
 
 /**
@@ -270,6 +314,82 @@ function sortCreateBranches(
 }
 
 export class GraphiteService {
+  private static gtAvailable: boolean | null = null
+
+  private static async currentBranch(worktreePath: string): Promise<string> {
+    const branch = await git(['rev-parse', '--abbrev-ref', 'HEAD'], worktreePath)
+    if (!branch || branch === 'HEAD') throw new Error('Graphite stack actions require a named branch.')
+    return branch
+  }
+
+  private static async hasStagedChanges(worktreePath: string): Promise<boolean> {
+    try {
+      await execFileAsync('git', ['diff', '--cached', '--quiet'], { cwd: worktreePath })
+      return false
+    } catch {
+      return true
+    }
+  }
+
+  static async isGtAvailable(): Promise<boolean> {
+    if (this.gtAvailable !== null) return this.gtAvailable
+    try {
+      await execFileAsync('gt', ['--version'], { timeout: 5000 })
+      this.gtAvailable = true
+    } catch {
+      this.gtAvailable = false
+    }
+    return this.gtAvailable
+  }
+
+  private static async ensureGtAvailable(): Promise<void> {
+    if (!(await this.isGtAvailable())) {
+      throw new Error('Graphite CLI is not installed.')
+    }
+  }
+
+  private static async isInitialized(repoPath: string): Promise<boolean> {
+    try {
+      const gitCommonDir = await resolveGitCommonDir(repoPath)
+      return existsSync(join(gitCommonDir, '.graphite_repo_config'))
+    } catch {
+      return false
+    }
+  }
+
+  private static async ensureInitialized(repoPath: string, defaultBranch: string): Promise<void> {
+    if (await this.isInitialized(repoPath)) return
+    try {
+      await graphite(['--no-interactive', 'init', '--trunk', defaultBranch], repoPath)
+    } catch (err) {
+      throw new Error(graphiteErrorMessage(err, 'Failed to initialize Graphite.'))
+    }
+  }
+
+  private static async ensureTracked(
+    repoPath: string,
+    worktreePath: string,
+    branch: string,
+    defaultBranch: string,
+  ): Promise<void> {
+    if (branch === defaultBranch) return
+    const parentMap = await parseGraphiteMetadata(repoPath)
+    if (parentMap.has(branch)) return
+
+    try {
+      await graphite(['--no-interactive', 'track', '--force'], worktreePath)
+      return
+    } catch {
+      // Fall through to explicit parent selection.
+    }
+
+    try {
+      await graphite(['--no-interactive', 'track', '--parent', defaultBranch], worktreePath)
+    } catch (err) {
+      throw new Error(graphiteErrorMessage(err, `Failed to track branch "${branch}" with Graphite.`))
+    }
+  }
+
   /**
    * Get the graphite stack info for a worktree.
    * Reads graphite metadata from git config, finds the stack containing
@@ -281,11 +401,10 @@ export class GraphiteService {
 
     let currentBranch: string
     try {
-      currentBranch = await git(['rev-parse', '--abbrev-ref', 'HEAD'], worktreePath)
+      currentBranch = await this.currentBranch(worktreePath)
     } catch {
       return null
     }
-    if (!currentBranch || currentBranch === 'HEAD') return null
 
     const chain = buildStackChain(currentBranch, parentMap)
     if (!chain) return null
@@ -324,6 +443,48 @@ export class GraphiteService {
     if (!branchName) throw new Error('Graphite branch name is required')
     if (!parentName) throw new Error('Graphite parent branch is required')
     await writeGraphiteMetadata(repoPath, [{ name: branchName, parent: parentName }])
+  }
+
+  static async runStackAction(
+    repoPath: string,
+    worktreePath: string,
+    action: GraphiteStackAction,
+    commitMessage: string,
+    defaultBranch: string,
+  ): Promise<GraphiteStackActionResult> {
+    await this.ensureGtAvailable()
+
+    const baseBranch = defaultBranch.trim().replace(/^origin\//, '')
+    if (!baseBranch) throw new Error('Default branch is required for Graphite stack actions.')
+
+    let branch = await this.currentBranch(worktreePath)
+    await this.ensureInitialized(repoPath, baseBranch)
+    await this.ensureTracked(repoPath, worktreePath, branch, baseBranch)
+
+    const trimmedMessage = commitMessage.trim()
+    if (action === 'start-stack' || action === 'add-to-stack') {
+      if (!(await this.hasStagedChanges(worktreePath))) {
+        throw new Error('Stage changes before creating a Graphite stack branch.')
+      }
+      if (!trimmedMessage) {
+        throw new Error('Commit message is required to create a Graphite stack branch.')
+      }
+
+      try {
+        await graphite(['--no-interactive', 'create', '-m', trimmedMessage], worktreePath)
+      } catch (err) {
+        throw new Error(graphiteErrorMessage(err, 'Failed to create a Graphite stack branch.'))
+      }
+      branch = await this.currentBranch(worktreePath)
+    }
+
+    try {
+      await graphite(['--no-interactive', 'submit', '--stack', '--draft', '--no-edit', '--view'], worktreePath)
+    } catch (err) {
+      throw new Error(graphiteErrorMessage(err, 'Failed to submit Graphite stack.'))
+    }
+
+    return { branch }
   }
 
   /**

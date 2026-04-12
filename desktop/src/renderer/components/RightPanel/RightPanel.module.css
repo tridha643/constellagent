@@ -228,6 +228,93 @@
   opacity: 1;
 }
 
+.graphiteSplitWrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.graphiteSplitGroup {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 10%, transparent);
+}
+
+.graphiteMainButton {
+  border-radius: 0;
+}
+
+.graphiteMenuButton {
+  min-height: 30px;
+  min-width: 32px;
+  padding: 0 var(--space-2);
+  border-radius: 0;
+  border-left: 1px solid color-mix(in srgb, white 16%, transparent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.graphiteMenuButton[data-open='true'] {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-blue) 98%, white 2%) 0%, color-mix(in srgb, var(--accent-blue) 84%, black 16%) 100%);
+}
+
+.graphiteMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  padding: var(--space-1);
+  background: color-mix(in srgb, var(--surface-2) 96%, black 4%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 30;
+}
+
+.graphiteMenuItem {
+  width: 100%;
+  border: none;
+  background: none;
+  border-radius: calc(var(--radius-md) - 4px);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out), opacity 140ms var(--ease-out);
+}
+
+.graphiteMenuItem:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.graphiteMenuItemActive {
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: var(--text-primary);
+}
+
+.graphiteMenuItem:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.graphiteMenuTitle {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.graphiteMenuHint {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
 /* ── Change Sections ── */
 
 .changeSection {

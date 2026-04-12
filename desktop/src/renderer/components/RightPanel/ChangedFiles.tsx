@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { STATUS_LABELS } from '../../../shared/status-labels'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { Tooltip } from '../Tooltip/Tooltip'
+import type { GraphiteStackAction } from '../../../shared/graphite-types'
 import styles from './RightPanel.module.css'
 
 const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
@@ -19,21 +20,37 @@ interface Props {
   isActive?: boolean
 }
 
+interface GraphiteActionOption {
+  action: GraphiteStackAction
+  label: string
+  hint: string
+  enabled: boolean
+}
+
 function errorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message.trim()) return err.message.trim()
   return fallback
+}
+
+function graphiteProgressLabel(action: GraphiteStackAction): string {
+  if (action === 'start-stack') return 'Starting stack…'
+  if (action === 'add-to-stack') return 'Adding to stack…'
+  return 'Submitting stack…'
 }
 
 export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const [files, setFiles] = useState<FileStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [busyAction, setBusyAction] = useState<'commit' | 'pr' | null>(null)
+  const [busyAction, setBusyAction] = useState<'commit' | 'pr' | 'graphite' | null>(null)
   const [busyLabel, setBusyLabel] = useState('')
   const [commitMsg, setCommitMsg] = useState('')
   const [currentBranch, setCurrentBranch] = useState('')
   const [defaultBranch, setDefaultBranch] = useState('')
   const [defaultBranchLoading, setDefaultBranchLoading] = useState(true)
+  const [graphiteMenuOpen, setGraphiteMenuOpen] = useState(false)
+  const [selectedGraphiteAction, setSelectedGraphiteAction] = useState<GraphiteStackAction | null>(null)
+  const graphiteMenuRef = useRef<HTMLDivElement | null>(null)
   const openDiffTab = useAppStore((s) => s.openDiffTab)
   const setGitFileStatuses = useAppStore((s) => s.setGitFileStatuses)
   const addToast = useAppStore((s) => s.addToast)
@@ -43,6 +60,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const setPrStatuses = useAppStore((s) => s.setPrStatuses)
   const setGhAvailability = useAppStore((s) => s.setGhAvailability)
   const updateWorkspaceBranch = useAppStore((s) => s.updateWorkspaceBranch)
+  const setGraphiteStack = useAppStore((s) => s.setGraphiteStack)
 
   const workspace = workspaces.find((ws) => ws.id === workspaceId)
   const project = workspace ? projects.find((p) => p.id === workspace.projectId) : undefined
@@ -119,10 +137,11 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     return () => { cancelled = true }
   }, [project])
 
-  const refreshCurrentPrStatus = useCallback(async () => {
-    if (!project || !branch) return
+  const refreshPrStatus = useCallback(async (targetBranch?: string) => {
+    const effectiveBranch = (targetBranch ?? branch).trim()
+    if (!project || !effectiveBranch) return
     try {
-      const result = await window.api.github.getPrStatuses(project.repoPath, [branch])
+      const result = await window.api.github.getPrStatuses(project.repoPath, [effectiveBranch])
       setGhAvailability(project.id, result.available)
       if (result.available) {
         setPrStatuses(project.id, result.data)
@@ -134,8 +153,29 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
   useEffect(() => {
     if (!isActive || !project || !branch) return
-    void refreshCurrentPrStatus()
-  }, [isActive, project, branch, refreshCurrentPrStatus])
+    void refreshPrStatus()
+  }, [isActive, project, branch, refreshPrStatus])
+
+  useEffect(() => {
+    if (!graphiteMenuOpen) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!graphiteMenuRef.current?.contains(event.target as Node)) {
+        setGraphiteMenuOpen(false)
+      }
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setGraphiteMenuOpen(false)
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [graphiteMenuOpen])
 
   // Watch filesystem for changes and auto-refresh
   useFileWatcher(worktreePath, refresh)
@@ -186,6 +226,57 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     : needsCommitForPr
       ? 'Commit staged changes, push the branch, and create a pull request'
       : 'Push the branch and create a pull request'
+
+  const graphiteVisible = !!project && !!defaultBranch && isRenderableBranch && !defaultBranchLoading && (staged.length > 0 || !isDefaultBranch)
+  const allowedGraphiteActions: GraphiteStackAction[] = !graphiteVisible
+    ? []
+    : isDefaultBranch
+      ? ['start-stack']
+      : ['add-to-stack', 'submit-stack']
+  const graphiteOptions: GraphiteActionOption[] = [
+    {
+      action: 'start-stack',
+      label: 'Start Stack',
+      hint: 'Create the first stacked branch from your staged changes',
+      enabled: graphiteVisible && isDefaultBranch && staged.length > 0 && commitMessage.length > 0,
+    },
+    {
+      action: 'add-to-stack',
+      label: 'Add to Stack',
+      hint: 'Create the next stacked branch on top of the current branch',
+      enabled: graphiteVisible && !isDefaultBranch && staged.length > 0 && commitMessage.length > 0,
+    },
+    {
+      action: 'submit-stack',
+      label: 'Submit Stack',
+      hint: 'Open or update draft PRs for the current Graphite stack',
+      enabled: graphiteVisible && !isDefaultBranch,
+    },
+  ]
+  const graphiteRecommended: GraphiteStackAction | null = !graphiteVisible
+    ? null
+    : isDefaultBranch
+      ? 'start-stack'
+      : staged.length > 0
+        ? 'add-to-stack'
+        : 'submit-stack'
+  const graphiteSelection = graphiteOptions.find((option) => option.action === selectedGraphiteAction)
+  const graphitePrimary = graphiteSelection
+    ?? graphiteOptions.find((option) => option.action === graphiteRecommended)
+    ?? null
+  const showControls = !!prActionMode || graphiteVisible || files.length > 0
+
+  useEffect(() => {
+    if (!graphiteVisible) {
+      setSelectedGraphiteAction(null)
+      setGraphiteMenuOpen(false)
+      return
+    }
+
+    if (!selectedGraphiteAction || !allowedGraphiteActions.includes(selectedGraphiteAction)) {
+      setSelectedGraphiteAction(graphiteRecommended ?? allowedGraphiteActions[0] ?? null)
+    }
+  }, [allowedGraphiteActions, graphiteRecommended, graphiteVisible, selectedGraphiteAction])
 
   const runGitOp = useCallback(async (
     op: () => Promise<void>,
@@ -296,7 +387,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
         prUrl = reopened.url
       }
 
-      await refreshCurrentPrStatus()
+      await refreshPrStatus()
       window.dispatchEvent(new CustomEvent(PR_POLL_HINT_EVENT, {
         detail: { worktreePath, branch, kind: 'pr' },
       }))
@@ -330,8 +421,73 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     prInfo,
     project,
     refresh,
-    refreshCurrentPrStatus,
+    refreshPrStatus,
     staged,
+    worktreePath,
+  ])
+
+  const handleGraphiteAction = useCallback(async (action: GraphiteStackAction | null) => {
+    if (!project || !defaultBranch || !action) return
+    const selected = graphiteOptions.find((option) => option.action === action)
+    if (!selected?.enabled) return
+
+    setGraphiteMenuOpen(false)
+    setBusy(true)
+    setBusyAction('graphite')
+    setBusyLabel(graphiteProgressLabel(action))
+
+    try {
+      const result = await window.api.graphite.runStackAction(
+        project.repoPath,
+        worktreePath,
+        action,
+        commitMessage,
+        defaultBranch,
+      )
+
+      if (result.branch) {
+        setCurrentBranch(result.branch)
+        updateWorkspaceBranch(workspaceId, result.branch)
+        await refreshPrStatus(result.branch)
+        window.dispatchEvent(new CustomEvent(PR_POLL_HINT_EVENT, {
+          detail: { worktreePath, branch: result.branch, kind: 'pr' },
+        }))
+      }
+
+      try {
+        const stack = await window.api.graphite.getStack(project.repoPath, worktreePath)
+        setGraphiteStack(workspaceId, stack)
+      } catch {
+        // Best effort — poller will catch up.
+      }
+
+      if (action !== 'submit-stack') {
+        setCommitMsg('')
+      }
+    } catch (err) {
+      console.error('[ChangedFiles] Graphite action failed:', err)
+      addToast({
+        id: crypto.randomUUID(),
+        message: errorMessage(err, 'Graphite stack action failed'),
+        type: 'error',
+      })
+    } finally {
+      await refresh()
+      setBusy(false)
+      setBusyAction(null)
+      setBusyLabel('')
+    }
+  }, [
+    addToast,
+    commitMessage,
+    defaultBranch,
+    graphiteOptions,
+    project,
+    refresh,
+    refreshPrStatus,
+    setGraphiteStack,
+    updateWorkspaceBranch,
+    workspaceId,
     worktreePath,
   ])
 
@@ -350,7 +506,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     )
   }
 
-  if (files.length === 0 && !prActionMode) {
+  if (files.length === 0 && !showControls) {
     return (
       <div className={styles.emptyState}>
         <span className={styles.emptyIcon}>✓</span>
@@ -368,38 +524,87 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
   return (
     <div className={styles.changedFilesList}>
-      <div className={styles.commitArea}>
-        <textarea
-          className={styles.commitInput}
-          placeholder="Commit message"
-          value={commitMsg}
-          onChange={(e) => setCommitMsg(e.target.value)}
-          onKeyDown={handleKeyDown}
-          rows={1}
-        />
-        <div className={styles.commitActions}>
-          <Tooltip label="Commit staged changes" shortcut="⌘↵">
-            <button
-              className={`${styles.commitButton} ${prActionMode ? styles.commitButtonSecondary : ''}`}
-              disabled={busy || !commitMessage || staged.length === 0}
-              onClick={() => { void handleCommit() }}
-            >
-              {busy && busyAction === 'commit' && busyLabel ? busyLabel : 'Commit'}
-            </button>
-          </Tooltip>
-          {prActionMode && (
-            <Tooltip label={prTooltipLabel}>
+      {showControls && (
+        <div className={styles.commitArea}>
+          <textarea
+            className={styles.commitInput}
+            placeholder="Commit message"
+            value={commitMsg}
+            onChange={(e) => setCommitMsg(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={1}
+          />
+          <div className={styles.commitActions}>
+            <Tooltip label="Commit staged changes" shortcut="⌘↵">
               <button
-                className={`${styles.commitButton} ${styles.prActionButton}`}
-                disabled={prActionDisabled}
-                onClick={() => { void handlePrAction() }}
+                className={`${styles.commitButton} ${(prActionMode || graphiteVisible) ? styles.commitButtonSecondary : ''}`}
+                disabled={busy || !commitMessage || staged.length === 0}
+                onClick={() => { void handleCommit() }}
               >
-                {busy && busyAction === 'pr' && busyLabel ? busyLabel : prActionLabel}
+                {busy && busyAction === 'commit' && busyLabel ? busyLabel : 'Commit'}
               </button>
             </Tooltip>
-          )}
+            {prActionMode && (
+              <Tooltip label={prTooltipLabel}>
+                <button
+                  className={`${styles.commitButton} ${styles.prActionButton}`}
+                  disabled={prActionDisabled}
+                  onClick={() => { void handlePrAction() }}
+                >
+                  {busy && busyAction === 'pr' && busyLabel ? busyLabel : prActionLabel}
+                </button>
+              </Tooltip>
+            )}
+            {graphiteVisible && graphitePrimary && (
+              <div className={styles.graphiteSplitWrap} ref={graphiteMenuRef}>
+                <div className={styles.graphiteSplitGroup}>
+                  <Tooltip label={graphitePrimary.hint}>
+                    <button
+                      className={`${styles.commitButton} ${styles.prActionButton} ${styles.graphiteMainButton}`}
+                      disabled={!graphitePrimary.enabled || busy}
+                      onClick={() => { void handleGraphiteAction(graphitePrimary.action) }}
+                    >
+                      {busy && busyAction === 'graphite' && busyLabel ? busyLabel : graphitePrimary.label}
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Choose a Graphite stack action">
+                    <button
+                      className={`${styles.commitButton} ${styles.prActionButton} ${styles.graphiteMenuButton}`}
+                      data-open={graphiteMenuOpen}
+                      disabled={busy}
+                      onClick={() => setGraphiteMenuOpen((open) => !open)}
+                      aria-haspopup="menu"
+                      aria-expanded={graphiteMenuOpen}
+                    >
+                      ▾
+                    </button>
+                  </Tooltip>
+                </div>
+                {graphiteMenuOpen && (
+                  <div className={styles.graphiteMenu} role="menu">
+                    {graphiteOptions.map((option) => (
+                      <button
+                        key={option.action}
+                        className={`${styles.graphiteMenuItem} ${selectedGraphiteAction === option.action ? styles.graphiteMenuItemActive : ''}`}
+                        disabled={!option.enabled || busy}
+                        onClick={() => {
+                          setSelectedGraphiteAction(option.action)
+                          setGraphiteMenuOpen(false)
+                        }}
+                        role="menuitemradio"
+                        aria-checked={selectedGraphiteAction === option.action}
+                      >
+                        <span className={styles.graphiteMenuTitle}>{option.label}</span>
+                        <span className={styles.graphiteMenuHint}>{option.hint}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {staged.length > 0 && (
         <div className={styles.changeSection}>
