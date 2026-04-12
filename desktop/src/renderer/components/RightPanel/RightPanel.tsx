@@ -14,11 +14,12 @@ export function RightPanel() {
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId)
 
   return (
-    <div className={styles.rightPanel}>
+    <div className={styles.rightPanel} data-testid="right-panel">
       <div className={styles.header}>
-        <div className={styles.modeToggle}>
+        <div className={styles.modeToggle} data-testid="right-panel-mode-toggle">
           <Tooltip label="Files" shortcut="⇧⌘E">
             <button
+              data-testid="right-panel-mode-files"
               className={`${styles.modeButton} ${rightPanelMode === 'files' ? styles.active : ''}`}
               onClick={() => setRightPanelMode('files')}
             >
@@ -27,6 +28,7 @@ export function RightPanel() {
           </Tooltip>
           <Tooltip label="Changes" shortcut="⇧⌘G">
             <button
+              data-testid="right-panel-mode-changes"
               className={`${styles.modeButton} ${rightPanelMode === 'changes' ? styles.active : ''}`}
               onClick={() => setRightPanelMode('changes')}
             >
@@ -35,6 +37,7 @@ export function RightPanel() {
           </Tooltip>
           <Tooltip label="Git" shortcut="⇧⌘H">
             <button
+              data-testid="right-panel-mode-graph"
               className={`${styles.modeButton} ${rightPanelMode === 'graph' ? styles.active : ''}`}
               onClick={() => setRightPanelMode('graph')}
             >

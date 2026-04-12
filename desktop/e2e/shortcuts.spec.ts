@@ -204,6 +204,25 @@ test.describe('Keyboard shortcuts', () => {
     }
   })
 
+  test('Cmd+Option+B toggles right panel', async () => {
+    const { app, window } = await launchApp()
+
+    try {
+      const rightPanel = window.getByTestId('right-panel')
+      await expect(rightPanel).toBeVisible()
+
+      await window.keyboard.press('Meta+Alt+b')
+      await window.waitForTimeout(500)
+      await expect(rightPanel).not.toBeVisible()
+
+      await window.keyboard.press('Meta+Alt+b')
+      await window.waitForTimeout(500)
+      await expect(rightPanel).toBeVisible()
+    } finally {
+      await app.close()
+    }
+  })
+
   test('Cmd+Shift+[ and Cmd+Shift+] cycle tabs', async () => {
     const repoPath = createTestRepo('shortcut-brackets')
     const { app, window } = await launchApp()

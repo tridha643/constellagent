@@ -231,26 +231,58 @@ test.describe('Git & Sidebar functionality', () => {
     }
   })
 
-  test('right panel shows "Files" and "Changes" toggle', async () => {
+  test('right panel mode toggle stays equal-width without overflow', async () => {
     const { app, window } = await launchApp()
 
     try {
-      // Right panel should be open by default
-      const filesBtn = window.locator('button', { hasText: 'Files' })
-      const changesBtn = window.locator('button', { hasText: 'Changes' })
+      const toggle = window.getByTestId('right-panel-mode-toggle')
+      const filesBtn = window.getByTestId('right-panel-mode-files')
+      const changesBtn = window.getByTestId('right-panel-mode-changes')
+      const graphBtn = window.getByTestId('right-panel-mode-graph')
 
+      await expect(toggle).toBeVisible()
       await expect(filesBtn).toBeVisible()
       await expect(changesBtn).toBeVisible()
+      await expect(graphBtn).toBeVisible()
 
-      // "Files" should be active by default
       const filesBtnClass = await filesBtn.getAttribute('class')
       expect(filesBtnClass).toContain('active')
 
-      // Click "Changes" and verify it becomes active
       await changesBtn.click()
       await window.waitForTimeout(300)
       const changesBtnClass = await changesBtn.getAttribute('class')
       expect(changesBtnClass).toContain('active')
+
+      const toggleBox = await toggle.boundingBox()
+      const filesBox = await filesBtn.boundingBox()
+      const changesBox = await changesBtn.boundingBox()
+      const graphBox = await graphBtn.boundingBox()
+
+      expect(toggleBox).toBeTruthy()
+      expect(filesBox).toBeTruthy()
+      expect(changesBox).toBeTruthy()
+      expect(graphBox).toBeTruthy()
+
+      if (!toggleBox || !filesBox || !changesBox || !graphBox) throw new Error('Missing right panel toggle bounds')
+
+      const widths = [filesBox.width, changesBox.width, graphBox.width]
+      expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(2)
+      expect(filesBox.x).toBeGreaterThanOrEqual(toggleBox.x - 1)
+      expect(graphBox.x + graphBox.width).toBeLessThanOrEqual(toggleBox.x + toggleBox.width + 1)
+
+      const hasOverflow = await window.evaluate(() => {
+        const ids = [
+          'right-panel-mode-toggle',
+          'right-panel-mode-files',
+          'right-panel-mode-changes',
+          'right-panel-mode-graph',
+        ]
+        return ids.some((id) => {
+          const el = document.querySelector(`[data-testid="${id}"]`) as HTMLElement | null
+          return !el || el.scrollWidth > el.clientWidth + 1
+        })
+      })
+      expect(hasOverflow).toBe(false)
 
       await window.screenshot({
         path: resolve(__dirname, 'screenshots/right-panel-toggle.png'),
@@ -272,7 +304,7 @@ test.describe('Git & Sidebar functionality', () => {
       await window.waitForTimeout(500)
 
       // With no workspace, right panel should show empty state
-      const emptyText = window.locator('text=Select a workspace to browse files')
+      const emptyText = window.locator('text=No workspace selected')
       await expect(emptyText).toBeVisible({ timeout: 5000 })
 
       // Welcome message in center

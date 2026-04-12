@@ -4,6 +4,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 92%, transparent), var(--surface-1));
   border-left: 1px solid var(--border-subtle);
   overflow: hidden;
@@ -14,6 +15,8 @@
 .header {
   display: flex;
   align-items: center;
+  width: 100%;
+  min-width: 0;
   padding: var(--space-4) var(--space-6);
   flex-shrink: 0;
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 82%, transparent), color-mix(in srgb, var(--surface-1) 96%, transparent));
@@ -22,7 +25,8 @@
 }
 
 .modeToggle {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
   background: var(--surface-2);
   border: 1px solid var(--border-subtle);
@@ -30,11 +34,15 @@
   padding: 2px;
   gap: 2px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
 }
 
 .modeButton {
-  flex: 1;
+  width: 100%;
+  min-width: 0;
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-full);
   border: none;
@@ -46,6 +54,9 @@
   cursor: pointer;
   transition: background-color var(--motion-fast), color var(--motion-fast), box-shadow var(--motion-fast);
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .modeButton.active {
