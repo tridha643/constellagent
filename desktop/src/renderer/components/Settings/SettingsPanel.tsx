@@ -411,7 +411,7 @@ function WorktreeCredentialsSection() {
     <div className={styles.section}>
       <div className={styles.sectionTitle}>Worktree Credentials</div>
       <div className={styles.sectionHint}>
-        Repo-local credential files and directories copied into new worktrees when the destination path is missing.
+        Repo-local credential files and directories copied into new worktrees. `.env*` files refresh from the source repo on create; other rules only fill missing destinations.
       </div>
 
       <div className={styles.subsectionLabel}>Built-in rules</div>
