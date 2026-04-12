@@ -19,13 +19,8 @@ const AGENT_ICON_MAP: Record<AgentType, { src: string; alt: string } | null> = {
   codex: { src: openaiIcon, alt: 'Codex' },
   gemini: null, // reuses GeminiIcon component
   cursor: null, // reuses CursorIcon component
-<<<<<<< Updated upstream
   opencode: null, // reuses OpenCodeIcon component
-  pi: null, // reuses PiIcon component
-=======
-  opencode: null,
-  'pi-constell': null,
->>>>>>> Stashed changes
+  'pi-constell': null, // reuses PiIcon component
 }
 
 /** VS Code logo */
@@ -315,7 +310,7 @@ export function TabBar() {
                 <CursorIcon className={styles.agentIcon} />
               ) : agentType === 'opencode' ? (
                 <OpenCodeIcon className={styles.agentIcon} />
-              ) : agentType === 'pi' ? (
+              ) : agentType === 'pi-constell' ? (
                 <PiIcon className={styles.agentIcon} />
               ) : showGeminiIcon ? (
                 <GeminiIcon className={styles.agentIcon} />

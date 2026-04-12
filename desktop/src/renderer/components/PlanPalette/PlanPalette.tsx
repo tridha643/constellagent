@@ -30,11 +30,7 @@ interface Props {
   projectWorktrees: PlanPaletteWorktreeOption[]
 }
 
-<<<<<<< Updated upstream
-type AgentFilter = 'all' | 'cursor' | 'claude-code' | 'codex' | 'gemini' | 'opencode' | 'pi'
-=======
 type AgentFilter = 'all' | 'cursor' | 'claude-code' | 'codex' | 'gemini' | 'opencode' | 'pi-constell'
->>>>>>> Stashed changes
 type SourceFilter = 'all' | 'worktree' | 'home'
 type WorktreeFilterKey = 'all' | '__home__' | string
 
@@ -45,11 +41,7 @@ const AGENTS: { key: AgentFilter; label: string }[] = [
   { key: 'codex', label: 'Codex' },
   { key: 'gemini', label: 'Gemini' },
   { key: 'opencode', label: 'OpenCode' },
-<<<<<<< Updated upstream
-  { key: 'pi', label: 'Pi' },
-=======
   { key: 'pi-constell', label: 'PI Constell' },
->>>>>>> Stashed changes
 ]
 
 const SOURCES: { key: SourceFilter; label: string }[] = [
@@ -112,13 +104,8 @@ function AgentChipIcon({ agent }: { agent: AgentFilter }) {
   if (agent === 'codex') return <img src={openaiIcon} alt="Codex" />
   if (agent === 'gemini') return <GeminiIcon />
   if (agent === 'cursor') return <CursorIcon />
-<<<<<<< Updated upstream
   if (agent === 'opencode') return <OpenCodeIcon />
-  if (agent === 'pi') return <PiIcon />
-=======
-  if (agent === 'opencode') return <AgentMonogram label="OC" title="OpenCode" />
-  if (agent === 'pi-constell') return <AgentMonogram label="PI" title="PI Constell" />
->>>>>>> Stashed changes
+  if (agent === 'pi-constell') return <PiIcon />
   return null
 }
 
@@ -127,13 +114,8 @@ function AgentRowIcon({ agent }: { agent: string }) {
   if (agent === 'codex') return <img src={openaiIcon} alt="" style={{ width: 14, height: 14 }} />
   if (agent === 'gemini') return <GeminiIcon className={qoStyles.resultIcon} />
   if (agent === 'cursor') return <CursorIcon className={qoStyles.resultIcon} />
-<<<<<<< Updated upstream
   if (agent === 'opencode') return <OpenCodeIcon className={qoStyles.resultIcon} />
-  if (agent === 'pi') return <PiIcon className={qoStyles.resultIcon} />
-=======
-  if (agent === 'opencode') return <AgentMonogram label="OC" title="OpenCode" small />
-  if (agent === 'pi-constell') return <AgentMonogram label="PI" title="PI Constell" small />
->>>>>>> Stashed changes
+  if (agent === 'pi-constell') return <PiIcon className={qoStyles.resultIcon} />
   return <span className={qoStyles.resultIcon}>·</span>
 }
 

@@ -1,10 +1,6 @@
 import type { PrInfo } from './github-types'
 
-<<<<<<< Updated upstream
-export type AutomationAgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor' | 'opencode' | 'pi'
-=======
 export type AutomationAgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor' | 'opencode' | 'pi-constell'
->>>>>>> Stashed changes
 
 export type AgentEventType = 'agent:started' | 'agent:stopped' | 'agent:tool-used'
 export type GitHubEventType =

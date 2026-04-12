@@ -363,10 +363,31 @@ export class GithubService {
       throw new Error('GitHub CLI is not authenticated.')
     }
 
+    // Match `git push origin` (see pushCurrentBranch): without `--repo`, `gh` may pick
+    // another remote (e.g. upstream / fork parent) and compare branches that only exist on origin.
+    const repoSlug = `${repoInfo.owner}/${repoInfo.name}`
+    const prCreateLogContext = {
+      worktreePath: repoPath,
+      headBranch,
+      baseBranch,
+      repoSlug,
+    }
+    console.info('[github:create-pr] request', prCreateLogContext)
+
     try {
       const { stdout } = await execFileAsync(
         'gh',
-        ['pr', 'create', '--fill', '--head', headBranch, '--base', baseBranch],
+        [
+          'pr',
+          'create',
+          '--fill',
+          '--repo',
+          repoSlug,
+          '--head',
+          headBranch,
+          '--base',
+          baseBranch,
+        ],
         { cwd: repoPath, timeout: 30_000 },
       )
       const parsed = parsePrUrl(stdout.trim())
@@ -374,7 +395,7 @@ export class GithubService {
       try {
         const { stdout: viewStdout } = await execFileAsync(
           'gh',
-          ['pr', 'view', '--json', 'url,number'],
+          ['pr', 'view', '--repo', repoSlug, '--json', 'url,number'],
           { cwd: repoPath, timeout: 15_000 },
         )
         const view = JSON.parse(viewStdout.trim()) as { url?: string; number?: number }
@@ -393,7 +414,9 @@ export class GithubService {
 
       throw new Error('Pull request created, but the URL could not be determined.')
     } catch (err) {
-      throw new Error(ghErrorMessage(err, 'Failed to create pull request.'))
+      const message = ghErrorMessage(err, 'Failed to create pull request.')
+      console.warn('[github:create-pr] failed', { ...prCreateLogContext, message })
+      throw new Error(message)
     }
   }
 
@@ -413,11 +436,17 @@ export class GithubService {
       throw new Error('GitHub CLI is not authenticated.')
     }
 
+    const repoSlug = `${repoInfo.owner}/${repoInfo.name}`
+
     try {
-      await execFileAsync('gh', ['pr', 'reopen', String(prNumber)], { cwd: repoPath, timeout: 20_000 })
+      await execFileAsync(
+        'gh',
+        ['pr', 'reopen', String(prNumber), '--repo', repoSlug],
+        { cwd: repoPath, timeout: 20_000 },
+      )
       const { stdout } = await execFileAsync(
         'gh',
-        ['pr', 'view', String(prNumber), '--json', 'url,number'],
+        ['pr', 'view', String(prNumber), '--repo', repoSlug, '--json', 'url,number'],
         { cwd: repoPath, timeout: 15_000 },
       )
       const parsed = JSON.parse(stdout.trim()) as { url?: string; number?: number }

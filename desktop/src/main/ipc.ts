@@ -1010,7 +1010,7 @@ export function registerIpcHandlers(): void {
       'codex': CODEX_CONFIG_PATH,
       'gemini': geminiConfigPath,
       'cursor': cursorConfigPath,
-      'pi': piConfigPath,
+      'pi-constell': piConfigPath,
     }
   })
 
