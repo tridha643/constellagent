@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { Project, GraphiteNewBranchSource } from '../../store/types'
+import { useAppStore } from '../../store/app-store'
 import { parsePrUrl, parsePrNumber } from '../../../shared/pr-url'
 import type { GraphiteCreateBranchOption } from '../../../shared/graphite-types'
 import styles from './WorkspaceDialog.module.css'
+import { maybeShowStaleMainToast } from '../../utils/ipc-stale-main'
 
 /** Live-sanitize a string into a valid git branch name as the user types */
 function toBranchName(input: string): string {
@@ -62,6 +64,7 @@ export function WorkspaceDialog({
   createProgressMessage = '',
   showSlowCreateMessage = false,
 }: Props) {
+  const addToast = useAppStore((s) => s.addToast)
   const [name, setName] = useState(`ws-${Date.now().toString(36)}`)
   const [branches, setBranches] = useState<string[]>([])
   const [selectedBranch, setSelectedBranch] = useState('')
@@ -91,7 +94,10 @@ export function WorkspaceDialog({
         const [defaultBranchRef, b, graphiteOptions] = await Promise.all([
           window.api.git.getDefaultBranch(project.repoPath).catch(() => ''),
           window.api.git.getBranches(project.repoPath).catch(() => [] as string[]),
-          window.api.graphite.getCreateOptions(project.repoPath).catch(() => null),
+          window.api.graphite.getCreateOptions(project.repoPath).catch((err) => {
+            maybeShowStaleMainToast(err, addToast)
+            return null
+          }),
         ])
         if (cancelled) return
 
@@ -135,7 +141,7 @@ export function WorkspaceDialog({
     return () => {
       cancelled = true
     }
-  }, [project.repoPath, project.graphitePreferredTrunk])
+  }, [addToast, project.repoPath, project.graphitePreferredTrunk])
 
   const graphiteEnabled = project.prLinkProvider === 'graphite'
     || !!project.graphitePreferredTrunk

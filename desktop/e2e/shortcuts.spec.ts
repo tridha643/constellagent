@@ -300,6 +300,28 @@ test.describe('Keyboard shortcuts', () => {
     }
   })
 
+  test('Cmd+Option+G opens the Git panel without opening a diff tab', async () => {
+    const repoPath = createTestRepo('shortcut-alt-g')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspaceWithTerminal(window, repoPath)
+      await window.waitForTimeout(2000)
+
+      expect(await window.locator('[class*="tabTitle"]').count()).toBe(1)
+
+      await window.keyboard.press('Meta+Alt+g')
+      await window.waitForTimeout(1000)
+
+      const gitBtn = window.locator('button', { hasText: 'Git' })
+      await expect(gitBtn).toHaveClass(/active/)
+      expect(await window.locator('[class*="tabTitle"]').count()).toBe(1)
+      await expect(window.locator('[class*="diffToolbar"]')).toHaveCount(0)
+    } finally {
+      await app.close()
+    }
+  })
+
   test('Shift+Tab keeps focus in terminal', async () => {
     const repoPath = createTestRepo('shortcut-shifttab')
     const { app, window } = await launchApp()

@@ -28,6 +28,31 @@ function createTestRepo(name: string): string {
   return repoPath
 }
 
+function commitAll(repoPath: string, message: string, date: string): void {
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_DATE: date,
+    GIT_COMMITTER_DATE: date,
+  }
+  execSync('git add .', { cwd: repoPath, env })
+  execSync(`git commit -m "${message}"`, { cwd: repoPath, env })
+}
+
+function createRepoWithLargeNonHeadCommit(name: string): string {
+  const repoPath = createTestRepo(name)
+
+  writeFileSync(join(repoPath, 'src/index.ts'), 'console.log("head commit")\n')
+  commitAll(repoPath, 'head-selected-commit', '2026-01-02T00:00:00Z')
+
+  execSync('git checkout -b large-history HEAD~1', { cwd: repoPath })
+  const hugeContent = Array.from({ length: 4000 }, (_unused, i) => `line ${i}`).join('\n') + '\n'
+  writeFileSync(join(repoPath, 'Pi-rewind.txt'), hugeContent)
+  commitAll(repoPath, 'Pi-rewind', '2030-01-03T00:00:00Z')
+
+  execSync('git checkout main', { cwd: repoPath })
+  return repoPath
+}
+
 function cleanupTestRepo(repoPath: string): void {
   try {
     if (existsSync(repoPath)) {
@@ -266,6 +291,54 @@ test.describe('Changed files & diff viewer', () => {
       await window.screenshot({
         path: resolve(__dirname, 'screenshots/diff-viewer-opened.png'),
       })
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('git panel highlights HEAD without auto-opening the first --all commit diff', async () => {
+    const repoPath = createRepoWithLargeNonHeadCommit('git-graph-head')
+    const { app, window } = await launchApp()
+
+    try {
+      const worktreePath = await setupWorkspace(window, repoPath, 'git-graph')
+      await window.waitForTimeout(1000)
+
+      const logInfo = await window.evaluate(async (wt: string) => {
+        const [log, headHash] = await Promise.all([
+          (window as any).api.git.getLog(wt),
+          (window as any).api.git.getHeadHash(wt),
+        ])
+        return {
+          headHash,
+          headMessage: log.find((entry: any) => entry.hash === headHash)?.message ?? '',
+          firstHash: log[0]?.hash ?? '',
+          firstMessage: log[0]?.message ?? '',
+        }
+      }, worktreePath)
+
+      expect(logInfo.firstHash).not.toBe(logInfo.headHash)
+      expect(logInfo.firstMessage).toBe('Pi-rewind')
+      expect(logInfo.headMessage).toBe('head-selected-commit')
+
+      const gitBtn = window.locator('button', { hasText: 'Git' })
+      await gitBtn.click()
+      await window.waitForTimeout(1500)
+
+      expect(await window.locator('[class*="tabTitle"]').count()).toBe(0)
+
+      const headRow = window.locator('[class*="commitRow"]', { hasText: logInfo.headMessage }).first()
+      await expect(headRow).toBeVisible({ timeout: 5000 })
+      await expect(headRow).toHaveClass(/selected/)
+
+      const firstRow = window.locator('[class*="commitRow"]', { hasText: logInfo.firstMessage }).first()
+      await expect(firstRow).toBeVisible({ timeout: 5000 })
+      await expect(firstRow).not.toHaveClass(/selected/)
+
+      await firstRow.click()
+      await expect(window.locator('[class*="diffToolbar"]')).toBeVisible({ timeout: 10000 })
+      await expect(window.locator('[class*="diffFileCount"]')).toContainText('Pi-rewind')
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

@@ -571,6 +571,15 @@ export class GitService {
     }
   }
 
+  static async getHeadHash(worktreePath: string): Promise<string> {
+    if (!existsSync(worktreePath)) return ''
+    try {
+      return await git(['rev-parse', 'HEAD'], worktreePath)
+    } catch {
+      return ''
+    }
+  }
+
   static async getStatus(worktreePath: string): Promise<FileStatus[]> {
     const output = await git(
       ['status', '--porcelain=v1', '-uall'],

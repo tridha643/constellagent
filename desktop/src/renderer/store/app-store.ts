@@ -5,8 +5,10 @@ import type {
   ChatSnippet,
   PersistedState,
   Project,
+  SkillEntry,
   SidebarActionId,
   StartupCommand,
+  SubagentEntry,
   Tab,
   SplitNode,
   Workspace,
@@ -33,6 +35,7 @@ import {
 import { formatChatContext } from '../utils/chat-context-formatter'
 import { wrapBracketedPaste } from '../utils/bracketed-paste'
 import { formatReviewForAgent } from '../utils/review-formatter'
+import { maybeShowStaleMainToast } from '../utils/ipc-stale-main'
 import { pathsEqualOrAlias } from '../../shared/agent-plan-path'
 import {
   DEFAULT_AUTOMATION_COOLDOWN_MS,
@@ -65,6 +68,43 @@ function normalizeHydratedStartupCommands(raw: Project['startupCommands']): Star
     out.push({ name: typeof c.name === 'string' ? c.name : '', command })
   }
   return out.length > 0 ? out : undefined
+}
+
+function normalizeSkillEntries(raw: unknown): SkillEntry[] {
+  if (!Array.isArray(raw)) return []
+  const out: SkillEntry[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const record = entry as Record<string, unknown>
+    if (typeof record.id !== 'string' || typeof record.name !== 'string' || typeof record.sourcePath !== 'string') continue
+    out.push({
+      id: record.id,
+      name: record.name,
+      description: typeof record.description === 'string' ? record.description : '',
+      sourcePath: record.sourcePath,
+      enabled: Boolean(record.enabled),
+    })
+  }
+  return out
+}
+
+function normalizeSubagentEntries(raw: unknown): SubagentEntry[] {
+  if (!Array.isArray(raw)) return []
+  const out: SubagentEntry[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const record = entry as Record<string, unknown>
+    if (typeof record.id !== 'string' || typeof record.name !== 'string' || typeof record.sourcePath !== 'string') continue
+    out.push({
+      id: record.id,
+      name: record.name,
+      description: typeof record.description === 'string' ? record.description : '',
+      sourcePath: record.sourcePath,
+      tools: typeof record.tools === 'string' ? record.tools : undefined,
+      enabled: Boolean(record.enabled),
+    })
+  }
+  return out
 }
 
 function normalizeProject(project: Project): Project {
@@ -123,6 +163,7 @@ async function syncExternalProjectStartupCommandsForProject(
 
     setProjectStartupCommandsInStore(projectId, undefined)
   } catch (err) {
+    maybeShowStaleMainToast(err, useAppStore.getState().addToast)
     console.error('Failed to sync project startup settings:', err)
   }
 }
@@ -744,16 +785,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       get().openMarkdownPreview(path)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (msg.includes('No handler registered')) {
-        s.addToast({
-          id: crypto.randomUUID(),
-          message:
-            'Main process is out of date. Quit Constellagent (⌘Q) and run `bun run dev` again — Reload (⌘R) only updates the UI, not IPC handlers.',
-          type: 'error',
-        })
+      if (maybeShowStaleMainToast(err, s.addToast)) {
         return
       }
+      const msg = err instanceof Error ? err.message : String(err)
       s.addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
     }
   },
@@ -1722,6 +1757,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const settings = {
       ...settingsMerged,
       worktreeCredentialRules: normalizeWorktreeCredentialRules(settingsMerged.worktreeCredentialRules),
+      skills: normalizeSkillEntries(settingsMerged.skills),
+      subagents: normalizeSubagentEntries(settingsMerged.subagents),
     }
     const activeWorkspaceId = settings.restoreWorkspace
       ? ((saved && workspaces.some((w) => w.id === saved) ? saved : workspaces[0]?.id) ?? null)

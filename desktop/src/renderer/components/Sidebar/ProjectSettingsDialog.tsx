@@ -8,6 +8,7 @@ import type {
   WaitCondition,
 } from '../../store/types'
 import styles from './ProjectSettingsDialog.module.css'
+import { maybeShowStaleMainToast } from '../../utils/ipc-stale-main'
 
 interface CommandWithId extends StartupCommand {
   _id: number
@@ -22,6 +23,10 @@ interface Props {
     graphitePreferredTrunk: string | null
   }) => void
   onCancel: () => void
+}
+
+function getRendererApi(): Window['api'] | null {
+  return (window as Window & { api?: Window['api'] }).api ?? null
 }
 
 function normalizeStartupCommands(list: StartupCommand[] | undefined): StartupCommand[] {
@@ -181,15 +186,25 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
   )
   const [graphitePreferredTrunk, setGraphitePreferredTrunk] = useState(project.graphitePreferredTrunk ?? '')
   const [graphiteTrunks, setGraphiteTrunks] = useState<string[]>([])
+  const enabledSkills = Array.isArray(settings.skills) ? settings.skills.filter((s) => s?.enabled) : []
+  const enabledSubagents = Array.isArray(settings.subagents) ? settings.subagents.filter((s) => s?.enabled) : []
 
   useEffect(() => {
     let cancelled = false
 
     const loadGraphiteInfo = async () => {
+      const api = getRendererApi()
+      if (!api?.git || !api?.graphite) {
+        if (!cancelled) setGraphiteTrunks(uniqueNonEmpty([project.graphitePreferredTrunk]))
+        return
+      }
       try {
         const [defaultBranchRef, createOptions] = await Promise.all([
-          window.api.git.getDefaultBranch(project.repoPath).catch(() => ''),
-          window.api.graphite.getCreateOptions(project.repoPath).catch(() => null),
+          api.git.getDefaultBranch(project.repoPath).catch(() => ''),
+          api.graphite.getCreateOptions(project.repoPath).catch((err) => {
+            maybeShowStaleMainToast(err, addToast)
+            return null
+          }),
         ])
         if (cancelled) return
         const defaultBranch = defaultBranchRef.replace(/^origin\//, '')
@@ -199,6 +214,7 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
           ...(createOptions?.trunks ?? []),
         ]))
       } catch {
+        // Should be unreachable because individual calls are guarded, but keep a fallback.
         if (!cancelled) setGraphiteTrunks(uniqueNonEmpty([project.graphitePreferredTrunk]))
       }
     }
@@ -342,9 +358,17 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
 
   useEffect(() => {
     let cancelled = false
-    void window.api.projectStartupSettings.path().then((value) => {
+    const api = getRendererApi()
+    if (!api?.projectStartupSettings?.path) {
+      setStartupSettingsPath('')
+      return () => {
+        cancelled = true
+      }
+    }
+    void api.projectStartupSettings.path().then((value) => {
       if (!cancelled) setStartupSettingsPath(value)
-    }).catch(() => {
+    }).catch((err) => {
+      maybeShowStaleMainToast(err, addToast)
       if (!cancelled) setStartupSettingsPath('')
     })
     return () => {
@@ -460,18 +484,18 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
           Sync enabled skills and subagents to this project's agent directories.
         </div>
         <div className={styles.commandList}>
-          {settings.skills.filter((s) => s.enabled).length === 0 && settings.subagents.filter((s) => s.enabled).length === 0 ? (
+          {enabledSkills.length === 0 && enabledSubagents.length === 0 ? (
             <div className={styles.hint}>No enabled skills or subagents. Configure them in Settings.</div>
           ) : (
             <>
-              {settings.skills.filter((s) => s.enabled).map((s) => (
+              {enabledSkills.map((s) => (
                 <div key={s.id} className={styles.commandRow}>
                   <span style={{ flex: 1, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontFamily: 'var(--font-ui)' }}>
                     {s.name} <span style={{ color: 'var(--text-ghost)' }}>(skill)</span>
                   </span>
                 </div>
               ))}
-              {settings.subagents.filter((s) => s.enabled).map((s) => (
+              {enabledSubagents.map((s) => (
                 <div key={s.id} className={styles.commandRow}>
                   <span style={{ flex: 1, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', fontFamily: 'var(--font-ui)' }}>
                     {s.name} <span style={{ color: 'var(--text-ghost)' }}>(subagent)</span>
@@ -484,13 +508,18 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
             className={styles.addBtn}
             disabled={syncing}
             onClick={async () => {
+              const api = getRendererApi()
+              if (!api?.skills || !api?.subagents) {
+                addToast({ id: crypto.randomUUID(), message: 'Project sync is unavailable right now', type: 'error' })
+                return
+              }
               setSyncing(true)
               try {
-                for (const skill of settings.skills.filter((s) => s.enabled)) {
-                  await window.api.skills.sync(skill.sourcePath, project.repoPath)
+                for (const skill of enabledSkills) {
+                  await api.skills.sync(skill.sourcePath, project.repoPath)
                 }
-                for (const sa of settings.subagents.filter((s) => s.enabled)) {
-                  await window.api.subagents.sync(sa.sourcePath, project.repoPath)
+                for (const sa of enabledSubagents) {
+                  await api.subagents.sync(sa.sourcePath, project.repoPath)
                 }
                 addToast({ id: crypto.randomUUID(), message: 'Skills & subagents synced to project', type: 'info' })
               } catch {

@@ -17,6 +17,7 @@ import { GraphiteStack } from "./GraphiteStack";
 import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME, CONSTELLAGENT_PROJECT_MIME } from "../../utils/add-to-chat";
 import { ContextWindowIndicator } from "./ContextWindowIndicator";
 import styles from "./Sidebar.module.css";
+import { maybeShowStaleMainToast } from "../../utils/ipc-stale-main";
 
 const PR_ICON_SIZE = 10;
 const PR_REVIEW_ICON_SIZE = 10;
@@ -563,7 +564,18 @@ export function Sidebar() {
         projectId: project.id,
       });
 
-      const commands = (((await window.api.projectStartupSettings.get(project.repoPath)) ?? project.startupCommands ?? [])
+      let startupSettings =
+        project.startupCommands ?? [];
+      try {
+        startupSettings =
+          (await window.api.projectStartupSettings.get(project.repoPath)) ??
+          project.startupCommands ??
+          [];
+      } catch (err) {
+        maybeShowStaleMainToast(err, addToast);
+      }
+
+      const commands = (startupSettings
         .filter((cmd) => typeof cmd.command === 'string' && cmd.command.trim())
         .map((cmd) => ({ name: typeof cmd.name === 'string' ? cmd.name : '', command: cmd.command })));
 
