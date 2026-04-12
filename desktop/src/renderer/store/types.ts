@@ -128,7 +128,11 @@ export interface McpServer {
   env?: Record<string, string>
 }
 
+<<<<<<< Updated upstream
 export type AgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor' | 'opencode' | 'pi'
+=======
+export type AgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor' | 'opencode' | 'pi-constell'
+>>>>>>> Stashed changes
 
 export type AgentMcpAssignments = Record<AgentType, string[]>
 
@@ -166,7 +170,11 @@ export const DEFAULT_SETTINGS: Settings = {
   favoriteEditor: 'cursor',
   favoriteEditorCustom: '',
   mcpServers: [],
+<<<<<<< Updated upstream
   agentMcpAssignments: { 'claude-code': [], 'codex': [], 'gemini': [], 'cursor': [], 'opencode': [], 'pi': [] },
+=======
+  agentMcpAssignments: { 'claude-code': [], 'codex': [], 'gemini': [], 'cursor': [], 'opencode': [], 'pi-constell': [] },
+>>>>>>> Stashed changes
   sessionResumeEnabled: true,
   worktreeCredentialRules: getDefaultWorktreeCredentialRules(),
   skills: [],

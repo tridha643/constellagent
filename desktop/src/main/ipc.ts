@@ -32,6 +32,7 @@ import { AnnotationService } from './annotation-service'
 import { emitAutomationEvent, onAutomationEvent } from './automation-event-bus'
 import { lookupPersistedProjectRepo } from './persisted-state'
 import { GithubPollService } from './github-poll-service'
+import { listPiModels } from './pi-models'
 
 const ptyManager = new PtyManager()
 const worktreeSyncService = new WorktreeSyncService()
@@ -649,6 +650,10 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.APP_GET_HOME_DIR, () => homedir())
+
+  ipcMain.handle(IPC.APP_LIST_PI_MODELS, async () => {
+    return listPiModels()
+  })
 
   // Accepts a path directly (for testing — avoids dialog.showOpenDialog)
   ipcMain.handle(IPC.APP_ADD_PROJECT_PATH, async (_e, dirPath: string) => {

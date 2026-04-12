@@ -10,7 +10,11 @@ import {
   GEMINI_MARKER_SEGMENT,
   CURSOR_MARKER_SEGMENT,
   OPENCODE_MARKER_SEGMENT,
+<<<<<<< Updated upstream
   PI_MARKER_SEGMENT,
+=======
+  PI_CONSTELL_MARKER_SEGMENT,
+>>>>>>> Stashed changes
 } from '../shared/agent-markers'
 import { lookupPersistedWorkspace } from './persisted-state'
 
@@ -168,10 +172,17 @@ export class NotificationWatcher {
       return wsId ? { wsId, agentType: 'opencode' } : null
     }
 
+<<<<<<< Updated upstream
     const piIdx = marker.indexOf(PI_MARKER_SEGMENT)
     if (piIdx > 0) {
       const wsId = marker.slice(0, piIdx)
       return wsId ? { wsId, agentType: 'pi' } : null
+=======
+    const piConstellIdx = marker.indexOf(PI_CONSTELL_MARKER_SEGMENT)
+    if (piConstellIdx > 0) {
+      const wsId = marker.slice(0, piConstellIdx)
+      return wsId ? { wsId, agentType: 'pi-constell' } : null
+>>>>>>> Stashed changes
     }
 
     return null

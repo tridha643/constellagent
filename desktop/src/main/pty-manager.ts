@@ -12,7 +12,11 @@ import {
   GEMINI_MARKER_SEGMENT,
   CURSOR_MARKER_SEGMENT,
   OPENCODE_MARKER_SEGMENT,
+<<<<<<< Updated upstream
   PI_MARKER_SEGMENT,
+=======
+  PI_CONSTELL_MARKER_SEGMENT,
+>>>>>>> Stashed changes
 } from '../shared/agent-markers'
 
 const TAB_TITLE_LOG = '[constellagent:tab-title]'
@@ -70,7 +74,11 @@ const AGENT_PATTERNS: AgentPattern[] = [
   { agentType: 'gemini',      basenames: ['gemini'] },
   { agentType: 'cursor',      basenames: ['cursor-agent', 'cursor', 'agent'] },
   { agentType: 'opencode',    basenames: ['opencode'] },
+<<<<<<< Updated upstream
   { agentType: 'pi',          basenames: ['pi'] },
+=======
+  { agentType: 'pi-constell', basenames: ['pi'] },
+>>>>>>> Stashed changes
 ]
 
 function detectAgentFromCommand(command: string): string | null {
@@ -296,6 +304,7 @@ export class PtyManager {
     this.ptys.set(id, instance)
     const presetAgent = instance.agentType
     if (presetAgent && presetAgent !== 'unknown') {
+      if (instance.workspaceId) this.writeAgentActivityMarker(instance.workspaceId, presetAgent, instance.process.pid)
       this.notifyAgentDetected(id, instance, presetAgent)
     }
     return id
@@ -498,7 +507,11 @@ export class PtyManager {
       case 'gemini': return `${getActivityDir()}/${workspaceId}${GEMINI_MARKER_SEGMENT}${ptyPid}`
       case 'cursor': return `${getActivityDir()}/${workspaceId}${CURSOR_MARKER_SEGMENT}${ptyPid}`
       case 'opencode': return `${getActivityDir()}/${workspaceId}${OPENCODE_MARKER_SEGMENT}${ptyPid}`
+<<<<<<< Updated upstream
       case 'pi': return `${getActivityDir()}/${workspaceId}${PI_MARKER_SEGMENT}${ptyPid}`
+=======
+      case 'pi-constell': return `${getActivityDir()}/${workspaceId}${PI_CONSTELL_MARKER_SEGMENT}${ptyPid}`
+>>>>>>> Stashed changes
       default: return `${getActivityDir()}/${workspaceId}.${agentType}.${ptyPid}`
     }
   }

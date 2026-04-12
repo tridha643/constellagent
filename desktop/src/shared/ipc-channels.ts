@@ -79,6 +79,8 @@ export const IPC = {
   APP_OPEN_IN_EDITOR: 'app:open-in-editor',
   /** Node os.homedir() — for resolving ~/.claude/plans etc. in the renderer */
   APP_GET_HOME_DIR: 'app:get-home-dir',
+  /** List available pi models from `pi --list-models` for PI Constell plan builds. */
+  APP_LIST_PI_MODELS: 'app:list-pi-models',
 
   // Claude Code integration
   CLAUDE_TRUST_PATH: 'claude:trust-path',

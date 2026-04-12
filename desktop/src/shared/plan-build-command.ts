@@ -7,12 +7,20 @@ export const BUILD_HARNESS_OPTIONS: { agent: PlanAgent; label: string }[] = [
   { agent: 'gemini', label: 'Gemini' },
   { agent: 'cursor', label: 'Cursor' },
   { agent: 'opencode', label: 'OpenCode' },
+  { agent: 'pi-constell', label: 'PI Constell' },
 ]
 
 export interface ModelPreset {
   label: string
   /** Canonical id passed to the CLI's --model flag (stored in plan frontmatter for presets). */
   cliModel: string
+}
+
+export interface PiModelOption {
+  provider: string
+  model: string
+  /** Provider-qualified identifier accepted by `pi --model`. */
+  id: string
 }
 
 export const PLAN_MODEL_PRESETS: Record<PlanAgent, ModelPreset[]> = {
@@ -168,6 +176,8 @@ export const PLAN_MODEL_PRESETS: Record<PlanAgent, ModelPreset[]> = {
     { label: 'Claude Opus 4.6', cliModel: 'claude-opus-4-6' },
     { label: 'Gemini 2.5 Pro', cliModel: 'gemini-2.5-pro' },
   ],
+  // PI Constell resolves models dynamically from `pi --list-models`; keep presets empty.
+  'pi-constell': [],
 }
 
 /** Plan frontmatter from older builds used these labels; map to current cliModel ids. */
@@ -193,6 +203,7 @@ const AGENT_CLI: Record<PlanAgent, string> = {
   gemini: 'gemini',
   cursor: 'cursor-agent',
   opencode: 'opencode',
+  'pi-constell': 'pi',
 }
 
 function shellEscape(s: string): string {
