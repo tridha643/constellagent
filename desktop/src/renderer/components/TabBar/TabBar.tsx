@@ -8,6 +8,8 @@ import { Tooltip } from '../Tooltip/Tooltip'
 import { GEMINI_TAB_LABEL } from '../../../shared/gemini-tab-title'
 import { GeminiIcon } from '../Icons/GeminiIcon'
 import { CursorIcon } from '../Icons/CursorIcon'
+import { OpenCodeIcon } from '../Icons/OpenCodeIcon'
+import { PiIcon } from '../Icons/PiIcon'
 import claudeIcon from '../../assets/agent-icons/claude.svg'
 import openaiIcon from '../../assets/agent-icons/openai.svg'
 import styles from './TabBar.module.css'
@@ -17,7 +19,8 @@ const AGENT_ICON_MAP: Record<AgentType, { src: string; alt: string } | null> = {
   codex: { src: openaiIcon, alt: 'Codex' },
   gemini: null, // reuses GeminiIcon component
   cursor: null, // reuses CursorIcon component
-  opencode: null,
+  opencode: null, // reuses OpenCodeIcon component
+  pi: null, // reuses PiIcon component
 }
 
 /** VS Code logo */
@@ -305,6 +308,10 @@ export function TabBar() {
             >
               {agentType === 'cursor' ? (
                 <CursorIcon className={styles.agentIcon} />
+              ) : agentType === 'opencode' ? (
+                <OpenCodeIcon className={styles.agentIcon} />
+              ) : agentType === 'pi' ? (
+                <PiIcon className={styles.agentIcon} />
               ) : showGeminiIcon ? (
                 <GeminiIcon className={styles.agentIcon} />
               ) : agentIcon ? (

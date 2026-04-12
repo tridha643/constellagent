@@ -3,6 +3,8 @@ import { useAppStore } from '../../store/app-store'
 import { relativePathInWorktree, pathsEqualOrAlias } from '../../../shared/agent-plan-path'
 import { GeminiIcon } from '../Icons/GeminiIcon'
 import { CursorIcon } from '../Icons/CursorIcon'
+import { OpenCodeIcon } from '../Icons/OpenCodeIcon'
+import { PiIcon } from '../Icons/PiIcon'
 import claudeIcon from '../../assets/agent-icons/claude.svg'
 import openaiIcon from '../../assets/agent-icons/openai.svg'
 import qoStyles from '../QuickOpen/QuickOpen.module.css'
@@ -28,7 +30,7 @@ interface Props {
   projectWorktrees: PlanPaletteWorktreeOption[]
 }
 
-type AgentFilter = 'all' | 'cursor' | 'claude-code' | 'codex' | 'gemini' | 'opencode'
+type AgentFilter = 'all' | 'cursor' | 'claude-code' | 'codex' | 'gemini' | 'opencode' | 'pi'
 type SourceFilter = 'all' | 'worktree' | 'home'
 type WorktreeFilterKey = 'all' | '__home__' | string
 
@@ -39,6 +41,7 @@ const AGENTS: { key: AgentFilter; label: string }[] = [
   { key: 'codex', label: 'Codex' },
   { key: 'gemini', label: 'Gemini' },
   { key: 'opencode', label: 'OpenCode' },
+  { key: 'pi', label: 'Pi' },
 ]
 
 const SOURCES: { key: SourceFilter; label: string }[] = [
@@ -93,25 +96,14 @@ function entryMatchesWorktree(
   return false
 }
 
-function AgentMonogram({ label, title, small = false }: { label: string; title: string; small?: boolean }) {
-  return (
-    <span
-      className={small ? styles.agentMonogramSmall : styles.agentMonogram}
-      aria-hidden="true"
-      title={title}
-    >
-      {label}
-    </span>
-  )
-}
-
 function AgentChipIcon({ agent }: { agent: AgentFilter }) {
   if (agent === 'all') return null
   if (agent === 'claude-code') return <img src={claudeIcon} alt="Claude" />
   if (agent === 'codex') return <img src={openaiIcon} alt="Codex" />
   if (agent === 'gemini') return <GeminiIcon />
   if (agent === 'cursor') return <CursorIcon />
-  if (agent === 'opencode') return <AgentMonogram label="OC" title="OpenCode" />
+  if (agent === 'opencode') return <OpenCodeIcon />
+  if (agent === 'pi') return <PiIcon />
   return null
 }
 
@@ -120,7 +112,8 @@ function AgentRowIcon({ agent }: { agent: string }) {
   if (agent === 'codex') return <img src={openaiIcon} alt="" style={{ width: 14, height: 14 }} />
   if (agent === 'gemini') return <GeminiIcon className={qoStyles.resultIcon} />
   if (agent === 'cursor') return <CursorIcon className={qoStyles.resultIcon} />
-  if (agent === 'opencode') return <AgentMonogram label="OC" title="OpenCode" small />
+  if (agent === 'opencode') return <OpenCodeIcon className={qoStyles.resultIcon} />
+  if (agent === 'pi') return <PiIcon className={qoStyles.resultIcon} />
   return <span className={qoStyles.resultIcon}>·</span>
 }
 

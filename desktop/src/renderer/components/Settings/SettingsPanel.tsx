@@ -622,6 +622,7 @@ const AGENT_LABELS: Record<AgentType, string> = {
   'gemini': 'Gemini CLI',
   'cursor': 'Cursor',
   'opencode': 'OpenCode',
+  'pi': 'Pi',
 }
 
 function McpServerCard({ server, onDelete, onOpenConfig }: {
@@ -715,6 +716,7 @@ function McpServersSection() {
     'gemini': '~/.gemini/settings.json',
     'cursor': '~/.cursor/mcp.json',
     'opencode': 'No known MCP config file',
+    'pi': '~/.pi/config.json',
   }
   const configFileName = configFileNames[selectedAgent]
 
