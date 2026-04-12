@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Project } from '../../store/types'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import type { Project, GraphiteNewBranchSource } from '../../store/types'
 import { parsePrUrl, parsePrNumber } from '../../../shared/pr-url'
+import type { GraphiteCreateBranchOption } from '../../../shared/graphite-types'
 import styles from './WorkspaceDialog.module.css'
 
 /** Live-sanitize a string into a valid git branch name as the user types */
@@ -12,9 +13,27 @@ function toBranchName(input: string): string {
     .replace(/\/{2,}/g, '/')
 }
 
+function uniqueNonEmpty(values: Array<string | null | undefined>): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    const normalized = value?.trim()
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    out.push(normalized)
+  }
+  return out
+}
+
 interface Props {
   project: Project
-  onConfirm: (name: string, branch: string, newBranch: boolean, baseBranch?: string) => void
+  onConfirm: (
+    name: string,
+    branch: string,
+    newBranch: boolean,
+    baseBranch?: string,
+    graphiteParentBranch?: string,
+  ) => void
   onCancel: () => void
   isCreating?: boolean
   createProgressMessage?: string
@@ -49,6 +68,12 @@ export function WorkspaceDialog({
   const [isNewBranch, setIsNewBranch] = useState(true)
   const [newBranchName, setNewBranchName] = useState('')
   const [baseBranch, setBaseBranch] = useState('')
+  const [graphiteTrunks, setGraphiteTrunks] = useState<string[]>([])
+  const [graphiteBranches, setGraphiteBranches] = useState<GraphiteCreateBranchOption[]>([])
+  const [graphiteSourceMode, setGraphiteSourceMode] = useState<GraphiteNewBranchSource>(
+    project.graphiteNewBranchSource ?? 'trunk',
+  )
+  const [selectedGraphiteBranch, setSelectedGraphiteBranch] = useState('')
   const [loading, setLoading] = useState(true)
   const [prResolving, setPrResolving] = useState(false)
   const [prError, setPrError] = useState('')
@@ -59,29 +84,72 @@ export function WorkspaceDialog({
   const [exiting, setExiting] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
+
     const loadBranches = async () => {
       try {
-        // Detect default branch from remote
-        const defaultBranch = await window.api.git.getDefaultBranch(project.repoPath)
-          .then((ref) => ref.replace(/^origin\//, ''))
-          .catch(() => '')
+        const [defaultBranchRef, b, graphiteOptions] = await Promise.all([
+          window.api.git.getDefaultBranch(project.repoPath).catch(() => ''),
+          window.api.git.getBranches(project.repoPath).catch(() => [] as string[]),
+          window.api.graphite.getCreateOptions(project.repoPath).catch(() => null),
+        ])
+        if (cancelled) return
 
-        const b = await window.api.git.getBranches(project.repoPath).catch(() => [] as string[])
+        const defaultBranch = defaultBranchRef.replace(/^origin\//, '')
         setBranches(b)
+        setGraphiteBranches(graphiteOptions?.branches ?? [])
+
+        const trunkOptions = uniqueNonEmpty([
+          project.graphitePreferredTrunk,
+          defaultBranch,
+          ...(graphiteOptions?.trunks ?? []),
+        ])
+        setGraphiteTrunks(trunkOptions)
 
         if (defaultBranch && b.includes(defaultBranch)) {
           setSelectedBranch(defaultBranch)
-          setBaseBranch(defaultBranch)
         } else if (b.length > 0) {
           setSelectedBranch(b[0])
+        }
+
+        if (project.graphitePreferredTrunk && trunkOptions.includes(project.graphitePreferredTrunk)) {
+          setBaseBranch(project.graphitePreferredTrunk)
+        } else if (defaultBranch && trunkOptions.includes(defaultBranch)) {
+          setBaseBranch(defaultBranch)
+        } else if (trunkOptions.length > 0) {
+          setBaseBranch(trunkOptions[0])
+        } else if (defaultBranch) {
+          setBaseBranch(defaultBranch)
+        } else if (b.length > 0) {
           setBaseBranch(b[0])
         }
+
+        if (graphiteOptions?.branches?.length) {
+          setSelectedGraphiteBranch((prev) => prev || graphiteOptions.branches[0].name)
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
-    loadBranches()
-  }, [project.repoPath])
+    void loadBranches()
+    return () => {
+      cancelled = true
+    }
+  }, [project.repoPath, project.graphitePreferredTrunk])
+
+  const graphiteEnabled = project.prLinkProvider === 'graphite'
+    || !!project.graphitePreferredTrunk
+    || graphiteBranches.length > 0
+
+  const graphiteBranchGroups = useMemo(() => {
+    const groups = new Map<string, GraphiteCreateBranchOption[]>()
+    for (const branch of graphiteBranches) {
+      const list = groups.get(branch.trunk) ?? []
+      list.push(branch)
+      groups.set(branch.trunk, list)
+    }
+    return Array.from(groups.entries())
+  }, [graphiteBranches])
 
   /** Resolve a PR reference to its branch name via gh CLI */
   const resolvePr = useCallback(async (value: string, target: 'branch' | 'baseBranch') => {
@@ -112,7 +180,17 @@ export function WorkspaceDialog({
   const handleSubmit = useCallback(async () => {
     if (isCreating || prResolving) return
     const branch = isNewBranch ? (newBranchName || name) : selectedBranch
-    const base = isNewBranch ? baseBranch : undefined
+    let base = isNewBranch ? baseBranch : undefined
+    let graphiteParentBranch: string | undefined
+
+    if (isNewBranch && graphiteEnabled) {
+      if (graphiteSourceMode === 'branch') {
+        base = selectedGraphiteBranch || undefined
+        graphiteParentBranch = selectedGraphiteBranch || undefined
+      } else {
+        graphiteParentBranch = baseBranch || undefined
+      }
+    }
 
     // Auto-resolve PR references on submit instead of passing raw URLs as branch names
     if (!isNewBranch && isPrRef(branch)) {
@@ -122,14 +200,27 @@ export function WorkspaceDialog({
       // Don't proceed — let the user review the resolved branch and submit again
       return
     }
-    if (isNewBranch && base && isPrRef(base)) {
+    if (isNewBranch && !graphiteEnabled && base && isPrRef(base)) {
       const resolved = await resolvePr(base, 'baseBranch')
       if (!resolved) return
       return
     }
 
-    onConfirm(name, branch, isNewBranch, base)
-  }, [name, isNewBranch, newBranchName, selectedBranch, baseBranch, onConfirm, isCreating, prResolving, resolvePr])
+    onConfirm(name, branch, isNewBranch, base, graphiteParentBranch)
+  }, [
+    name,
+    isNewBranch,
+    newBranchName,
+    selectedBranch,
+    baseBranch,
+    onConfirm,
+    isCreating,
+    prResolving,
+    resolvePr,
+    graphiteEnabled,
+    graphiteSourceMode,
+    selectedGraphiteBranch,
+  ])
 
   // Close pickers on click outside
   useEffect(() => {
@@ -161,7 +252,9 @@ export function WorkspaceDialog({
           // Determine which field is focused
           if (isNewBranch) {
             // In new-branch mode, only the base branch input can have a PR ref
-            resolvePr(value, 'baseBranch')
+            if (!graphiteEnabled) {
+              resolvePr(value, 'baseBranch')
+            }
           } else {
             // In existing-branch mode, the branch input can have a PR ref
             resolvePr(value, 'branch')
@@ -171,13 +264,19 @@ export function WorkspaceDialog({
       }
       handleSubmit()
     }
-  }, [handleSubmit, onCancel, isCreating, isNewBranch, resolvePr])
+  }, [handleSubmit, isCreating, isNewBranch, resolvePr, exiting, graphiteEnabled])
 
   const animateExit = useCallback(() => {
     if (exiting || isCreating) return
     setExiting(true)
     setTimeout(() => onCancel(), 150)
   }, [exiting, isCreating, onCancel])
+
+  const createDisabled = !name.trim()
+    || isCreating
+    || prResolving
+    || (isNewBranch && graphiteEnabled && graphiteSourceMode === 'trunk' && !baseBranch.trim())
+    || (isNewBranch && graphiteEnabled && graphiteSourceMode === 'branch' && !selectedGraphiteBranch.trim())
 
   return (
     <div className={`${styles.overlay} ${exiting ? styles.overlayExiting : ''}`} onClick={animateExit}>
@@ -221,39 +320,102 @@ export function WorkspaceDialog({
               disabled={isCreating}
               placeholder={toBranchName(name) || 'branch-name'}
             />
-            <label className={styles.label}>Base branch</label>
-            <div className={styles.branchInputRow} ref={basePickerRef}>
-              <input
-                className={styles.input}
-                value={baseBranch}
-                onChange={(e) => { setBaseBranch(e.target.value); setPrError('') }}
-                disabled={loading || isCreating || prResolving}
-                placeholder="Branch name, PR URL, or #123 (press Enter to resolve)"
-              />
-              {prResolving && <span className={styles.prSpinner} />}
-              <button
-                className={styles.pickerBtn}
-                onClick={() => setBasePickerOpen((v) => !v)}
-                disabled={loading || isCreating || prResolving}
-                type="button"
-              >
-                &#9662;
-              </button>
-              {basePickerOpen && (
-                <div className={styles.pickerDropdown}>
-                  {branches.map((b) => (
-                    <div
-                      key={b}
-                      className={`${styles.pickerOption} ${b === baseBranch ? styles.pickerOptionActive : ''}`}
-                      onClick={() => { setBaseBranch(b); setBasePickerOpen(false) }}
-                    >
-                      {b}
-                    </div>
-                  ))}
+
+            {graphiteEnabled ? (
+              <>
+                <label className={styles.label}>Create from</label>
+                <div className={styles.branchToggle}>
+                  <button
+                    className={`${styles.toggleBtn} ${graphiteSourceMode === 'trunk' ? styles.active : ''}`}
+                    onClick={() => setGraphiteSourceMode('trunk')}
+                    disabled={isCreating || prResolving}
+                    type="button"
+                  >
+                    Trunk
+                  </button>
+                  <button
+                    className={`${styles.toggleBtn} ${graphiteSourceMode === 'branch' ? styles.active : ''}`}
+                    onClick={() => setGraphiteSourceMode('branch')}
+                    disabled={isCreating || prResolving || graphiteBranches.length === 0}
+                    type="button"
+                  >
+                    Graphite branch
+                  </button>
                 </div>
-              )}
-            </div>
-            {prError && <div className={styles.prError}>{prError}</div>}
+
+                {graphiteSourceMode === 'trunk' ? (
+                  <>
+                    <label className={styles.label}>Trunk branch</label>
+                    <select
+                      className={styles.input}
+                      value={baseBranch}
+                      onChange={(e) => setBaseBranch(e.target.value)}
+                      disabled={loading || isCreating || prResolving}
+                    >
+                      {graphiteTrunks.map((trunk) => (
+                        <option key={trunk} value={trunk}>{trunk}</option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <>
+                    <label className={styles.label}>Graphite source branch</label>
+                    <select
+                      className={styles.input}
+                      value={selectedGraphiteBranch}
+                      onChange={(e) => setSelectedGraphiteBranch(e.target.value)}
+                      disabled={loading || isCreating || prResolving || graphiteBranches.length === 0}
+                    >
+                      {graphiteBranchGroups.map(([trunk, options]) => (
+                        <optgroup key={trunk} label={`Trunk · ${trunk}`}>
+                          {options.map((option) => (
+                            <option key={option.name} value={option.name}>
+                              {option.parent ? `${option.name} ← ${option.parent}` : option.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <label className={styles.label}>Base branch</label>
+                <div className={styles.branchInputRow} ref={basePickerRef}>
+                  <input
+                    className={styles.input}
+                    value={baseBranch}
+                    onChange={(e) => { setBaseBranch(e.target.value); setPrError('') }}
+                    disabled={loading || isCreating || prResolving}
+                    placeholder="Branch name, PR URL, or #123 (press Enter to resolve)"
+                  />
+                  {prResolving && <span className={styles.prSpinner} />}
+                  <button
+                    className={styles.pickerBtn}
+                    onClick={() => setBasePickerOpen((v) => !v)}
+                    disabled={loading || isCreating || prResolving}
+                    type="button"
+                  >
+                    &#9662;
+                  </button>
+                  {basePickerOpen && (
+                    <div className={styles.pickerDropdown}>
+                      {branches.map((b) => (
+                        <div
+                          key={b}
+                          className={`${styles.pickerOption} ${b === baseBranch ? styles.pickerOptionActive : ''}`}
+                          onClick={() => { setBaseBranch(b); setBasePickerOpen(false) }}
+                        >
+                          {b}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {prError && <div className={styles.prError}>{prError}</div>}
+              </>
+            )}
           </>
         ) : (
           <>
@@ -306,7 +468,7 @@ export function WorkspaceDialog({
 
         <div className={styles.actions}>
           <button className={styles.cancelBtn} onClick={animateExit} disabled={isCreating || exiting}>Cancel</button>
-          <button className={styles.createBtn} onClick={handleSubmit} disabled={!name.trim() || isCreating || prResolving}>
+          <button className={styles.createBtn} onClick={handleSubmit} disabled={createDisabled}>
             {isCreating ? 'Creating...' : 'Create'}
           </button>
         </div>

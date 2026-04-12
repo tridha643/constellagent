@@ -414,6 +414,14 @@ export function registerIpcHandlers(): void {
     return GraphiteService.getStackForPr(repoPath, prBranch)
   })
 
+  ipcMain.handle(IPC.GRAPHITE_GET_CREATE_OPTIONS, async (_e, repoPath: string) => {
+    return GraphiteService.getCreateOptions(repoPath)
+  })
+
+  ipcMain.handle(IPC.GRAPHITE_SET_BRANCH_PARENT, async (_e, repoPath: string, branch: string, parent: string) => {
+    return GraphiteService.setBranchParent(repoPath, branch, parent)
+  })
+
   // ── PTY handlers ──
   ipcMain.handle(IPC.PTY_CREATE, async (_e, workingDir: string, shell?: string, extraEnv?: Record<string, string>) => {
     const win = BrowserWindow.fromWebContents(_e.sender)

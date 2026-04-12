@@ -714,6 +714,7 @@ export function Sidebar() {
       newBranch: boolean,
       force = false,
       baseBranch?: string,
+      graphiteParentBranch?: string,
     ) => {
       if (workspaceCreation) return;
       const requestId = crypto.randomUUID();
@@ -733,11 +734,15 @@ export function Sidebar() {
           requestId,
           settings.worktreeCredentialRules,
         );
+        const createdBranch = await window.api.git.getCurrentBranch(worktreePath).catch(() => branch);
+        if (newBranch && graphiteParentBranch) {
+          await window.api.graphite.setBranchParent(project.repoPath, createdBranch, graphiteParentBranch).catch(() => {});
+        }
         setWorkspaceCreation((prev) => {
           if (!prev || prev.requestId !== requestId) return prev;
           return { ...prev, message: START_TERMINAL_MESSAGE };
         });
-        await finishCreateWorkspace(project, name, branch, worktreePath);
+        await finishCreateWorkspace(project, name, createdBranch, worktreePath);
         openWorkspaceDialog(null);
       } catch (err) {
         const msg =
@@ -762,7 +767,7 @@ export function Sidebar() {
             destructive: true,
             onConfirm: () => {
               dismissConfirmDialog();
-              handleCreateWorkspace(project, name, branch, newBranch, true, baseBranch);
+              handleCreateWorkspace(project, name, branch, newBranch, true, baseBranch, graphiteParentBranch);
             },
           });
           return;
@@ -1686,7 +1691,7 @@ export function Sidebar() {
       {dialogProject && (
         <WorkspaceDialog
           project={dialogProject}
-          onConfirm={(name, branch, newBranch, baseBranch) => {
+          onConfirm={(name, branch, newBranch, baseBranch, graphiteParentBranch) => {
             handleCreateWorkspace(
               dialogProject,
               name,
@@ -1694,6 +1699,7 @@ export function Sidebar() {
               newBranch,
               false,
               baseBranch,
+              graphiteParentBranch,
             );
           }}
           onCancel={() => {
@@ -1708,10 +1714,12 @@ export function Sidebar() {
       {editingProject && (
         <ProjectSettingsDialog
           project={editingProject}
-          onSave={({ startupCommands, prLinkProvider }) => {
+          onSave={({ startupCommands, prLinkProvider, graphiteNewBranchSource, graphitePreferredTrunk }) => {
             updateProject(editingProject.id, {
               startupCommands,
               prLinkProvider,
+              graphiteNewBranchSource,
+              graphitePreferredTrunk,
             });
             setEditingProject(null);
           }}

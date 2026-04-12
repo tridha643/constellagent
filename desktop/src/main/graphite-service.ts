@@ -3,7 +3,12 @@ import { existsSync } from 'fs'
 import { rm } from 'fs/promises'
 import { promisify } from 'util'
 import { basename, dirname, join, resolve } from 'path'
-import type { GraphiteBranchInfo, GraphiteStackInfo } from '../shared/graphite-types'
+import type {
+  GraphiteBranchInfo,
+  GraphiteCreateBranchOption,
+  GraphiteCreateOptions,
+  GraphiteStackInfo,
+} from '../shared/graphite-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import { copyWorktreeCredentialArtifacts } from './worktree-credential-copy'
 
@@ -126,6 +131,65 @@ async function parseGraphiteMetadata(repoPath: string): Promise<Map<string, stri
   return parseGraphiteConfigMetadata(repoPath)
 }
 
+async function writeGraphiteMetadata(
+  repoPath: string,
+  entries: { name: string; parent: string }[],
+): Promise<void> {
+  if (entries.length === 0) return
+
+  let wroteToDb = false
+  try {
+    const gitCommonDir = await resolveGitCommonDir(repoPath)
+    const dbPath = join(gitCommonDir, '.graphite_metadata.db')
+    if (existsSync(dbPath)) {
+      await execFileAsync('sqlite3', [
+        dbPath,
+        'CREATE TABLE IF NOT EXISTS branch_metadata (branch_name TEXT PRIMARY KEY, parent_branch_name TEXT);',
+      ]).catch(() => {})
+      for (const entry of entries) {
+        await execFileAsync('sqlite3', [
+          dbPath,
+          `INSERT OR REPLACE INTO branch_metadata (branch_name, parent_branch_name) VALUES ('${entry.name.replace(/'/g, "''")}', '${entry.parent.replace(/'/g, "''")}');`,
+        ]).catch(() => {})
+      }
+      wroteToDb = true
+    }
+  } catch {
+    // DB write failed — fall through to git config
+  }
+
+  if (!wroteToDb) {
+    for (const entry of entries) {
+      await git(
+        ['config', `graphite.branch.${entry.name}.parent`, entry.parent],
+        repoPath,
+      ).catch(() => {})
+    }
+  }
+}
+
+function resolveBranchLineage(
+  branchName: string,
+  parentMap: Map<string, string>,
+): { trunk: string; depth: number } | null {
+  if (!parentMap.has(branchName)) return null
+
+  let current = branchName
+  let depth = 0
+  const visited = new Set<string>()
+  while (parentMap.has(current) && !visited.has(current)) {
+    visited.add(current)
+    const parent = parentMap.get(current)!
+    depth += 1
+    if (!parentMap.has(parent)) {
+      return { trunk: parent, depth }
+    }
+    current = parent
+  }
+
+  return null
+}
+
 /**
  * Build a linear stack chain containing a given branch.
  * Walks up from the branch to find the root, then walks down to find the full chain.
@@ -195,6 +259,16 @@ function buildStackChain(
   return chain.length > 1 ? chain : null
 }
 
+function sortCreateBranches(
+  a: GraphiteCreateBranchOption,
+  b: GraphiteCreateBranchOption,
+): number {
+  if (a.trunk !== b.trunk) return a.trunk.localeCompare(b.trunk)
+  if (a.depth !== b.depth) return a.depth - b.depth
+  if (a.parent !== b.parent) return (a.parent ?? '').localeCompare(b.parent ?? '')
+  return a.name.localeCompare(b.name)
+}
+
 export class GraphiteService {
   /**
    * Get the graphite stack info for a worktree.
@@ -217,6 +291,39 @@ export class GraphiteService {
     if (!chain) return null
 
     return { branches: chain, currentBranch }
+  }
+
+  static async getCreateOptions(repoPath: string): Promise<GraphiteCreateOptions | null> {
+    const parentMap = await parseGraphiteMetadata(repoPath)
+    if (parentMap.size === 0) return null
+
+    const trunks = new Set<string>()
+    const branches: GraphiteCreateBranchOption[] = []
+    for (const [name, parent] of parentMap.entries()) {
+      const lineage = resolveBranchLineage(name, parentMap)
+      if (!lineage) continue
+      trunks.add(lineage.trunk)
+      branches.push({
+        name,
+        parent,
+        trunk: lineage.trunk,
+        depth: lineage.depth,
+      })
+    }
+
+    branches.sort(sortCreateBranches)
+    return {
+      trunks: Array.from(trunks).sort((a, b) => a.localeCompare(b)),
+      branches,
+    }
+  }
+
+  static async setBranchParent(repoPath: string, branch: string, parent: string): Promise<void> {
+    const branchName = branch.trim()
+    const parentName = parent.trim()
+    if (!branchName) throw new Error('Graphite branch name is required')
+    if (!parentName) throw new Error('Graphite parent branch is required')
+    await writeGraphiteMetadata(repoPath, [{ name: branchName, parent: parentName }])
   }
 
   /**
@@ -294,36 +401,12 @@ export class GraphiteService {
       }
     }
 
-    // Write graphite parent metadata so the stack is discoverable.
-    // Prefer the SQLite DB (current CLI format), fall back to git config.
-    let wroteToDb = false
-    try {
-      const gitCommonDir = await resolveGitCommonDir(repoPath)
-      const dbPath = join(gitCommonDir, '.graphite_metadata.db')
-      if (existsSync(dbPath)) {
-        for (const entry of prBranches) {
-          if (entry.parent != null) {
-            await execFileAsync('sqlite3', [
-              dbPath,
-              `INSERT OR REPLACE INTO branch_metadata (branch_name, parent_branch_name) VALUES ('${entry.name.replace(/'/g, "''")}', '${entry.parent.replace(/'/g, "''")}');`,
-            ]).catch(() => {})
-          }
-        }
-        wroteToDb = true
-      }
-    } catch {
-      // DB write failed — fall through to git config
-    }
-    if (!wroteToDb) {
-      for (const entry of prBranches) {
-        if (entry.parent != null) {
-          await git(
-            ['config', `graphite.branch.${entry.name}.parent`, entry.parent],
-            repoPath,
-          ).catch(() => {})
-        }
-      }
-    }
+    await writeGraphiteMetadata(
+      repoPath,
+      prBranches
+        .filter((entry): entry is { name: string; parent: string } => entry.parent != null)
+        .map((entry) => ({ name: entry.name, parent: entry.parent })),
+    )
 
     // Copy repo-local credential artifacts from the main repo.
     await copyWorktreeCredentialArtifacts(repoPath, worktreePath, credentialRules)

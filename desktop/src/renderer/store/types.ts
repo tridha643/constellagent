@@ -58,6 +58,8 @@ export interface Project {
   repoPath: string
   startupCommands?: StartupCommand[]
   prLinkProvider?: PrLinkProvider
+  graphiteNewBranchSource?: GraphiteNewBranchSource
+  graphitePreferredTrunk?: string | null
 }
 
 export interface Workspace {
@@ -91,6 +93,8 @@ export type Tab = {
 export type RightPanelMode = 'files' | 'changes' | 'graph'
 
 export type PrLinkProvider = 'github' | 'graphite' | 'devinreview'
+
+export type GraphiteNewBranchSource = 'trunk' | 'branch'
 
 export type FavoriteEditor = 'cursor' | 'vscode' | 'zed' | 'sublime' | 'webstorm' | 'custom'
 
