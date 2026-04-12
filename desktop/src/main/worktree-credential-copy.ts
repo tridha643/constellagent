@@ -24,6 +24,8 @@ interface PreparedRule extends WorktreeCredentialRule {
   matcher?: RegExp
 }
 
+class RequiredCredentialCopyError extends Error {}
+
 function toPosixPath(relativePath: string): string {
   return relativePath.split(sep).join('/')
 }
@@ -79,11 +81,36 @@ function matchesRule(relativePath: string, isDirectory: boolean, rules: Prepared
   return false
 }
 
-async function copyFileIfMissing(sourcePath: string, destinationPath: string): Promise<void> {
-  if (existsSync(destinationPath)) return
+function isEnvLikePath(relativePath: string): boolean {
+  return basename(relativePath).startsWith('.env')
+}
 
-  await mkdir(dirname(destinationPath), { recursive: true }).catch(() => {})
-  await copyFile(sourcePath, destinationPath).catch(() => {})
+interface CopyFileOptions {
+  overwrite: boolean
+  required: boolean
+  relativePath: string
+}
+
+function describeError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+async function copyCredentialFile(
+  sourcePath: string,
+  destinationPath: string,
+  options: CopyFileOptions,
+): Promise<void> {
+  if (!options.overwrite && existsSync(destinationPath)) return
+
+  try {
+    await mkdir(dirname(destinationPath), { recursive: true })
+    await copyFile(sourcePath, destinationPath)
+  } catch (err) {
+    if (!options.required) return
+    throw new RequiredCredentialCopyError(
+      `Failed to copy required worktree credential "${options.relativePath}": ${describeError(err)}`,
+    )
+  }
 }
 
 async function copyDirectoryIfMissing(sourcePath: string, destinationPath: string): Promise<void> {
@@ -119,10 +146,19 @@ async function walkAndCopy(
       }
 
       if (entry.isFile() && matchesRule(nextRelativePath, false, rules)) {
-        await copyFileIfMissing(sourcePath, destinationPath)
+        const envLike = isEnvLikePath(nextRelativePath)
+        await copyCredentialFile(sourcePath, destinationPath, {
+          overwrite: envLike,
+          required: envLike,
+          relativePath: toPosixPath(nextRelativePath),
+        })
       }
     }
-  } catch {
+  } catch (err) {
+    if (err instanceof RequiredCredentialCopyError) throw err
+    if (!relativeDir) {
+      throw new Error(`Failed to scan worktree credential artifacts: ${describeError(err)}`)
+    }
     // Best-effort copy to preserve worktree creation flow.
   }
 }

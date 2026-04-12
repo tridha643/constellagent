@@ -37,9 +37,12 @@ function createRepoWithCredentialFixtures(name: string): { basePath: string; rep
   execSync('git commit -m "initial commit"', { cwd: repoPath })
 
   execSync('git checkout -b tracked-creds', { cwd: repoPath })
+  mkdirSync(join(repoPath, 'apps', 'web'), { recursive: true })
+  writeFileSync(join(repoPath, '.env'), 'TRACKED_SECRET=0\n')
+  writeFileSync(join(repoPath, 'apps', 'web', '.env.local'), 'TRACKED_WEB_SECRET=0\n')
   writeFileSync(join(repoPath, '.npmrc'), 'tracked-registry=https://tracked.example\n')
-  execSync('git add .npmrc', { cwd: repoPath })
-  execSync('git commit -m "add tracked npmrc"', { cwd: repoPath })
+  execSync('git add .env apps/web/.env.local .npmrc', { cwd: repoPath })
+  execSync('git commit -m "add tracked credentials"', { cwd: repoPath })
   execSync('git checkout main', { cwd: repoPath })
 
   mkdirSync(join(repoPath, 'apps', 'web'), { recursive: true })
@@ -92,7 +95,7 @@ function createGraphiteRepoWithRemote(name: string): { basePath: string; repoPat
 }
 
 test.describe('Worktree credential copy', () => {
-  test('copies default credential artifacts and does not overwrite destination files', async () => {
+  test('refreshes default env artifacts and preserves non-env tracked files', async () => {
     const { basePath, repoPath } = createRepoWithCredentialFixtures('defaults')
     const { app, window } = await launchApp()
 
