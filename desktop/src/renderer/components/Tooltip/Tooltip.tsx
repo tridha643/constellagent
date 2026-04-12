@@ -10,7 +10,7 @@ interface Props {
 }
 
 const SHOW_DELAY = 400
-const SHOW_DELAY_FAST = 50
+const SHOW_DELAY_FAST = 0
 const SKIP_WINDOW = 500
 const EDGE_PAD = 8
 const GAP = 6
@@ -20,6 +20,8 @@ let lastTooltipHidden = 0
 
 export function Tooltip({ label, shortcut, position = 'top', children }: Props) {
   const [visible, setVisible] = useState(false)
+  const [entered, setEntered] = useState(false)
+  const [instant, setInstant] = useState(false)
   const [coords, setCoords] = useState({ x: 0, y: 0 })
   const [resolvedPos, setResolvedPos] = useState(position)
   const elRef = useRef<HTMLElement | null>(null)
@@ -28,7 +30,9 @@ export function Tooltip({ label, shortcut, position = 'top', children }: Props) 
 
   const show = useCallback(() => {
     clearTimeout(showTimer.current)
-    const delay = Date.now() - lastTooltipHidden < SKIP_WINDOW ? SHOW_DELAY_FAST : SHOW_DELAY
+    const shouldOpenInstantly = Date.now() - lastTooltipHidden < SKIP_WINDOW
+    const delay = shouldOpenInstantly ? SHOW_DELAY_FAST : SHOW_DELAY
+
     showTimer.current = setTimeout(() => {
       if (!elRef.current) return
       const rect = elRef.current.getBoundingClientRect()
@@ -47,6 +51,8 @@ export function Tooltip({ label, shortcut, position = 'top', children }: Props) 
         x: rect.left + rect.width / 2,
         y: pos === 'top' ? rect.top - GAP : rect.bottom + GAP,
       })
+      setInstant(shouldOpenInstantly)
+      setEntered(false)
       setVisible(true)
     }, delay)
   }, [position])
@@ -54,12 +60,24 @@ export function Tooltip({ label, shortcut, position = 'top', children }: Props) 
   const hide = useCallback(() => {
     clearTimeout(showTimer.current)
     if (visible) lastTooltipHidden = Date.now()
+    setEntered(false)
     setVisible(false)
   }, [visible])
 
   useEffect(() => {
     return () => clearTimeout(showTimer.current)
   }, [])
+
+  useLayoutEffect(() => {
+    if (!visible) return
+    if (instant) {
+      setEntered(true)
+      return
+    }
+
+    const raf = requestAnimationFrame(() => setEntered(true))
+    return () => cancelAnimationFrame(raf)
+  }, [visible, instant, coords.x, coords.y, resolvedPos])
 
   // Clamp tooltip to viewport left/right edges before paint
   useLayoutEffect(() => {
@@ -110,6 +128,8 @@ export function Tooltip({ label, shortcut, position = 'top', children }: Props) 
         <div
           ref={tooltipRef}
           className={`${styles.tooltip} ${resolvedPos === 'bottom' ? styles.bottom : styles.top}`}
+          data-entered={entered}
+          data-instant={instant}
           style={{ left: coords.x, top: coords.y }}
         >
           <span className={styles.label}>{label}</span>

@@ -14,19 +14,61 @@
   height: var(--titlebar-height);
   -webkit-app-region: drag;
   flex-shrink: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 74%, transparent), transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
 }
 
 .projectList {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--space-2) 0;
+  padding: var(--space-3) 0 var(--space-4);
+}
+
+.emptyState {
+  margin: var(--space-4);
+  padding: var(--space-8) var(--space-6);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 84%, transparent), color-mix(in srgb, var(--surface-1) 92%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.emptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+  color: var(--accent-blue);
+  font-size: 13px;
+}
+
+.emptyTitle {
+  font-size: var(--text-sm);
+  font-family: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.emptyCopy {
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  max-width: 26ch;
 }
 
 /* ── Project Section ── */
 
 .projectSection {
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
   position: relative;
 }
 
@@ -41,16 +83,12 @@
   font-weight: var(--weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  transition: color var(--transition-fast);
+  transition: color var(--motion-fast);
   position: relative;
 }
 
 .projectHeader[draggable="true"] {
   cursor: grab;
-}
-
-.projectHeader:hover {
-  color: var(--text-primary);
 }
 
 .projectSectionDragging {
@@ -104,19 +142,17 @@
   font-size: 12px;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color var(--motion-fast), color var(--motion-fast);
+  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
   padding: 0;
   line-height: 1;
   z-index: 1;
 }
 
-.settingsBtn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary);
-}
-
-.projectHeader:hover .settingsBtn {
-  display: flex;
+.settingsBtn:active,
+.prListBtn:active,
+.syncBtn:active,
+.deleteBtn:active {
+  transform: scale(0.97);
 }
 
 .prListBtn {
@@ -137,19 +173,10 @@
   letter-spacing: 0.04em;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color var(--motion-fast), color var(--motion-fast);
+  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
   padding: 0;
   line-height: 1;
   z-index: 1;
-}
-
-.prListBtn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary);
-}
-
-.projectHeader:hover .prListBtn {
-  display: flex;
 }
 
 .syncBtn {
@@ -167,18 +194,17 @@
   font-size: 12px;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color var(--motion-fast), color var(--motion-fast);
+  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
   padding: 0;
   line-height: 1;
   z-index: 1;
 }
 
-.syncBtn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary);
-}
-
-.projectHeader:hover .syncBtn {
+.projectHeader:focus-within .settingsBtn,
+.projectHeader:focus-within .prListBtn,
+.projectHeader:focus-within .syncBtn,
+.projectHeader:focus-within .deleteBtn,
+.workspaceItem:focus-within .deleteBtn {
   display: flex;
 }
 
@@ -198,20 +224,10 @@
   font-size: 9px;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color var(--motion-fast), color var(--motion-fast);
+  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
   padding: 0;
   line-height: 1;
   z-index: 1;
-}
-
-.deleteBtn:hover {
-  background: var(--accent-red-dim);
-  color: var(--accent-red);
-}
-
-.projectHeader:hover .deleteBtn,
-.workspaceItem:hover .deleteBtn {
-  display: flex;
 }
 
 .projectPrModalOverlay {
@@ -223,7 +239,7 @@
   justify-content: center;
   padding: var(--space-10);
   background: rgba(0, 0, 0, 0.5);
-  animation: prOverlayFadeIn 200ms var(--ease-out) both;
+  animation: prOverlayFadeIn 180ms var(--ease-out) both;
 }
 
 .projectPrModal {
@@ -237,7 +253,7 @@
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   transform-origin: center;
-  animation: prDialogEnter 200ms var(--ease-out) both;
+  animation: prDialogEnter 180ms var(--ease-out) both;
 }
 
 @keyframes prOverlayFadeIn {
@@ -246,7 +262,7 @@
 }
 
 @keyframes prDialogEnter {
-  from { opacity: 0; transform: scale(0.95); }
+  from { opacity: 0; transform: scale(0.97); }
   to { opacity: 1; transform: scale(1); }
 }
 
@@ -297,17 +313,17 @@
   font-family: var(--font-ui);
   font-size: var(--text-sm);
   cursor: pointer;
-  transition: background-color var(--motion-fast), color var(--motion-fast);
-}
-
-.projectPrModalGhostBtn:hover:not(:disabled) {
-  background: var(--surface-3);
-  color: var(--text-primary);
+  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
 }
 
 .projectPrModalGhostBtn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.projectPrModalGhostBtn:active:not(:disabled),
+.projectPrModalCloseBtn:active {
+  transform: scale(0.97);
 }
 
 .projectPrModalCloseBtn {
@@ -320,13 +336,21 @@
   font-size: var(--text-sm);
   line-height: 1;
   cursor: pointer;
-  transition: background-color var(--motion-fast), color var(--motion-fast);
+  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
 }
 
-.projectPrModalCloseBtn:hover {
-  background: var(--surface-3);
-  color: var(--text-primary);
+@media (hover: hover) and (pointer: fine) {
+  .projectPrModalGhostBtn:hover:not(:disabled) {
+    background: var(--surface-3);
+    color: var(--text-primary);
+  }
+
+  .projectPrModalCloseBtn:hover {
+    background: var(--surface-3);
+    color: var(--text-primary);
+  }
 }
+
 
 .projectPrModalToolbar {
   display: flex;
@@ -604,21 +628,24 @@
 /* ── Workspace Items ── */
 
 .workspaceList {
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-3) var(--space-2);
 }
 
 .workspaceItem {
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  margin: 1px 0;
-  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: 2px 0;
+  border-radius: var(--radius-lg);
+  border: 1px solid transparent;
+  background: transparent;
   cursor: pointer;
   color: var(--text-secondary);
   font-size: var(--text-base);
   font-family: var(--font-mono);
   transition: background-color var(--motion-fast),
+              border-color var(--motion-fast),
               color var(--motion-fast),
               transform var(--motion-default),
               opacity var(--motion-default);
@@ -648,14 +675,15 @@
   border-radius: 1px;
 }
 
-.workspaceItem:hover {
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-primary);
+.workspaceItem.active {
+  background: color-mix(in srgb, var(--accent-blue-glow) 78%, var(--surface-2) 22%);
+  border-color: color-mix(in srgb, var(--accent-blue) 24%, transparent);
+  color: var(--accent-blue);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
 }
 
-.workspaceItem.active {
-  background: var(--accent-blue-glow);
-  color: var(--accent-blue);
+.workspaceItem:active:not(.workspaceItemDragging) {
+  transform: scale(0.992);
 }
 
 /* Active indicator — thin left bar */
@@ -750,7 +778,7 @@
   font-size: inherit;
   font-family: var(--font-mono);
   color: inherit;
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
   border-radius: var(--radius-sm);
   padding: 0 2px;
   margin: -1px -2px;
@@ -779,6 +807,55 @@
   animation: spin var(--duration-spinner) linear infinite;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .projectHeader:hover {
+    color: var(--text-primary);
+  }
+
+  .settingsBtn:hover,
+  .prListBtn:hover,
+  .syncBtn:hover {
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+    color: var(--text-primary);
+  }
+
+  .deleteBtn:hover {
+    background: var(--accent-red-dim);
+    color: var(--accent-red);
+  }
+
+  .projectHeader:hover .settingsBtn,
+  .projectHeader:hover .prListBtn,
+  .projectHeader:hover .syncBtn,
+  .projectHeader:hover .deleteBtn,
+  .workspaceItem:hover .deleteBtn {
+    display: flex;
+  }
+
+  .workspaceItem:hover {
+    background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+    color: var(--text-primary);
+  }
+
+  .graphiteStackToggle:hover {
+    opacity: 1;
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  }
+
+  .prInline:hover {
+    filter: brightness(1.3);
+  }
+
+  .actionButton:hover {
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+    color: var(--text-primary);
+  }
+
+  .actionsList:hover {
+    scrollbar-color: color-mix(in srgb, var(--text-primary) 15%, transparent) transparent;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .syncIndicatorSyncing {
     animation: none;
@@ -800,13 +877,14 @@
 .workspaceMetaRow {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
   min-width: 0;
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
 .workspaceMeta {
   font-size: var(--text-xs);
+  line-height: 1.35;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
   overflow: hidden;
@@ -839,7 +917,7 @@
   border-radius: var(--radius-lg);  /* 8px — outer container gets larger radius */
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  scrollbar-color: color-mix(in srgb, var(--text-primary) 15%, transparent) transparent;
 }
 
 /* Collapsed: show ~3 pills then scroll. 3*24px pills + 2*3px gaps + 10px padding = 88px */
@@ -861,12 +939,11 @@
   font-size: 10px;
   line-height: 1;
   opacity: 0.6;
-  transition: opacity 100ms ease, background-color 100ms ease;
+  transition: opacity 100ms var(--ease-out), background-color 100ms var(--ease-out), transform 100ms var(--ease-out);
 }
 
-.graphiteStackToggle:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.05);
+.graphiteStackToggle:active {
+  transform: scale(0.97);
 }
 
 /* Branch pill — inner cards */
@@ -950,13 +1027,12 @@
   align-items: center;
   gap: 3px;
   cursor: pointer;
-  transition: color var(--transition-fast);
+  transition: color var(--motion-fast), filter var(--motion-fast), transform 100ms var(--ease-out);
 }
 
-.prInline:hover {
-  filter: brightness(1.3);
+.prInline:active {
+  transform: scale(0.98);
 }
-
 
 .prNumber {
   opacity: 0.8;
@@ -1099,6 +1175,8 @@
   flex-shrink: 0;
   padding: var(--space-4) var(--space-6);
   border-top: 1px solid var(--border-subtle);
+  background: linear-gradient(0deg, color-mix(in srgb, var(--surface-2) 82%, transparent), color-mix(in srgb, var(--surface-1) 94%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -1109,21 +1187,17 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  border: none;
-  background: none;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 2%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 1.5%, transparent);
   color: var(--text-secondary);
   font-size: var(--text-sm);
   font-family: var(--font-ui);
   cursor: pointer;
-  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
+  transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
   width: 100%;
   text-align: left;
-}
-
-.actionButton:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-primary);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 2%, transparent);
 }
 
 .actionButton:active:not(:disabled) {
@@ -1131,10 +1205,17 @@
 }
 
 .actionIcon {
-  font-size: var(--text-md);
-  opacity: 0.5;
-  width: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  font-size: 11px;
+  opacity: 0.75;
   text-align: center;
+  flex-shrink: 0;
 }
 
 /* ── Scrollable action list ── */
@@ -1157,10 +1238,6 @@
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
   transition: scrollbar-color 200ms ease-out;
-}
-
-.actionsList:hover {
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
 /* ── DnD wrapper ── */
@@ -1222,7 +1299,14 @@
                 color var(--motion-fast),
                 opacity var(--motion-default);
   }
-  .workspaceItemDragging {
+  .workspaceItemDragging,
+  .workspaceItem:active:not(.workspaceItemDragging),
+  .graphiteStackToggle:active,
+  .prInline:active,
+  .settingsBtn:active,
+  .prListBtn:active,
+  .syncBtn:active,
+  .deleteBtn:active {
     transform: none;
   }
   .prCiPending {

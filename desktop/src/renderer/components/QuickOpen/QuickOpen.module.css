@@ -6,7 +6,6 @@
   justify-content: center;
   padding-top: 15vh;
   z-index: 100;
-  animation: overlayFadeIn 150ms var(--ease-out) both;
 }
 
 .panel {
@@ -21,17 +20,6 @@
   overflow: hidden;
   align-self: flex-start;
   transform-origin: top center;
-  animation: paletteEnter 150ms var(--ease-out) both;
-}
-
-@keyframes overlayFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes paletteEnter {
-  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .inputWrap {
@@ -50,7 +38,7 @@
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   outline: none;
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--motion-fast);
 }
 
 .input:focus {
@@ -76,11 +64,13 @@
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   color: var(--text-secondary);
-  transition: background var(--transition-fast);
+  transition: background-color var(--motion-fast), color var(--motion-fast);
 }
 
-.resultItem:hover {
-  background: rgba(255, 255, 255, 0.03);
+@media (hover: hover) and (pointer: fine) {
+  .resultItem:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
 }
 
 .resultItem.selected {

@@ -6,7 +6,7 @@
   align-items: center;
   justify-content: center;
   z-index: 100;
-  animation: overlayFadeIn 200ms var(--ease-out) both;
+  animation: overlayFadeIn 180ms var(--ease-out) both;
 }
 
 .dialog {
@@ -20,7 +20,7 @@
   gap: var(--space-4);
   box-shadow: var(--shadow-lg);
   transform-origin: center;
-  animation: dialogEnter 200ms var(--ease-out) both;
+  animation: dialogEnter 180ms var(--ease-out) both;
 }
 
 @keyframes overlayFadeIn {
@@ -29,7 +29,7 @@
 }
 
 @keyframes dialogEnter {
-  from { opacity: 0; transform: scale(0.95); }
+  from { opacity: 0; transform: scale(0.97); }
   to { opacity: 1; transform: scale(1); }
 }
 
@@ -72,12 +72,7 @@
   letter-spacing: 0.5px;
   cursor: pointer;
   text-align: left;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
-}
-
-.sectionToggle:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-3);
+  transition: border-color var(--motion-fast), background-color var(--motion-fast);
 }
 
 .sectionToggleLabel {
@@ -236,15 +231,10 @@
   align-items: center;
   justify-content: center;
   transition:
-    border-color var(--transition-fast),
-    color var(--transition-fast),
-    background var(--transition-fast);
-}
-
-.expandCmdBtn:hover:not(:disabled) {
-  border-color: var(--accent-blue);
-  color: var(--accent-blue);
-  background: var(--surface-3);
+    border-color var(--motion-fast),
+    color var(--motion-fast),
+    background-color var(--motion-fast),
+    transform 100ms var(--ease-out);
 }
 
 .expandCmdBtn:focus-visible {
@@ -255,6 +245,10 @@
 .expandCmdBtn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.expandCmdBtn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .expandCmdIcon {
@@ -368,12 +362,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color var(--motion-fast), color var(--motion-fast);
-}
-
-.removeBtn:hover {
-  background: var(--accent-red-dim);
-  color: var(--accent-red);
+  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
 }
 
 .addBtn {
@@ -388,12 +377,7 @@
   font-size: var(--text-sm);
   font-family: var(--font-ui);
   cursor: pointer;
-  transition: border-color var(--motion-fast), color var(--motion-fast);
-}
-
-.addBtn:hover {
-  border-color: var(--text-tertiary);
-  color: var(--text-secondary);
+  transition: border-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
 }
 
 .actions {
@@ -415,12 +399,12 @@
   transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
 }
 
-.cancelBtn:hover {
-  background: var(--surface-3);
-  color: var(--text-primary);
+.cancelBtn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
-.cancelBtn:active:not(:disabled) {
+.removeBtn:active:not(:disabled),
+.addBtn:active:not(:disabled) {
   transform: scale(0.97);
 }
 
@@ -437,21 +421,17 @@
   transition: filter var(--motion-fast), transform 100ms var(--ease-out);
 }
 
-.saveBtn:hover {
-  filter: brightness(1.1);
-}
-
 .saveBtn:active:not(:disabled) {
   transform: scale(0.97);
 }
 
 /* Exit animations */
 .overlayExiting {
-  animation: overlayFadeOut 150ms var(--ease-out) both;
+  animation: overlayFadeOut 140ms var(--ease-out) both;
 }
 
 .dialogExiting {
-  animation: dialogExit 150ms var(--ease-out) both;
+  animation: dialogExit 140ms var(--ease-out) both;
 }
 
 @keyframes overlayFadeOut {
@@ -461,5 +441,37 @@
 
 @keyframes dialogExit {
   from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(0.95); }
+  to { opacity: 0; transform: scale(0.97); }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sectionToggle:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-3);
+  }
+
+  .expandCmdBtn:hover:not(:disabled) {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+    background: var(--surface-3);
+  }
+
+  .removeBtn:hover {
+    background: var(--accent-red-dim);
+    color: var(--accent-red);
+  }
+
+  .addBtn:hover {
+    border-color: var(--text-tertiary);
+    color: var(--text-secondary);
+  }
+
+  .cancelBtn:hover {
+    background: var(--surface-3);
+    color: var(--text-primary);
+  }
+
+  .saveBtn:hover {
+    filter: brightness(1.1);
+  }
 }

@@ -141,7 +141,11 @@ function AutomationList({
     <>
       {automations.length === 0 ? (
         <div className={styles.emptyState}>
-          <span>No automations yet</span>
+          <span className={styles.emptyIcon}>⚡</span>
+          <span className={styles.emptyTitle}>No automations yet</span>
+          <span className={styles.emptyCopy}>
+            Create a recurring prompt, event reaction, or manual workflow for this project.
+          </span>
           <button className={styles.emptyBtn} onClick={onNew}>+ Create your first automation</button>
         </div>
       ) : (
@@ -644,7 +648,10 @@ export function AutomationsPanel() {
             <Tooltip label="Back">
               <button className={styles.backBtn} onClick={toggleAutomations}>‹</button>
             </Tooltip>
-            <h2 className={styles.title}>Automations</h2>
+            <div className={styles.headerText}>
+              <h2 className={styles.title}>Automations</h2>
+              <p className={styles.subtitle}>Schedule prompts, event hooks, and repeatable workflows.</p>
+            </div>
           </div>
           {view === 'list' && (
             <button className={styles.newBtn} onClick={handleNew}>+ New</button>

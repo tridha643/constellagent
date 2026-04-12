@@ -48,8 +48,9 @@ export function RightPanel() {
         {!workspace ? (
           <div className={styles.emptyState}>
             <span className={styles.emptyIcon}>📁</span>
+            <span className={styles.emptyTitle}>No workspace selected</span>
             <span className={styles.emptyText}>
-              Select a workspace to browse files
+              Pick a workspace to browse files, inspect changes, and move through git history.
             </span>
           </div>
         ) : (

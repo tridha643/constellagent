@@ -159,24 +159,24 @@
   /* ═══════════════════════════════════════════════════════
      TRANSITIONS
      ═══════════════════════════════════════════════════════ */
-  --transition-fast: 80ms ease;
-  --transition-default: 150ms ease;
-  --transition-slow: 250ms ease;
+  --transition-fast: 90ms var(--ease-out);
+  --transition-default: 150ms var(--ease-out);
+  --transition-slow: 220ms var(--ease-out);
 
   /* Easing curves */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
   /* Duration tokens */
-  --duration-fast: 80ms;
+  --duration-fast: 90ms;
   --duration-default: 150ms;
-  --duration-slow: 250ms;
+  --duration-slow: 220ms;
   --duration-spinner: 0.8s;
 
   /* Composite motion tokens (coexists with old --transition-*) */
-  --motion-fast: 80ms var(--ease-out);
+  --motion-fast: 90ms var(--ease-out);
   --motion-default: 150ms var(--ease-out);
-  --motion-slow: 250ms var(--ease-out);
+  --motion-slow: 220ms var(--ease-out);
 
   /* ═══════════════════════════════════════════════════════
      LAYOUT

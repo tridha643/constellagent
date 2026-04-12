@@ -52,12 +52,6 @@
   opacity: 0.5;
 }
 
-.resizeHandle:hover .resizeGrip,
-.resizeHandle:focus-visible .resizeGrip,
-.resizeHandleActive .resizeGrip {
-  background: var(--accent-blue);
-  opacity: 0.9;
-}
 
 .resizeHandle:focus-visible {
   outline: none;
@@ -113,16 +107,17 @@
   font-size: var(--text-xs);
   font-family: var(--font-ui);
   cursor: pointer;
-  transition: color var(--motion-fast), background-color var(--motion-fast);
-}
-
-.toggleOption:hover {
-  color: var(--text-secondary);
+  transition: color var(--motion-fast), background-color var(--motion-fast), transform 100ms var(--ease-out);
 }
 
 .toggleOption.active {
   background: var(--surface-3);
   color: var(--text-primary);
+}
+
+.toggleOption:active,
+.closeBtn:active {
+  transform: scale(0.97);
 }
 
 .submitBtn {
@@ -135,11 +130,7 @@
   font-family: var(--font-ui);
   font-weight: var(--weight-semibold);
   cursor: pointer;
-  transition: opacity var(--motion-fast), transform 80ms ease;
-}
-
-.submitBtn:hover {
-  opacity: 0.9;
+  transition: opacity var(--motion-fast), transform 100ms var(--ease-out), filter var(--motion-fast);
 }
 
 .submitBtn:active {
@@ -164,12 +155,7 @@
   font-size: var(--text-base);
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: color var(--motion-fast), background-color var(--motion-fast);
-}
-
-.closeBtn:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  transition: color var(--motion-fast), background-color var(--motion-fast), transform 100ms var(--ease-out);
 }
 
 /* ── Hint ── */
@@ -225,12 +211,43 @@
   font-size: var(--text-xs);
   font-family: var(--font-ui);
   cursor: pointer;
+  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
 }
-.selectAllBtn:hover { color: var(--text-primary); background: var(--surface-3); }
 .selectAllBtn:active { transform: scale(0.97); }
 
 /* ── Reduced motion ── */
 
+@media (hover: hover) and (pointer: fine) {
+  .resizeHandle:hover .resizeGrip {
+    background: var(--accent-blue);
+    opacity: 0.9;
+  }
+
+  .toggleOption:hover {
+    color: var(--text-secondary);
+  }
+
+  .submitBtn:hover {
+    opacity: 0.9;
+  }
+
+  .closeBtn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .selectAllBtn:hover {
+    color: var(--text-primary);
+    background: var(--surface-3);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .resizeGrip { transition: none; }
+  .toggleOption:active,
+  .closeBtn:active,
+  .submitBtn:active,
+  .selectAllBtn:active {
+    transform: none;
+  }
 }

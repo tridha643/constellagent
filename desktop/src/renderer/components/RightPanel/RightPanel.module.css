@@ -4,7 +4,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--surface-1);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 92%, transparent), var(--surface-1));
   border-left: 1px solid var(--border-subtle);
   overflow: hidden;
 }
@@ -16,16 +16,21 @@
   align-items: center;
   padding: var(--space-4) var(--space-6);
   flex-shrink: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 82%, transparent), color-mix(in srgb, var(--surface-1) 96%, transparent));
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
 }
 
 .modeToggle {
   display: flex;
   align-items: center;
   background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   padding: 2px;
   gap: 2px;
   width: 100%;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
 }
 
 .modeButton {
@@ -41,10 +46,6 @@
   cursor: pointer;
   transition: background-color var(--motion-fast), color var(--motion-fast), box-shadow var(--motion-fast);
   text-align: center;
-}
-
-.modeButton:hover {
-  color: var(--text-secondary);
 }
 
 .modeButton.active {
@@ -82,10 +83,6 @@
   font-family: var(--font-mono);
   white-space: nowrap;
   height: 100%;
-}
-
-.treeNode:hover {
-  background: rgba(255, 255, 255, 0.03);
 }
 
 .treeNodeActive {
@@ -151,6 +148,7 @@
   flex-direction: column;
   gap: var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 76%, transparent), color-mix(in srgb, var(--surface-1) 96%, transparent));
 }
 
 .commitInput {
@@ -283,17 +281,17 @@
   font-weight: var(--weight-semibold);
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: color var(--motion-fast), background-color var(--motion-fast);
-}
-
-.sectionAction:hover {
-  color: var(--text-primary);
-  background: var(--surface-4);
+  transition: color var(--motion-fast), background-color var(--motion-fast), transform 100ms var(--ease-out);
 }
 
 .sectionAction:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.sectionAction:active,
+.fileActionBtn:active {
+  transform: scale(0.97);
 }
 
 /* ── File Rows ── */
@@ -306,15 +304,7 @@
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   color: var(--text-secondary);
-  transition: background var(--transition-fast);
-}
-
-.changedFile:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.changedFile:hover .fileActions {
-  opacity: 1;
+  transition: background-color var(--motion-fast);
 }
 
 .statusBadge {
@@ -376,12 +366,7 @@
   font-size: 14px;
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: color var(--motion-fast), background-color var(--motion-fast);
-}
-
-.fileActionBtn:hover {
-  color: var(--text-primary);
-  background: var(--surface-4);
+  transition: color var(--motion-fast), background-color var(--motion-fast), transform 100ms var(--ease-out);
 }
 
 .fileActionBtn:disabled {
@@ -396,18 +381,68 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-16) var(--space-8);
+  margin: auto;
+  width: min(280px, calc(100% - 32px));
+  padding: var(--space-8);
   color: var(--text-tertiary);
   text-align: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 82%, transparent), color-mix(in srgb, var(--surface-1) 96%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
 }
 
 .emptyIcon {
-  font-size: 24px;
-  opacity: 0.3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+  font-size: 18px;
+  opacity: 0.9;
+}
+
+.emptyTitle {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
 }
 
 .emptyText {
+  max-width: 24ch;
   font-size: var(--text-sm);
+  color: var(--text-secondary);
   line-height: var(--leading-relaxed);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .modeButton:hover {
+    color: var(--text-secondary);
+  }
+
+  .treeNode:hover {
+    background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+  }
+
+  .sectionAction:hover {
+    color: var(--text-primary);
+    background: var(--surface-4);
+  }
+
+  .changedFile:hover {
+    background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+  }
+
+  .changedFile:hover .fileActions {
+    opacity: 1;
+  }
+
+  .fileActionBtn:hover {
+    color: var(--text-primary);
+    background: var(--surface-4);
+  }
 }
