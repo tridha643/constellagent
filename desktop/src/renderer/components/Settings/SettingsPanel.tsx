@@ -7,6 +7,7 @@ import {
   type WorktreeCredentialRuleKind,
 } from '../../../shared/worktree-credentials'
 import { Tooltip } from '../Tooltip/Tooltip'
+import { APPEARANCE_THEME_OPTIONS, type AppearanceThemeId } from '../../theme/appearance'
 import styles from './SettingsPanel.module.css'
 
 const SHORTCUTS = [
@@ -144,6 +145,40 @@ function SelectRow({ label, description, value, onChange, options }: {
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
+    </div>
+  )
+}
+
+function ThemePresetPicker({ value, onChange }: {
+  value: AppearanceThemeId
+  onChange: (value: AppearanceThemeId) => void
+}) {
+  return (
+    <div className={styles.themePresetGrid}>
+      {APPEARANCE_THEME_OPTIONS.map((theme) => {
+        const active = theme.id === value
+        return (
+          <button
+            key={theme.id}
+            type="button"
+            className={`${styles.themePresetCard} ${active ? styles.themePresetCardActive : ''}`}
+            onClick={() => onChange(theme.id)}
+          >
+            <div className={styles.themePresetHeader}>
+              <div>
+                <div className={styles.themePresetName}>{theme.label}</div>
+                <div className={styles.themePresetDescription}>{theme.description}</div>
+              </div>
+              <div className={styles.themePresetBadge}>{active ? 'Selected' : 'Built-in'}</div>
+            </div>
+            <div className={styles.themePresetPreview}>
+              <span className={styles.themeSwatch} style={{ background: theme.preview.surface }} />
+              <span className={styles.themeSwatch} style={{ background: theme.preview.accent }} />
+              <span className={styles.themeSwatch} style={{ background: theme.preview.ink }} />
+            </div>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -751,6 +786,17 @@ export function SettingsPanel() {
         <div className={styles.inner}>
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Appearance</div>
+
+          <div className={styles.settingBlock}>
+            <div className={styles.settingBlockLabel}>Theme</div>
+            <div className={styles.settingBlockDescription}>
+              Choose the overall shell palette for panels, tabs, terminal, and editor surfaces.
+            </div>
+            <ThemePresetPicker
+              value={settings.appearanceThemeId}
+              onChange={(v) => update('appearanceThemeId', v)}
+            />
+          </div>
 
           <NumberRow
             label="Terminal font size"

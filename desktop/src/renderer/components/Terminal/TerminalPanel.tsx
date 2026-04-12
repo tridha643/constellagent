@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useAppStore } from '../../store/app-store'
+import { getAppearanceTerminalTheme } from '../../theme/appearance'
 import { CONSTELLAGENT_PATH_MIME, wrapBracketedPaste } from '../../utils/add-to-chat'
 import styles from './TerminalPanel.module.css'
 
@@ -32,6 +33,7 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
   const fitFnRef = useRef<(() => void) | null>(null)
   const inputLineRef = useRef('')
   const terminalFontSize = useAppStore((s) => s.settings.terminalFontSize)
+  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
 
   const emitPrPollHint = (command: string) => {
     const normalized = command.trim().toLowerCase()
@@ -105,28 +107,7 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
           cursorBlink: true,
           cursorStyle: 'bar',
           scrollback: 10000,
-          theme: {
-            background: '#111111',
-            foreground: '#eeeeee',
-            cursor: '#eeeeee',
-            selectionBackground: 'rgba(255, 255, 255, 0.15)',
-            black: '#2a2a2a',
-            red: '#BF616A',
-            green: '#A3BE8C',
-            yellow: '#EBCB8B',
-            blue: '#81A1C1',
-            magenta: '#B48EAD',
-            cyan: '#88C0D0',
-            white: '#eeeeee',
-            brightBlack: '#505050',
-            brightRed: '#D08770',
-            brightGreen: '#B4C99A',
-            brightYellow: '#F5DDA0',
-            brightBlue: '#8FAFD7',
-            brightMagenta: '#C49BBF',
-            brightCyan: '#9DD0DE',
-            brightWhite: '#fafafa',
-          },
+          theme: getAppearanceTerminalTheme(useAppStore.getState().settings.appearanceThemeId),
         })
 
         const fitAddon = new FitAddon()
@@ -246,6 +227,13 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
     term.options.fontSize = terminalFontSize
     fitFnRef.current?.()
   }, [terminalFontSize])
+
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+
+    term.options.theme = getAppearanceTerminalTheme(appearanceThemeId)
+  }, [appearanceThemeId])
 
   // Focus + refit when this tab becomes active.
   useEffect(() => {

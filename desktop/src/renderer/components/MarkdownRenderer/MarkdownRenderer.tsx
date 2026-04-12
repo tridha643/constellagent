@@ -1,14 +1,12 @@
+import { useMemo } from 'react'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { mermaid } from '@streamdown/mermaid'
 import { math } from '@streamdown/math'
 import { cjk } from '@streamdown/cjk'
+import { useAppStore } from '../../store/app-store'
+import { getAppearanceMermaidThemeVariables } from '../../theme/appearance'
 import styles from './MarkdownRenderer.module.css'
-
-/** Dark-friendly Shiki themes for code blocks (Streamdown uses [light, dark] tuple). */
-const code = createCodePlugin({
-  themes: ['github-dark', 'github-dark'],
-})
 
 interface Props {
   children: string
@@ -17,6 +15,15 @@ interface Props {
 }
 
 export function MarkdownRenderer({ children, isStreaming, className }: Props) {
+  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
+  const code = useMemo(() => createCodePlugin({
+    themes: ['github-dark', 'github-dark'],
+  }), [])
+  const mermaidThemeVariables = useMemo(
+    () => getAppearanceMermaidThemeVariables(appearanceThemeId),
+    [appearanceThemeId],
+  )
+
   return (
     <div className={`${styles.wrapper} ${className ?? ''}`}>
       <Streamdown
@@ -27,14 +34,7 @@ export function MarkdownRenderer({ children, isStreaming, className }: Props) {
         mermaid={{
           config: {
             theme: 'dark',
-            themeVariables: {
-              primaryColor: '#7B93BD',
-              primaryTextColor: '#eeeeee',
-              primaryBorderColor: '#2e2e2e',
-              lineColor: '#999999',
-              secondaryColor: '#88C0D0',
-              tertiaryColor: '#B48EAD',
-            },
+            themeVariables: mermaidThemeVariables,
           },
         }}
         controls={{
