@@ -972,6 +972,8 @@ export function registerIpcHandlers(): void {
     const geminiConfigPath = join(geminiDir, 'settings.json')
     const cursorDir = join(home, '.cursor')
     const cursorConfigPath = join(cursorDir, 'mcp.json')
+    const piDir = join(home, '.pi')
+    const piConfigPath = join(piDir, 'config.json')
 
     // Ensure claude config exists
     if (!existsSync(CLAUDE_CONFIG_PATH)) {
@@ -992,12 +994,18 @@ export function registerIpcHandlers(): void {
       await mkdir(cursorDir, { recursive: true })
       await writeFile(cursorConfigPath, '{}', 'utf-8')
     }
+    // Ensure Pi config exists
+    if (!existsSync(piConfigPath)) {
+      await mkdir(piDir, { recursive: true })
+      await writeFile(piConfigPath, '{}', 'utf-8')
+    }
 
     return {
       'claude-code': CLAUDE_CONFIG_PATH,
       'codex': CODEX_CONFIG_PATH,
       'gemini': geminiConfigPath,
       'cursor': cursorConfigPath,
+      'pi': piConfigPath,
     }
   })
 

@@ -1,6 +1,6 @@
 import type { PrInfo } from './github-types'
 
-export type AutomationAgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor' | 'opencode'
+export type AutomationAgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor' | 'opencode' | 'pi'
 
 export type AgentEventType = 'agent:started' | 'agent:stopped' | 'agent:tool-used'
 export type GitHubEventType =
