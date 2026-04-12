@@ -28,7 +28,7 @@ interface Props {
   projectWorktrees: PlanPaletteWorktreeOption[]
 }
 
-type AgentFilter = 'all' | 'cursor' | 'claude-code' | 'codex' | 'gemini'
+type AgentFilter = 'all' | 'cursor' | 'claude-code' | 'codex' | 'gemini' | 'opencode'
 type SourceFilter = 'all' | 'worktree' | 'home'
 type WorktreeFilterKey = 'all' | '__home__' | string
 
@@ -38,6 +38,7 @@ const AGENTS: { key: AgentFilter; label: string }[] = [
   { key: 'claude-code', label: 'Claude' },
   { key: 'codex', label: 'Codex' },
   { key: 'gemini', label: 'Gemini' },
+  { key: 'opencode', label: 'OpenCode' },
 ]
 
 const SOURCES: { key: SourceFilter; label: string }[] = [
@@ -92,12 +93,25 @@ function entryMatchesWorktree(
   return false
 }
 
+function AgentMonogram({ label, title, small = false }: { label: string; title: string; small?: boolean }) {
+  return (
+    <span
+      className={small ? styles.agentMonogramSmall : styles.agentMonogram}
+      aria-hidden="true"
+      title={title}
+    >
+      {label}
+    </span>
+  )
+}
+
 function AgentChipIcon({ agent }: { agent: AgentFilter }) {
   if (agent === 'all') return null
   if (agent === 'claude-code') return <img src={claudeIcon} alt="Claude" />
   if (agent === 'codex') return <img src={openaiIcon} alt="Codex" />
   if (agent === 'gemini') return <GeminiIcon />
   if (agent === 'cursor') return <CursorIcon />
+  if (agent === 'opencode') return <AgentMonogram label="OC" title="OpenCode" />
   return null
 }
 
@@ -106,6 +120,7 @@ function AgentRowIcon({ agent }: { agent: string }) {
   if (agent === 'codex') return <img src={openaiIcon} alt="" style={{ width: 14, height: 14 }} />
   if (agent === 'gemini') return <GeminiIcon className={qoStyles.resultIcon} />
   if (agent === 'cursor') return <CursorIcon className={qoStyles.resultIcon} />
+  if (agent === 'opencode') return <AgentMonogram label="OC" title="OpenCode" small />
   return <span className={qoStyles.resultIcon}>·</span>
 }
 
