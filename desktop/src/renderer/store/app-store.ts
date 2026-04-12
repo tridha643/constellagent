@@ -74,7 +74,11 @@ const AGENT_NAMES: Record<string, string> = {
   gemini: 'Gemini',
   cursor: 'Cursor Agent',
   opencode: 'OpenCode',
+<<<<<<< Updated upstream
   pi: 'Pi',
+=======
+  'pi-constell': 'PI Constell',
+>>>>>>> Stashed changes
 }
 
 const GENERIC_AGENT_TITLES = new Set(Object.values(AGENT_NAMES))

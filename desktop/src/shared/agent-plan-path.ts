@@ -5,6 +5,7 @@ export const AGENT_PLAN_RELATIVE_DIRS = [
   '.codex/plans',
   '.gemini/plans',
   '.opencode/plans',
+  '.pi-constell/plans',
 ] as const
 
 export type AgentPlanDir = (typeof AGENT_PLAN_RELATIVE_DIRS)[number]
@@ -15,6 +16,7 @@ export const PLAN_DIR_TO_AGENT: Record<string, string> = {
   '.codex/plans': 'codex',
   '.gemini/plans': 'gemini',
   '.opencode/plans': 'opencode',
+  '.pi-constell/plans': 'pi-constell',
 }
 
 export const AGENT_TO_PLAN_DIR: Record<string, AgentPlanDir> = {
@@ -23,10 +25,11 @@ export const AGENT_TO_PLAN_DIR: Record<string, AgentPlanDir> = {
   codex: '.codex/plans',
   gemini: '.gemini/plans',
   opencode: '.opencode/plans',
+  'pi-constell': '.pi-constell/plans',
 }
 
 export const AGENT_PLAN_DIRS_LABEL =
-  '.cursor/plans, .claude/plans, .codex/plans, .gemini/plans, .opencode/plans'
+  '.cursor/plans, .claude/plans, .codex/plans, .gemini/plans, .opencode/plans, .pi-constell/plans'
 
 const PRIVATE_PREFIX = '/private'
 
@@ -136,5 +139,5 @@ export const PLAN_META_DEFAULTS: PlanMeta = {
   buildHarness: null,
 }
 
-export type PlanAgent = 'cursor' | 'claude-code' | 'codex' | 'gemini' | 'opencode'
+export type PlanAgent = 'cursor' | 'claude-code' | 'codex' | 'gemini' | 'opencode' | 'pi-constell'
 export type RelocateMode = 'copy' | 'move'

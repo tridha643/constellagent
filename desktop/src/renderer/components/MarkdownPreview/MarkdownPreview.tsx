@@ -19,6 +19,7 @@ import {
   findPlanModelPreset,
   isModelLabelFromOtherHarness,
   planAgentToPtyAgentType,
+  type PiModelOption,
 } from '../../../shared/plan-build-command'
 import type { AgentType } from '../../store/types'
 import styles from './MarkdownPreview.module.css'
@@ -31,6 +32,7 @@ const RELOCATE_TARGETS: { agent: PlanAgent; label: string }[] = [
   { agent: 'codex', label: 'Codex' },
   { agent: 'gemini', label: 'Gemini' },
   { agent: 'opencode', label: 'OpenCode' },
+  { agent: 'pi-constell', label: 'PI Constell' },
 ]
 
 interface Props {
@@ -47,6 +49,7 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
   const [customInput, setCustomInput] = useState('')
   const [building, setBuilding] = useState(false)
   const [userHome, setUserHome] = useState<string | undefined>(undefined)
+  const [piModels, setPiModels] = useState<PiModelOption[]>([])
   const relocateRef = useRef<HTMLDivElement>(null)
   const openFileTab = useAppStore((s) => s.openFileTab)
   const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
@@ -77,8 +80,11 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
 
   const agentPresets = useMemo(() => {
     if (!effectiveHarness) return []
+    if (effectiveHarness === 'pi-constell') {
+      return piModels.map((model) => ({ label: model.id, cliModel: model.id }))
+    }
     return PLAN_MODEL_PRESETS[effectiveHarness] ?? []
-  }, [effectiveHarness])
+  }, [effectiveHarness, piModels])
   const modelSelectValue = useMemo(() => {
     if (!effectiveHarness || !meta.codingAgent) return ''
     return canonicalPlanModelValue(effectiveHarness, meta.codingAgent)
@@ -88,6 +94,20 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
     () => RELOCATE_TARGETS.find((t) => t.agent === currentAgent)?.label ?? 'folder',
     [currentAgent],
   )
+
+  useEffect(() => {
+    if (effectiveHarness !== 'pi-constell') {
+      setPiModels([])
+      return
+    }
+    let cancelled = false
+    window.api.app.listPiModels().then((models) => {
+      if (!cancelled) setPiModels(models)
+    }).catch(() => {
+      if (!cancelled) setPiModels([])
+    })
+    return () => { cancelled = true }
+  }, [effectiveHarness])
 
   const loadContent = useCallback(async () => {
     try {
@@ -176,7 +196,9 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
 
     const matchesHarnessPreset = !!findPlanModelPreset(harness, meta.codingAgent)
     const modelOkForHarness =
-      matchesHarnessPreset || !isModelLabelFromOtherHarness(harness, meta.codingAgent)
+      harness === 'pi-constell'
+        ? true
+        : (matchesHarnessPreset || !isModelLabelFromOtherHarness(harness, meta.codingAgent))
     if (!modelOkForHarness) {
       addToast({
         id: crypto.randomUUID(),

@@ -622,7 +622,11 @@ const AGENT_LABELS: Record<AgentType, string> = {
   'gemini': 'Gemini CLI',
   'cursor': 'Cursor',
   'opencode': 'OpenCode',
+<<<<<<< Updated upstream
   'pi': 'Pi',
+=======
+  'pi-constell': 'PI Constell',
+>>>>>>> Stashed changes
 }
 
 function McpServerCard({ server, onDelete, onOpenConfig }: {
@@ -716,7 +720,11 @@ function McpServersSection() {
     'gemini': '~/.gemini/settings.json',
     'cursor': '~/.cursor/mcp.json',
     'opencode': 'No known MCP config file',
+<<<<<<< Updated upstream
     'pi': '~/.pi/config.json',
+=======
+    'pi-constell': 'No known MCP config file',
+>>>>>>> Stashed changes
   }
   const configFileName = configFileNames[selectedAgent]
 

@@ -10,6 +10,7 @@ import type {
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { PlanAgent } from '../shared/agent-plan-path'
+import type { PiModelOption } from '../shared/plan-build-command'
 import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
 import type { GraphiteStackInfo } from '../shared/graphite-types'
 import type { ReviewComment } from '../shared/review-types'
@@ -169,6 +170,7 @@ const api = {
 
   app: {
     getHomeDir: () => ipcRenderer.invoke(IPC.APP_GET_HOME_DIR) as Promise<string>,
+    listPiModels: () => ipcRenderer.invoke(IPC.APP_LIST_PI_MODELS) as Promise<PiModelOption[]>,
     selectDirectory: () =>
       ipcRenderer.invoke(IPC.APP_SELECT_DIRECTORY),
     selectFile: (filters?: { name: string; extensions: string[] }[]) =>

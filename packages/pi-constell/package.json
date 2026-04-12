@@ -1,0 +1,16 @@
+{
+  "name": "pi-constell",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "description": "PI Constell plan mode package for exporting Constellagent-compatible plan files.",
+  "pi": {
+    "extensions": ["./extensions/pi-constell.ts"]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-agent-core": "*",
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*"
+  }
+}
