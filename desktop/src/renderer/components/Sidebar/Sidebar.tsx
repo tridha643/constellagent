@@ -563,7 +563,9 @@ export function Sidebar() {
         projectId: project.id,
       });
 
-      const commands = project.startupCommands ?? [];
+      const commands = (((await window.api.projectStartupSettings.get(project.repoPath)) ?? project.startupCommands ?? [])
+        .filter((cmd) => typeof cmd.command === 'string' && cmd.command.trim())
+        .map((cmd) => ({ name: typeof cmd.name === 'string' ? cmd.name : '', command: cmd.command })));
 
       // Pre-trust worktree in Claude Code if any command uses claude
       if (commands.some((c) => c.command.trim().startsWith("claude"))) {
@@ -1224,6 +1226,7 @@ export function Sidebar() {
                 <Tooltip label="Project settings">
                   <button
                     className={styles.settingsBtn}
+                    aria-label="Project settings"
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingProject(project);

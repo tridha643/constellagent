@@ -80,6 +80,60 @@ function normalizeProject(project: Project): Project {
   }
 }
 
+function startupCommandsEqual(a: StartupCommand[] | undefined, b: StartupCommand[] | undefined): boolean {
+  const left = normalizeHydratedStartupCommands(a) ?? []
+  const right = normalizeHydratedStartupCommands(b) ?? []
+  if (left.length !== right.length) return false
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i]?.name !== right[i]?.name) return false
+    if (left[i]?.command !== right[i]?.command) return false
+  }
+  return true
+}
+
+function setProjectStartupCommandsInStore(projectId: string, startupCommands: StartupCommand[] | undefined): void {
+  useAppStore.setState((state) => ({
+    projects: state.projects.map((project) => {
+      if (project.id !== projectId) return project
+      if (startupCommandsEqual(project.startupCommands, startupCommands)) return project
+      return { ...project, startupCommands }
+    }),
+  }))
+}
+
+async function syncExternalProjectStartupCommandsForProject(
+  projectId: string,
+  repoPath: string,
+  legacyStartupCommands?: StartupCommand[],
+): Promise<void> {
+  try {
+    const externalRaw = await window.api.projectStartupSettings.get(repoPath)
+    const external = externalRaw ? normalizeHydratedStartupCommands(externalRaw) : undefined
+    if (external) {
+      setProjectStartupCommandsInStore(projectId, external)
+      return
+    }
+
+    const legacy = normalizeHydratedStartupCommands(legacyStartupCommands)
+    if (legacy) {
+      const saved = normalizeHydratedStartupCommands(await window.api.projectStartupSettings.set(repoPath, legacy))
+      setProjectStartupCommandsInStore(projectId, saved ?? legacy)
+      return
+    }
+
+    setProjectStartupCommandsInStore(projectId, undefined)
+  } catch (err) {
+    console.error('Failed to sync project startup settings:', err)
+  }
+}
+
+async function syncExternalProjectStartupSettingsForProjects(projects: Project[]): Promise<void> {
+  await Promise.all(
+    projects.map((project) =>
+      syncExternalProjectStartupCommandsForProject(project.id, project.repoPath, project.startupCommands),
+    ),
+  )
+}
 const TAB_TITLE_LOG = '[constellagent:tab-title]'
 
 const AGENT_NAMES: Record<string, string> = {
@@ -228,12 +282,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarActionOrder: [...DEFAULT_SIDEBAR_ACTION_ORDER],
 
   addProject: (project) => {
+    const normalizedProject = normalizeProject(project)
     set((s) => ({
       projects: [
         ...s.projects,
-        normalizeProject(project),
+        normalizedProject,
       ],
     }))
+    void syncExternalProjectStartupCommandsForProject(
+      normalizedProject.id,
+      normalizedProject.repoPath,
+      normalizedProject.startupCommands,
+    )
     void window.api.git.startSyncPolling(project.id, project.repoPath)
     void reconcileGitWorktreesForStore(project.id)
   },
@@ -992,8 +1052,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get()
     if (!s.activeTabId) return
     const tab = s.tabs.find((t) => t.id === s.activeTabId)
-    if (!tab || !tab.splitRoot) return
-    if (tab.type !== 'terminal' && tab.type !== 'file') return
+    if (!tab || (tab.type !== 'terminal' && tab.type !== 'file')) return
+    if (!tab.splitRoot) return
     const leaves = collectLeaves(tab.splitRoot)
     if (leaves.length <= 1) return
     const idx = leaves.findIndex((l) => l.id === tab.focusedPaneId)
@@ -1015,8 +1075,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get()
     if (!s.activeTabId) return
     const tab = s.tabs.find((t) => t.id === s.activeTabId)
-    if (!tab || !tab.splitRoot) return
-    if (tab.type !== 'terminal' && tab.type !== 'file') return
+    if (!tab || (tab.type !== 'terminal' && tab.type !== 'file')) return
+    if (!tab.splitRoot) return
 
     const leaf = findLeaf(tab.splitRoot, paneId)
     if (!leaf) return
@@ -1200,10 +1260,34 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  updateProject: (id, partial) =>
+  updateProject: (id, partial) => {
+    const existing = get().projects.find((project) => project.id === id)
+    const repoPath = partial.repoPath ?? existing?.repoPath
+    const normalizedStartupCommands =
+      partial.startupCommands !== undefined
+        ? normalizeHydratedStartupCommands(partial.startupCommands)
+        : undefined
+
+    if (repoPath && partial.startupCommands !== undefined) {
+      if (normalizedStartupCommands) {
+        void window.api.projectStartupSettings.set(repoPath, normalizedStartupCommands)
+      } else {
+        void window.api.projectStartupSettings.delete(repoPath)
+      }
+    }
+
     set((s) => ({
-      projects: s.projects.map((p) => (p.id === id ? { ...p, ...partial } : p)),
-    })),
+      projects: s.projects.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              ...partial,
+              ...(partial.startupCommands !== undefined ? { startupCommands: normalizedStartupCommands } : {}),
+            }
+          : p,
+      ),
+    }))
+  },
 
   deleteProject: async (projectId) => {
     const s = get()
@@ -1806,7 +1890,7 @@ async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Pr
 
 function getPersistedSlice(state: AppState): PersistedState {
   return {
-    projects: state.projects,
+    projects: state.projects.map(({ startupCommands, ...project }) => project),
     workspaces: state.workspaces,
     tabs: state.tabs,
     automations: state.automations,
@@ -1874,6 +1958,7 @@ export async function hydrateFromDisk(): Promise<void> {
     const data = await window.api.state.load()
     if (data) {
       useAppStore.getState().hydrateState(data)
+      await syncExternalProjectStartupSettingsForProjects(data.projects ?? [])
     }
   } catch (err) {
     console.error('Failed to load persisted state:', err)
