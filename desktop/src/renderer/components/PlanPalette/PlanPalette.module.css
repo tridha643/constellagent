@@ -80,6 +80,34 @@
   display: block;
 }
 
+.agentMonogram,
+.agentMonogramSmall {
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.agentMonogram {
+  font-size: 8px;
+}
+
+.agentMonogramSmall {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  font-size: 7px;
+  color: inherit;
+  opacity: 0.75;
+}
+
 .builtPill {
   font-size: 10px;
   font-family: var(--font-ui);
