@@ -121,6 +121,30 @@ test.describe('external project startup settings', () => {
     }
   })
 
+  test('opening Project Settings does not crash when skills and subagents are empty', async () => {
+    const repoPath = createTestRepo('startup-empty-settings')
+    const paths = makeTempPaths('startup-empty-settings')
+    const { app, window } = await launchApp(paths)
+
+    try {
+      await addProject(window, repoPath, 'empty-settings-project')
+      await window.waitForTimeout(1200)
+
+      const projectHeader = window.locator('[class*="projectHeader"]', { hasText: 'empty-settings-project' })
+      await expect(projectHeader).toBeVisible()
+      await projectHeader.hover()
+      await window.locator('[aria-label="Project settings"]').first().click({ force: true })
+
+      await expect(window.getByText('Something went wrong. Try reloading the window (⌘R).')).toHaveCount(0)
+      await expect(window.locator('div', { hasText: 'empty-settings-project' }).first()).toBeVisible()
+      await expect(window.getByText('No enabled skills or subagents. Configure them in Settings.')).toBeVisible()
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+      rmSync(resolve(paths.settingsPath, '..'), { recursive: true, force: true })
+    }
+  })
+
   test('saving from Project Settings persists to the external file', async () => {
     const repoPath = createTestRepo('startup-ui')
     const paths = makeTempPaths('startup-ui')
@@ -149,6 +173,44 @@ test.describe('external project startup settings', () => {
         { name: 'Dev server', command: 'echo ui-settings' },
       ])
 
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+      rmSync(resolve(paths.settingsPath, '..'), { recursive: true, force: true })
+    }
+  })
+
+  test('malformed persisted settings do not crash Project Settings', async () => {
+    const repoPath = createTestRepo('startup-malformed-settings')
+    const paths = makeTempPaths('startup-malformed-settings')
+    seedPersistedState(paths.userDataPath, {
+      projects: [{ id: 'malformed-project', name: 'malformed-project', repoPath }],
+      workspaces: [],
+      settings: {
+        skills: null,
+        subagents: null,
+      },
+    })
+
+    const { app, window } = await launchApp(paths)
+
+    try {
+      const hydratedSettings = await window.evaluate(() => {
+        const state = (window as any).__store.getState()
+        return {
+          skillsIsArray: Array.isArray(state.settings.skills),
+          subagentsIsArray: Array.isArray(state.settings.subagents),
+        }
+      })
+      expect(hydratedSettings).toEqual({ skillsIsArray: true, subagentsIsArray: true })
+
+      const projectHeader = window.locator('[class*="projectHeader"]', { hasText: 'malformed-project' })
+      await expect(projectHeader).toBeVisible()
+      await projectHeader.hover()
+      await window.locator('[aria-label="Project settings"]').first().click({ force: true })
+
+      await expect(window.getByText('Something went wrong. Try reloading the window (⌘R).')).toHaveCount(0)
+      await expect(window.getByText('No enabled skills or subagents. Configure them in Settings.')).toBeVisible()
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

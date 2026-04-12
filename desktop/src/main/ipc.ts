@@ -342,6 +342,10 @@ export function registerIpcHandlers(): void {
     return GitService.getCurrentBranch(worktreePath)
   })
 
+  ipcMain.handle(IPC.GIT_GET_HEAD_HASH, async (_e, worktreePath: string) => {
+    return GitService.getHeadHash(worktreePath)
+  })
+
   ipcMain.handle(IPC.GIT_GET_DEFAULT_BRANCH, async (_e, repoPath: string) => {
     return GitService.getDefaultBranch(repoPath)
   })

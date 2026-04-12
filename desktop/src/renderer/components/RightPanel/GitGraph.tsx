@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import type { GitLogEntry } from '@shared/git-types'
@@ -70,7 +70,7 @@ function laneX(lane: number): number {
  *   - Each active lane gets a vertical continuation point every row to keep the
  *     line continuous.
  */
-function computeGraph(entries: GitLogEntry[]): GraphData {
+function computeGraph(entries: GitLogEntry[], currentHash: string | null): GraphData {
   // lanes[i] = hash that lane i is waiting for, or null if free
   const lanes: (string | null)[] = []
   // laneBranch[i] = index into `branches` for the running vertical line on lane i
@@ -191,7 +191,7 @@ function computeGraph(entries: GitLogEntry[]): GraphData {
       cy: y,
       color: laneColor(laneColorIdx[commitLane]),
       hash,
-      isCurrent: i === 0,
+      isCurrent: hash === currentHash,
       isMerge: parents.length > 1,
     })
 
@@ -392,9 +392,9 @@ interface GitGraphProps {
 export function GitGraph({ worktreePath, workspaceId, isActive }: GitGraphProps) {
   const [entries, setEntries] = useState<GitLogEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [headHash, setHeadHash] = useState<string | null>(null)
   const [selectedHash, setSelectedHash] = useState<string | null>(null)
   const openCommitDiffTab = useAppStore((s) => s.openCommitDiffTab)
-  const hasAutoSelected = useRef(false)
 
   const loadLog = useCallback(async () => {
     try {
@@ -409,24 +409,40 @@ export function GitGraph({ worktreePath, workspaceId, isActive }: GitGraphProps)
     }
   }, [worktreePath])
 
+  const refreshHeadHash = useCallback(async () => {
+    try {
+      const hash = await window.api.git.getHeadHash(worktreePath)
+      const normalized = hash.trim()
+      const nextHeadHash = normalized || null
+      setHeadHash(nextHeadHash)
+      if (nextHeadHash) {
+        setSelectedHash((current) => current ?? nextHeadHash)
+      }
+      return nextHeadHash
+    } catch (err) {
+      console.error('Failed to load HEAD hash:', err)
+      setHeadHash(null)
+      return null
+    }
+  }, [worktreePath])
+
+  const refreshGraphData = useCallback(() => {
+    if (!isActive) return
+    void loadLog()
+    void refreshHeadHash()
+  }, [isActive, loadLog, refreshHeadHash])
+
   // Load on mount and when worktreePath changes
   useEffect(() => {
-    hasAutoSelected.current = false
+    if (!isActive) return
+    setHeadHash(null)
+    setSelectedHash(null)
     setLoading(true)
-    loadLog()
-  }, [loadLog])
-
-  // Auto-select latest commit on first load when active
-  useEffect(() => {
-    if (!isActive || hasAutoSelected.current || entries.length === 0) return
-    hasAutoSelected.current = true
-    const latest = entries[0]
-    setSelectedHash(latest.hash)
-    openCommitDiffTab(workspaceId, latest.hash, latest.message)
-  }, [isActive, entries, workspaceId, openCommitDiffTab])
+    refreshGraphData()
+  }, [isActive, refreshGraphData])
 
   // Refresh on filesystem changes
-  useFileWatcher(worktreePath, loadLog, isActive)
+  useFileWatcher(worktreePath, refreshGraphData, isActive)
 
   const handleClickCommit = useCallback(
     (entry: GitLogEntry) => {
@@ -444,7 +460,7 @@ export function GitGraph({ worktreePath, workspaceId, isActive }: GitGraphProps)
     [entries, handleClickCommit],
   )
 
-  const graph = useMemo(() => computeGraph(entries), [entries])
+  const graph = useMemo(() => computeGraph(entries, headHash), [entries, headHash])
 
   if (loading) {
     return <div className={styles.loading}>Loading commits...</div>

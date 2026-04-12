@@ -17,6 +17,7 @@ export const IPC = {
   GIT_COMMIT: 'git:commit',
   GIT_PUSH_CURRENT_BRANCH: 'git:push-current-branch',
   GIT_GET_CURRENT_BRANCH: 'git:get-current-branch',
+  GIT_GET_HEAD_HASH: 'git:get-head-hash',
   GIT_GET_DEFAULT_BRANCH: 'git:get-default-branch',
   GIT_SHOW_FILE_AT_HEAD: 'git:show-file-at-head',
   GIT_GET_LOG: 'git:get-log',

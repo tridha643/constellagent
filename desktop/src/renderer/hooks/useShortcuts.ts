@@ -264,20 +264,11 @@ export function useShortcuts() {
         if (!store.rightPanelOpen) store.toggleRightPanel()
         return
       }
-      // Cmd+Option+G — git panel + open latest commit diff
+      // Cmd+Option+G — git panel (open if closed)
       if (!shift && alt && e.code === 'KeyG') {
         consume()
         store.setRightPanelMode('graph')
         if (!store.rightPanelOpen) store.toggleRightPanel()
-        // Fetch and open latest commit diff
-        const ws = store.workspaces.find((w) => w.id === store.activeWorkspaceId)
-        if (ws) {
-          window.api.git.getLog(ws.worktreePath).then((log) => {
-            if (log.length > 0) {
-              store.openCommitDiffTab(ws.id, log[0].hash, log[0].message)
-            }
-          })
-        }
         return
       }
 

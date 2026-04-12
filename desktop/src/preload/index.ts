@@ -58,6 +58,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_PUSH_CURRENT_BRANCH, worktreePath) as Promise<void>,
     getCurrentBranch: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_CURRENT_BRANCH, worktreePath) as Promise<string>,
+    getHeadHash: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.GIT_GET_HEAD_HASH, worktreePath) as Promise<string>,
     getDefaultBranch: (repoPath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_DEFAULT_BRANCH, repoPath) as Promise<string>,
     showFileAtHead: (worktreePath: string, filePath: string) =>
