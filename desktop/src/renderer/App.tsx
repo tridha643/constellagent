@@ -24,6 +24,7 @@ import { useWorktreeSyncPoller } from './hooks/useWorktreeSyncPoller'
 import { useGraphiteStackPoller } from './hooks/useGraphiteStackPoller'
 import { useContextWindowPoller } from './hooks/useContextWindowPoller'
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary'
+import { applyAppearanceTheme } from './theme/appearance'
 import styles from './App.module.css'
 
 export function App() {
@@ -99,6 +100,11 @@ export function App() {
   const hunkReviewWorkspaceId = useAppStore((s) => s.hunkReviewWorkspaceId)
   const confirmDialog = useAppStore((s) => s.confirmDialog)
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
+  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
+
+  useEffect(() => {
+    applyAppearanceTheme(appearanceThemeId)
+  }, [appearanceThemeId])
 
   const wsTabs = activeWorkspaceTabs()
   const activeTab = wsTabs.find((t) => t.id === activeTabId)

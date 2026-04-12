@@ -10,6 +10,7 @@ import {
   setMonacoAddToChatHandler,
   clearMonacoAddToChatHandler,
 } from '../../utils/add-to-chat-monaco-bridge'
+import { ensureAppearanceMonacoThemes, getAppearanceMonacoThemeName } from '../../theme/appearance'
 import styles from './Editor.module.css'
 
 import { getLanguage } from '../../utils/language-map'
@@ -20,6 +21,7 @@ let diagnosticsConfigured = false
 loader.init().then((monaco) => {
   if (diagnosticsConfigured) return
   diagnosticsConfigured = true
+  ensureAppearanceMonacoThemes(monaco.editor)
 
   const diagnosticsOptions = {
     noSemanticValidation: false,
@@ -309,7 +311,7 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
           height="100%"
           language={getLanguage(filePath)}
           value={content}
-          theme="vs-dark"
+          theme={getAppearanceMonacoThemeName(settings.appearanceThemeId)}
           onChange={handleChange}
           onMount={handleEditorMount}
           options={{

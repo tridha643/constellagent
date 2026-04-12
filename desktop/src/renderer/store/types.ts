@@ -5,6 +5,7 @@ import type { GraphiteStackInfo } from '@shared/graphite-types'
 import type { ContextWindowData } from '@shared/context-window-types'
 import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '../../shared/automation-types'
 import type { WorktreeCredentialRule } from '../../shared/worktree-credentials'
+import type { AppearanceThemeId } from '../theme/appearance'
 import { getDefaultWorktreeCredentialRules } from '../../shared/worktree-credentials'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
@@ -132,6 +133,7 @@ export type AgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor' | 'opencod
 export type AgentMcpAssignments = Record<AgentType, string[]>
 
 export interface Settings {
+  appearanceThemeId: AppearanceThemeId
   confirmOnClose: boolean
   autoSaveOnBlur: boolean
   defaultShell: string
@@ -152,6 +154,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  appearanceThemeId: 'default',
   confirmOnClose: true,
   autoSaveOnBlur: false,
   defaultShell: '',
