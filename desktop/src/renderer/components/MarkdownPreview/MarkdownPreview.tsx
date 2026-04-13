@@ -210,9 +210,7 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
 
     let planAbsPath = filePath
     const onDiskAgent = agentForPlanPath(worktreePath, filePath, userHome) as PlanAgent | null
-    const planInActiveWorkspace =
-      !!worktreePath && relativePathInWorktree(worktreePath, filePath) !== null
-    if (onDiskAgent && onDiskAgent !== harness && planInActiveWorkspace) {
+    if (onDiskAgent && onDiskAgent !== harness) {
       try {
         planAbsPath = await window.api.fs.relocateAgentPlan(worktreePath, filePath, harness, 'move')
         if (activeTabId) retargetMarkdownPreviewTab(activeTabId, planAbsPath)

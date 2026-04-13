@@ -1,7 +1,8 @@
 import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test'
 import { resolve, join } from 'path'
-import { mkdirSync, writeFileSync, utimesSync } from 'fs'
+import { mkdirSync, rmSync, writeFileSync, utimesSync } from 'fs'
 import { execSync } from 'child_process'
+import { homedir } from 'os'
 
 const appPath = resolve(__dirname, '../out/main/index.js')
 
@@ -52,15 +53,15 @@ test.describe('PI Constell plan discovery', () => {
   test('Cmd+Shift+M palette lists and filters PI Constell plans', async () => {
     const repoPath = createTestRepo('pi-constell-plan-palette')
     const { app, window } = await launchApp()
+    const piConstellDir = join(homedir(), '.pi-constell', 'plans')
+    const piConstellPlan = join(piConstellDir, `pi-constell-plan-${Date.now()}.md`)
 
     try {
       const { worktreePath } = await setupWorkspace(window, repoPath)
-      const piConstellDir = join(worktreePath, '.pi-constell', 'plans')
       const cursorDir = join(worktreePath, '.cursor', 'plans')
       mkdirSync(piConstellDir, { recursive: true })
       mkdirSync(cursorDir, { recursive: true })
 
-      const piConstellPlan = join(piConstellDir, 'pi-constell-plan.md')
       const cursorPlan = join(cursorDir, 'cursor-plan.md')
       writeFileSync(piConstellPlan, '# PI Constell plan\n')
       writeFileSync(cursorPlan, '# Cursor plan\n')
@@ -74,15 +75,16 @@ test.describe('PI Constell plan discovery', () => {
       await expect(window.getByPlaceholder('Search plans by name...')).toBeVisible()
       const planFilters = window.getByRole('group', { name: 'Plan filters' })
       await expect(planFilters.getByRole('button', { name: 'PI Constell', exact: true })).toBeVisible()
-      await expect(window.getByText('pi-constell-plan.md', { exact: true })).toBeVisible()
+      await expect(window.getByText(piConstellPlan.split('/').pop()!, { exact: true })).toBeVisible()
       await expect(window.getByText('cursor-plan.md', { exact: true })).toBeVisible()
 
       await planFilters.getByRole('button', { name: 'PI Constell', exact: true }).click()
       await window.waitForTimeout(300)
 
-      await expect(window.getByText('pi-constell-plan.md', { exact: true })).toBeVisible()
+      await expect(window.getByText(piConstellPlan.split('/').pop()!, { exact: true })).toBeVisible()
       await expect(window.getByText('cursor-plan.md', { exact: true })).toHaveCount(0)
     } finally {
+      rmSync(piConstellPlan, { force: true })
       await app.close()
     }
   })
@@ -90,16 +92,16 @@ test.describe('PI Constell plan discovery', () => {
   test('Plans button opens newest PI Constell plan', async () => {
     const repoPath = createTestRepo('pi-constell-plan-button')
     const { app, window } = await launchApp()
+    const piConstellDir = join(homedir(), '.pi-constell', 'plans')
+    const piConstellPlan = join(piConstellDir, `newest-pi-constell-plan-${Date.now()}.md`)
 
     try {
       const { worktreePath } = await setupWorkspace(window, repoPath)
-      const piConstellDir = join(worktreePath, '.pi-constell', 'plans')
       const claudeDir = join(worktreePath, '.claude', 'plans')
       mkdirSync(piConstellDir, { recursive: true })
       mkdirSync(claudeDir, { recursive: true })
 
       const claudePlan = join(claudeDir, 'older-claude-plan.md')
-      const piConstellPlan = join(piConstellDir, 'newest-pi-constell-plan.md')
       writeFileSync(claudePlan, '# Older Claude plan\n')
       writeFileSync(piConstellPlan, '# Newest PI Constell plan\n')
       const now = new Date()
@@ -120,6 +122,7 @@ test.describe('PI Constell plan discovery', () => {
       })
       expect(active).toEqual({ type: 'markdownPreview', filePath: piConstellPlan })
     } finally {
+      rmSync(piConstellPlan, { force: true })
       await app.close()
     }
   })

@@ -802,7 +802,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!path) {
         s.addToast({
           id: crypto.randomUUID(),
-          message: `No plan files found. Expected .md/.mdx under ${AGENT_PLAN_DIRS_LABEL} in the workspace, or the same folders under your home directory (e.g. ~/.claude/plans).`,
+          message: `No plan files found. Expected .md/.mdx under ${AGENT_PLAN_DIRS_LABEL} in the workspace, or the same folders under your home directory (e.g. ~/.claude/plans or ~/.pi-constell/plans).`,
           type: 'info',
         })
         return
