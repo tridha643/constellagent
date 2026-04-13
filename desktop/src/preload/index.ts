@@ -23,6 +23,10 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_LIST_WORKTREES, repoPath),
     checkIsRepo: (dirPath: string) =>
       ipcRenderer.invoke(IPC.GIT_CHECK_IS_REPO, dirPath) as Promise<boolean>,
+    getProjectRepoAnchor: (dirPath: string) =>
+      ipcRenderer.invoke(IPC.GIT_GET_PROJECT_REPO_ANCHOR, dirPath) as Promise<string>,
+    isSecondaryWorktreeRoot: (repoPath: string, workspaceRoot: string) =>
+      ipcRenderer.invoke(IPC.GIT_IS_SECONDARY_WORKTREE_ROOT, repoPath, workspaceRoot) as Promise<boolean>,
     initRepo: (dirPath: string) =>
       ipcRenderer.invoke(IPC.GIT_INIT_REPO, dirPath) as Promise<void>,
     createWorktree: (repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[]) =>
@@ -93,8 +97,23 @@ const api = {
       ipcRenderer.invoke(IPC.GRAPHITE_CLONE_STACK, repoPath, name, prBranches, credentialRules) as Promise<{ worktreePath: string; branch: string }>,
     getStackForPr: (repoPath: string, prBranch: string) =>
       ipcRenderer.invoke(IPC.GRAPHITE_GET_STACK_FOR_PR, repoPath, prBranch) as Promise<{ name: string; parent: string | null }[] | null>,
-    runStackAction: (repoPath: string, worktreePath: string, action: GraphiteStackAction, commitMessage: string, defaultBranch: string) =>
-      ipcRenderer.invoke(IPC.GRAPHITE_RUN_STACK_ACTION, repoPath, worktreePath, action, commitMessage, defaultBranch) as Promise<GraphiteStackActionResult>,
+    runStackAction: (
+      repoPath: string,
+      worktreePath: string,
+      action: GraphiteStackAction,
+      commitMessage: string,
+      defaultBranch: string,
+      stackBranchName?: string | null,
+    ) =>
+      ipcRenderer.invoke(
+        IPC.GRAPHITE_RUN_STACK_ACTION,
+        repoPath,
+        worktreePath,
+        action,
+        commitMessage,
+        defaultBranch,
+        stackBranchName ?? null,
+      ) as Promise<GraphiteStackActionResult>,
     getCreateOptions: (repoPath: string) =>
       ipcRenderer.invoke(IPC.GRAPHITE_GET_CREATE_OPTIONS, repoPath) as Promise<GraphiteCreateOptions | null>,
     setBranchParent: (repoPath: string, branch: string, parent: string) =>

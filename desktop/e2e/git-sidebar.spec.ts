@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import { resolve, join } from 'path'
 import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync, realpathSync } from 'fs'
 import { execSync } from 'child_process'
+import { homedir } from 'os'
 
 const appPath = resolve(__dirname, '../out/main/index.js')
 
@@ -41,6 +42,10 @@ function cleanupTestRepo(repoPath: string): void {
           rmSync(join(parentDir, entry), { recursive: true, force: true })
         }
       }
+    }
+    const t3RepoName = repoPath.split('/').pop()
+    if (t3RepoName) {
+      rmSync(join(homedir(), '.t3', 'worktrees', t3RepoName), { recursive: true, force: true })
     }
   } catch {
     // best effort
@@ -184,6 +189,69 @@ test.describe('Git & Sidebar functionality', () => {
         expect(['modified', 'untracked', 'added']).toContain(readmeStatus.status)
       }
       // At minimum, there should be at least one change detected
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('linked t3 project path anchors to the primary repo and shows main changes', async () => {
+    const repoPath = createTestRepo('linked-t3-anchor')
+    const realRepo = realpathSync(repoPath)
+    const repoName = realRepo.split('/').pop()!
+    const t3Root = join(homedir(), '.t3', 'worktrees', repoName)
+    const linkedPath = join(t3Root, 'feature-sidebar')
+    mkdirSync(t3Root, { recursive: true })
+    execSync(`git worktree add -b feature-sidebar "${linkedPath}"`, { cwd: realRepo })
+    const realLinkedPath = realpathSync(linkedPath)
+
+    const { app, window } = await launchApp()
+
+    try {
+      await window.evaluate(async ({ selectedPath }: { selectedPath: string }) => {
+        const store = (window as any).__store.getState()
+        store.hydrateState({ projects: [], workspaces: [] })
+        const repoPath = await (window as any).api.git.getProjectRepoAnchor(selectedPath)
+        store.addProject({
+          id: crypto.randomUUID(),
+          name: 'linked-project',
+          repoPath,
+        })
+      }, { selectedPath: realLinkedPath })
+
+      await window.waitForFunction(() => {
+        const store = (window as any).__store.getState()
+        const project = store.projects[0]
+        if (!project) return false
+        const branches = store.workspaces.map((w: any) => w.branch)
+        return branches.includes('main') && branches.includes('feature-sidebar')
+      })
+
+      const state = await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        return {
+          repoPath: store.projects[0]?.repoPath ?? '',
+          branches: store.workspaces.map((w: any) => w.branch),
+        }
+      })
+
+      expect(state.repoPath.replace('/private', '')).toBe(realRepo.replace('/private', ''))
+      expect(state.branches).toEqual(expect.arrayContaining(['main', 'feature-sidebar']))
+
+      writeFileSync(join(realRepo, 'README.md'), '# main changed\n')
+
+      await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        const mainWorkspace = store.workspaces.find((w: any) => w.branch === 'main')
+        if (!mainWorkspace) throw new Error('main workspace missing')
+        store.setActiveWorkspace(mainWorkspace.id)
+      })
+
+      await window.locator('button', { hasText: 'Changes' }).click()
+      await window.waitForTimeout(1200)
+
+      const readmeChange = window.locator('[class*="changePath"]', { hasText: 'README.md' })
+      await expect(readmeChange).toBeVisible({ timeout: 5000 })
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

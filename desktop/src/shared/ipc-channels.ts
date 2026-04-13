@@ -31,6 +31,10 @@ export const IPC = {
   GIT_START_SYNC_POLLING: 'git:start-sync-polling',
   GIT_STOP_SYNC_POLLING: 'git:stop-sync-polling',
   GIT_CHECK_IS_REPO: 'git:check-is-repo',
+  /** Canonical project repo root, anchored at the primary checkout when possible. */
+  GIT_GET_PROJECT_REPO_ANCHOR: 'git:get-project-repo-anchor',
+  /** True when workspace root is a linked worktree (resolved path differs from main repo). */
+  GIT_IS_SECONDARY_WORKTREE_ROOT: 'git:is-secondary-worktree-root',
   GIT_INIT_REPO: 'git:init-repo',
   /** Renderer → main: worktree paths that have an active agent (busy for sync) */
   GIT_SYNC_SET_BUSY: 'git:sync-set-busy',

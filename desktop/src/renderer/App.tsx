@@ -85,6 +85,28 @@ export function App() {
     })
   }, [])
 
+  // Re-merge `git worktree list` when returning to the app so CLI-created worktrees appear in the sidebar.
+  useEffect(() => {
+    let debounce: ReturnType<typeof setTimeout> | null = null
+    const schedule = () => {
+      if (debounce) clearTimeout(debounce)
+      debounce = setTimeout(() => {
+        debounce = null
+        useAppStore.getState().refreshGitWorktrees()
+      }, 400)
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') schedule()
+    }
+    window.addEventListener('focus', schedule)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      if (debounce) clearTimeout(debounce)
+      window.removeEventListener('focus', schedule)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
+
   const allTabs = useAppStore((s) => s.tabs)
   const activeTabId = useAppStore((s) => s.activeTabId)
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen)
@@ -233,7 +255,7 @@ export function App() {
 
             {/* Right Panel */}
             {rightPanelOpen && (
-              <Allotment.Pane minSize={200} maxSize={500} preferredSize={280}>
+              <Allotment.Pane minSize={240} maxSize={500} preferredSize={280}>
                 <RightPanel />
               </Allotment.Pane>
             )}

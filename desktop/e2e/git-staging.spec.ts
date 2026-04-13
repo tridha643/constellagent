@@ -56,8 +56,9 @@ async function mountWorkspace(
   worktreePath: string,
   branch: string,
   workspaceName = 'feature-ws',
+  graphiteUiTrunkBranch?: string | null,
 ): Promise<void> {
-  await window.evaluate(async ({ repo, worktree, branchName, workspaceName }) => {
+  await window.evaluate(async ({ repo, worktree, branchName, workspaceName, graphiteUiTrunkBranch: pin }) => {
     const store = (window as any).__store.getState()
     store.hydrateState({ projects: [], workspaces: [] })
     const projectId = 'proj-pr-button'
@@ -68,8 +69,9 @@ async function mountWorkspace(
       branch: branchName,
       worktreePath: worktree,
       projectId,
+      ...(pin != null && pin !== '' ? { graphiteUiTrunkBranch: pin } : {}),
     })
-  }, { repo: repoPath, worktree: worktreePath, branchName: branch, workspaceName })
+  }, { repo: repoPath, worktree: worktreePath, branchName: branch, workspaceName, graphiteUiTrunkBranch })
 }
 
 test.describe('Git staging functionality', () => {
@@ -427,7 +429,40 @@ test.describe('Git staging functionality', () => {
       await window.locator('button', { hasText: 'Changes' }).click()
       await window.waitForTimeout(1200)
 
-      await expect(window.locator('button', { hasText: 'Add to Stack' })).toBeVisible({ timeout: 5000 })
+      await expect(window.locator('button', { hasText: 'Add stack' })).toBeVisible({ timeout: 5000 })
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('linked worktree with graphiteUiTrunkBranch pin shows Start Stack on home branch', async () => {
+    const repoPath = createTestRepo('staging-graphite-pin')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const worktreePath = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.git.createWorktree(repo, 'graphite-pin', 'feature/graphite-pin', true, 'main')
+      }, realRepo)
+
+      writeFileSync(join(worktreePath as string, 'README.md'), '# pin test\n')
+      await window.evaluate(async (worktree: string) => {
+        await (window as any).api.git.stage(worktree, ['README.md'])
+      }, worktreePath)
+
+      await mountWorkspace(
+        window,
+        realRepo,
+        worktreePath as string,
+        'feature/graphite-pin',
+        'graphite-pin',
+        'feature/graphite-pin',
+      )
+      await window.locator('button', { hasText: 'Changes' }).click()
+      await window.waitForTimeout(1200)
+
+      await expect(window.locator('button', { hasText: 'Start Stack' })).toBeVisible({ timeout: 5000 })
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
