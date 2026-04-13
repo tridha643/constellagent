@@ -1,7 +1,7 @@
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { AssistantMessage, TextContent } from '@mariozechner/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent'
-import registerAskUserQuestion, { type AskUserQuestionDetails } from './ask-user-question.js'
+import registerAskUserQuestion, { formatAskUserQuestionDetails, type AskUserQuestionDetails } from './ask-user-question.js'
 import { ensureActivePlanPath, isSafeCommand, notifyConstellagent, readPlanFile, resolvePlanToolPath, savePlanFile } from './utils.js'
 
 const PLAN_MODE_TOOLS = ['read', 'bash', 'grep', 'find', 'ls', 'write', 'edit', 'askUserQuestion']
@@ -15,6 +15,8 @@ interface PersistedState {
   lastSavedText: string | null
   lastPrompt: string | null
   lastClarifications: string | null
+  clarificationGateOpen: boolean
+  lastClarifiedPrompt: string | null
 }
 
 function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
@@ -38,15 +40,10 @@ function extractLatestClarifications(messages: AgentMessage[]): string | null {
     return candidate.role === 'toolResult' && candidate.toolName === 'askUserQuestion'
   }) as (AgentMessage & { details?: AskUserQuestionDetails }) | undefined
 
-  if (!toolResult?.details || toolResult.details.cancelled) return null
-  return toolResult.details.answers
-    .map((answer: AskUserQuestionDetails['answers'][number]) => `${answer.header}: ${Array.isArray(answer.answer) ? answer.answer.join(', ') : answer.answer}`)
-    .join('\n')
+  return toolResult?.details ? formatAskUserQuestionDetails(toolResult.details) : null
 }
 
 export default function piConstell(pi: ExtensionAPI): void {
-  registerAskUserQuestion(pi)
-
   let planModeEnabled = false
   let previousTools: string[] | null = null
   let activePlanPath: string | null = null
@@ -54,6 +51,20 @@ export default function piConstell(pi: ExtensionAPI): void {
   let lastSavedText: string | null = null
   let lastPrompt: string | null = null
   let lastClarifications: string | null = null
+  let clarificationGateOpen = false
+  let lastClarifiedPrompt: string | null = null
+
+  registerAskUserQuestion(pi, {
+    onComplete: async (details) => {
+      if (!planModeEnabled) return
+      const summary = formatAskUserQuestionDetails(details)
+      if (!summary) return
+      lastClarifications = summary
+      lastClarifiedPrompt = lastPrompt
+      clarificationGateOpen = true
+      persistState()
+    },
+  })
 
   pi.registerFlag('plan', {
     description: 'Start in pi-constell-plan mode',
@@ -69,6 +80,8 @@ export default function piConstell(pi: ExtensionAPI): void {
       lastSavedText,
       lastPrompt,
       lastClarifications,
+      clarificationGateOpen,
+      lastClarifiedPrompt,
     } satisfies PersistedState)
   }
 
@@ -83,7 +96,8 @@ export default function piConstell(pi: ExtensionAPI): void {
     }
 
     const label = relativePlanPath(ctx) ?? lastSavedPath?.replace(`${ctx.cwd}/`, '') ?? 'plan mode'
-    ctx.ui.setStatus('pi-constell-plan', ctx.ui.theme.fg('warning', `⏸ PI Constell Plan → ${label}`))
+    const gateLabel = clarificationGateOpen ? 'ready' : 'ask 1 question'
+    ctx.ui.setStatus('pi-constell-plan', ctx.ui.theme.fg('warning', `⏸ PI Constell Plan → ${label} · ${gateLabel}`))
   }
 
   function enablePlanMode(ctx: ExtensionContext): void {
@@ -91,7 +105,7 @@ export default function piConstell(pi: ExtensionAPI): void {
     planModeEnabled = true
     previousTools = pi.getActiveTools()
     pi.setActiveTools(PLAN_MODE_TOOLS)
-    ctx.ui.notify('pi-constell-plan enabled. Only the active plan file is writable.', 'info')
+    ctx.ui.notify('pi-constell-plan enabled. Ask one clarifying question before the active plan file becomes writable.', 'info')
     updateStatus(ctx)
     persistState()
   }
@@ -146,6 +160,12 @@ export default function piConstell(pi: ExtensionAPI): void {
       if (!activePlanPath) {
         return { block: true, reason: 'Plan mode has not allocated an active plan file yet.' }
       }
+      if (!clarificationGateOpen) {
+        return {
+          block: true,
+          reason: 'Plan mode requires a completed askUserQuestion clarification round before the active plan file can be written.',
+        }
+      }
 
       const requestedPath = resolvePlanToolPath(ctx.cwd, rawPath)
       const allowedPath = resolvePlanToolPath(ctx.cwd, activePlanPath)
@@ -161,8 +181,13 @@ export default function piConstell(pi: ExtensionAPI): void {
   pi.on('before_agent_start', async (event, ctx) => {
     if (!planModeEnabled) return
 
-    lastPrompt = event.prompt
-    activePlanPath = await ensureActivePlanPath(ctx.cwd, { prompt: lastPrompt, clarifications: lastClarifications }, activePlanPath)
+    const nextPrompt = event.prompt
+    const promptChanged = nextPrompt !== lastPrompt
+    lastPrompt = nextPrompt
+    if (promptChanged || lastClarifiedPrompt !== lastPrompt) clarificationGateOpen = false
+
+    const activeClarifications = clarificationGateOpen ? lastClarifications : null
+    activePlanPath = await ensureActivePlanPath(ctx.cwd, { prompt: lastPrompt, clarifications: activeClarifications }, activePlanPath)
     const planContent = activePlanPath ? await readPlanFile(activePlanPath) : null
 
     persistState()
@@ -171,7 +196,7 @@ export default function piConstell(pi: ExtensionAPI): void {
     return {
       message: {
         customType: 'pi-constell-plan-mode',
-        content: `[PI CONSTELL PLAN MODE ACTIVE]\nYou are in plan mode.\n\nRules:\n- Investigate the codebase with read-only tools.\n- Ask clarifying questions with askUserQuestion when necessary.\n- You may use write/edit only for the active plan file: ${activePlanPath}\n- Do not modify any other project file.\n- Produce a concrete implementation plan in markdown with headings like \"## Goal\" and \"## Plan\".\n- Prefer a strong action-oriented title so the saved filename is useful documentation.\n\n${planContent ? `Current plan file contents:\n\n${planContent}` : 'The active plan file is empty; create or refine it as needed.'}`,
+        content: `[PI CONSTELL PLAN MODE ACTIVE]\nYou are in plan mode.\n\nRules:\n- Investigate the repo with read-only tools before planning.\n- Your first substantive action must be askUserQuestion. Treat it as a blocking prerequisite before drafting or saving the plan.\n- Ask exactly one clarification question per askUserQuestion call, wait for the answer, and continue asking follow-ups one at a time until material ambiguities are resolved.\n- Prefer reading the codebase over asking the user when the answer is discoverable from the repo.\n- Each question should offer 2-4 strong options with concise tradeoffs, and include a recommended answer in the option descriptions when you have a strong default.\n- Until askUserQuestion completes successfully for this prompt, write/edit is blocked even for the active plan file.\n- You may use write/edit only for the active plan file: ${activePlanPath}\n- Do not modify any other project file.\n- Produce a concise markdown implementation plan with sections for \"## Open Questions / Assumptions\", \"## Proposed PR Stack\", per-phase validation details, and \"## Recommendation\".\n- For each planned phase, include: Goal, Why this is a good PR boundary, Main code areas likely to change, Unit tests, E2E validation, DB verification, and Linear.\n- After the plan is approved, execution should stop after phase 1 and wait for approval before PR creation or later phases.\n- Prefer a strong action-oriented title so the saved filename is useful documentation.\n\n${clarificationGateOpen ? `Clarification gate: satisfied for this prompt.\nLatest clarifications:\n${activeClarifications ?? 'None recorded.'}` : 'Clarification gate: pending. Ask one clarifying question with askUserQuestion before drafting the plan.'}\n\n${planContent ? `Current plan file contents:\n\n${planContent}` : 'The active plan file is empty; create or refine it as needed once the clarification gate is open.'}`,
         display: false,
       },
     }
@@ -182,13 +207,23 @@ export default function piConstell(pi: ExtensionAPI): void {
     if (!planModeEnabled) return
 
     const clarificationSummary = extractLatestClarifications(event.messages)
-    if (clarificationSummary) lastClarifications = clarificationSummary
+    if (clarificationSummary) {
+      lastClarifications = clarificationSummary
+      lastClarifiedPrompt = lastPrompt
+      clarificationGateOpen = true
+    }
 
     const lastAssistant = [...event.messages].reverse().find(isAssistantMessage)
     if (!lastAssistant) return
 
     const text = getTextContent(lastAssistant).trim()
     if (!text || text === lastSavedText) return
+    if (!clarificationGateOpen) {
+      persistState()
+      updateStatus(ctx)
+      ctx.ui.notify('pi-constell-plan did not save this response because askUserQuestion must complete first.', 'warning')
+      return
+    }
 
     const saved = await savePlanFile(ctx.cwd, text, currentModelId(ctx), {
       prompt: lastPrompt,
@@ -219,6 +254,8 @@ export default function piConstell(pi: ExtensionAPI): void {
       lastSavedText = stateEntry.data.lastSavedText ?? lastSavedText
       lastPrompt = stateEntry.data.lastPrompt ?? lastPrompt
       lastClarifications = stateEntry.data.lastClarifications ?? lastClarifications
+      clarificationGateOpen = stateEntry.data.clarificationGateOpen ?? clarificationGateOpen
+      lastClarifiedPrompt = stateEntry.data.lastClarifiedPrompt ?? lastClarifiedPrompt
     }
 
     if (planModeEnabled) {

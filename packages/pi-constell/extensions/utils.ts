@@ -1,8 +1,10 @@
-import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { access, lstat, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 
 const DEFAULT_NOTIFY_DIR = '/tmp/constellagent-notify'
 const PLAN_DIR = '.pi-constell/plans'
+const PLAN_EXCLUDE_COMMENT = '# pi-constell-plan local-only plans'
+const PLAN_EXCLUDE_ENTRY = `${PLAN_DIR}/`
 const GENERIC_TITLES = new Set(['plan', 'implementation plan', 'pi constell plan', 'pi constell plan mode'])
 const FILLER_PREFIXES = [
   /^please\s+/i,
@@ -124,6 +126,8 @@ function firstPlanStep(text: string): string | null {
 
 function hasPlanShape(text: string): boolean {
   if (/^\s*#{1,6}\s+plan\b/im.test(text)) return true
+  if (/^\s*#{1,6}\s+goal\b/im.test(text) && /^\s*#{1,6}\s+plan\b/im.test(text)) return true
+  if (/^\s*#{1,6}\s+open questions(?:\s*\/\s*assumptions)?\b/im.test(text) && /^\s*#{1,6}\s+proposed pr stack\b/im.test(text)) return true
   if (/\bplan\s*:/i.test(text) && /^\s*1[.)]\s+/m.test(text)) return true
   if (/^\s*1[.)]\s+/m.test(text) && /^\s*2[.)]\s+/m.test(text)) return true
   return false
@@ -228,7 +232,49 @@ export function getPlanDir(cwd: string): string {
   return join(cwd, PLAN_DIR)
 }
 
+async function resolveGitDir(cwd: string): Promise<string | null> {
+  const dotGitPath = resolve(cwd, '.git')
+  try {
+    const stats = await lstat(dotGitPath)
+    if (stats.isDirectory()) return dotGitPath
+    if (!stats.isFile()) return null
+
+    const pointer = await readFile(dotGitPath, 'utf-8')
+    const match = pointer.match(/^gitdir:\s*(.+)\s*$/m)
+    return match ? resolve(cwd, match[1]) : null
+  } catch {
+    return null
+  }
+}
+
+export async function ensurePlanStorageIgnored(cwd: string): Promise<void> {
+  const gitDir = await resolveGitDir(cwd)
+  if (!gitDir) return
+
+  const infoDir = join(gitDir, 'info')
+  const excludePath = join(infoDir, 'exclude')
+  await mkdir(infoDir, { recursive: true })
+
+  let content = ''
+  try {
+    content = await readFile(excludePath, 'utf-8')
+  } catch {
+    content = ''
+  }
+
+  const lines = content.replace(/\r\n/g, '\n').split('\n').map((line) => line.trim())
+  if (lines.includes(PLAN_DIR) || lines.includes(PLAN_EXCLUDE_ENTRY)) return
+
+  const prefix = content.trimEnd()
+  const next = [prefix, prefix ? '' : null, PLAN_EXCLUDE_COMMENT, PLAN_EXCLUDE_ENTRY, '']
+    .filter((line): line is string => line !== null)
+    .join('\n')
+  await writeFile(excludePath, next, 'utf-8')
+}
+
 export async function allocatePlanPath(cwd: string, title: string, currentPath?: string | null): Promise<string> {
+  await ensurePlanStorageIgnored(cwd)
+
   const planDir = getPlanDir(cwd)
   await mkdir(planDir, { recursive: true })
 
