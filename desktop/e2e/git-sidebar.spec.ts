@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test'
 import { resolve, join } from 'path'
-import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync, realpathSync } from 'fs'
+import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync, realpathSync, readFileSync } from 'fs'
 import { execSync } from 'child_process'
 import { homedir } from 'os'
 
@@ -50,6 +50,10 @@ function cleanupTestRepo(repoPath: string): void {
   } catch {
     // best effort
   }
+}
+
+function normalizeMacPath(value: string): string {
+  return value.replace(/^\/private/, '')
 }
 
 test.describe('Git & Sidebar functionality', () => {
@@ -108,6 +112,59 @@ test.describe('Git & Sidebar functionality', () => {
       expect(worktrees.length).toBeGreaterThanOrEqual(2) // main + our worktree
       const found = worktrees.find((wt: any) => wt.branch === 'e2e-branch')
       expect(found).toBeTruthy()
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('replacing a workspace keeps it registered as a valid git worktree', async () => {
+    const repoPath = createTestRepo('git-ws-replace')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const initialPath = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.git.createWorktree(repo, 'replace-ws', 'replace-branch', true)
+      }, repoPath)
+
+      const replacedPath = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.git.createWorktree(
+          repo,
+          'replace-ws',
+          'replace-branch',
+          true,
+          undefined,
+          true,
+        )
+      }, repoPath)
+
+      expect(normalizeMacPath(replacedPath as string)).toBe(normalizeMacPath(initialPath as string))
+
+      const realWorktree = realpathSync(replacedPath as string)
+      const gitPointer = readFileSync(join(realWorktree, '.git'), 'utf8')
+      expect(gitPointer).toContain('/.git/worktrees/')
+
+      execSync(`git -C "${realWorktree}" status --short`, { stdio: 'pipe' })
+
+      const commonDir = execSync('git rev-parse --git-common-dir', {
+        cwd: realWorktree,
+        encoding: 'utf8',
+      }).trim()
+      expect(normalizeMacPath(resolve(realWorktree, commonDir))).toBe(
+        normalizeMacPath(join(realRepo, '.git')),
+      )
+
+      const worktreeList = execSync('git worktree list --porcelain', {
+        cwd: realRepo,
+        encoding: 'utf8',
+      })
+      const matchingEntries = worktreeList
+        .split('\n')
+        .filter((line) => line.startsWith('worktree '))
+        .filter((line) => normalizeMacPath(line.slice('worktree '.length)) === normalizeMacPath(realWorktree))
+
+      expect(matchingEntries).toHaveLength(1)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
