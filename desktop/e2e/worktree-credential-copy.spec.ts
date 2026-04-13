@@ -23,6 +23,10 @@ function cleanupPath(targetPath: string): void {
   }
 }
 
+function normalizeMacPath(value: string): string {
+  return value.replace(/^\/private/, '')
+}
+
 function createRepoWithCredentialFixtures(name: string): { basePath: string; repoPath: string } {
   const basePath = join('/tmp', `test-worktree-creds-${name}-${Date.now()}`)
   const repoPath = join(basePath, 'repo')
@@ -203,6 +207,57 @@ test.describe('Worktree credential copy', () => {
       expect(result.branch).toBe('feat-b')
       expect(readFileSync(join(result.worktreePath, '.env'), 'utf8')).toBe('GRAPHITE_SECRET=1\n')
       expect(readFileSync(join(result.worktreePath, '.claude', 'settings.json'), 'utf8')).toBe('{"graphite":true}\n')
+    } finally {
+      await app.close()
+      cleanupPath(basePath)
+    }
+  })
+
+  test('graphite clone stack replacement keeps the recreated worktree registered', async () => {
+    const { basePath, repoPath } = createGraphiteRepoWithRemote('replace-helper')
+    const { app, window } = await launchApp()
+
+    try {
+      const initial = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.graphite.cloneStack(
+          repo,
+          'graphite-replace',
+          [
+            { name: 'feat-a', parent: 'main' },
+            { name: 'feat-b', parent: 'feat-a' },
+          ],
+        )
+      }, repoPath)
+
+      const replaced = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.graphite.cloneStack(
+          repo,
+          'graphite-replace',
+          [
+            { name: 'feat-a', parent: 'main' },
+            { name: 'feat-b', parent: 'feat-a' },
+          ],
+        )
+      }, repoPath)
+
+      expect(replaced.branch).toBe('feat-b')
+      expect(normalizeMacPath(replaced.worktreePath)).toBe(normalizeMacPath(initial.worktreePath))
+
+      const gitPointer = readFileSync(join(replaced.worktreePath, '.git'), 'utf8')
+      expect(gitPointer).toContain('/.git/worktrees/')
+
+      execSync(`git -C "${replaced.worktreePath}" status --short`, { stdio: 'pipe' })
+
+      const worktreeList = execSync('git worktree list --porcelain', {
+        cwd: repoPath,
+        encoding: 'utf8',
+      })
+      const matchingEntries = worktreeList
+        .split('\n')
+        .filter((line) => line.startsWith('worktree '))
+        .filter((line) => normalizeMacPath(line.slice('worktree '.length)) === normalizeMacPath(replaced.worktreePath))
+
+      expect(matchingEntries).toHaveLength(1)
     } finally {
       await app.close()
       cleanupPath(basePath)

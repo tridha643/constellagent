@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 import { existsSync } from 'fs'
-import { readdir, realpath, rm, writeFile } from 'fs/promises'
+import { readFile, readdir, realpath, rm, writeFile } from 'fs/promises'
 import { homedir } from 'os'
 import { promisify } from 'util'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
@@ -89,6 +89,11 @@ function ensureWithinParent(parentDir: string, candidatePath: string): void {
   if (relPath.startsWith('..') || isAbsolute(relPath)) {
     throw new Error('Invalid workspace name')
   }
+}
+
+function isPathInside(parentDir: string, candidatePath: string): boolean {
+  const relPath = relative(parentDir, candidatePath)
+  return relPath.length > 0 && !relPath.startsWith('..') && !isAbsolute(relPath)
 }
 
 const DEFAULT_GITIGNORE = [
@@ -268,6 +273,71 @@ export class GitService {
     }
   }
 
+  static async pruneWorktrees(repoPath: string): Promise<void> {
+    await git(['worktree', 'prune', '--expire', 'now'], repoPath).catch(() => {})
+  }
+
+  private static async readLinkedWorktreeGitdir(worktreePath: string): Promise<string | null> {
+    const gitPath = join(worktreePath, '.git')
+    if (!existsSync(gitPath)) return null
+
+    try {
+      const raw = await readFile(gitPath, 'utf8')
+      const match = raw.match(/^gitdir:\s*(.+)\s*$/i)
+      if (!match) return null
+      return resolve(worktreePath, match[1].trim())
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Replace an existing workspace path without leaving broken linked-worktree state behind.
+   * Prefer Git-native removal, fall back to filesystem cleanup only for orphaned linked
+   * worktrees owned by this repo or for plain directories with no git metadata.
+   */
+  static async removeExistingWorkspacePath(repoPath: string, worktreePath: string): Promise<void> {
+    if (!existsSync(worktreePath)) return
+
+    const [repoRealPath, worktreeRealPath] = await Promise.all([
+      realpath(repoPath).catch(() => resolve(repoPath)),
+      realpath(worktreePath).catch(() => resolve(worktreePath)),
+    ])
+    if (repoRealPath === worktreeRealPath) {
+      throw new Error('Refusing to replace the primary repository directory')
+    }
+
+    try {
+      await git(['worktree', 'remove', '--force', worktreePath], repoPath)
+      await GitService.pruneWorktrees(repoPath)
+      return
+    } catch {
+      // Fall through to orphan/non-git cleanup.
+    }
+
+    const linkedGitdir = await GitService.readLinkedWorktreeGitdir(worktreePath)
+    if (linkedGitdir) {
+      const commonDir = await GitService.getResolvedGitCommonDir(repoPath)
+      const worktreesDir = commonDir ? join(commonDir, 'worktrees') : null
+      if (worktreesDir && isPathInside(worktreesDir, linkedGitdir)) {
+        await rm(worktreePath, { recursive: true, force: true })
+        await GitService.pruneWorktrees(repoPath)
+        return
+      }
+      throw new Error('Existing workspace path is another git worktree; refusing to delete it automatically')
+    }
+
+    if (await GitService.isGitRepo(worktreePath)) {
+      throw new Error('Existing workspace path is a standalone git repository; refusing to delete it automatically')
+    }
+
+    if (existsSync(join(worktreePath, '.git'))) {
+      throw new Error('Existing workspace path contains git metadata; refusing to delete it automatically')
+    }
+
+    await rm(worktreePath, { recursive: true, force: true })
+  }
+
   /**
    * Canonical project anchor for app-level repo state.
    * For linked worktrees, prefer the primary checkout root that owns the shared `.git`.
@@ -368,7 +438,7 @@ export class GitService {
       stage: 'prune-worktrees',
       message: 'Cleaning stale worktree references...',
     })
-    await git(['worktree', 'prune'], repoPath).catch(() => {})
+    await GitService.pruneWorktrees(repoPath)
 
     const hasOrigin = await GitService.hasRemote(repoPath, 'origin')
 
@@ -399,7 +469,7 @@ export class GitService {
       if (!force) {
         throw new Error('WORKTREE_PATH_EXISTS')
       }
-      await rm(worktreePath, { recursive: true, force: true })
+      await GitService.removeExistingWorkspacePath(repoPath, worktreePath)
     }
 
     // Pre-check if branch exists so we never need -b retry
@@ -514,7 +584,7 @@ export class GitService {
       stage: 'prune-worktrees',
       message: 'Cleaning stale worktree references...',
     })
-    await git(['worktree', 'prune'], repoPath).catch(() => {})
+    await GitService.pruneWorktrees(repoPath)
 
     const hasOrigin = await GitService.hasRemote(repoPath, 'origin')
     if (!hasOrigin) {
@@ -544,7 +614,7 @@ export class GitService {
       if (!force) {
         throw new Error('WORKTREE_PATH_EXISTS')
       }
-      await rm(worktreePath, { recursive: true, force: true })
+      await GitService.removeExistingWorkspacePath(repoPath, worktreePath)
     }
 
     reportCreateWorktreeProgress(onProgress, {
@@ -580,7 +650,7 @@ export class GitService {
 
   static async removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
     try {
-      await git(['worktree', 'remove', worktreePath, '--force'], repoPath)
+      await git(['worktree', 'remove', '--force', worktreePath], repoPath)
     } catch (err) {
       throw new Error(friendlyGitError(err, 'Failed to remove worktree'))
     }

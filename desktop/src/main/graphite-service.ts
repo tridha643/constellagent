@@ -1,6 +1,5 @@
 import { execFile } from 'child_process'
 import { existsSync } from 'fs'
-import { rm } from 'fs/promises'
 import { promisify } from 'util'
 import { basename, dirname, join, resolve } from 'path'
 import type {
@@ -13,6 +12,7 @@ import type {
 } from '../shared/graphite-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import { copyWorktreeCredentialArtifacts } from './worktree-credential-copy'
+import { GitService } from './git-service'
 
 const execFileAsync = promisify(execFile)
 
@@ -544,13 +544,14 @@ export class GraphiteService {
       .replace(/^[-_]+|[-_]+$/g, '')
       .slice(0, 80) || 'stack'
     const worktreePath = resolve(parentDir, `${repoName}-ws-${safeName}`)
+    const replacingExistingPath = existsSync(worktreePath)
 
     // Clean stale worktree refs
-    await git(['worktree', 'prune'], repoPath).catch(() => {})
+    await GitService.pruneWorktrees(repoPath)
 
     // Remove existing directory if present
-    if (existsSync(worktreePath)) {
-      await rm(worktreePath, { recursive: true, force: true })
+    if (replacingExistingPath) {
+      await GitService.removeExistingWorkspacePath(repoPath, worktreePath)
     }
 
     // Check if tip branch exists locally
@@ -558,14 +559,16 @@ export class GraphiteService {
       .then(() => true, () => false)
 
     // Create worktree at tip
+    const addArgs = ['worktree', 'add']
+    if (replacingExistingPath) addArgs.push('--force')
     if (tipExists) {
-      await git(['worktree', 'add', worktreePath, tipBranch], repoPath)
+      await git([...addArgs, worktreePath, tipBranch], repoPath)
     } else {
       // Create from remote tracking branch
       const remoteExists = await git(['rev-parse', '--verify', `refs/remotes/origin/${tipBranch}`], repoPath)
         .then(() => true, () => false)
       if (remoteExists) {
-        await git(['worktree', 'add', '-b', tipBranch, worktreePath, `origin/${tipBranch}`], repoPath)
+        await git([...addArgs, '-b', tipBranch, worktreePath, `origin/${tipBranch}`], repoPath)
       } else {
         throw new Error(`Branch "${tipBranch}" not found locally or on origin`)
       }
