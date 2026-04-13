@@ -12,8 +12,9 @@
 - `askUserQuestion` supports 1-4 clarifying questions with:
   - `Tab` / `Shift+Tab` question cycling
   - keyboard-first option selection
-  - multi-select support
-  - `My own thoughts` free-text answers
+  - multi-select support (spacebar toggles the highlighted preset option)
+  - optional `Extra details (optional)` free-text on top of preset choices
+  - `My own thoughts` for a fully custom answer when presets do not fit
 - plans are exported to `.pi-constell/plans/`
 - newly created plan files are kept local-only by adding `.pi-constell/plans/` to `.git/info/exclude` automatically
 - saved plans use Cursor-like, action-oriented filenames such as:

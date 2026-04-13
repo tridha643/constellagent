@@ -16,6 +16,7 @@ type CustomQuestionResult = {
     answer: string | string[]
     wasCustom: boolean
     selectedOptions: string[]
+    details?: string
   }>
 }
 
