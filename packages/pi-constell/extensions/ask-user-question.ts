@@ -27,6 +27,10 @@ export interface AskUserQuestionDetails {
   answers: AskUserQuestionAnswer[]
 }
 
+export interface AskUserQuestionHooks {
+  onComplete?: (details: AskUserQuestionDetails) => void | Promise<void>
+}
+
 const OptionSchema = Type.Object({
   label: Type.String({ description: 'Choice label shown to the user' }),
   description: Type.Optional(Type.String({ description: 'Optional explanation or tradeoff for the choice' })),
@@ -70,16 +74,22 @@ function summarizeAnswers(answers: AskUserQuestionAnswer[]): string {
   }).join('\n')
 }
 
-export default function registerAskUserQuestion(pi: ExtensionAPI): void {
+export function formatAskUserQuestionDetails(details: AskUserQuestionDetails): string | null {
+  if (details.cancelled) return null
+  return summarizeAnswers(details.answers)
+}
+
+export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUserQuestionHooks = {}): void {
   pi.registerTool({
     name: 'askUserQuestion',
     label: 'Ask User Question',
     description: 'Ask the user one to four clarifying questions with Claude Code-style keyboard navigation and custom free-text answers.',
-    promptSnippet: 'Ask the user clarifying multiple-choice questions with Tab cycling, multi-select, and custom free-text answers.',
+    promptSnippet: 'Ask the user clarifying multiple-choice questions with keyboard navigation and custom free-text answers. In plan mode, ask one question at a time and wait for the answer before the next question.',
     promptGuidelines: [
-      'Use askUserQuestion when the plan depends on unresolved product or implementation choices.',
+      'Use askUserQuestion as the blocking clarification step before drafting a plan when important scope, behavior, or validation choices are still unresolved.',
+      'In plan mode, prefer exactly 1 question per call and wait for the answer before asking the next follow-up question.',
       'Keep to 1-4 questions per call and 2-4 strong options per question.',
-      'Prefer short headers and include tradeoffs in option descriptions.',
+      'Prefer short headers, include tradeoffs in option descriptions, and include a recommended option when you have a strong default.',
     ],
     parameters: AskUserQuestionParams,
 
@@ -381,6 +391,8 @@ export default function registerAskUserQuestion(pi: ExtensionAPI): void {
           details,
         }
       }
+
+      await hooks.onComplete?.(details)
 
       return {
         content: [{ type: 'text', text: summarizeAnswers(details.answers) }],
