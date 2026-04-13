@@ -1,10 +1,9 @@
-import { access, lstat, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 
 const DEFAULT_NOTIFY_DIR = '/tmp/constellagent-notify'
 const PLAN_DIR = '.pi-constell/plans'
-const PLAN_EXCLUDE_COMMENT = '# pi-constell-plan local-only plans'
-const PLAN_EXCLUDE_ENTRY = `${PLAN_DIR}/`
 const GENERIC_TITLES = new Set(['plan', 'implementation plan', 'pi constell plan', 'pi constell plan mode'])
 const FILLER_PREFIXES = [
   /^please\s+/i,
@@ -12,14 +11,37 @@ const FILLER_PREFIXES = [
   /^could you\s+/i,
   /^help me\s+/i,
   /^i want to\s+/i,
+  /^i(?:'d| would)? like to\s+/i,
   /^we want to\s+/i,
+  /^we(?:'d| would)? like to\s+/i,
+  /^we need to\s+/i,
+  /^need to\s+/i,
+  /^for\s+the\s+/i,
+  /^for\s+/i,
+  /^(?:as|i as)\s+the\s+user\s+/i,
+  /^the goal is to\s+/i,
   /^create a plan for\s+/i,
   /^plan for\s+/i,
 ]
 const STOP_WORDS = new Set([
   'a', 'an', 'and', 'as', 'be', 'basically', 'by', 'exactly', 'for', 'from', 'how', 'in', 'into', 'just', 'of', 'on', 'or', 'our', 'the', 'their', 'this', 'to', 'we', 'with', 'would', 'your', 'want', 'wants', 'idea',
+  'ability', 'able', 'also', 'current', 'currently', 'just', 'now', 'part', 'really', 'right', 'same', 'that', 'user', 'users', 'way',
 ])
-const PREFERRED_VERBS = ['add', 'improve', 'fix', 'publish', 'refactor', 'support', 'implement', 'update']
+const PREFERRED_VERBS = ['add', 'allow', 'fix', 'improve', 'implement', 'move', 'publish', 'refactor', 'remove', 'support', 'toggle', 'update']
+const STRUCTURAL_VERBS = new Set(['change', 'modify', 'update'])
+const TITLE_NOISE_PATTERNS = [
+  /\bpi[-\s]?constell(?:-plan)?\b/gi,
+  /\bconstellagent\b/gi,
+  /\bclaude\s+code\b/gi,
+  /\bcursor\s+cli\b/gi,
+  /\bcodex\s+cli\b/gi,
+  /\bask\s*user\s*question\b/gi,
+  /\baskuserquestion\b/gi,
+  /\blike how\b.*$/i,
+  /\bsimilar to\b.*$/i,
+  /\bthat is\b.*$/i,
+  /\bwhich is\b.*$/i,
+]
 
 const DESTRUCTIVE_PATTERNS = [
   /\brm\b/i,
@@ -114,6 +136,13 @@ function normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
+function stripMarkdownArtifacts(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, (_match, label: string) => (/[/.]/.test(label) ? ' ' : label))
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/(?:^|\s)(?:\/|\.{1,2}\/)?(?:[\w.-]+\/)+[\w.-]+/g, ' ')
+}
+
 function firstHeading(text: string): string | null {
   const match = text.match(/^#\s+(.+)$/m)
   return match?.[1]?.trim() || null
@@ -138,8 +167,9 @@ function toTitleCase(text: string): string {
 }
 
 function sanitizePhrase(text: string): string {
-  let value = normalizeWhitespace(text.replace(/[`*_#>]/g, ' '))
+  let value = normalizeWhitespace(stripMarkdownArtifacts(text).replace(/[`*_#>]/g, ' '))
   for (const prefix of FILLER_PREFIXES) value = value.replace(prefix, '')
+  for (const pattern of TITLE_NOISE_PATTERNS) value = value.replace(pattern, ' ')
   return value.replace(/[.?!,:;]+$/g, '').trim()
 }
 
@@ -148,28 +178,74 @@ function isGenericTitle(title: string): boolean {
   return GENERIC_TITLES.has(normalized)
 }
 
-function titleFromPrompt(prompt: string | null | undefined): string | null {
-  if (!prompt) return null
-  const sanitized = sanitizePhrase(prompt)
-  if (!sanitized) return null
-  const words = sanitized
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]+/g, ' ')
-    .split(/\s+/)
+function candidateWords(text: string): string[] {
+  const clauses = sanitizePhrase(text)
+    .split(/\s+(?:and|also)\s+|[.;:]+/i)
+    .map((clause) => normalizeWhitespace(clause))
     .filter(Boolean)
-    .filter((word) => !STOP_WORDS.has(word))
 
+  const selectedClauses = clauses
+    .map((clause) => {
+      const words = clause
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]+/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean)
+        .filter((word) => !STOP_WORDS.has(word))
+      return { clause, words, verbIndex: words.findIndex((word) => PREFERRED_VERBS.includes(word)) }
+    })
+    .filter(({ words }) => words.length > 0)
+    .sort((left, right) => {
+      const leftScore = left.verbIndex >= 0 ? 1 : 0
+      const rightScore = right.verbIndex >= 0 ? 1 : 0
+      return rightScore - leftScore
+    })
+    .slice(0, 2)
+
+  const combined = selectedClauses.flatMap(({ words }) => words)
+  const deduped = combined.filter((word, index) => combined.indexOf(word) === index)
+  const trimmed = STRUCTURAL_VERBS.has(deduped[0] ?? '') ? deduped.slice(1) : deduped
+  return trimmed
+}
+
+function titleFromCandidate(text: string | null | undefined): string | null {
+  if (!text) return null
+  const words = candidateWords(text)
   if (words.length === 0) return null
 
   const firstVerb = words.findIndex((word) => PREFERRED_VERBS.includes(word))
   const ordered = firstVerb > 0 ? [...words.slice(firstVerb), ...words.slice(0, firstVerb)] : words
-  return toTitleCase(ordered.slice(0, 8).join(' '))
+  const filtered = ordered.filter((word, index) => index === 0 || !STOP_WORDS.has(word))
+  const title = toTitleCase(filtered.slice(0, 8).join(' '))
+  return title || null
+}
+
+function titleFromPrompt(prompt: string | null | undefined): string | null {
+  return titleFromCandidate(prompt)
 }
 
 function titleFromFirstStep(text: string): string | null {
   const step = firstPlanStep(text)
   if (!step) return null
-  return toTitleCase(sanitizePhrase(step).split(/\s+/).slice(0, 8).join(' '))
+  return titleFromCandidate(step)
+}
+
+function firstSectionListItem(text: string, sectionNames: string[]): string | null {
+  const sectionSet = new Set(sectionNames.map((name) => name.toLowerCase()))
+  let inSection = false
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const heading = rawLine.match(/^\s*#{1,6}\s+(.+?)\s*$/)
+    if (heading) {
+      inSection = sectionSet.has(heading[1].trim().toLowerCase())
+      continue
+    }
+    if (!inSection) continue
+    const item = rawLine.match(/^\s*(?:[-*]|\d+[.)])\s+(.+?)\s*$/)
+    if (item) return item[1].trim()
+  }
+
+  return null
 }
 
 export function derivePlanTitle(rawText: string, context: PlanNamingContext = {}): string {
@@ -180,20 +256,27 @@ export function derivePlanTitle(rawText: string, context: PlanNamingContext = {}
   const contextual = titleFromPrompt(context.clarifications) || titleFromPrompt(context.prompt)
   if (contextual) return contextual
 
+  const implementationItem = firstSectionListItem(cleaned, ['Implementation', 'Plan'])
+  const implementationTitle = titleFromCandidate(implementationItem)
+  if (implementationTitle) return implementationTitle
+
+  const goalItem = firstSectionListItem(cleaned, ['Goal', 'Goals'])
+  const goalTitle = titleFromCandidate(goalItem)
+  if (goalTitle) return goalTitle
+
   const firstStepTitle = titleFromFirstStep(cleaned)
   if (firstStepTitle) return firstStepTitle
 
-  return 'Implementation Plan'
+  return 'Working Plan'
 }
 
 export function slugifyPlanTitle(title: string): string {
-  const lowered = title.toLowerCase().replace(/[^a-z0-9\s-]+/g, ' ')
-  const tokens = lowered.split(/\s+/).filter(Boolean)
+  const tokens = candidateWords(title)
   const firstVerb = tokens.findIndex((token) => PREFERRED_VERBS.includes(token))
   const ordered = firstVerb > 0 ? [...tokens.slice(firstVerb), ...tokens.slice(0, firstVerb)] : tokens
   const filtered = ordered.filter((token, index) => index === 0 || !STOP_WORDS.has(token))
   const slug = filtered.slice(0, 8).join('-').replace(/-+/g, '-').replace(/^-|-$/g, '')
-  return slug || 'implementation-plan'
+  return slug || 'working-plan'
 }
 
 export function buildPlanMarkdown(rawText: string, context: PlanNamingContext = {}): { title: string; markdown: string } | null {
@@ -228,54 +311,12 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-export function getPlanDir(cwd: string): string {
-  return join(cwd, PLAN_DIR)
-}
-
-async function resolveGitDir(cwd: string): Promise<string | null> {
-  const dotGitPath = resolve(cwd, '.git')
-  try {
-    const stats = await lstat(dotGitPath)
-    if (stats.isDirectory()) return dotGitPath
-    if (!stats.isFile()) return null
-
-    const pointer = await readFile(dotGitPath, 'utf-8')
-    const match = pointer.match(/^gitdir:\s*(.+)\s*$/m)
-    return match ? resolve(cwd, match[1]) : null
-  } catch {
-    return null
-  }
-}
-
-export async function ensurePlanStorageIgnored(cwd: string): Promise<void> {
-  const gitDir = await resolveGitDir(cwd)
-  if (!gitDir) return
-
-  const infoDir = join(gitDir, 'info')
-  const excludePath = join(infoDir, 'exclude')
-  await mkdir(infoDir, { recursive: true })
-
-  let content = ''
-  try {
-    content = await readFile(excludePath, 'utf-8')
-  } catch {
-    content = ''
-  }
-
-  const lines = content.replace(/\r\n/g, '\n').split('\n').map((line) => line.trim())
-  if (lines.includes(PLAN_DIR) || lines.includes(PLAN_EXCLUDE_ENTRY)) return
-
-  const prefix = content.trimEnd()
-  const next = [prefix, prefix ? '' : null, PLAN_EXCLUDE_COMMENT, PLAN_EXCLUDE_ENTRY, '']
-    .filter((line): line is string => line !== null)
-    .join('\n')
-  await writeFile(excludePath, next, 'utf-8')
+export function getPlanDir(): string {
+  return join(homedir(), PLAN_DIR)
 }
 
 export async function allocatePlanPath(cwd: string, title: string, currentPath?: string | null): Promise<string> {
-  await ensurePlanStorageIgnored(cwd)
-
-  const planDir = getPlanDir(cwd)
+  const planDir = getPlanDir()
   await mkdir(planDir, { recursive: true })
 
   const slug = slugifyPlanTitle(title)
@@ -294,7 +335,7 @@ export async function allocatePlanPath(cwd: string, title: string, currentPath?:
 
 export async function ensureActivePlanPath(cwd: string, context: PlanNamingContext, currentPath?: string | null): Promise<string> {
   if (currentPath) return resolve(currentPath)
-  const title = titleFromPrompt(context.clarifications) || titleFromPrompt(context.prompt) || 'Implementation Plan'
+  const title = titleFromPrompt(context.clarifications) || titleFromPrompt(context.prompt) || 'Working Plan'
   return allocatePlanPath(cwd, title)
 }
 

@@ -22,8 +22,6 @@ export interface AskUserQuestionAnswer {
   selectedOptions: string[]
   /** Optional free-text elaboration alongside preset choice(s). Omitted when empty for backward compatibility. */
   details?: string
-  /** Optional extracted image file paths referenced from details. */
-  imagePaths?: string[]
 }
 
 export interface AskUserQuestionDetails {
@@ -68,57 +66,14 @@ interface QuestionState {
   customOnlyAnswer: string | null
 }
 
-const IMAGE_PATH_PATTERN = /(?:^|[\s(])((?:~\/|\.{1,2}\/|\/|[A-Za-z]:[\\/])[^\s)]+?\.(?:png|jpe?g|gif|webp|bmp|svg))(?:$|[\s),])/gi
-const IMAGE_PATH_PREFIX_PATTERN = /^(?:[-*]\s*)?(?:image|images|screenshot|screenshots|attachment|attachments):\s*/i
-
 function clampHeader(header: string): string {
   return header.trim().slice(0, 12) || 'Question'
 }
 
-export function extractImagePaths(text: string | null | undefined): string[] {
-  if (!text?.trim()) return []
-
-  const matches = new Set<string>()
-  for (const match of text.matchAll(IMAGE_PATH_PATTERN)) {
-    const candidate = match[1]?.trim()
-    if (candidate) matches.add(candidate)
-  }
-
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim().replace(IMAGE_PATH_PREFIX_PATTERN, '')
-    if (!line) continue
-    if (/^(?:~\/|\.{1,2}\/|\/|[A-Za-z]:[\\/]).+\.(?:png|jpe?g|gif|webp|bmp|svg)$/i.test(line)) {
-      matches.add(line)
-    }
-  }
-
-  return [...matches]
-}
-
-function stripImagePathsFromDetails(details: string | undefined, imagePaths: string[]): string | null {
-  if (!details?.trim()) return null
-
-  let cleaned = details
-  for (const path of imagePaths) cleaned = cleaned.split(path).join('')
-
-  cleaned = cleaned
-    .split(/\r?\n/)
-    .map((line) => line.trim().replace(IMAGE_PATH_PREFIX_PATTERN, '').trim())
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/[,:;-]\s*$/g, '')
-    .trim()
-
-  return cleaned || null
-}
-
 function summarizeAskUserQuestionAnswer(answer: AskUserQuestionAnswer): string {
   const value = Array.isArray(answer.answer) ? answer.answer.join(', ') : answer.answer
-  const imagePaths = answer.imagePaths?.length ? answer.imagePaths : extractImagePaths(answer.details)
-  const detail = stripImagePathsFromDetails(answer.details, imagePaths)
-  const suffixParts = [detail, imagePaths.length > 0 ? `Images: ${imagePaths.join(', ')}` : null].filter(Boolean)
-  return `${answer.header}: ${value}${suffixParts.length > 0 ? ` — ${suffixParts.join(' • ')}` : ''}`
+  const detail = answer.details?.trim()
+  return `${answer.header}: ${value}${detail ? ` — ${detail}` : ''}`
 }
 
 export function summarizeAskUserQuestionAnswers(answers: AskUserQuestionAnswer[]): string {
@@ -142,7 +97,6 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
       'Keep to 1-4 questions per call and 2-4 strong options per question.',
       'Prefer short headers, include tradeoffs in option descriptions, and include a recommended option when you have a strong default.',
       'Users can pick preset option(s) and still add optional extra details; multi-select uses spacebar to toggle the highlighted option.',
-      'When screenshots or mockups help, tell the user they can paste an image file path into details; desktop clipboard image paste is saved as a temp path.',
     ],
     parameters: AskUserQuestionParams,
 
@@ -242,7 +196,6 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
               .filter((value): value is string => Boolean(value))
 
             const trimmedDetails = state.extraDetails?.trim()
-            const imagePaths = extractImagePaths(trimmedDetails)
             const base: AskUserQuestionAnswer = {
               question: question.question,
               header: question.header,
@@ -251,7 +204,6 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
               selectedOptions,
             }
             if (trimmedDetails) base.details = trimmedDetails
-            if (imagePaths.length > 0) base.imagePaths = imagePaths
             return base
           })
         }
@@ -419,11 +371,9 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
             for (const answer of buildAnswers()) {
               const rendered = Array.isArray(answer.answer) ? answer.answer.join(', ') : answer.answer
               const prefix = answer.wasCustom ? theme.fg('muted', '(custom) ') : ''
-              const imagePaths = answer.imagePaths?.length ? answer.imagePaths : extractImagePaths(answer.details)
-              const detail = stripImagePathsFromDetails(answer.details, imagePaths)
+              const detail = answer.details?.trim()
               add(`${theme.fg('muted', `${answer.header}: `)}${prefix}${theme.fg('text', rendered || '—')}`)
               if (detail) add(` ${theme.fg('muted', 'Details: ')}${theme.fg('text', detail)}`)
-              if (imagePaths.length > 0) add(` ${theme.fg('muted', 'Images: ')}${theme.fg('text', imagePaths.join(', '))}`)
             }
             lines.push('')
             add(allAnswered()
@@ -441,7 +391,7 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
               const option = isCustom
                 ? { label: 'My own thoughts', description: 'Answer entirely in your own words instead of preset options.' }
                 : isDetails
-                  ? { label: 'Extra details / image paths (optional)', description: 'Add nuance on top of your preset choice(s). Paste saved screenshot paths here; desktop image paste creates a temp .png path.' }
+                  ? { label: 'Extra details (optional)', description: 'Add nuance on top of your preset choice(s).' }
                   : question.options[index]!
               const active = index === currentIndex()
               const selected = !isDetails && !isCustom && state.selected.has(index)
@@ -464,7 +414,7 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
             }
             if (inputMode) {
               lines.push('')
-              const label = inputKind === 'details' ? ' Extra details / image paths:' : ' Your answer:'
+              const label = inputKind === 'details' ? ' Extra details:' : ' Your answer:'
               add(theme.fg('muted', label))
               for (const line of editor.render(Math.max(width - 2, 1))) add(` ${line}`)
             }
@@ -518,11 +468,9 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
       return new Text(details.answers.map((answer) => {
         const value = Array.isArray(answer.answer) ? answer.answer.join(', ') : answer.answer
         const prefix = answer.wasCustom ? theme.fg('muted', '(custom) ') : ''
-        const imagePaths = answer.imagePaths?.length ? answer.imagePaths : extractImagePaths(answer.details)
-        const detail = stripImagePathsFromDetails(answer.details, imagePaths)
+        const detail = answer.details?.trim()
         const detailSuffix = detail ? theme.fg('muted', ` — ${detail}`) : ''
-        const imageSuffix = imagePaths.length > 0 ? theme.fg('muted', ` — Images: ${imagePaths.join(', ')}`) : ''
-        return `${theme.fg('success', '\u2713 ')}${theme.fg('accent', answer.header)}: ${prefix}${value}${detailSuffix}${imageSuffix}`
+        return `${theme.fg('success', '\u2713 ')}${theme.fg('accent', answer.header)}: ${prefix}${value}${detailSuffix}`
       }).join('\n'), 0, 0)
     },
   })

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { mkdtemp, readFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -223,11 +223,12 @@ test('completed clarification round opens the gate and keeps plan files out of g
   const successNotice = ctx._notifications.find((message: string) => message.includes('saved plan'))
   assert.ok(successNotice)
   const savedPath = successNotice.split(': ').pop()!
+  assert.match(savedPath, new RegExp(`^${homedir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\.pi-constell/plans/`))
   const saved = await readFile(savedPath, 'utf-8')
   assert.match(saved, /# Improve plan mode questionnaire UX/)
 
   const exclude = await readFile(join(cwd, '.git', 'info', 'exclude'), 'utf-8')
-  assert.match(exclude, /\.pi-constell\/plans\//)
+  assert.doesNotMatch(exclude, /\.pi-constell\/plans\//)
 
   const status = spawnSync('git', ['status', '--short'], { cwd, encoding: 'utf-8' })
   assert.equal(status.status, 0)

@@ -1,9 +1,13 @@
-import { mkdtemp, readFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readFile, rm } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { allocatePlanPath, buildPlanMarkdown, derivePlanTitle, isSafeCommand, savePlanFile, slugifyPlanTitle } from '../extensions/utils.js'
+import { allocatePlanPath, buildPlanMarkdown, derivePlanTitle, getPlanDir, isSafeCommand, savePlanFile, slugifyPlanTitle } from '../extensions/utils.js'
+
+async function removeIfExists(path: string): Promise<void> {
+  await rm(path, { force: true }).catch(() => {})
+}
 
 test('isSafeCommand blocks destructive shell commands', () => {
   assert.equal(isSafeCommand('ls -la'), true)
@@ -30,11 +34,22 @@ test('derivePlanTitle falls back to prompt context when heading is generic', () 
     prompt: 'I want to improve the pi constell plan mode extension ask user question flow',
   })
   assert.match(title, /Improve/i)
-  assert.match(title, /Ask/i)
+  assert.match(title, /Flow/i)
 })
 
 test('slugifyPlanTitle produces a concise cursor-like slug', () => {
   assert.equal(slugifyPlanTitle('Improve plan mode questionnaire UX'), 'improve-plan-mode-questionnaire-ux')
+})
+
+test('derivePlanTitle keeps only the strongest action clauses from noisy prompts', () => {
+  const title = derivePlanTitle(`# Plan
+
+## Goal
+- Do the work`, {
+    prompt: 'for pi-constell-plan extension I as the user want the ability to toggle multiple options via spacebar, and have a field to add extra details. remove the image integration part.',
+  })
+  assert.match(title, /^Toggle Multiple Options/)
+  assert.match(title, /Add/)
 })
 
 test('buildPlanMarkdown injects a derived title when missing', () => {
@@ -47,25 +62,35 @@ Ship faster
     prompt: 'publish pi constell plan to npm',
   })
   assert.ok(result)
-  assert.match(result!.markdown, /^# Publish Pi Constell Plan Npm/m)
+  assert.match(result!.markdown, /^# Publish Plan Npm/m)
+})
+
+test('getPlanDir stores plans under the user home directory', () => {
+  assert.equal(getPlanDir(), join(homedir(), '.pi-constell', 'plans'))
 })
 
 test('allocatePlanPath uses numeric suffixes instead of timestamps', async () => {
-  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-plan-'))
-  const first = await allocatePlanPath(cwd, 'Improve plan mode questionnaire UX')
-  assert.match(first, /improve-plan-mode-questionnaire-ux\.md$/)
-  await savePlanFile(cwd, `# Improve plan mode questionnaire UX
+  const cwd = '/tmp/ignored-pi-constell-cwd'
+  const title = `Improve plan mode questionnaire UX ${Date.now()}`
+  const first = await allocatePlanPath(cwd, title)
+  try {
+    assert.equal(first.startsWith(join(homedir(), '.pi-constell', 'plans')), true)
+    assert.match(first, /improve-plan-mode-questionnaire-ux-\d+\.md$/)
+    await savePlanFile(cwd, `# ${title}
 
 ## Plan
 1. Add tests
 2. Publish`, null, {}, first)
-  const second = await allocatePlanPath(cwd, 'Improve plan mode questionnaire UX', null)
-  assert.match(second, /improve-plan-mode-questionnaire-ux-2\.md$/)
+    const second = await allocatePlanPath(cwd, title, null)
+    assert.match(second, /improve-plan-mode-questionnaire-ux-\d+-2\.md$/)
+  } finally {
+    await removeIfExists(first)
+  }
 })
 
 test('savePlanFile writes frontmatter and renames when a better title appears', async () => {
-  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-save-'))
-  const initial = await allocatePlanPath(cwd, 'Implementation Plan')
+  const cwd = '/tmp/ignored-pi-constell-cwd'
+  const initial = await allocatePlanPath(cwd, `Working Plan ${Date.now()}`)
   const saved = await savePlanFile(cwd, `# Improve plan mode questionnaire UX
 
 ## Plan
@@ -74,9 +99,14 @@ test('savePlanFile writes frontmatter and renames when a better title appears', 
     prompt: 'improve the plan mode questionnaire ux',
   }, initial)
 
-  assert.ok(saved)
-  assert.match(saved!.path, /improve-plan-mode-questionnaire-ux\.md$/)
-  const content = await readFile(saved!.path, 'utf-8')
-  assert.match(content, /buildHarness: "pi-constell-plan"/)
-  assert.match(content, /# Improve plan mode questionnaire UX/)
+  try {
+    assert.ok(saved)
+    assert.match(saved!.path, /improve-plan-mode-questionnaire-ux(?:-\d+)?\.md$/)
+    const content = await readFile(saved!.path, 'utf-8')
+    assert.match(content, /buildHarness: "pi-constell-plan"/)
+    assert.match(content, /# Improve plan mode questionnaire UX/)
+  } finally {
+    await removeIfExists(initial)
+    if (saved?.path) await removeIfExists(saved.path)
+  }
 })

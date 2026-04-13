@@ -7,6 +7,7 @@ import {
   AGENT_PLAN_RELATIVE_DIRS,
   PLAN_DIR_TO_AGENT,
   AGENT_TO_PLAN_DIR,
+  isAgentPlanPath,
   relativePathInWorktree,
 } from '../shared/agent-plan-path'
 import type { AgentPlanEntry, PlanAgent, PlanMeta } from '../shared/agent-plan-path'
@@ -309,8 +310,10 @@ export class FileService {
     targetAgent: PlanAgent,
     mode: 'copy' | 'move',
   ): Promise<string> {
-    if (relativePathInWorktree(worktreePath, filePath) === null) {
-      throw new Error('Plan file is not inside the workspace')
+    const inWorkspace = relativePathInWorktree(worktreePath, filePath) !== null
+    const inHomeAgentDir = isAgentPlanPath('', filePath, homedir())
+    if (!inWorkspace && !inHomeAgentDir) {
+      throw new Error('Plan file is not inside the workspace or a supported home plan directory')
     }
 
     const targetRelDir = AGENT_TO_PLAN_DIR[targetAgent]

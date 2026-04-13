@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { extractImagePaths, formatAskUserQuestionDetails, summarizeAskUserQuestionAnswers, type AskUserQuestionAnswer } from '../extensions/ask-user-question.js'
+import { formatAskUserQuestionDetails, summarizeAskUserQuestionAnswers, type AskUserQuestionAnswer } from '../extensions/ask-user-question.js'
 
 test('summarizeAskUserQuestionAnswers merges single-select choice and extra details', () => {
   const answers: AskUserQuestionAnswer[] = [
@@ -43,28 +43,20 @@ test('custom-only answers omit preset selections and serialize without details s
   assert.equal(summarizeAskUserQuestionAnswers(answers), 'Note: Fully custom response')
 })
 
-test('extractImagePaths finds path-based image references in details text', () => {
-  assert.deepEqual(
-    extractImagePaths('See mockup below\nScreenshot: /tmp/constellagent-paste-123.png\n./artifacts/wireframe.webp'),
-    ['/tmp/constellagent-paste-123.png', './artifacts/wireframe.webp'],
-  )
-})
-
-test('summarizeAskUserQuestionAnswers surfaces image paths separately from free-text details', () => {
+test('summarizeAskUserQuestionAnswers preserves multiline details as-is', () => {
   const answers: AskUserQuestionAnswer[] = [
     {
       question: 'Q?',
-      header: 'Visuals',
+      header: 'Notes',
       answer: 'Use current layout',
       wasCustom: false,
       selectedOptions: ['Use current layout'],
-      details: 'Match the hero spacing.\nScreenshot: /tmp/constellagent-paste-123.png',
-      imagePaths: ['/tmp/constellagent-paste-123.png'],
+      details: 'Match the hero spacing.\nKeep the footer unchanged.',
     },
   ]
   assert.equal(
     summarizeAskUserQuestionAnswers(answers),
-    'Visuals: Use current layout — Match the hero spacing. • Images: /tmp/constellagent-paste-123.png',
+    'Notes: Use current layout — Match the hero spacing.\nKeep the footer unchanged.',
   )
 })
 
