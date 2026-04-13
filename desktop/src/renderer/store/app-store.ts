@@ -175,6 +175,26 @@ async function syncExternalProjectStartupSettingsForProjects(projects: Project[]
     ),
   )
 }
+
+async function normalizeProjectRepoAnchorsInStore(): Promise<void> {
+  const projects = useAppStore.getState().projects
+  let repairedCount = 0
+
+  for (const project of projects) {
+    try {
+      const anchored = await window.api.git.getProjectRepoAnchor(project.repoPath)
+      if (!anchored || pathsEqualOrAlias(project.repoPath, anchored)) continue
+      useAppStore.getState().updateProject(project.id, { repoPath: anchored })
+      repairedCount += 1
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  if (repairedCount > 0) {
+    console.info(`[constellagent] normalized ${repairedCount} persisted project repo path(s)`)
+  }
+}
 const TAB_TITLE_LOG = '[constellagent:tab-title]'
 
 const AGENT_NAMES: Record<string, string> = {
@@ -507,6 +527,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       workspaces: s.workspaces.map((w) => w.id === id ? { ...w, branch } : w),
     })),
+
+  refreshGitWorktrees: () => {
+    void reconcileGitWorktreesForStore(null)
+  },
 
   setActiveWorkspace: (id) =>
     set((s) => {
@@ -1849,9 +1873,27 @@ function pruneDetachedHeadWorkspaces(): void {
   })
 }
 
+async function resolveListedWorktreeBranch(
+  wt: { path: string; branch: string; isDetached?: boolean },
+  path: string,
+): Promise<string> {
+  let branch = (wt.branch || '').trim().replace(/^refs\/heads\//, '')
+  if (!branch) {
+    try {
+      branch = (await window.api.git.getCurrentBranch(path)).trim().replace(/^refs\/heads\//, '')
+    } catch {
+      branch = ''
+    }
+  }
+  return branch
+}
+
 /**
  * Merge git worktrees from `git worktree list` (plus t3's `~/.t3/worktrees/…` scan) into the store
  * when they are missing from persisted state. The sidebar only renders app workspaces.
+ *
+ * Also repairs persisted rows stuck with branch `HEAD` / empty when git now reports a real branch,
+ * and pins `graphiteUiTrunkBranch` for newly merged linked worktrees.
  */
 async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Promise<void> {
   pruneDetachedHeadWorkspaces()
@@ -1863,6 +1905,7 @@ async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Pr
   if (projects.length === 0) return
 
   const additions: Workspace[] = []
+  const branchPatches = new Map<string, string>()
 
   for (const project of projects) {
     let listed: { path: string; branch: string; head: string; isBare: boolean; isDetached?: boolean }[]
@@ -1875,6 +1918,23 @@ async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Pr
     const workspacesSnap = useAppStore.getState().workspaces
     const currentForProject = workspacesSnap.filter((w) => w.projectId === project.id)
 
+    for (const w of currentForProject) {
+      const p = w.worktreePath?.trim()
+      if (!p) continue
+      const wt = listed.find((x) => x.path && pathsEqualOrAlias(x.path, p))
+      if (!wt || wt.isBare) continue
+      const t3 = isT3WorktreePath(p)
+      if (wt.isDetached && !t3) continue
+      const resolved = await resolveListedWorktreeBranch(wt, p)
+      if (t3 && isDetachedHeadBranchLabel(resolved)) continue
+      if (!t3 && isDetachedHeadBranchLabel(resolved)) continue
+      if (!resolved) continue
+      const prev = (w.branch || '').trim()
+      if (isDetachedHeadBranchLabel(prev) || prev === '' || prev.toUpperCase() === 'HEAD') {
+        if (resolved !== prev) branchPatches.set(w.id, resolved)
+      }
+    }
+
     for (const wt of listed) {
       if (wt.isBare) continue
       const path = wt.path?.trim()
@@ -1884,14 +1944,7 @@ async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Pr
       if (currentForProject.some((w) => pathsEqualOrAlias(w.worktreePath, path))) continue
       if (additions.some((w) => w.projectId === project.id && pathsEqualOrAlias(w.worktreePath, path))) continue
 
-      let branch = (wt.branch || '').trim()
-      if (!branch) {
-        try {
-          branch = (await window.api.git.getCurrentBranch(path)).trim()
-        } catch {
-          branch = ''
-        }
-      }
+      let branch = await resolveListedWorktreeBranch(wt, path)
       if (t3 && isDetachedHeadBranchLabel(branch)) {
         branch = ''
       }
@@ -1899,22 +1952,51 @@ async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Pr
 
       const fallbackName = path.split(/[/\\]/).filter(Boolean).pop() || 'workspace'
       const name = branch || fallbackName
+
+      let graphiteUiTrunkBranch: string | undefined
+      try {
+        if (branch && (await window.api.git.isSecondaryWorktreeRoot(project.repoPath, path))) {
+          graphiteUiTrunkBranch = branch
+        }
+      } catch {
+        /* best-effort */
+      }
+
       additions.push({
         id: crypto.randomUUID(),
         name,
         branch,
         worktreePath: path,
         projectId: project.id,
+        ...(graphiteUiTrunkBranch ? { graphiteUiTrunkBranch } : {}),
       })
     }
   }
 
-  if (additions.length === 0) return
+  if (additions.length === 0 && branchPatches.size === 0) return
 
-  console.info(`[constellagent] merged ${additions.length} git worktree(s) into sidebar state`)
+  if (additions.length > 0) {
+    console.info(`[constellagent] merged ${additions.length} git worktree(s) into sidebar state`)
+  }
+  if (branchPatches.size > 0) {
+    console.info(`[constellagent] repaired branch label(s) on ${branchPatches.size} workspace(s) from git worktree list`)
+  }
 
   useAppStore.setState((s) => {
-    const nextWorkspaces = [...s.workspaces, ...additions]
+    let nextWorkspaces = s.workspaces.map((w) => {
+      const newBranch = branchPatches.get(w.id)
+      if (!newBranch) return w
+      const next = { ...w, branch: newBranch }
+      if (
+        w.name === w.branch
+        || /^ws-[a-z0-9]+$/i.test(w.name)
+        || !w.name.trim()
+      ) {
+        next.name = newBranch
+      }
+      return next
+    })
+    nextWorkspaces = [...nextWorkspaces, ...additions]
     let activeWorkspaceId = s.activeWorkspaceId
     if (activeWorkspaceId === null && additions.length > 0) {
       activeWorkspaceId = additions[0].id
@@ -1995,7 +2077,8 @@ export async function hydrateFromDisk(): Promise<void> {
     const data = await window.api.state.load()
     if (data) {
       useAppStore.getState().hydrateState(data)
-      await syncExternalProjectStartupSettingsForProjects(data.projects ?? [])
+      await normalizeProjectRepoAnchorsInStore()
+      await syncExternalProjectStartupSettingsForProjects(useAppStore.getState().projects)
     }
   } catch (err) {
     console.error('Failed to load persisted state:', err)

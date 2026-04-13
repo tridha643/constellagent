@@ -163,7 +163,8 @@ export class GitService {
         for (const block of blocks) {
           const lines = block.split('\n')
           const info: Partial<WorktreeInfo> = { isBare: false, isDetached: false }
-          for (const line of lines) {
+          for (const rawLine of lines) {
+            const line = rawLine.trimEnd()
             if (line.startsWith('worktree ')) info.path = line.slice(9)
             else if (line.startsWith('HEAD ')) info.head = line.slice(5)
             else if (line.startsWith('branch ')) info.branch = line.slice(7).replace('refs/heads/', '')
@@ -181,9 +182,12 @@ export class GitService {
           }
         }
       }
-    } catch {
-      // Stale/moved projects, non-repo folders, or empty IPC path — avoid throwing and
-      // spamming Electron's "Error occurred in handler for 'git:list-worktrees'" log.
+    } catch (err) {
+      // Keep renderer IPC best-effort, but log enough context to diagnose empty sidebars.
+      console.warn('[constellagent] git worktree list failed', {
+        cwd,
+        error: friendlyGitError(err, 'Failed to list worktrees'),
+      })
     }
 
     // t3 sandboxes: merge even when porcelain failed or omitted paths (no extra IPC).
@@ -213,13 +217,8 @@ export class GitService {
     const mainCommon = await GitService.getResolvedGitCommonDir(cwd)
     if (!mainCommon) return []
 
-    let repoDirName: string
-    try {
-      const realRoot = await realpath(cwd)
-      repoDirName = basename(realRoot)
-    } catch {
-      repoDirName = basename(resolve(cwd))
-    }
+    const repoAnchor = await GitService.getProjectRepoAnchor(cwd)
+    const repoDirName = basename(repoAnchor || resolve(cwd))
 
     const t3Root = join(homedir(), '.t3', 'worktrees', repoDirName)
     if (!existsSync(t3Root)) return []
@@ -266,6 +265,35 @@ export class GitService {
       return await realpath(joined)
     } catch {
       return null
+    }
+  }
+
+  /**
+   * Canonical project anchor for app-level repo state.
+   * For linked worktrees, prefer the primary checkout root that owns the shared `.git`.
+   */
+  static async getProjectRepoAnchor(dirPath: string): Promise<string> {
+    const cwd = (dirPath ?? '').trim()
+    if (!cwd.length) return ''
+
+    let fallback = resolve(cwd)
+    try {
+      fallback = await realpath(cwd)
+    } catch {
+      /* best-effort */
+    }
+    if (!existsSync(cwd)) return fallback
+
+    try {
+      const topLevelRaw = (await GitService.getTopLevel(cwd)).trim()
+      const topLevel = await realpath(topLevelRaw).catch(() => resolve(topLevelRaw))
+      const commonDir = await GitService.getResolvedGitCommonDir(cwd)
+      if (!commonDir || basename(commonDir) !== '.git') return topLevel
+
+      const primaryRoot = dirname(commonDir)
+      return await realpath(primaryRoot).catch(() => resolve(primaryRoot))
+    } catch {
+      return fallback
     }
   }
 
@@ -894,5 +922,20 @@ export class GitService {
     const hasOrigin = await this.hasRemote(repoPath, 'origin')
     if (!hasOrigin) return
     await git(['fetch', '--prune', 'origin'], repoPath).catch(() => {})
+  }
+
+  /**
+   * Linked worktrees live at a different directory than the primary checkout.
+   * Used to pin a Graphite "UI trunk" branch for secondary worktrees.
+   */
+  static async isSecondaryWorktreeRoot(repoPath: string, workspaceRoot: string): Promise<boolean> {
+    try {
+      if (!existsSync(repoPath) || !existsSync(workspaceRoot)) return false
+      const primary = await realpath(repoPath)
+      const wt = await realpath(workspaceRoot)
+      return primary !== wt
+    } catch {
+      return false
+    }
   }
 }

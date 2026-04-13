@@ -303,6 +303,16 @@ function buildStackChain(
   return chain.length > 1 ? chain : null
 }
 
+function validateStackBranchNameArg(raw: string): string {
+  const name = raw.trim()
+  if (!name) throw new Error('Branch name is required.')
+  if (name.includes('/') || name.includes('\\') || name.includes('..')) {
+    throw new Error('Branch name cannot contain slashes or "..".')
+  }
+  if (name.startsWith('-')) throw new Error('Branch name cannot start with "-".')
+  return name
+}
+
 function sortCreateBranches(
   a: GraphiteCreateBranchOption,
   b: GraphiteCreateBranchOption,
@@ -451,6 +461,7 @@ export class GraphiteService {
     action: GraphiteStackAction,
     commitMessage: string,
     defaultBranch: string,
+    stackBranchName?: string,
   ): Promise<GraphiteStackActionResult> {
     await this.ensureGtAvailable()
 
@@ -470,8 +481,20 @@ export class GraphiteService {
         throw new Error('Commit message is required to create a Graphite stack branch.')
       }
 
+      const named =
+        typeof stackBranchName === 'string' && stackBranchName.trim()
+          ? validateStackBranchNameArg(stackBranchName)
+          : null
+
       try {
-        await graphite(['--no-interactive', 'create', '-m', trimmedMessage], worktreePath)
+        if (named) {
+          await graphite(
+            ['--no-interactive', 'create', named, '-m', trimmedMessage],
+            worktreePath,
+          )
+        } else {
+          await graphite(['--no-interactive', 'create', '-m', trimmedMessage], worktreePath)
+        }
       } catch (err) {
         throw new Error(graphiteErrorMessage(err, 'Failed to create a Graphite stack branch.'))
       }

@@ -264,6 +264,14 @@ export function registerIpcHandlers(): void {
     return GitService.isGitRepo(dirPath)
   })
 
+  ipcMain.handle(IPC.GIT_GET_PROJECT_REPO_ANCHOR, async (_e, dirPath: string) => {
+    return GitService.getProjectRepoAnchor(dirPath)
+  })
+
+  ipcMain.handle(IPC.GIT_IS_SECONDARY_WORKTREE_ROOT, async (_e, repoPath: string, workspaceRoot: string) => {
+    return GitService.isSecondaryWorktreeRoot(repoPath, workspaceRoot)
+  })
+
   ipcMain.handle(IPC.GIT_INIT_REPO, async (_e, dirPath: string) => {
     return GitService.initRepo(dirPath)
   })
@@ -429,8 +437,23 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC.GRAPHITE_RUN_STACK_ACTION,
-    async (_e, repoPath: string, worktreePath: string, action: GraphiteStackAction, commitMessage: string, defaultBranch: string) => {
-      return GraphiteService.runStackAction(repoPath, worktreePath, action, commitMessage, defaultBranch)
+    async (
+      _e,
+      repoPath: string,
+      worktreePath: string,
+      action: GraphiteStackAction,
+      commitMessage: string,
+      defaultBranch: string,
+      stackBranchName?: string | null,
+    ) => {
+      return GraphiteService.runStackAction(
+        repoPath,
+        worktreePath,
+        action,
+        commitMessage,
+        defaultBranch,
+        stackBranchName ?? undefined,
+      )
     },
   )
 

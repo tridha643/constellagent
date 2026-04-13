@@ -69,6 +69,11 @@ export interface Workspace {
   worktreePath: string
   projectId: string
   automationId?: string
+  /**
+   * For linked worktrees only: branch this workspace was created on.
+   * Used as Graphite "UI trunk" so Start vs Add / Submit matches the worktree’s home branch.
+   */
+  graphiteUiTrunkBranch?: string | null
 }
 
 export type SplitLeaf =
@@ -306,6 +311,8 @@ export interface AppState {
   reorderProject: (fromId: string, toId: string) => void
   reorderSidebarAction: (fromId: SidebarActionId, toId: SidebarActionId) => void
   updateWorkspaceBranch: (id: string, branch: string) => void
+  /** Re-scan `git worktree list` and merge missing linked worktrees into the sidebar. */
+  refreshGitWorktrees: () => void
   deleteWorkspace: (workspaceId: string) => Promise<void>
   updateProject: (id: string, partial: Partial<Omit<Project, 'id'>>) => void
   deleteProject: (projectId: string) => Promise<void>

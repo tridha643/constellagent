@@ -513,8 +513,11 @@ export function Sidebar() {
       const name = dirPath.split("/").pop() || dirPath;
       const id = crypto.randomUUID();
 
-      const addSelectedProject = () => {
-        addProject({ id, name, repoPath: dirPath });
+      const addSelectedProject = async () => {
+        const repoPath = isRepo
+          ? await window.api.git.getProjectRepoAnchor(dirPath).catch(() => dirPath)
+          : dirPath;
+        addProject({ id, name, repoPath });
       };
 
       if (!isRepo) {
@@ -527,7 +530,7 @@ export function Sidebar() {
             setIsInitializingRepo(true);
             try {
               await window.api.git.initRepo(dirPath);
-              addSelectedProject();
+              await addSelectedProject();
             } catch (err) {
               const msg =
                 err instanceof Error ? err.message : "Failed to initialize repo";
@@ -540,7 +543,7 @@ export function Sidebar() {
         return;
       }
 
-      addSelectedProject();
+      await addSelectedProject();
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Failed to inspect directory";
@@ -556,12 +559,28 @@ export function Sidebar() {
       worktreePath: string,
     ) => {
       const wsId = crypto.randomUUID();
+      let graphiteUiTrunkBranch: string | undefined;
+      try {
+        if (
+          await window.api.git.isSecondaryWorktreeRoot(
+            project.repoPath,
+            worktreePath,
+          )
+        ) {
+          graphiteUiTrunkBranch = branch;
+        }
+      } catch {
+        // Best effort — fall back to default Graphite UI trunk detection.
+      }
       addWorkspace({
         id: wsId,
         name,
         branch,
         worktreePath,
         projectId: project.id,
+        ...(graphiteUiTrunkBranch
+          ? { graphiteUiTrunkBranch }
+          : {}),
       });
 
       let startupSettings =
@@ -1259,13 +1278,15 @@ export function Sidebar() {
                     PR
                   </button>
                 </Tooltip>
-                <Tooltip label="Sync all worktrees">
+                    <Tooltip label="Sync all worktrees">
                   <button
                     type="button"
                     className={styles.syncBtn}
                     onClick={(e) => {
                       e.stopPropagation();
-                      void window.api.git.syncAllWorktrees(project.id);
+                      void window.api.git.syncAllWorktrees(project.id).then(() => {
+                        useAppStore.getState().refreshGitWorktrees();
+                      });
                     }}
                   >
                     ↻

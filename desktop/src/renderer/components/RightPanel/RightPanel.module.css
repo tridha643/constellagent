@@ -154,30 +154,48 @@
 /* ── Commit Area ── */
 
 .commitArea {
+  --commit-action-slot-min: 104px;
+
   padding: var(--space-4) var(--space-6);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 76%, transparent), color-mix(in srgb, var(--surface-1) 96%, transparent));
+  overflow-x: auto;
+  min-width: 0;
 }
 
-.commitInputRow {
+/* Single-surface message field + PI trigger (attached segment, shared border) */
+.commitInputCompound {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
+  align-items: stretch;
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  overflow: hidden;
+  transition: border-color 180ms var(--ease-out);
+}
+
+.commitInputCompound:focus-within {
+  border-color: var(--accent-blue);
+}
+
+.commitInputCompoundFlash {
+  border-color: color-mix(in srgb, var(--accent-blue) 72%, white 28%);
 }
 
 .commitInput {
-  width: 100%;
   flex: 1;
   min-width: 0;
-  min-height: 28px;
+  min-height: 32px;
   max-height: 80px;
   padding: var(--space-2) var(--space-3);
-  background: var(--surface-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  border-radius: 0;
   color: var(--text-primary);
   font-size: var(--text-sm);
   font-family: var(--font-ui);
@@ -186,7 +204,7 @@
 }
 
 .commitInput:focus {
-  border-color: var(--accent-blue);
+  outline: none;
 }
 
 .commitInput::placeholder {
@@ -194,24 +212,26 @@
 }
 
 .commitPiButton {
-  width: 32px;
-  height: 32px;
+  width: 40px;
   flex-shrink: 0;
+  align-self: stretch;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  background: color-mix(in srgb, var(--surface-3) 92%, transparent);
-  border: 1px solid var(--border-subtle);
-  border-radius: 9999px;
+  margin: 0;
+  background: color-mix(in srgb, var(--surface-3) 88%, var(--surface-2) 12%);
+  border: none;
+  border-left: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
+  border-radius: 0;
+  box-shadow: none;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out), transform 100ms var(--ease-out), border-color 140ms var(--ease-out), opacity 140ms var(--ease-out);
+  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out), transform 100ms var(--ease-out), opacity 140ms var(--ease-out);
 }
 
 .commitPiButton:not(:disabled):hover {
-  background: color-mix(in srgb, var(--accent-blue) 18%, var(--surface-3));
-  border-color: color-mix(in srgb, var(--accent-blue) 44%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-blue) 14%, var(--surface-3));
   color: var(--text-primary);
 }
 
@@ -230,7 +250,7 @@
 }
 
 .commitPiIconBusy {
-  animation: commitPiPulse 900ms ease-in-out infinite;
+  animation: commitPiPulse 620ms cubic-bezier(0.23, 1, 0.32, 1) infinite;
 }
 
 @keyframes commitPiPulse {
@@ -245,14 +265,41 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .commitPiIconBusy {
+    animation: commitPiPulseReduced 1.1s ease-out infinite;
+  }
+
+  @keyframes commitPiPulseReduced {
+    0%, 100% {
+      opacity: 0.55;
+    }
+
+    50% {
+      opacity: 1;
+    }
+  }
+}
+
 .commitActions {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  align-items: stretch;
+  flex-wrap: nowrap;
   gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+}
+
+.commitActionSlot {
+  flex: 1 1 0;
+  min-width: var(--commit-action-slot-min);
+  max-width: 100%;
+  min-height: 0;
 }
 
 .commitButton {
+  width: 100%;
+  min-width: 0;
   min-height: 30px;
   padding: var(--space-2) var(--space-4);
   background: var(--accent-blue);
@@ -264,6 +311,13 @@
   font-weight: var(--weight-medium);
   cursor: pointer;
   transition: background-color 140ms var(--ease-out), opacity 140ms var(--ease-out), transform 100ms var(--ease-out), border-color 140ms var(--ease-out);
+}
+
+.commitButtonLabel {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .commitButtonSecondary {
@@ -300,26 +354,34 @@
 }
 
 .graphiteSplitWrap {
-  position: relative;
-  display: inline-flex;
-  flex-shrink: 0;
+  display: flex;
+  width: 100%;
+  min-width: 0;
 }
 
 .graphiteSplitGroup {
-  display: inline-flex;
+  display: flex;
+  flex: 1;
   align-items: stretch;
+  min-width: 0;
+  width: 100%;
   border-radius: var(--radius-sm);
   overflow: hidden;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, white 10%, transparent);
 }
 
 .graphiteMainButton {
+  flex: 1 1 0;
+  min-width: 0;
   border-radius: 0;
+  overflow: hidden;
 }
 
 .graphiteMenuButton {
+  flex-shrink: 0;
   min-height: 30px;
   min-width: 32px;
+  width: auto;
   padding: 0 var(--space-2);
   border-radius: 0;
   border-left: 1px solid color-mix(in srgb, white 16%, transparent);
@@ -332,17 +394,78 @@
   background: linear-gradient(180deg, color-mix(in srgb, var(--accent-blue) 98%, white 2%) 0%, color-mix(in srgb, var(--accent-blue) 84%, black 16%) 100%);
 }
 
+/* Portaled popover: `position` / inset come from inline style (fixed to viewport). */
 .graphiteMenu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
   min-width: 220px;
+  max-height: min(320px, calc(100vh - 16px));
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: var(--space-1);
   background: color-mix(in srgb, var(--surface-2) 96%, black 4%);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  z-index: 30;
+  z-index: 10000;
+  transform-origin: top right;
+  animation: graphiteMenuIn 170ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.graphiteMenuClosing {
+  animation: graphiteMenuOut 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes graphiteMenuIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes graphiteMenuOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graphiteMenu {
+    animation: graphiteMenuInReduced 120ms var(--ease-out) both;
+  }
+
+  .graphiteMenuClosing {
+    animation: graphiteMenuOutReduced 100ms var(--ease-out) both;
+  }
+
+  @keyframes graphiteMenuInReduced {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes graphiteMenuOutReduced {
+    from {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 0;
+    }
+  }
 }
 
 .graphiteMenuItem {
