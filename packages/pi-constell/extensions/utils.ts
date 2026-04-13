@@ -1,8 +1,23 @@
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 
 const DEFAULT_NOTIFY_DIR = '/tmp/constellagent-notify'
 const PLAN_DIR = '.pi-constell/plans'
+const GENERIC_TITLES = new Set(['plan', 'implementation plan', 'pi constell plan', 'pi constell plan mode'])
+const FILLER_PREFIXES = [
+  /^please\s+/i,
+  /^can you\s+/i,
+  /^could you\s+/i,
+  /^help me\s+/i,
+  /^i want to\s+/i,
+  /^we want to\s+/i,
+  /^create a plan for\s+/i,
+  /^plan for\s+/i,
+]
+const STOP_WORDS = new Set([
+  'a', 'an', 'and', 'as', 'be', 'basically', 'by', 'exactly', 'for', 'from', 'how', 'in', 'into', 'just', 'of', 'on', 'or', 'our', 'the', 'their', 'this', 'to', 'we', 'with', 'would', 'your', 'want', 'wants', 'idea',
+])
+const PREFERRED_VERBS = ['add', 'improve', 'fix', 'publish', 'refactor', 'support', 'implement', 'update']
 
 const DESTRUCTIVE_PATTERNS = [
   /\brm\b/i,
@@ -78,23 +93,23 @@ export interface SavedPlan {
   title: string
 }
 
-export function isSafeCommand(command: string): boolean {
-  const isDestructive = DESTRUCTIVE_PATTERNS.some((p) => p.test(command))
-  const isSafe = SAFE_PATTERNS.some((p) => p.test(command))
-  return !isDestructive && isSafe
+export interface PlanNamingContext {
+  prompt?: string | null
+  clarifications?: string | null
 }
 
-function slugify(value: string): string {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
-  return slug || 'pi-constell-plan'
+export function isSafeCommand(command: string): boolean {
+  const isDestructive = DESTRUCTIVE_PATTERNS.some((pattern) => pattern.test(command))
+  const isSafe = SAFE_PATTERNS.some((pattern) => pattern.test(command))
+  return !isDestructive && isSafe
 }
 
 function stripFrontmatter(text: string): string {
   return text.replace(/^---\n[\s\S]*?\n---\n?/, '').trim()
+}
+
+function normalizeWhitespace(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
 }
 
 function firstHeading(text: string): string | null {
@@ -107,14 +122,6 @@ function firstPlanStep(text: string): string | null {
   return match?.[1]?.trim() || null
 }
 
-function deriveTitle(text: string): string {
-  const heading = firstHeading(text)
-  if (heading) return heading
-  const firstStep = firstPlanStep(text)
-  if (firstStep) return firstStep.replace(/[.?!].*$/, '').trim()
-  return 'PI Constell Plan'
-}
-
 function hasPlanShape(text: string): boolean {
   if (/^\s*#{1,6}\s+plan\b/im.test(text)) return true
   if (/\bplan\s*:/i.test(text) && /^\s*1[.)]\s+/m.test(text)) return true
@@ -122,51 +129,169 @@ function hasPlanShape(text: string): boolean {
   return false
 }
 
-export function buildPlanMarkdown(rawText: string): { title: string; markdown: string } | null {
+function toTitleCase(text: string): string {
+  return text.split(/\s+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
+
+function sanitizePhrase(text: string): string {
+  let value = normalizeWhitespace(text.replace(/[`*_#>]/g, ' '))
+  for (const prefix of FILLER_PREFIXES) value = value.replace(prefix, '')
+  return value.replace(/[.?!,:;]+$/g, '').trim()
+}
+
+function isGenericTitle(title: string): boolean {
+  const normalized = title.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return GENERIC_TITLES.has(normalized)
+}
+
+function titleFromPrompt(prompt: string | null | undefined): string | null {
+  if (!prompt) return null
+  const sanitized = sanitizePhrase(prompt)
+  if (!sanitized) return null
+  const words = sanitized
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((word) => !STOP_WORDS.has(word))
+
+  if (words.length === 0) return null
+
+  const firstVerb = words.findIndex((word) => PREFERRED_VERBS.includes(word))
+  const ordered = firstVerb > 0 ? [...words.slice(firstVerb), ...words.slice(0, firstVerb)] : words
+  return toTitleCase(ordered.slice(0, 8).join(' '))
+}
+
+function titleFromFirstStep(text: string): string | null {
+  const step = firstPlanStep(text)
+  if (!step) return null
+  return toTitleCase(sanitizePhrase(step).split(/\s+/).slice(0, 8).join(' '))
+}
+
+export function derivePlanTitle(rawText: string, context: PlanNamingContext = {}): string {
+  const cleaned = stripFrontmatter(rawText)
+  const heading = firstHeading(cleaned)
+  if (heading && !isGenericTitle(heading)) return normalizeWhitespace(heading)
+
+  const contextual = titleFromPrompt(context.clarifications) || titleFromPrompt(context.prompt)
+  if (contextual) return contextual
+
+  const firstStepTitle = titleFromFirstStep(cleaned)
+  if (firstStepTitle) return firstStepTitle
+
+  return 'Implementation Plan'
+}
+
+export function slugifyPlanTitle(title: string): string {
+  const lowered = title.toLowerCase().replace(/[^a-z0-9\s-]+/g, ' ')
+  const tokens = lowered.split(/\s+/).filter(Boolean)
+  const firstVerb = tokens.findIndex((token) => PREFERRED_VERBS.includes(token))
+  const ordered = firstVerb > 0 ? [...tokens.slice(firstVerb), ...tokens.slice(0, firstVerb)] : tokens
+  const filtered = ordered.filter((token, index) => index === 0 || !STOP_WORDS.has(token))
+  const slug = filtered.slice(0, 8).join('-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  return slug || 'implementation-plan'
+}
+
+export function buildPlanMarkdown(rawText: string, context: PlanNamingContext = {}): { title: string; markdown: string } | null {
   const cleaned = stripFrontmatter(rawText)
   if (!hasPlanShape(cleaned)) return null
 
-  const title = deriveTitle(cleaned)
-  const hasTitleHeading = /^#\s+/m.test(cleaned)
-  const markdown = hasTitleHeading ? cleaned : `# ${title}\n\n${cleaned}`
+  const title = derivePlanTitle(cleaned, context)
+  const heading = firstHeading(cleaned)
+  const hasSpecificTitle = Boolean(heading && !isGenericTitle(heading))
+  const markdown = hasSpecificTitle ? cleaned : `# ${title}\n\n${cleaned}`
   return { title, markdown: markdown.trim() + '\n' }
 }
 
 function buildFrontmatter(modelId: string | null): string {
-  const lines = [
+  return [
     '---',
     'constellagent:',
     '  built: false',
     `  codingAgent: ${modelId ? JSON.stringify(modelId) : 'null'}`,
-    '  buildHarness: "pi-constell"',
+    '  buildHarness: "pi-constell-plan"',
     '---',
     '',
-  ]
-  return lines.join('\n')
+  ].join('\n')
 }
 
-export async function savePlanFile(cwd: string, rawText: string, modelId: string | null): Promise<SavedPlan | null> {
-  const built = buildPlanMarkdown(rawText)
-  if (!built) return null
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
 
-  const planDir = join(cwd, PLAN_DIR)
+export function getPlanDir(cwd: string): string {
+  return join(cwd, PLAN_DIR)
+}
+
+export async function allocatePlanPath(cwd: string, title: string, currentPath?: string | null): Promise<string> {
+  const planDir = getPlanDir(cwd)
   await mkdir(planDir, { recursive: true })
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').replace(/Z$/, '')
-  const fileName = `${stamp}_${slugify(built.title)}.md`
-  const path = join(planDir, fileName)
-  const content = buildFrontmatter(modelId) + built.markdown
-  await writeFile(path, content, 'utf-8')
-  return { path, title: built.title }
+  const slug = slugifyPlanTitle(title)
+  const currentBase = currentPath ? basename(currentPath) : null
+  if (currentBase === `${slug}.md` || currentBase?.startsWith(`${slug}-`)) return resolve(currentPath!)
+
+  let attempt = 1
+  while (true) {
+    const suffix = attempt === 1 ? '' : `-${attempt}`
+    const candidate = resolve(planDir, `${slug}${suffix}.md`)
+    if (candidate === resolve(currentPath ?? '')) return candidate
+    if (!(await fileExists(candidate))) return candidate
+    attempt += 1
+  }
+}
+
+export async function ensureActivePlanPath(cwd: string, context: PlanNamingContext, currentPath?: string | null): Promise<string> {
+  if (currentPath) return resolve(currentPath)
+  const title = titleFromPrompt(context.clarifications) || titleFromPrompt(context.prompt) || 'Implementation Plan'
+  return allocatePlanPath(cwd, title)
+}
+
+export function resolvePlanToolPath(cwd: string, toolPath: string): string {
+  return resolve(cwd, toolPath.replace(/^@/, ''))
+}
+
+export async function savePlanFile(
+  cwd: string,
+  rawText: string,
+  modelId: string | null,
+  context: PlanNamingContext = {},
+  currentPath?: string | null,
+): Promise<SavedPlan | null> {
+  const built = buildPlanMarkdown(rawText, context)
+  if (!built) return null
+
+  const targetPath = await allocatePlanPath(cwd, built.title, currentPath)
+  await mkdir(dirname(targetPath), { recursive: true })
+
+  if (currentPath && resolve(currentPath) !== targetPath && (await fileExists(currentPath))) {
+    await rename(currentPath, targetPath)
+  }
+
+  await writeFile(targetPath, buildFrontmatter(modelId) + built.markdown, 'utf-8')
+  return { path: targetPath, title: built.title }
+}
+
+export async function readPlanFile(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf-8')
+  } catch {
+    return null
+  }
 }
 
 export async function notifyConstellagent(): Promise<void> {
   const workspaceId = process.env.AGENT_ORCH_WS_ID?.trim()
   const agentType = process.env.AGENT_ORCH_AGENT_TYPE?.trim()
-  if (!workspaceId || agentType !== 'pi-constell') return
+  if (!workspaceId || !agentType || !['pi-constell', 'pi-constell-plan'].includes(agentType)) return
 
   const notifyDir = process.env.CONSTELLAGENT_NOTIFY_DIR || DEFAULT_NOTIFY_DIR
   await mkdir(notifyDir, { recursive: true })
-  const filePath = join(notifyDir, `${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2)}.txt`)
+  const filePath = join(notifyDir, `${Date.now()}-${Math.random().toString(36).slice(2)}.txt`)
   await writeFile(filePath, `${workspaceId}\n`, 'utf-8')
 }
