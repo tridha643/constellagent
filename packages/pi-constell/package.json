@@ -1,16 +1,55 @@
 {
-  "name": "pi-constell",
-  "private": true,
-  "version": "0.0.1",
+  "name": "pi-constell-plan",
+  "version": "0.1.0",
+  "description": "Claude Code-style plan mode for pi with interactive clarifying questions and Constellagent-compatible plan exports.",
   "type": "module",
-  "keywords": ["pi-package"],
-  "description": "PI Constell plan mode package for exporting Constellagent-compatible plan files.",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "plan-mode",
+    "claude-code",
+    "cursor",
+    "constellagent"
+  ],
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/owengretzinger/constellagent.git",
+    "directory": "packages/pi-constell"
+  },
+  "files": [
+    "extensions",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "test:e2e": "tsx --test test/*.e2e.test.ts",
+    "verify": "npm run typecheck && npm run test && npm run test:e2e",
+    "manual:verify": "tsx scripts/manual-verify.ts",
+    "prepublishOnly": "npm run verify"
+  },
   "pi": {
-    "extensions": ["./extensions/pi-constell.ts"]
+    "extensions": [
+      "./extensions/pi-constell.ts"
+    ]
   },
   "peerDependencies": {
     "@mariozechner/pi-agent-core": "*",
     "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*"
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

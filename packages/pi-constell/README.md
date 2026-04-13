@@ -1,29 +1,32 @@
-# PI Constell
+# pi-constell-plan
 
-PI Constell is a pi package that adds a Constellagent-friendly plan mode.
+`pi-constell-plan` adds a Claude Code-style plan mode to pi.
 
-## What it does
+## Features
 
-- adds `/plan` read-only planning mode to pi
-- exports valid plans to `.pi-constell/plans`
-- writes Constellagent-compatible frontmatter:
-  - `built: false`
-  - `codingAgent: <provider/model>`
-  - `buildHarness: pi-constell`
-- emits Constellagent workspace notifications when pi is launched from Constellagent with `AGENT_ORCH_WS_ID` and `AGENT_ORCH_AGENT_TYPE=pi-constell`
+- `/plan` toggles planning mode
+- codebase remains read-only in plan mode
+- only the active plan file is writable in plan mode
+- `askUserQuestion` supports 1-4 clarifying questions with:
+  - `Tab` / `Shift+Tab` question cycling
+  - keyboard-first option selection
+  - multi-select support
+  - `My own thoughts` free-text answers
+- plans are exported to `.pi-constell/plans/`
+- saved plans use Cursor-like, action-oriented filenames such as:
+  - `improve-plan-mode-questionnaire-ux.md`
+  - `add-claude-style-ask-user-question.md`
 
-## Install locally
-
-From a repo where you want PI Constell available:
+## Install
 
 ```bash
-pi install -l /absolute/path/to/packages/pi-constell
+pi install npm:pi-constell-plan
 ```
 
-Or globally:
+## Update
 
 ```bash
-pi install /absolute/path/to/packages/pi-constell
+pi update
 ```
 
 ## Usage
@@ -32,12 +35,30 @@ pi install /absolute/path/to/packages/pi-constell
 pi /plan
 ```
 
-Then ask pi to investigate and produce a markdown plan with a numbered `Plan` section.
+In plan mode pi will:
 
-When a valid plan is produced, PI Constell saves it under:
+- investigate the repo with read-only tools
+- ask interactive clarifying questions when needed via `askUserQuestion`
+- let the model write or edit only the active plan file in `.pi-constell/plans/`
+- save Constellagent-compatible markdown plans with frontmatter
 
-```text
-.pi-constell/plans/
+## askUserQuestion payload
+
+```json
+{
+  "questions": [
+    {
+      "header": "Scope",
+      "question": "What should this plan prioritize?",
+      "multiSelect": false,
+      "options": [
+        { "label": "UX parity", "description": "Match Claude Code plan mode interactions closely." },
+        { "label": "Fast publish", "description": "Minimize scope and ship to npm quickly." },
+        { "label": "Hardening", "description": "Prioritize tests and guardrails first." }
+      ]
+    }
+  ]
+}
 ```
 
-Constellagent can then discover the file via the Plans button or `⌘⇧M`.
+Users can always choose `My own thoughts` if none of the suggested options fit.
