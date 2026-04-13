@@ -85,6 +85,8 @@ export const IPC = {
   APP_GET_HOME_DIR: 'app:get-home-dir',
   /** List available pi models from `pi --list-models` for PI Constell plan builds. */
   APP_LIST_PI_MODELS: 'app:list-pi-models',
+  /** Generate a commit message from current uncommitted changes using PI. */
+  APP_GENERATE_COMMIT_MESSAGE: 'app:generate-commit-message',
 
   // Claude Code integration
   CLAUDE_TRUST_PATH: 'claude:trust-path',

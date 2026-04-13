@@ -34,6 +34,7 @@ import { emitAutomationEvent, onAutomationEvent } from './automation-event-bus'
 import { lookupPersistedProjectRepo } from './persisted-state'
 import { GithubPollService } from './github-poll-service'
 import { listPiModels } from './pi-models'
+import { CommitMessageService } from './commit-message-service'
 import {
   deleteProjectStartupCommands,
   getProjectStartupCommands,
@@ -680,6 +681,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.APP_LIST_PI_MODELS, async () => {
     return listPiModels()
+  })
+
+  ipcMain.handle(IPC.APP_GENERATE_COMMIT_MESSAGE, async (_e, worktreePath: string) => {
+    return CommitMessageService.generateWithPi(worktreePath)
   })
 
   // Accepts a path directly (for testing — avoids dialog.showOpenDialog)

@@ -3,6 +3,7 @@ import { useAppStore } from '../../store/app-store'
 import { STATUS_LABELS } from '../../../shared/status-labels'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { Tooltip } from '../Tooltip/Tooltip'
+import { PiIcon } from '../Icons/PiIcon'
 import type { GraphiteStackAction } from '../../../shared/graphite-types'
 import styles from './RightPanel.module.css'
 
@@ -42,7 +43,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const [files, setFiles] = useState<FileStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [busyAction, setBusyAction] = useState<'commit' | 'pr' | 'graphite' | null>(null)
+  const [busyAction, setBusyAction] = useState<'commit' | 'pr' | 'graphite' | 'generate-commit-message' | null>(null)
   const [busyLabel, setBusyLabel] = useState('')
   const [commitMsg, setCommitMsg] = useState('')
   const [currentBranch, setCurrentBranch] = useState('')
@@ -51,6 +52,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const [graphiteMenuOpen, setGraphiteMenuOpen] = useState(false)
   const [selectedGraphiteAction, setSelectedGraphiteAction] = useState<GraphiteStackAction | null>(null)
   const graphiteMenuRef = useRef<HTMLDivElement | null>(null)
+  const commitInputRef = useRef<HTMLTextAreaElement | null>(null)
   const openDiffTab = useAppStore((s) => s.openDiffTab)
   const setGitFileStatuses = useAppStore((s) => s.setGitFileStatuses)
   const addToast = useAppStore((s) => s.addToast)
@@ -322,6 +324,36 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     }, `Failed to discard ${file.path}`)
   }, [worktreePath, runGitOp])
 
+  const handleGenerateCommitMessage = useCallback(async () => {
+    if (files.length === 0) return
+
+    setBusy(true)
+    setBusyAction('generate-commit-message')
+    setBusyLabel('Generating…')
+
+    try {
+      const message = await window.api.app.generateCommitMessage(worktreePath)
+      setCommitMsg(message)
+      addToast({
+        id: crypto.randomUUID(),
+        message: 'Commit message generated',
+        type: 'info',
+      })
+      requestAnimationFrame(() => commitInputRef.current?.focus())
+    } catch (err) {
+      console.error('[ChangedFiles] commit message generation failed:', err)
+      addToast({
+        id: crypto.randomUUID(),
+        message: errorMessage(err, 'Failed to generate commit message'),
+        type: 'error',
+      })
+    } finally {
+      setBusy(false)
+      setBusyAction(null)
+      setBusyLabel('')
+    }
+  }, [addToast, files.length, worktreePath])
+
   const handleCommit = useCallback(async () => {
     if (!commitMessage || staged.length === 0) return
     const committedPaths = staged.map((f) => f.path)
@@ -526,14 +558,28 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     <div className={styles.changedFilesList}>
       {showControls && (
         <div className={styles.commitArea}>
-          <textarea
-            className={styles.commitInput}
-            placeholder="Commit message"
-            value={commitMsg}
-            onChange={(e) => setCommitMsg(e.target.value)}
-            onKeyDown={handleKeyDown}
-            rows={1}
-          />
+          <div className={styles.commitInputRow}>
+            <textarea
+              ref={commitInputRef}
+              className={styles.commitInput}
+              placeholder="Commit message"
+              value={commitMsg}
+              onChange={(e) => setCommitMsg(e.target.value)}
+              onKeyDown={handleKeyDown}
+              rows={1}
+            />
+            <Tooltip label={busy && busyAction === 'generate-commit-message' ? 'Generating commit message…' : 'Generate commit message with PI'}>
+              <button
+                type="button"
+                className={styles.commitPiButton}
+                disabled={busy || files.length === 0}
+                onClick={() => { void handleGenerateCommitMessage() }}
+                aria-label="Generate commit message with PI"
+              >
+                <PiIcon className={`${styles.commitPiIcon} ${busy && busyAction === 'generate-commit-message' ? styles.commitPiIconBusy : ''}`} />
+              </button>
+            </Tooltip>
+          </div>
           <div className={styles.commitActions}>
             <Tooltip label="Commit staged changes" shortcut="⌘↵">
               <button

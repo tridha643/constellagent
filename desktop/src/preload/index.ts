@@ -179,6 +179,8 @@ const api = {
   app: {
     getHomeDir: () => ipcRenderer.invoke(IPC.APP_GET_HOME_DIR) as Promise<string>,
     listPiModels: () => ipcRenderer.invoke(IPC.APP_LIST_PI_MODELS) as Promise<PiModelOption[]>,
+    generateCommitMessage: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.APP_GENERATE_COMMIT_MESSAGE, worktreePath) as Promise<string>,
     selectDirectory: () =>
       ipcRenderer.invoke(IPC.APP_SELECT_DIRECTORY),
     selectFile: (filters?: { name: string; extensions: string[] }[]) =>
