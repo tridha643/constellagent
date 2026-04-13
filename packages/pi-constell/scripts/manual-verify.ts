@@ -33,3 +33,4 @@ console.log('7. Verify the saved plan includes concise PR-stack sections and exp
 console.log('8. Verify a newly written .pi-constell/plans file is readable locally but does not appear in git status.')
 console.log('9. Verify saved filenames are action-oriented and collision-safe (slug, slug-2, ...).')
 console.log('10. Verify askUserQuestion lets you pick preset option(s), add optional extra details, use spacebar multi-select toggles, and still supports My own thoughts.')
+console.log('11. Paste an image during Extra details / image paths and verify a temp file path is captured, summarized, and preserved in saved plan context.')
