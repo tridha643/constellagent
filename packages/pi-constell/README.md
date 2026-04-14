@@ -1,11 +1,15 @@
 # pi-constell-plan
 
-`pi-constell-plan` adds a Claude Code-style plan mode to pi.
+`pi-constell-plan` adds a Claude Code-style plan mode to pi, including an agent-requested consent flow that can switch a planning-heavy prompt into plan mode without ever auto-switching.
 
 ## Features
 
-- `/plan` toggles planning mode
+- `/plan` toggles planning mode manually
 - `/plan-off` and `/agent` leave planning mode explicitly
+- `suggestPlanModeSwitch` lets the model request plan mode from normal agent mode, but only after explicit user approval
+- the consent UI is inline/native, shows clear **Accept plan mode** vs **Stay in agent mode** actions, and times out after 15 seconds
+- decline/timeout suppresses re-asking only for the current prompt; later prompts can suggest plan mode again
+- non-interactive sessions fall back to a safe no-op and stay in normal agent mode
 - codebase remains read-only in plan mode
 - `askUserQuestion` is a blocking prerequisite before plan writing or auto-save
 - plan mode starts with a stronger first clarification round, then asks smaller follow-ups only if the plan changes materially
@@ -38,9 +42,23 @@ pi update
 
 ## Usage
 
+### Manual plan mode
+
 ```bash
 pi /plan
 ```
+
+### Agent-requested switching
+
+For planning-heavy prompts, the model can call `suggestPlanModeSwitch` while still in normal mode. The extension will:
+
+- show a 15 second consent prompt
+- switch only if the user accepts
+- keep the current prompt in agent mode on decline/timeout
+- suppress repeated plan-mode requests for that same prompt only
+- immediately apply plan-mode rules after acceptance, even mid-turn
+
+## What plan mode does
 
 In plan mode pi will:
 
@@ -56,7 +74,24 @@ In plan mode pi will:
 - keep the plan detailed enough to cover the required constraints and validation, but concise enough to stay readable
 - generate concise phase-based plans with explicit validation sections and better saved filenames
 
-## askUserQuestion payload
+## Prompt guidance for `suggestPlanModeSwitch`
+
+The model should prefer `suggestPlanModeSwitch` for requests like:
+
+- broad refactors
+- architecture or workflow changes
+- migrations
+- ambiguous multi-file changes
+- requests that obviously need phased planning, tradeoffs, or rollout decisions
+
+The model should avoid it for:
+
+- small direct edits
+- single-file fixes
+- typos, copy changes, or simple renames
+- straightforward implementation tasks that do not need a planning pass
+
+## `askUserQuestion` payload
 
 ```json
 {
