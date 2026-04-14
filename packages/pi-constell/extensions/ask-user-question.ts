@@ -70,6 +70,10 @@ function clampHeader(header: string): string {
   return header.trim().slice(0, 12) || 'Question'
 }
 
+function isSpaceToggleInput(data: string): boolean {
+  return data === ' ' || matchesKey(data, Key.space)
+}
+
 function summarizeAskUserQuestionAnswer(answer: AskUserQuestionAnswer): string {
   const value = Array.isArray(answer.answer) ? answer.answer.join(', ') : answer.answer
   const detail = answer.details?.trim()
@@ -330,7 +334,7 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
             refresh()
             return
           }
-          if (matchesKey(data, Key.space) && question.multiSelect) {
+          if (question.multiSelect && isSpaceToggleInput(data)) {
             if (index <= question.options.length - 1) {
               toggleOption(index)
             }

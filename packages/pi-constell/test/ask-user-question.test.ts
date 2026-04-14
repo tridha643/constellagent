@@ -1,6 +1,63 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { formatAskUserQuestionDetails, summarizeAskUserQuestionAnswers, type AskUserQuestionAnswer } from '../extensions/ask-user-question.js'
+import registerAskUserQuestion, { formatAskUserQuestionDetails, summarizeAskUserQuestionAnswers, type AskUserQuestionAnswer, type AskUserQuestionDetails } from '../extensions/ask-user-question.js'
+
+class FakeAPI {
+  tools: any[] = []
+
+  registerTool(tool: any): void {
+    this.tools.push(tool)
+  }
+}
+
+async function createInteractiveHarness(params: {
+  questions: Array<{
+    question: string
+    header: string
+    options: Array<{ label: string; description?: string }>
+    multiSelect?: boolean
+  }>
+}) {
+  const api = new FakeAPI()
+  registerAskUserQuestion(api as any)
+  const tool = api.tools.find((candidate) => candidate.name === 'askUserQuestion')
+  assert.ok(tool)
+
+  let component: { handleInput: (data: string) => void; render: (width: number) => string[] } | null = null
+  let resolveDone: ((value: AskUserQuestionDetails) => void) | null = null
+  const detailsPromise = new Promise<AskUserQuestionDetails>((resolve) => {
+    resolveDone = resolve
+  })
+
+  const ctx = {
+    hasUI: true,
+    ui: {
+      custom: async (factory: any) => {
+        component = factory(
+          { requestRender: () => {} },
+          {
+            fg: (_name: string, text: string) => text,
+            bg: (_name: string, text: string) => text,
+            bold: (text: string) => text,
+          },
+          {},
+          (details: AskUserQuestionDetails) => resolveDone?.(details),
+        )
+        return detailsPromise
+      },
+    },
+  }
+
+  const executePromise = tool.execute('tool-call-id', params, new AbortController().signal, () => {}, ctx)
+  await Promise.resolve()
+  assert.ok(component)
+
+  return {
+    send: (data: string) => component!.handleInput(data),
+    render: (width = 120) => component!.render(width).join('\n'),
+    result: executePromise,
+  }
+}
 
 test('summarizeAskUserQuestionAnswers merges single-select choice and extra details', () => {
   const answers: AskUserQuestionAnswer[] = [
@@ -86,4 +143,68 @@ test('formatAskUserQuestionDetails joins multiple questions with newlines', () =
     ],
   })
   assert.equal(text, 'A: One — alpha\nB: X, Y')
+})
+
+test('askUserQuestion accepts raw space for multi-select toggles and submits from review', async () => {
+  const harness = await createInteractiveHarness({
+    questions: [
+      {
+        header: 'Stack',
+        question: 'Which areas should this plan cover?',
+        multiSelect: true,
+        options: [
+          { label: 'API', description: 'Backend work first.' },
+          { label: 'UI', description: 'Frontend work too.' },
+        ],
+      },
+    ],
+  })
+
+  harness.send(' ')
+  assert.match(harness.render(), /\[x\] API/)
+  assert.doesNotMatch(harness.render(), /Review your answers/)
+
+  harness.send('\t')
+  harness.send('\r')
+
+  const result = await harness.result
+  assert.equal(result.details.cancelled, false)
+  assert.deepEqual(result.details.answers, [
+    {
+      question: 'Which areas should this plan cover?',
+      header: 'Stack',
+      answer: ['API'],
+      wasCustom: false,
+      selectedOptions: ['API'],
+    },
+  ])
+})
+
+test('askUserQuestion keeps multi-select enter as a toggle until review submit', async () => {
+  const harness = await createInteractiveHarness({
+    questions: [
+      {
+        header: 'Stack',
+        question: 'Which areas should this plan cover?',
+        multiSelect: true,
+        options: [
+          { label: 'API', description: 'Backend work first.' },
+          { label: 'UI', description: 'Frontend work too.' },
+        ],
+      },
+    ],
+  })
+
+  harness.send('\r')
+  const questionView = harness.render()
+  assert.match(questionView, /\[x\] API/)
+  assert.match(questionView, /Which areas should this plan cover\?/)
+  assert.doesNotMatch(questionView, /Review your answers/)
+
+  harness.send('\t')
+  harness.send('\r')
+
+  const result = await harness.result
+  assert.equal(result.details.cancelled, false)
+  assert.deepEqual(result.details.answers[0]?.selectedOptions, ['API'])
 })
