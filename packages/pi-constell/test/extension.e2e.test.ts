@@ -21,12 +21,19 @@ type CustomQuestionResult = {
   }>
 }
 
+type PlanModeSwitchResult = {
+  outcome: 'accepted' | 'declined' | 'timed_out' | 'already_active' | 'suppressed' | 'unavailable'
+  activePlanPath?: string | null
+  secondsRemaining?: number
+  suppressedForPrompt?: boolean
+}
+
 class FakeAPI {
   tools: any[] = []
   commands = new Map<string, any>()
   flags = new Map<string, unknown>()
   events = new Map<string, Handler[]>()
-  activeTools = ['read', 'bash', 'edit', 'write']
+  activeTools = ['read', 'bash', 'edit', 'write', 'suggestPlanModeSwitch']
   entries: Array<{ type: string; customType: string; data: unknown }> = []
 
   registerTool(tool: any): void { this.tools.push(tool) }
@@ -43,23 +50,34 @@ class FakeAPI {
   appendEntry(customType: string, data: unknown): void { this.entries.push({ type: 'custom', customType, data }) }
 }
 
-function createCtx(cwd: string, entries: any[] = [], customQuestionResult: CustomQuestionResult = { cancelled: true, answers: [] }) {
+function createCtx(params: {
+  cwd: string
+  entries?: any[]
+  customResponses?: any[]
+  hasUI?: boolean
+}): any {
   const notifications: string[] = []
   const statuses = new Map<string, string | undefined>()
+  const customResponses = [...(params.customResponses ?? [])]
   return {
-    cwd,
-    hasUI: true,
+    cwd: params.cwd,
+    hasUI: params.hasUI ?? true,
     model: { provider: 'anthropic', id: 'claude-sonnet-4-5' },
     ui: {
       theme: {
         fg: (_name: string, text: string) => text,
+        bg: (_name: string, text: string) => text,
+        bold: (text: string) => text,
       },
       notify: (message: string) => { notifications.push(message) },
       setStatus: (name: string, text?: string) => { statuses.set(name, text) },
-      custom: async () => customQuestionResult,
+      custom: async () => {
+        if (customResponses.length === 0) throw new Error('No queued custom UI response available')
+        return customResponses.shift()
+      },
     },
     sessionManager: {
-      getEntries: () => entries,
+      getEntries: () => params.entries ?? [],
     },
     _notifications: notifications,
     _statuses: statuses,
@@ -73,8 +91,8 @@ async function emit(api: FakeAPI, name: string, event: any, ctx: any) {
   return results
 }
 
-function getAskUserQuestionTool(api: FakeAPI): any {
-  const tool = api.tools.find((candidate) => candidate.name === 'askUserQuestion')
+function getTool(api: FakeAPI, name: string): any {
+  const tool = api.tools.find((candidate) => candidate.name === name)
   assert.ok(tool)
   return tool
 }
@@ -85,21 +103,125 @@ function extractActivePlanPath(message: string): string {
   return activePath!
 }
 
-test('extension registers askUserQuestion and plan mode commands', () => {
+test('extension registers planning tools and plan mode commands', () => {
   const api = new FakeAPI()
   piConstell(api as any)
   assert.ok(api.tools.some((tool) => tool.name === 'askUserQuestion'))
+  assert.ok(api.tools.some((tool) => tool.name === 'suggestPlanModeSwitch'))
   assert.ok(api.commands.has('plan'))
   assert.ok(api.commands.has('plan-off'))
   assert.ok(api.commands.has('agent'))
   assert.ok(api.commands.has('plan-save'))
 })
 
+test('normal mode nudges planning-heavy prompts but skips small direct edits', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
+  const api = new FakeAPI()
+  piConstell(api as any)
+  const ctx = createCtx({ cwd })
+
+  const [planningNudge] = await emit(api, 'before_agent_start', {
+    prompt: 'Design the architecture and migration approach for switching from agent mode into plan mode across the extension and tests.',
+  }, ctx)
+  assert.match(planningNudge?.message?.content ?? '', /call suggestPlanModeSwitch once/)
+  assert.match(planningNudge?.message?.content ?? '', /Never auto-switch/)
+
+  const [smallEditNudge] = await emit(api, 'before_agent_start', {
+    prompt: 'Fix a typo in the README title.',
+  }, ctx)
+  assert.equal(smallEditNudge, undefined)
+})
+
+test('accepted suggestPlanModeSwitch enables plan mode immediately and keeps the clarification gate closed', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
+  const api = new FakeAPI()
+  piConstell(api as any)
+  const ctx = createCtx({
+    cwd,
+    customResponses: [
+      { outcome: 'accepted', secondsRemaining: 12, suppressedForPrompt: false } satisfies PlanModeSwitchResult,
+    ],
+  })
+
+  await emit(api, 'before_agent_start', {
+    prompt: 'Refactor the extension architecture and add tests for a user-approved plan mode switch.',
+  }, ctx)
+
+  const tool = getTool(api, 'suggestPlanModeSwitch')
+  const result = await tool.execute('tool-call-id', {
+    reason: 'This request spans runtime behavior, TUI consent, prompt guidance, and tests.',
+  }, new AbortController().signal, () => {}, ctx)
+
+  assert.equal((result.details as PlanModeSwitchResult).outcome, 'accepted')
+  assert.match(result.content[0]?.text ?? '', /Switch into plan mode immediately for this same prompt/)
+  assert.deepEqual(api.activeTools, ['read', 'bash', 'grep', 'find', 'ls', 'write', 'edit', 'askUserQuestion'])
+
+  const activePath = String((result.details as PlanModeSwitchResult).activePlanPath)
+  assert.match(activePath, new RegExp(`^${homedir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\.pi-constell/plans/`))
+  assert.match(ctx._statuses.get('pi-constell-plan') ?? '', /clarify first/)
+
+  const [blockedWrite] = await emit(api, 'tool_call', {
+    toolName: 'write',
+    input: { path: activePath, content: '# Draft plan' },
+  }, ctx)
+  assert.equal(blockedWrite?.block, true)
+  assert.match(blockedWrite?.reason ?? '', /askUserQuestion clarification round/)
+})
+
+test('declined switch suppresses repeated asks only for the current prompt', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
+  const api = new FakeAPI()
+  piConstell(api as any)
+  const ctx = createCtx({
+    cwd,
+    customResponses: [
+      { outcome: 'declined', secondsRemaining: 9, suppressedForPrompt: true } satisfies PlanModeSwitchResult,
+    ],
+  })
+
+  const prompt = 'Plan a multi-step migration for the extension state model and validation flow.'
+  await emit(api, 'before_agent_start', { prompt }, ctx)
+
+  const tool = getTool(api, 'suggestPlanModeSwitch')
+  const declined = await tool.execute('tool-call-id', {}, new AbortController().signal, () => {}, ctx)
+  assert.equal((declined.details as PlanModeSwitchResult).outcome, 'declined')
+  assert.match(declined.content[0]?.text ?? '', /do not ask again during this prompt/)
+  assert.deepEqual(api.activeTools, ['read', 'bash', 'edit', 'write', 'suggestPlanModeSwitch'])
+
+  const repeated = await tool.execute('tool-call-id-2', {}, new AbortController().signal, () => {}, ctx)
+  assert.equal((repeated.details as PlanModeSwitchResult).outcome, 'suppressed')
+
+  const [suppressedNudge] = await emit(api, 'before_agent_start', { prompt }, ctx)
+  assert.equal(suppressedNudge, undefined)
+
+  const [freshNudge] = await emit(api, 'before_agent_start', {
+    prompt: 'Design a phased rollout for plan mode consent, state restore, and countdown UX across multiple packages.',
+  }, ctx)
+  assert.match(freshNudge?.message?.content ?? '', /call suggestPlanModeSwitch once/)
+})
+
+test('non-interactive suggestPlanModeSwitch is a safe no-op that leaves agent mode unchanged', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
+  const api = new FakeAPI()
+  piConstell(api as any)
+  const ctx = createCtx({ cwd, hasUI: false })
+
+  await emit(api, 'before_agent_start', {
+    prompt: 'Plan a broad architecture refactor across the extension and tests.',
+  }, ctx)
+
+  const tool = getTool(api, 'suggestPlanModeSwitch')
+  const result = await tool.execute('tool-call-id', {}, new AbortController().signal, () => {}, ctx)
+  assert.equal((result.details as PlanModeSwitchResult).outcome, 'unavailable')
+  assert.match(result.content[0]?.text ?? '', /Continue in normal agent mode/)
+  assert.deepEqual(api.activeTools, ['read', 'bash', 'edit', 'write', 'suggestPlanModeSwitch'])
+})
+
 test('plan mode allows help commands but still blocks mutating shell commands', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
   const api = new FakeAPI()
   piConstell(api as any)
-  const ctx = createCtx(cwd)
+  const ctx = createCtx({ cwd })
 
   await api.commands.get('plan')!.handler('', ctx)
 
@@ -121,7 +243,7 @@ test('plan mode requires askUserQuestion before plan writing or auto-save', asyn
   const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
   const api = new FakeAPI()
   piConstell(api as any)
-  const ctx = createCtx(cwd)
+  const ctx = createCtx({ cwd })
 
   await api.commands.get('plan')!.handler('', ctx)
   const [beforeAgentStart] = await emit(api, 'before_agent_start', {
@@ -138,12 +260,12 @@ test('plan mode requires askUserQuestion before plan writing or auto-save', asyn
   assert.match(message, /detailed without becoming overbearing/)
 
   const activePath = extractActivePlanPath(message)
-  const blockedPlanWrite = await emit(api, 'tool_call', {
+  const [blockedPlanWrite] = await emit(api, 'tool_call', {
     toolName: 'write',
     input: { path: activePath, content: '# Draft plan' },
   }, ctx)
-  assert.equal(blockedPlanWrite[0]?.block, true)
-  assert.match(blockedPlanWrite[0]?.reason ?? '', /clarification round/)
+  assert.equal(blockedPlanWrite?.block, true)
+  assert.match(blockedPlanWrite?.reason ?? '', /clarification round/)
 
   await emit(api, 'agent_end', {
     messages: [
@@ -209,20 +331,25 @@ test('completed clarification round opens the gate and keeps plan files out of g
 
   const api = new FakeAPI()
   piConstell(api as any)
-  const ctx = createCtx(cwd, [], {
-    cancelled: false,
-    answers: [
+  const ctx = createCtx({
+    cwd,
+    customResponses: [
       {
-        question: 'What should this plan prioritize?',
-        header: 'Scope',
-        answer: 'Hardening',
-        wasCustom: false,
-        selectedOptions: ['Hardening'],
-        optionMappings: [
-          { letter: 'A', index: 1, label: 'Hardening' },
-          { letter: 'B', index: 2, label: 'Fast publish' },
+        cancelled: false,
+        answers: [
+          {
+            question: 'What should this plan prioritize?',
+            header: 'Scope',
+            answer: 'Hardening',
+            wasCustom: false,
+            selectedOptions: ['Hardening'],
+            optionMappings: [
+              { letter: 'A', index: 1, label: 'Hardening' },
+              { letter: 'B', index: 2, label: 'Fast publish' },
+            ],
+          },
         ],
-      },
+      } satisfies CustomQuestionResult,
     ],
   })
 
@@ -232,7 +359,7 @@ test('completed clarification round opens the gate and keeps plan files out of g
   }, ctx)
   const activePath = extractActivePlanPath(beforeAgentStart.message.content)
 
-  const tool = getAskUserQuestionTool(api)
+  const tool = getTool(api, 'askUserQuestion')
   const result = await tool.execute('tool-call-id', {
     questions: [
       {
@@ -247,11 +374,11 @@ test('completed clarification round opens the gate and keeps plan files out of g
   }, new AbortController().signal, () => {}, ctx)
   assert.match(result.content[0]?.text ?? '', /Scope: Hardening \(choices: A\/1=Hardening, B\/2=Fast publish\)/)
 
-  const allowedPlanWrite = await emit(api, 'tool_call', {
+  const [allowedPlanWrite] = await emit(api, 'tool_call', {
     toolName: 'write',
     input: { path: activePath, content: '# Draft plan' },
   }, ctx)
-  assert.equal(allowedPlanWrite[0], undefined)
+  assert.equal(allowedPlanWrite, undefined)
 
   await emit(api, 'agent_end', {
     messages: [
@@ -321,4 +448,34 @@ How I'll validate:
   const status = spawnSync('git', ['status', '--short'], { cwd, encoding: 'utf-8' })
   assert.equal(status.status, 0)
   assert.doesNotMatch(String(status.stdout), /\.pi-constell\/plans/)
+})
+
+test('session restore reapplies accepted plan mode state', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
+  const activePlanPath = join(homedir(), '.pi-constell', 'plans', `restore-${Date.now()}.md`)
+  const api = new FakeAPI()
+  piConstell(api as any)
+  const ctx = createCtx({
+    cwd,
+    entries: [
+      {
+        type: 'custom',
+        customType: 'pi-constell-plan-state',
+        data: {
+          enabled: true,
+          activePlanPath,
+          lastSavedPath: activePlanPath,
+          lastSavedText: '# Existing plan',
+          lastPrompt: 'restore this session',
+          lastClarifications: 'Scope: Hardening',
+          clarificationGateOpen: false,
+          lastClarifiedPrompt: null,
+        },
+      },
+    ],
+  })
+
+  await emit(api, 'session_start', {}, ctx)
+  assert.deepEqual(api.activeTools, ['read', 'bash', 'grep', 'find', 'ls', 'write', 'edit', 'askUserQuestion'])
+  assert.match(ctx._statuses.get('pi-constell-plan') ?? '', /restore-\d+\.md · clarify first/)
 })

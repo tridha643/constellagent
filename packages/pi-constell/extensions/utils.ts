@@ -116,6 +116,64 @@ const SAFE_PATTERNS = [
   /^\s*fd\b/,
 ]
 
+const STRONG_PLAN_PATTERNS = [
+  /\bplan\b/i,
+  /\bphases?\b/i,
+  /\broadmap\b/i,
+  /\bstrategy\b/i,
+  /\bapproach\b/i,
+  /\bproposal\b/i,
+  /\bdesign\s+doc\b/i,
+]
+
+const ARCHITECTURE_PATTERNS = [
+  /\barchitecture\b/i,
+  /\brefactor\b/i,
+  /\bmigration\b/i,
+  /\boverhaul\b/i,
+  /\brewrite\b/i,
+  /\bredesign\b/i,
+  /\bre-architect\b/i,
+  /\bworkflow\b/i,
+  /\bcontract\b/i,
+]
+
+const COMPLEXITY_PATTERNS = [
+  /\bmulti[-\s]?step\b/i,
+  /\bstep[-\s]?by[-\s]?step\b/i,
+  /\bbreak\s+down\b/i,
+  /\btrade[-\s]?offs?\b/i,
+  /\bcompare\b/i,
+  /\boptions?\b/i,
+  /\bambiguous\b/i,
+  /\bexplore\b/i,
+  /\bconsent\b/i,
+  /\bstate\s+restore\b/i,
+  /\bruntime\b/i,
+]
+
+const SCOPE_PATTERNS = [
+  /\bacross\b/i,
+  /\bthroughout\b/i,
+  /\bend-to-end\b/i,
+  /\bsystem-wide\b/i,
+  /\bwhole\s+repo\b/i,
+  /\bentire\s+codebase\b/i,
+  /\bmultiple\s+(?:files|packages|steps|areas|components)\b/i,
+  /\bseveral\s+(?:files|packages|areas|components)\b/i,
+]
+
+const SMALL_DIRECT_EDIT_PATTERNS = [
+  /\bfix\s+(?:a\s+)?typo\b/i,
+  /\brename\b.{0,24}\b(variable|prop|field|class|function|type)\b/i,
+  /\bupdate\b.{0,24}\b(?:readme|docs?|comment|copy|string|snapshot)\b/i,
+  /\bsmall\b.{0,24}\b(?:edit|fix|change|cleanup|refactor)\b/i,
+  /\bminor\b.{0,24}\b(?:edit|fix|change|cleanup|refactor)\b/i,
+  /\bsingle\s+(?:file|line|component|function|test)\b/i,
+  /\bone[-\s]?line\b/i,
+  /\bstraightforward\b/i,
+]
+
 export interface SavedPlan {
   path: string
   title: string
@@ -130,6 +188,24 @@ export function isSafeCommand(command: string): boolean {
   const isDestructive = DESTRUCTIVE_PATTERNS.some((pattern) => pattern.test(command))
   const isSafe = SAFE_PATTERNS.some((pattern) => pattern.test(command))
   return !isDestructive && isSafe
+}
+
+export function shouldSuggestPlanModeSwitch(prompt: string | null | undefined): boolean {
+  const normalized = prompt?.trim()
+  if (!normalized) return false
+
+  let score = 0
+  if (STRONG_PLAN_PATTERNS.some((pattern) => pattern.test(normalized))) score += 3
+  if (ARCHITECTURE_PATTERNS.some((pattern) => pattern.test(normalized))) score += 2
+  if (COMPLEXITY_PATTERNS.some((pattern) => pattern.test(normalized))) score += 2
+  if (SCOPE_PATTERNS.some((pattern) => pattern.test(normalized))) score += 2
+  if (/\b(?:and|then|plus|also)\b/i.test(normalized) && /[,;]/.test(normalized)) score += 1
+  if (normalized.length >= 120) score += 1
+
+  if (SMALL_DIRECT_EDIT_PATTERNS.some((pattern) => pattern.test(normalized))) score -= 3
+  if (/\b(?:quick|tiny|simple)\b/i.test(normalized) && !STRONG_PLAN_PATTERNS.some((pattern) => pattern.test(normalized))) score -= 1
+
+  return score >= 3
 }
 
 function stripFrontmatter(text: string): string {
@@ -321,7 +397,7 @@ export function getPlanDir(): string {
   return join(homedir(), PLAN_DIR)
 }
 
-export async function allocatePlanPath(cwd: string, title: string, currentPath?: string | null): Promise<string> {
+export async function allocatePlanPath(_cwd: string, title: string, currentPath?: string | null): Promise<string> {
   const planDir = getPlanDir()
   await mkdir(planDir, { recursive: true })
 
