@@ -229,6 +229,11 @@ export function useShortcuts() {
       }
 
       // ── Tab management ──
+      if (!shift && !alt && e.code === 'KeyE') {
+        consume()
+        store.focusOrCreateTerminal()
+        return
+      }
       if (!shift && !alt && e.key === 't') {
         consume()
         store.createTerminalForActiveWorkspace()
