@@ -48,20 +48,6 @@ import { normalizeWorktreeCredentialRules } from '../../shared/worktree-credenti
 const DEFAULT_PR_LINK_PROVIDER = 'github' as const
 const DEFAULT_GRAPHITE_NEW_BRANCH_SOURCE = 'trunk' as const
 
-function sanitizeWorkspaceTaskId(workspaceId: string): string {
-  return workspaceId.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'workspace'
-}
-
-async function cleanupWorkspaceTaskDir(workspaceId: string): Promise<void> {
-  try {
-    const homeDir = await window.api.app.getHomeDir()
-    const taskRoot = `${homeDir}/.pi/${sanitizeWorkspaceTaskId(workspaceId)}/tasks`
-    await window.api.fs.deleteFile(taskRoot)
-  } catch {
-    // Missing task roots are expected for workspaces that never used pi-constell tasks.
-  }
-}
-
 /** Removed Phone Control settings — strip from persisted JSON so old installs do not re-save them. */
 const LEGACY_PHONE_CONTROL_SETTING_KEYS = [
   'phoneControlEnabled',
@@ -1321,7 +1307,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // Remove from state immediately so sidebar updates
     get().removeWorkspace(workspaceId)
-    await cleanupWorkspaceTaskDir(workspaceId)
 
     // Remove git worktree in background (skip if workspace uses the main repo directly)
     if (project && ws.worktreePath !== project.repoPath) {
@@ -1386,7 +1371,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
         }
       }
-      await cleanupWorkspaceTaskDir(ws.id)
     }
 
     get().removeProject(projectId)

@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { allocatePlanPath, buildPlanMarkdown, derivePlanTitle, ensurePathInsideRoot, getPlanDir, getWorkspaceTaskRoot, isSafeCommand, savePlanFile, slugifyPlanTitle } from '../extensions/utils.js'
+import { allocatePlanPath, buildPlanMarkdown, derivePlanTitle, getPlanDir, isSafeCommand, savePlanFile, slugifyPlanTitle } from '../extensions/utils.js'
 
 async function removeIfExists(path: string): Promise<void> {
   await rm(path, { force: true }).catch(() => {})
@@ -56,15 +56,9 @@ test('buildPlanMarkdown injects a derived title when missing', () => {
   const result = buildPlanMarkdown(`## Goal
 Ship faster
 
-## Phases
-### Phase 1
-- Goal: Add tests
-- Why this phase boundary is good: It is focused.
-- Main code areas likely to change: tests.
-- Task breakdown: Add tests.
-- Unit tests: Run focused coverage.
-- E2E validation: N/A.
-- Storage/runtime verification: N/A.`, {
+## Plan
+1. Add tests
+2. Publish package`, {
     prompt: 'publish pi constell plan to npm',
   })
   assert.ok(result)
@@ -73,14 +67,6 @@ Ship faster
 
 test('getPlanDir stores plans under the user home directory', () => {
   assert.equal(getPlanDir(), join(homedir(), '.pi-constell', 'plans'))
-})
-
-test('getWorkspaceTaskRoot scopes tasks by workspace id under ~/.pi', () => {
-  assert.equal(getWorkspaceTaskRoot('workspace-123'), join(homedir(), '.pi', 'workspace-123', 'tasks'))
-})
-
-test('ensurePathInsideRoot rejects paths outside the allowed root', () => {
-  assert.throws(() => ensurePathInsideRoot('/tmp/root', '/tmp/elsewhere/file.txt'))
 })
 
 test('allocatePlanPath uses numeric suffixes instead of timestamps', async () => {
