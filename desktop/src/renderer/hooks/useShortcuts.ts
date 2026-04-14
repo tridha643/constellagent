@@ -2,9 +2,15 @@ import { useEffect } from 'react'
 import { useAppStore } from '../store/app-store'
 import { resolveEditor } from '../store/types'
 import { getFocusedPtyId, isFocusedPaneTerminal, resolveAgentPtyForContextInjection } from '../store/split-helpers'
-import { sendAddToChatText, sendActiveSelectionToAgent, findMarkdownPreviewRootForCurrentSelection } from '../utils/add-to-chat'
+import {
+  sendAddToChatText,
+  sendActiveSelectionToAgent,
+  findMarkdownPreviewRootForCurrentSelection,
+  isPlanSidecarPath,
+  openPlanEditSidecar,
+} from '../utils/add-to-chat'
 import { wrapBracketedPaste } from '../utils/bracketed-paste'
-import { runMonacoAddToChatIfFocused } from '../utils/add-to-chat-monaco-bridge'
+import { getFocusedMonacoEditor, runMonacoAddToChatIfFocused } from '../utils/add-to-chat-monaco-bridge'
 
 export function useShortcuts() {
   useEffect(() => {
@@ -92,7 +98,7 @@ export function useShortcuts() {
         e.stopPropagation()
       }
 
-      // ── Add to Chat: Cmd+L — Monaco (capture phase) + markdown preview
+      // ── Cmd+L: plan edit sidecar on plan surfaces; Add to Chat elsewhere ──
       if (!shift && !alt && e.code === 'KeyL') {
         const target = e.target as HTMLElement
         const activeEl = document.activeElement as HTMLElement | null
@@ -100,8 +106,17 @@ export function useShortcuts() {
           return
         }
 
+        const activeTab = store.tabs.find((tab) => tab.id === store.activeTabId)
         const inMonaco =
           target?.closest?.('[class*="monaco-editor"]') ?? activeEl?.closest?.('[class*="monaco-editor"]')
+        const focusedMonacoPath = getFocusedMonacoEditor()?.getModel()?.uri.path
+
+        if (inMonaco && focusedMonacoPath && isPlanSidecarPath(focusedMonacoPath)) {
+          consume()
+          void openPlanEditSidecar(focusedMonacoPath)
+          return
+        }
+
         if (inMonaco) {
           if (runMonacoAddToChatIfFocused()) {
             consume()
@@ -113,13 +128,33 @@ export function useShortcuts() {
           (target?.closest?.('[data-constellagent-md-preview]') as HTMLElement | null)
           ?? (activeEl?.closest?.('[data-constellagent-md-preview]') as HTMLElement | null)
           ?? findMarkdownPreviewRootForCurrentSelection()
-        if (!preview) return
-        const filePathAttr = preview.dataset.constellagentFilePath
-        const text = window.getSelection()?.toString().trim() ?? ''
-        if (!filePathAttr || !text) return
-        consume()
-        sendAddToChatText(filePathAttr, 'markdown', text)
-        return
+        const previewFilePath = preview?.dataset.constellagentFilePath
+
+        if (previewFilePath && isPlanSidecarPath(previewFilePath)) {
+          consume()
+          void openPlanEditSidecar(previewFilePath)
+          return
+        }
+
+        if (previewFilePath) {
+          const text = window.getSelection()?.toString().trim() ?? ''
+          if (!text) return
+          consume()
+          sendAddToChatText(previewFilePath, 'markdown', text)
+          return
+        }
+
+        const activePlanFilePath =
+          activeTab?.type === 'markdownPreview'
+            ? activeTab.filePath
+            : activeTab?.type === 'file'
+              ? activeTab.filePath
+              : undefined
+        if (activePlanFilePath && isPlanSidecarPath(activePlanFilePath)) {
+          consume()
+          void openPlanEditSidecar(activePlanFilePath)
+          return
+        }
       }
 
       // ── Quick open: Cmd+P ──
@@ -203,9 +238,9 @@ export function useShortcuts() {
         const wTab = store.tabs.find((t) => t.id === store.activeTabId)
         if (
           wTab
+          && (wTab.type === 'terminal' || wTab.type === 'file')
           && wTab.splitRoot
           && wTab.focusedPaneId
-          && (wTab.type === 'terminal' || wTab.type === 'file')
         ) {
           store.closeSplitPane(wTab.focusedPaneId)
         } else {

@@ -900,25 +900,21 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // File tab — convert to a split container with file + terminal panes
     if (tab.type === 'file') {
-      if (tab.splitRoot) {
-        // File-only split (e.g. from tab drag): cannot embed a live PTY in a file tab without breaking keep-alive.
-        return
-      }
       const backingPtyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
       const newPtyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
-
-      const originalLeafId = crypto.randomUUID()
       const newLeafId = crypto.randomUUID()
 
-      const splitRoot: SplitNode = {
-        type: 'split' as const,
+      const currentRoot: SplitNode = tab.splitRoot ?? {
+        type: 'leaf' as const,
         id: crypto.randomUUID(),
-        direction,
-        children: [
-          { type: 'leaf' as const, id: originalLeafId, contentType: 'file' as const, filePath: tab.filePath },
-          { type: 'leaf' as const, id: newLeafId, contentType: 'terminal' as const, ptyId: newPtyId },
-        ] as [SplitNode, SplitNode],
+        contentType: 'file' as const,
+        filePath: tab.filePath,
       }
+      const targetPaneId = tab.splitRoot
+        ? (tab.focusedPaneId ?? firstLeaf(tab.splitRoot).id)
+        : currentRoot.id
+      const newLeaf = { type: 'leaf' as const, id: newLeafId, contentType: 'terminal' as const, ptyId: newPtyId }
+      const splitRoot = splitLeaf(currentRoot, targetPaneId, direction, newLeaf)
 
       const fileName = tab.filePath.split('/').pop() || 'Split'
       const id = tab.id
@@ -945,19 +941,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (tab.type === 'markdownPreview') {
       const backingPtyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
       const newPtyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
-
-      const originalLeafId = crypto.randomUUID()
       const newLeafId = crypto.randomUUID()
 
-      const splitRoot: SplitNode = {
-        type: 'split' as const,
+      const currentRoot: SplitNode = {
+        type: 'leaf' as const,
         id: crypto.randomUUID(),
-        direction,
-        children: [
-          { type: 'leaf' as const, id: originalLeafId, contentType: 'file' as const, filePath: tab.filePath },
-          { type: 'leaf' as const, id: newLeafId, contentType: 'terminal' as const, ptyId: newPtyId },
-        ] as [SplitNode, SplitNode],
+        contentType: 'file' as const,
+        filePath: tab.filePath,
       }
+      const newLeaf = { type: 'leaf' as const, id: newLeafId, contentType: 'terminal' as const, ptyId: newPtyId }
+      const splitRoot = splitLeaf(currentRoot, currentRoot.id, direction, newLeaf)
 
       const fileName = tab.filePath.split('/').pop() || 'Split'
       const id = tab.id

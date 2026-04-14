@@ -4,6 +4,10 @@ type Run = () => void
 
 let focused: { ed: editor.IStandaloneCodeEditor; run: Run } | null = null
 
+export function getFocusedMonacoEditor(): editor.IStandaloneCodeEditor | null {
+  return focused?.ed ?? null
+}
+
 export function setMonacoAddToChatHandler(ed: editor.IStandaloneCodeEditor, run: Run) {
   focused = { ed, run }
 }
