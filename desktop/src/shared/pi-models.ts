@@ -1,6 +1,6 @@
 import type { ModelPreset, PiModelOption } from './plan-build-command'
 
-export const PI_MODEL_CACHE_VERSION = 1
+export const PI_MODEL_CACHE_VERSION = 3
 export const PI_MODEL_CACHE_TTL_MS = 12 * 60 * 60 * 1000
 
 const ANSI_ESCAPE_RE = /\u001B\[[0-9;]*m/g
