@@ -7,6 +7,10 @@ import {
   type PrLinkProvider,
   type SidebarActionId,
 } from "../../store/types";
+import {
+  getRenderableProjectWorkspaces,
+  getSwitchableVisibleProjects,
+} from "../../store/sidebar-navigation";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
 import type { OpenPrInfo, GithubLookupError } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
@@ -30,11 +34,6 @@ const PR_PROVIDER_DOMAINS: Record<PrLinkProvider, string> = {
 };
 
 const VALID_SIDEBAR_ACTION_IDS = new Set<SidebarActionId>(DEFAULT_SIDEBAR_ACTION_ORDER);
-
-/** Detached checkouts use branch label `HEAD` — hide from sidebar (not a named branch). */
-function isRenderableWorkspaceBranch(branch: string): boolean {
-  return branch.trim().toUpperCase() !== "HEAD";
-}
 
 function providerUrl(url: string, provider: PrLinkProvider): string {
   return url.replace("github.com", PR_PROVIDER_DOMAINS[provider]);
@@ -391,10 +390,10 @@ export function Sidebar() {
   const setGhAvailability = useAppStore((s) => s.setGhAvailability);
   const worktreeSyncMap = useAppStore((s) => s.worktreeSyncStatus);
   const graphiteStacks = useAppStore((s) => s.graphiteStacks);
+  const collapsedProjectIds = useAppStore((s) => s.collapsedProjectIds);
+  const toggleProjectCollapsed = useAppStore((s) => s.toggleProjectCollapsed);
+  const lastActiveWorkspaceByProjectId = useAppStore((s) => s.lastActiveWorkspaceByProjectId);
 
-  const [manualCollapsed, setManualCollapsed] = useState<Set<string>>(
-    new Set(),
-  );
   const [contextMenu, setContextMenu] = useState<{ wsId: string; x: number; y: number } | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(
@@ -489,20 +488,26 @@ export function Sidebar() {
 
   const isProjectExpanded = useCallback(
     (id: string) => {
-      return !manualCollapsed.has(id);
+      return !collapsedProjectIds.has(id);
     },
-    [manualCollapsed],
+    [collapsedProjectIds],
   );
 
   const toggleProject = useCallback((id: string) => {
-    setManualCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    toggleProjectCollapsed(id);
     if (openProjectPrPopoverId === id) closeProjectPrModal();
-  }, [openProjectPrPopoverId, closeProjectPrModal]);
+  }, [closeProjectPrModal, openProjectPrPopoverId, toggleProjectCollapsed]);
+
+  const projectShortcutIndexById = useMemo(() => {
+    const switchableProjects = getSwitchableVisibleProjects(
+      projects,
+      workspaces,
+      lastActiveWorkspaceByProjectId,
+    ).slice(0, 9);
+    return new Map(
+      switchableProjects.map((project, index) => [project.id, index + 1]),
+    );
+  }, [lastActiveWorkspaceByProjectId, projects, workspaces]);
 
   const handleAddProject = useCallback(async () => {
     const dirPath = await window.api.app.selectDirectory();
@@ -1202,9 +1207,11 @@ export function Sidebar() {
 
         {projects.map((project) => {
           const isExpanded = isProjectExpanded(project.id);
-          const projectWorkspaces = workspaces.filter(
-            (w) => w.projectId === project.id && isRenderableWorkspaceBranch(w.branch),
+          const projectWorkspaces = getRenderableProjectWorkspaces(
+            workspaces,
+            project.id,
           );
+          const projectShortcutIndex = projectShortcutIndexById.get(project.id);
 
           return (
             <div
@@ -1254,6 +1261,15 @@ export function Sidebar() {
                   ▶
                 </span>
                 <span className={styles.projectName}>{project.name}</span>
+                {projectShortcutIndex ? (
+                  <span
+                    className={styles.projectShortcutKeycap}
+                    data-testid={`project-shortcut-${projectShortcutIndex}`}
+                    title={`⌘${projectShortcutIndex}`}
+                  >
+                    {projectShortcutIndex}
+                  </span>
+                ) : null}
                 <Tooltip label="Project settings">
                   <button
                     className={styles.settingsBtn}

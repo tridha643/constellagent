@@ -184,6 +184,89 @@ test.describe('Workspace project sections should not auto-collapse', () => {
     }
   })
 
+  test('store selectors skip collapsed projects, wrap hidden active workspaces, and remember per-project targets', async () => {
+    const repoA = createTestRepo('collapse-visible-a')
+    const repoB = createTestRepo('collapse-visible-b')
+    const { app, window } = await launchApp()
+
+    try {
+      const setup = await window.evaluate(async ({ repoA, repoB }: { repoA: string; repoB: string }) => {
+        const store = (window as any).__store.getState()
+        store.hydrateState({ projects: [], workspaces: [] })
+
+        const projAId = crypto.randomUUID()
+        store.addProject({ id: projAId, name: 'project-alpha', repoPath: repoA })
+        const wtA1 = await (window as any).api.git.createWorktree(repoA, 'ws-vis-a1', 'branch-vis-a1', true)
+        const wsA1 = crypto.randomUUID()
+        store.addWorkspace({
+          id: wsA1, name: 'ws-vis-a1', branch: 'branch-vis-a1', worktreePath: wtA1, projectId: projAId,
+        })
+        const wtA2 = await (window as any).api.git.createWorktree(repoA, 'ws-vis-a2', 'branch-vis-a2', true)
+        const wsA2 = crypto.randomUUID()
+        store.addWorkspace({
+          id: wsA2, name: 'ws-vis-a2', branch: 'branch-vis-a2', worktreePath: wtA2, projectId: projAId,
+        })
+
+        const projBId = crypto.randomUUID()
+        store.addProject({ id: projBId, name: 'project-beta', repoPath: repoB })
+        const wtB = await (window as any).api.git.createWorktree(repoB, 'ws-vis-b1', 'branch-vis-b1', true)
+        const wsB1 = crypto.randomUUID()
+        store.addWorkspace({
+          id: wsB1, name: 'ws-vis-b1', branch: 'branch-vis-b1', worktreePath: wtB, projectId: projBId,
+        })
+
+        store.setActiveWorkspace(wsA2)
+        store.setActiveWorkspace(wsB1)
+
+        return { projAId }
+      }, { repoA, repoB })
+
+      await window.waitForTimeout(1000)
+
+      const projectBetaHeader = window.locator('[class*="projectHeader"]', { hasText: 'project-beta' }).first()
+      await projectBetaHeader.click()
+      await window.waitForTimeout(300)
+
+      const storeState = await window.evaluate(({ projAId }) => {
+        const store = (window as any).__store.getState()
+        const activeBranch = store.workspaces.find((w: any) => w.id === store.activeWorkspaceId)?.branch ?? null
+        return {
+          activeBranch,
+          visibleBranches: store.visibleWorkspaces().map((workspace: any) => workspace.branch),
+          targetBranch: store.resolveProjectTargetWorkspace(projAId)?.branch ?? null,
+        }
+      }, setup)
+      expect(storeState.visibleBranches).toContain('branch-vis-a1')
+      expect(storeState.visibleBranches).toContain('branch-vis-a2')
+      expect(storeState.visibleBranches).not.toContain('branch-vis-b1')
+      expect(storeState.targetBranch).toBe('branch-vis-a2')
+
+      const expectedNextBranch = storeState.visibleBranches[0]
+      await window.keyboard.press('Meta+]')
+      await window.waitForTimeout(300)
+
+      let activeBranch = await window.evaluate(() => {
+        const s = (window as any).__store.getState()
+        return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
+      })
+      expect(activeBranch).toBe(expectedNextBranch)
+
+      const expectedPrevBranch = storeState.visibleBranches[storeState.visibleBranches.length - 1]
+      await window.keyboard.press('Meta+[')
+      await window.waitForTimeout(300)
+
+      activeBranch = await window.evaluate(() => {
+        const s = (window as any).__store.getState()
+        return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
+      })
+      expect(activeBranch).toBe(expectedPrevBranch)
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoA)
+      cleanupTestRepo(repoB)
+    }
+  })
+
   test('manually collapsed project stays collapsed when switching workspaces', async () => {
     const repoA = createTestRepo('collapse-manual-a')
     const repoB = createTestRepo('collapse-manual-b')

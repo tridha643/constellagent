@@ -5,6 +5,12 @@ import { execSync } from 'child_process'
 
 const appPath = resolve(__dirname, '../out/main/index.js')
 
+type SidebarProjectSetup = {
+  name: string
+  repoPath: string
+  workspaces: Array<{ name: string; branch: string }>
+}
+
 async function launchApp(): Promise<{ app: ElectronApplication; window: Page }> {
   const app = await electron.launch({ args: [appPath], env: { ...process.env, CI_TEST: '1' } })
   const window = await app.firstWindow()
@@ -49,6 +55,52 @@ async function setupWorkspaceWithTerminal(window: Page, repoPath: string) {
   }, repoPath)
 }
 
+async function setupSidebarProjects(window: Page, projects: SidebarProjectSetup[]) {
+  return await window.evaluate(async (input: SidebarProjectSetup[]) => {
+    const store = (window as any).__store.getState()
+    store.hydrateState({ projects: [], workspaces: [] })
+
+    const result: Array<{
+      projectId: string
+      name: string
+      workspaces: Array<{ id: string; name: string; branch: string; worktreePath: string }>
+    }> = []
+
+    for (const project of input) {
+      const projectId = crypto.randomUUID()
+      store.addProject({ id: projectId, name: project.name, repoPath: project.repoPath })
+
+      const createdWorkspaces: Array<{ id: string; name: string; branch: string; worktreePath: string }> = []
+      for (const workspace of project.workspaces) {
+        const worktreePath = await (window as any).api.git.createWorktree(
+          project.repoPath,
+          workspace.name,
+          workspace.branch,
+          true,
+        )
+        const workspaceId = crypto.randomUUID()
+        store.addWorkspace({
+          id: workspaceId,
+          name: workspace.name,
+          branch: workspace.branch,
+          worktreePath,
+          projectId,
+        })
+        createdWorkspaces.push({
+          id: workspaceId,
+          name: workspace.name,
+          branch: workspace.branch,
+          worktreePath,
+        })
+      }
+
+      result.push({ projectId, name: project.name, workspaces: createdWorkspaces })
+    }
+
+    return result
+  }, projects)
+}
+
 test.describe('Keyboard shortcuts', () => {
   test('Cmd+T creates new terminal tab', async () => {
     const repoPath = createTestRepo('shortcut-t')
@@ -61,7 +113,6 @@ test.describe('Keyboard shortcuts', () => {
       const tabsBefore = await window.locator('[class*="tabTitle"]').count()
       expect(tabsBefore).toBe(1)
 
-      // Press Cmd+T
       await window.keyboard.press('Meta+t')
       await window.waitForTimeout(2000)
 
@@ -72,51 +123,118 @@ test.describe('Keyboard shortcuts', () => {
     }
   })
 
-  test('Cmd+1/Cmd+2 switches between tabs', async () => {
-    const repoPath = createTestRepo('shortcut-num')
+  test('Cmd+1/Cmd+2 switches projects by visible sidebar order and restores last active workspace', async () => {
+    const repoA = createTestRepo('shortcut-project-a')
+    const repoB = createTestRepo('shortcut-project-b')
     const { app, window } = await launchApp()
 
     try {
-      await setupWorkspaceWithTerminal(window, repoPath)
-      await window.waitForTimeout(2000)
+      const setup = await setupSidebarProjects(window, [
+        {
+          name: 'project-alpha',
+          repoPath: repoA,
+          workspaces: [
+            { name: 'ws-a1', branch: 'branch-a1' },
+            { name: 'ws-a2', branch: 'branch-a2' },
+          ],
+        },
+        {
+          name: 'project-beta',
+          repoPath: repoB,
+          workspaces: [
+            { name: 'ws-b1', branch: 'branch-b1' },
+          ],
+        },
+      ])
+      await window.waitForTimeout(1500)
 
-      // Create a second terminal via Cmd+T
-      await window.keyboard.press('Meta+t')
-      await window.waitForTimeout(2000)
+      const [projectAlpha, projectBeta] = setup
+      const alphaSecondWorkspaceId = projectAlpha.workspaces[1].id
+      const betaWorkspaceId = projectBeta.workspaces[0].id
 
-      // Should now have 2 tabs, with tab 2 active
-      const tabCount = await window.locator('[class*="tabTitle"]').count()
-      expect(tabCount).toBe(2)
+      await window.evaluate(({ alphaSecondWorkspaceId, betaWorkspaceId }) => {
+        const store = (window as any).__store.getState()
+        store.setActiveWorkspace(alphaSecondWorkspaceId)
+        store.setActiveWorkspace(betaWorkspaceId)
+      }, { alphaSecondWorkspaceId, betaWorkspaceId })
+      await window.waitForTimeout(300)
 
-      // Get active tab title
-      const activeTitle2 = await window.evaluate(() => {
-        const s = (window as any).__store.getState()
-        const tab = s.tabs.find((t: any) => t.id === s.activeTabId)
-        return tab?.title
-      })
-      expect(activeTitle2).toBe('Terminal 2')
+      await expect(window.getByTestId('project-shortcut-1')).toHaveText('1')
+      await expect(window.getByTestId('project-shortcut-2')).toHaveText('2')
 
-      // Press Cmd+1 — switch to first tab
       await window.keyboard.press('Meta+1')
       await window.waitForTimeout(500)
 
-      const activeTitle1 = await window.evaluate(() => {
+      let activeBranch = await window.evaluate(() => {
         const s = (window as any).__store.getState()
-        const tab = s.tabs.find((t: any) => t.id === s.activeTabId)
-        return tab?.title
+        return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
       })
-      expect(activeTitle1).toBe('Terminal 1')
+      expect(activeBranch).toBe('branch-a2')
 
-      // Press Cmd+2 — switch back to second tab
       await window.keyboard.press('Meta+2')
       await window.waitForTimeout(500)
 
-      const activeTitleBack = await window.evaluate(() => {
+      activeBranch = await window.evaluate(() => {
         const s = (window as any).__store.getState()
-        const tab = s.tabs.find((t: any) => t.id === s.activeTabId)
-        return tab?.title
+        return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
       })
-      expect(activeTitleBack).toBe('Terminal 2')
+      expect(activeBranch).toBe('branch-b1')
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('Cmd+1 is ignored while typing in the terminal', async () => {
+    const repoA = createTestRepo('shortcut-typing-a')
+    const repoB = createTestRepo('shortcut-typing-b')
+    const { app, window } = await launchApp()
+
+    try {
+      const setup = await setupSidebarProjects(window, [
+        {
+          name: 'project-alpha',
+          repoPath: repoA,
+          workspaces: [{ name: 'ws-a1', branch: 'branch-a1' }],
+        },
+        {
+          name: 'project-beta',
+          repoPath: repoB,
+          workspaces: [{ name: 'ws-b1', branch: 'branch-b1' }],
+        },
+      ])
+      await window.waitForTimeout(1500)
+
+      const activeWorkspace = setup[1].workspaces[0]
+      await window.evaluate(async ({ workspaceId, worktreePath }) => {
+        const store = (window as any).__store.getState()
+        store.setActiveWorkspace(workspaceId)
+        const ptyId = await (window as any).api.pty.create(worktreePath)
+        store.addTab({
+          id: crypto.randomUUID(),
+          workspaceId,
+          type: 'terminal',
+          title: 'Terminal 1',
+          ptyId,
+        })
+      }, {
+        workspaceId: activeWorkspace.id,
+        worktreePath: activeWorkspace.worktreePath,
+      })
+      await window.waitForTimeout(1000)
+
+      const terminal = window.locator('[class*="terminalInner"]').first()
+      await terminal.click()
+      await window.waitForTimeout(300)
+
+      await window.keyboard.type('hello')
+      await window.keyboard.press('Meta+1')
+      await window.waitForTimeout(500)
+
+      const activeBranch = await window.evaluate(() => {
+        const s = (window as any).__store.getState()
+        return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
+      })
+      expect(activeBranch).toBe('branch-b1')
     } finally {
       await app.close()
     }
@@ -165,12 +283,10 @@ test.describe('Keyboard shortcuts', () => {
       await setupWorkspaceWithTerminal(window, repoPath)
       await window.waitForTimeout(2000)
 
-      // Create second tab
       await window.keyboard.press('Meta+t')
       await window.waitForTimeout(2000)
       expect(await window.locator('[class*="tabTitle"]').count()).toBe(2)
 
-      // Press Cmd+W — close active tab
       await window.keyboard.press('Meta+w')
       await window.waitForTimeout(1000)
 
@@ -184,17 +300,14 @@ test.describe('Keyboard shortcuts', () => {
     const { app, window } = await launchApp()
 
     try {
-      // Sidebar should be visible initially
       const sidebar = window.locator('[class*="sidebar"]').first()
       await expect(sidebar).toBeVisible()
 
-      // Press Cmd+B — hide sidebar
       await window.keyboard.press('Meta+b')
       await window.waitForTimeout(500)
 
       await expect(sidebar).not.toBeVisible()
 
-      // Press Cmd+B again — show sidebar
       await window.keyboard.press('Meta+b')
       await window.waitForTimeout(500)
 
@@ -231,18 +344,15 @@ test.describe('Keyboard shortcuts', () => {
       await setupWorkspaceWithTerminal(window, repoPath)
       await window.waitForTimeout(2000)
 
-      // Create second tab
       await window.keyboard.press('Meta+t')
       await window.waitForTimeout(2000)
 
-      // Active should be Terminal 2
       let active = await window.evaluate(() => {
         const s = (window as any).__store.getState()
         return s.tabs.find((t: any) => t.id === s.activeTabId)?.title
       })
       expect(active).toBe('Terminal 2')
 
-      // Cmd+Shift+[ — previous tab
       await window.keyboard.press('Meta+Shift+[')
       await window.waitForTimeout(500)
 
@@ -252,7 +362,6 @@ test.describe('Keyboard shortcuts', () => {
       })
       expect(active).toBe('Terminal 1')
 
-      // Cmd+Shift+] — next tab
       await window.keyboard.press('Meta+Shift+]')
       await window.waitForTimeout(500)
 
@@ -266,12 +375,76 @@ test.describe('Keyboard shortcuts', () => {
     }
   })
 
+  test('Cmd+[ and Cmd+] switch visible workspaces', async () => {
+    const repoA = createTestRepo('shortcut-workspace-a')
+    const repoB = createTestRepo('shortcut-workspace-b')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupSidebarProjects(window, [
+        {
+          name: 'project-alpha',
+          repoPath: repoA,
+          workspaces: [
+            { name: 'ws-a1', branch: 'branch-a1' },
+            { name: 'ws-a2', branch: 'branch-a2' },
+          ],
+        },
+        {
+          name: 'project-beta',
+          repoPath: repoB,
+          workspaces: [
+            { name: 'ws-b1', branch: 'branch-b1' },
+          ],
+        },
+      ])
+      await window.waitForTimeout(1500)
+
+      const snapshotBefore = await window.evaluate(() => {
+        const s = (window as any).__store.getState()
+        return {
+          activeBranch: s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch,
+          visibleBranches: s.visibleWorkspaces().map((workspace: any) => workspace.branch),
+        }
+      })
+      expect(snapshotBefore.activeBranch).toBe('branch-b1')
+      expect(snapshotBefore.visibleBranches).toContain('branch-a1')
+      expect(snapshotBefore.visibleBranches).toContain('branch-a2')
+      expect(snapshotBefore.visibleBranches).toContain('branch-b1')
+
+      const currentIndex = snapshotBefore.visibleBranches.indexOf(snapshotBefore.activeBranch)
+      expect(currentIndex).toBeGreaterThanOrEqual(0)
+      const expectedPrevBranch = snapshotBefore.visibleBranches[
+        (currentIndex - 1 + snapshotBefore.visibleBranches.length) % snapshotBefore.visibleBranches.length
+      ]
+
+      await window.keyboard.press('Meta+[')
+      await window.waitForTimeout(500)
+
+      let activeBranch = await window.evaluate(() => {
+        const s = (window as any).__store.getState()
+        return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
+      })
+      expect(activeBranch).toBe(expectedPrevBranch)
+
+      await window.keyboard.press('Meta+]')
+      await window.waitForTimeout(500)
+
+      activeBranch = await window.evaluate(() => {
+        const s = (window as any).__store.getState()
+        return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
+      })
+      expect(activeBranch).toBe(snapshotBefore.activeBranch)
+    } finally {
+      await app.close()
+    }
+  })
+
   test('Cmd+J focuses terminal or creates one', async () => {
     const repoPath = createTestRepo('shortcut-j')
     const { app, window } = await launchApp()
 
     try {
-      // Set up workspace with NO terminal (just project + workspace, no tab)
       await window.evaluate(async (repo: string) => {
         const store = (window as any).__store.getState()
         store.hydrateState({ projects: [], workspaces: [] })
@@ -287,10 +460,8 @@ test.describe('Keyboard shortcuts', () => {
       }, repoPath)
       await window.waitForTimeout(1000)
 
-      // No tabs
       expect(await window.locator('[class*="tabTitle"]').count()).toBe(0)
 
-      // Press Cmd+J — should create a terminal
       await window.keyboard.press('Meta+j')
       await window.waitForTimeout(2000)
 
@@ -330,7 +501,6 @@ test.describe('Keyboard shortcuts', () => {
       await setupWorkspaceWithTerminal(window, repoPath)
       await window.waitForTimeout(3000)
 
-      // Focus the terminal
       const termInner = window.locator('[class*="terminalInner"]').first()
       await termInner.click()
       await window.waitForTimeout(500)
@@ -342,7 +512,6 @@ test.describe('Keyboard shortcuts', () => {
       await window.keyboard.press('Shift+Tab')
       await window.waitForTimeout(500)
 
-      // Focus should still be inside the terminal (not navigated away)
       expect(await window.evaluate(() =>
         !!document.activeElement?.closest('[class*="terminalInner"]')
       )).toBe(true)
