@@ -5,7 +5,7 @@ import { useAppStore } from '../../store/app-store'
 import { useGitGutter } from '../../hooks/useGitGutter'
 import { MarkdownRenderer } from '../MarkdownRenderer/MarkdownRenderer'
 import { AddToChatMarkdownSurface } from '../AddToChat/AddToChatMarkdownSurface'
-import { sendAddToChatText } from '../../utils/add-to-chat'
+import { sendAddToChatText, isPlanSidecarPath, openPlanEditSidecar } from '../../utils/add-to-chat'
 import {
   setMonacoAddToChatHandler,
   clearMonacoAddToChatHandler,
@@ -229,7 +229,20 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
     runAddToChatRef.current = () => {
       const selection = ed.getSelection()
       const model = ed.getModel()
-      if (!selection || !model || selection.isEmpty()) {
+      if (!selection || !model) return
+
+      if (isPlanSidecarPath(filePath)) {
+        const selectedText = selection.isEmpty() ? '' : model.getValueInRange(selection)
+        void openPlanEditSidecar(filePath, {
+          text: selectedText || undefined,
+          startLine: selection.startLineNumber,
+          endLine: selection.endLineNumber,
+          fullText: model.getValue(),
+        })
+        return
+      }
+
+      if (selection.isEmpty()) {
         addToast({
           id: crypto.randomUUID(),
           message: 'Select text to add to the terminal',

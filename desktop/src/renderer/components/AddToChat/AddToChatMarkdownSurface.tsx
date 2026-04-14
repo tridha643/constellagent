@@ -2,6 +2,8 @@ import { useRef, useState, useEffect, useCallback, type ReactNode } from 'react'
 import {
   sendAddToChatText,
   selectionOverlapsElement,
+  isPlanSidecarPath,
+  openPlanEditSidecar,
 } from '../../utils/add-to-chat'
 import styles from './AddToChatMarkdownSurface.module.css'
 
@@ -51,9 +53,15 @@ export function AddToChatMarkdownSurface({ filePath, children, className }: Prop
     return () => document.removeEventListener('selectionchange', onSel)
   }, [updateFloating])
 
+  const isPlanSurface = isPlanSidecarPath(filePath)
+
   const handleAdd = () => {
-    const text = window.getSelection()?.toString() ?? ''
-    sendAddToChatText(filePath, 'markdown', text)
+    if (isPlanSurface) {
+      void openPlanEditSidecar(filePath)
+    } else {
+      const text = window.getSelection()?.toString() ?? ''
+      sendAddToChatText(filePath, 'markdown', text)
+    }
     setFloating(null)
     window.getSelection()?.removeAllRanges()
   }
@@ -75,7 +83,7 @@ export function AddToChatMarkdownSurface({ filePath, children, className }: Prop
           onMouseDown={(e) => e.preventDefault()}
           onClick={handleAdd}
         >
-          Add to Chat ⌘L
+          {isPlanSurface ? 'Open PI sidecar ⌘L' : 'Add to Chat ⌘L'}
         </button>
       )}
     </div>
