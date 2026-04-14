@@ -1,6 +1,7 @@
 import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+export { getWorkspaceTaskRoot, getWorkspaceTaskManifestPath, getTaskSeedFileName, getTaskHandoffFileName, removeWorkspaceTaskRoot } from './task-handoff.js'
 
 const DEFAULT_NOTIFY_DIR = '/tmp/constellagent-notify'
 const PLAN_DIR = '.pi-constell/plans'
@@ -156,9 +157,10 @@ function firstPlanStep(text: string): string | null {
 function hasPlanShape(text: string): boolean {
   if (/^\s*#{1,6}\s+plan\b/im.test(text)) return true
   if (/^\s*#{1,6}\s+goal\b/im.test(text) && /^\s*#{1,6}\s+plan\b/im.test(text)) return true
-  if (/^\s*#{1,6}\s+open questions(?:\s*\/\s*assumptions)?\b/im.test(text) && /^\s*#{1,6}\s+proposed pr stack\b/im.test(text)) return true
+  if (/^\s*#{1,6}\s+open questions(?:\s*\/\s*assumptions)?\b/im.test(text) && /^\s*#{1,6}\s+phases\b/im.test(text)) return true
   if (/\bplan\s*:/i.test(text) && /^\s*1[.)]\s+/m.test(text)) return true
   if (/^\s*1[.)]\s+/m.test(text) && /^\s*2[.)]\s+/m.test(text)) return true
+  if (/^\s*#{1,6}\s+phase\s+\d+/im.test(text)) return true
   return false
 }
 
@@ -315,26 +317,36 @@ export function getPlanDir(): string {
   return join(homedir(), PLAN_DIR)
 }
 
+export function ensurePathInsideRoot(rootPath: string, targetPath: string): string {
+  const resolvedRoot = resolve(rootPath)
+  const resolvedTarget = resolve(targetPath)
+  if (resolvedTarget !== resolvedRoot && !resolvedTarget.startsWith(`${resolvedRoot}/`)) {
+    throw new Error(`Refusing to use path outside allowed root: ${resolvedTarget}`)
+  }
+  return resolvedTarget
+}
+
 export async function allocatePlanPath(cwd: string, title: string, currentPath?: string | null): Promise<string> {
   const planDir = getPlanDir()
   await mkdir(planDir, { recursive: true })
 
   const slug = slugifyPlanTitle(title)
-  const currentBase = currentPath ? basename(currentPath) : null
-  if (currentBase === `${slug}.md` || currentBase?.startsWith(`${slug}-`)) return resolve(currentPath!)
+  const normalizedCurrentPath = currentPath ? ensurePathInsideRoot(planDir, currentPath) : null
+  const currentBase = normalizedCurrentPath ? basename(normalizedCurrentPath) : null
+  if (currentBase === `${slug}.md` || currentBase?.startsWith(`${slug}-`)) return normalizedCurrentPath!
 
   let attempt = 1
   while (true) {
     const suffix = attempt === 1 ? '' : `-${attempt}`
-    const candidate = resolve(planDir, `${slug}${suffix}.md`)
-    if (candidate === resolve(currentPath ?? '')) return candidate
+    const candidate = ensurePathInsideRoot(planDir, resolve(planDir, `${slug}${suffix}.md`))
+    if (normalizedCurrentPath && candidate === normalizedCurrentPath) return candidate
     if (!(await fileExists(candidate))) return candidate
     attempt += 1
   }
 }
 
 export async function ensureActivePlanPath(cwd: string, context: PlanNamingContext, currentPath?: string | null): Promise<string> {
-  if (currentPath) return resolve(currentPath)
+  if (currentPath) return ensurePathInsideRoot(getPlanDir(), currentPath)
   const title = titleFromPrompt(context.clarifications) || titleFromPrompt(context.prompt) || 'Working Plan'
   return allocatePlanPath(cwd, title)
 }
@@ -356,8 +368,9 @@ export async function savePlanFile(
   const targetPath = await allocatePlanPath(cwd, built.title, currentPath)
   await mkdir(dirname(targetPath), { recursive: true })
 
-  if (currentPath && resolve(currentPath) !== targetPath && (await fileExists(currentPath))) {
-    await rename(currentPath, targetPath)
+  const normalizedCurrentPath = currentPath ? ensurePathInsideRoot(getPlanDir(), currentPath) : null
+  if (normalizedCurrentPath && normalizedCurrentPath !== targetPath && (await fileExists(normalizedCurrentPath))) {
+    await rename(normalizedCurrentPath, targetPath)
   }
 
   await writeFile(targetPath, buildFrontmatter(modelId) + built.markdown, 'utf-8')

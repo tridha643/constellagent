@@ -2,7 +2,8 @@
  * Verifies the pi-constell extension loads in the real `pi` CLI.
  *
  * 1. Always: `pi -ne -e <extension> -h` must list the `--plan` flag (proves the extension executed).
- * 2. Optional: VERIFY_PI_PRINT=1 runs a short `pi -p` prompt (needs working API auth; may skip if no credentials).
+ * 2. Best-effort: if command names appear in help output, validate the explicit plan command surface too.
+ * 3. Optional: VERIFY_PI_PRINT=1 runs a short `pi -p` prompt (needs working API auth; may skip if no credentials).
  */
 import { spawnSync, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -37,6 +38,13 @@ function assertExtensionHelp(piBin: string): void {
   }
   if (!out.includes('pi-constell-plan')) {
     throw new Error('Expected help text to mention pi-constell-plan mode')
+  }
+  const knownCommands = ['plan-off', 'agent']
+  const visibleCommands = knownCommands.filter((name) => out.includes(name))
+  if (visibleCommands.length > 0) {
+    console.log(`OK: help exposes command surface (${visibleCommands.join(', ')})`)
+  } else {
+    console.log('Note: pi -h did not expose plan command names directly; rely on manual verification for command visibility.')
   }
   console.log('OK: pi loads extension (help lists --plan / pi-constell-plan)')
 }

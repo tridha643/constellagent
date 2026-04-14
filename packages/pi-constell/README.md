@@ -1,25 +1,19 @@
 # pi-constell-plan
 
-`pi-constell-plan` adds a Claude Code-style plan mode to pi.
+`pi-constell-plan` is the planning half of the split Constellagent pi workflow.
+
+It owns plan-mode guardrails, clarifying-question flow, and plan export. When a plan is saved, it also seeds durable handoff metadata under `~/.pi/<workspaceId>/tasks/` so a separate implementation-time extension can pick the work up in another pi instance.
 
 ## Features
 
-- `/plan` toggles planning mode
-- codebase remains read-only in plan mode
-- `askUserQuestion` is a blocking prerequisite before plan writing or auto-save
-- plan mode asks clarifying questions one at a time before drafting the plan
-- only the active plan file is writable in plan mode, and only after a clarification round completes
-- `askUserQuestion` supports 1-4 clarifying questions with:
-  - `Tab` / `Shift+Tab` question cycling
-  - keyboard-first option selection
-  - multi-select support (spacebar toggles the highlighted preset option)
-  - optional `Extra details (optional)` free-text on top of preset choices
-  - `My own thoughts` for a fully custom answer when presets do not fit
-- plan storage is created on install at `~/.pi-constell/plans/`
-- plans are exported to `~/.pi-constell/plans/`, completely outside the repo and never git-trackable by default
-- saved plans use stronger action-oriented filenames such as:
-  - `improve-plan-mode-questionnaire-ux.md`
-  - `add-claude-style-ask-user-question.md`
+- `/plan` toggles planning mode.
+- `/plan-off` and `/agent` exit planning mode explicitly.
+- The codebase stays read-only in plan mode.
+- `askUserQuestion` is a blocking prerequisite before plan writing or auto-save.
+- Only the active plan file is writable in plan mode, and only after a clarification round completes.
+- Plan files are written only under `~/.pi-constell/plans/`.
+- Durable handoff files are written only under `~/.pi/<workspaceId>/tasks/`.
+- Saved plans use stronger action-oriented filenames such as `improve-plan-mode-questionnaire-ux.md`.
 
 ## Install
 
@@ -27,10 +21,10 @@
 pi install npm:pi-constell-plan
 ```
 
-## Update
+Install the companion task extension when you want implementation-time pickup:
 
 ```bash
-pi update
+pi install npm:pi-constell-tasks
 ```
 
 ## Usage
@@ -39,16 +33,27 @@ pi update
 pi /plan
 ```
 
+Use `pi /plan-off` or `pi /agent` to leave plan mode before handing control to an implementation-focused pi instance.
+
 In plan mode pi will:
 
-- investigate the repo with read-only tools before planning
-- require `askUserQuestion` before the plan file becomes writable
-- ask follow-up questions one at a time until ambiguities are resolved
-- prefer codebase inspection over asking when the answer is already discoverable in the repo
-- let the model write or edit only the active plan file in `~/.pi-constell/plans/`
-- preserve structured clarification context, including optional `Extra details`
-- save Constellagent-compatible markdown plans with frontmatter
-- generate concise PR-stack style plans with explicit validation sections and better saved filenames
+- Investigate the repo with read-only tools before planning.
+- Require `askUserQuestion` before the plan file becomes writable.
+- Ask an initial 3-4 question clarification batch after repo investigation, then smaller 1-2 question follow-ups when the plan changes materially.
+- Prefer codebase inspection over asking when the answer is already discoverable in the repo.
+- Let the model write or edit only the active plan file in `~/.pi-constell/plans/`.
+- Preserve structured clarification context, including optional `Extra details`.
+- Save Constellagent-compatible markdown plans with frontmatter.
+- Seed a durable handoff manifest and an initial phase-derived task graph under `~/.pi/<workspaceId>/tasks/`.
+
+## Handoff Contract
+
+When `AGENT_ORCH_WS_ID` is available, saving a plan writes:
+
+- `~/.pi/<workspaceId>/tasks/handoff.json` with the saved plan reference and seed metadata.
+- `~/.pi/<workspaceId>/tasks/tasks.json` when the shared workspace task graph is still empty.
+
+The plan package does not own `Task*` tools or `/tasks`. Those live in `pi-constell-tasks`, which reads the stored handoff contract in a later implementation session.
 
 ## askUserQuestion payload
 
