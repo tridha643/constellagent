@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { Allotment } from 'allotment'
 import { useAppStore } from '../../store/app-store'
+import { ChatView } from './ChatView'
 import { TerminalPanel } from './TerminalPanel'
 import { FileEditorPane } from './FileEditorPane'
 import type { SplitNode, Tab } from '../../store/types'
@@ -13,9 +14,11 @@ interface ContainerProps {
   tab: TerminalTab
   active: boolean
   worktreePath?: string
+  workspaceName?: string
+  branch?: string
 }
 
-export function TerminalSplitContainer({ tab, active, worktreePath }: ContainerProps) {
+export function TerminalSplitContainer({ tab, active, worktreePath, workspaceName, branch }: ContainerProps) {
   const setFocusedPane = useAppStore((s) => s.setFocusedPane)
 
   const handlePaneFocus = useCallback(
@@ -25,27 +28,46 @@ export function TerminalSplitContainer({ tab, active, worktreePath }: ContainerP
     [tab.id, setFocusedPane],
   )
 
-  // No splits — render a single TerminalPanel in standalone mode
+  // No splits — render a single TerminalPanel in a centered chat shell.
   if (!tab.splitRoot) {
     return (
-      <TerminalPanel
-        key={tab.ptyId}
-        ptyId={tab.ptyId}
+      <ChatView
         active={active}
-      />
+        title={tab.title}
+        agentType={tab.agentType}
+        workspaceName={workspaceName}
+        branch={branch}
+        worktreePath={worktreePath}
+      >
+        <TerminalPanel
+          key={tab.ptyId}
+          ptyId={tab.ptyId}
+          active={active}
+        />
+      </ChatView>
     )
   }
 
-  // Render the split tree inside a visibility-toggling wrapper
+  // Split panes keep their power-user layout, but now live inside the same chat shell.
   return (
-    <div className={`${styles.splitWrapper} ${active ? styles.active : styles.hidden}`}>
-      <SplitTreeNode
-        node={tab.splitRoot}
-        focusedPaneId={tab.focusedPaneId}
-        onPaneFocus={handlePaneFocus}
-        worktreePath={worktreePath}
-      />
-    </div>
+    <ChatView
+      active={active}
+      title={tab.title}
+      agentType={tab.agentType}
+      workspaceName={workspaceName}
+      branch={branch}
+      worktreePath={worktreePath}
+      splitMode
+    >
+      <div className={`${styles.splitWrapper} ${active ? styles.active : styles.hidden}`}>
+        <SplitTreeNode
+          node={tab.splitRoot}
+          focusedPaneId={tab.focusedPaneId}
+          onPaneFocus={handlePaneFocus}
+          worktreePath={worktreePath}
+        />
+      </div>
+    </ChatView>
   )
 }
 
