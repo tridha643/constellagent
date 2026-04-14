@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent'
 import { Editor, type EditorTheme, Key, Text, matchesKey, truncateToWidth } from '@mariozechner/pi-tui'
-import { Type, type Static } from '@sinclair/typebox'
+import { Type } from '@sinclair/typebox'
 
 export interface AskUserQuestionOption {
   label: string
@@ -53,37 +53,6 @@ const AskUserQuestionParams = Type.Object({
   }),
 })
 
-/** For CI / `pi -p` only: print mode has no UI, so clarifications must be synthesized when this env is set. */
-function headlessClarificationEnabled(): boolean {
-  return process.env.PI_CONSTELL_HEADLESS_CLARIFICATION?.trim() === '1'
-}
-
-function buildHeadlessAskUserQuestionDetails(params: Static<typeof AskUserQuestionParams>): AskUserQuestionDetails {
-  const answers: AskUserQuestionAnswer[] = params.questions.map((question) => {
-    const header = clampHeader(question.header)
-    const options = question.options
-    if (question.multiSelect === true) {
-      const labels = options.length ? [options[0]!.label] : ['OK']
-      return {
-        question: question.question,
-        header,
-        answer: labels,
-        wasCustom: false,
-        selectedOptions: labels,
-      }
-    }
-    const first = options[0]?.label ?? 'OK'
-    return {
-      question: question.question,
-      header,
-      answer: first,
-      wasCustom: false,
-      selectedOptions: [first],
-    }
-  })
-  return { cancelled: false, answers }
-}
-
 interface PromptQuestion {
   question: string
   header: string
@@ -125,11 +94,10 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
     name: 'askUserQuestion',
     label: 'Ask User Question',
     description: 'Ask the user one to four clarifying questions with Claude Code-style keyboard navigation and custom free-text answers.',
-    promptSnippet: 'Ask the user clarifying multiple-choice questions with keyboard navigation and custom free-text answers. In plan mode, investigate first, then ask an initial batch of 3-4 strong questions; later follow-ups should usually be 1-2 questions.',
+    promptSnippet: 'Ask the user clarifying multiple-choice questions with keyboard navigation and custom free-text answers. In plan mode, ask one question at a time and wait for the answer before the next question.',
     promptGuidelines: [
       'Use askUserQuestion as the blocking clarification step before drafting a plan when important scope, behavior, or validation choices are still unresolved.',
-      'In plan mode, do deeper repo investigation first so your options and recommendations are grounded in the codebase.',
-      'For the initial clarification pass in plan mode, prefer 3-4 questions in one call. For follow-up clarification after the plan changes, prefer 1-2 questions and never exceed 4 questions in one call.',
+      'In plan mode, prefer exactly 1 question per call and wait for the answer before asking the next follow-up question.',
       'Keep to 1-4 questions per call and 2-4 strong options per question.',
       'Prefer short headers, include tradeoffs in option descriptions, and include a recommended option when you have a strong default.',
       'Users can pick preset option(s) and still add optional extra details; multi-select uses spacebar to toggle the highlighted option.',
@@ -138,17 +106,9 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (!ctx.hasUI) {
-        if (!headlessClarificationEnabled()) {
-          return {
-            content: [{ type: 'text', text: 'Error: askUserQuestion requires an interactive UI.' }],
-            details: { cancelled: true, answers: [] } satisfies AskUserQuestionDetails,
-          }
-        }
-        const details = buildHeadlessAskUserQuestionDetails(params)
-        await hooks.onComplete?.(details)
         return {
-          content: [{ type: 'text', text: summarizeAskUserQuestionAnswers(details.answers) }],
-          details,
+          content: [{ type: 'text', text: 'Error: askUserQuestion requires an interactive UI.' }],
+          details: { cancelled: true, answers: [] } satisfies AskUserQuestionDetails,
         }
       }
 
