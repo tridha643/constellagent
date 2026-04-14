@@ -6,6 +6,20 @@ import { sendAddToChatText, sendActiveSelectionToAgent, findMarkdownPreviewRootF
 import { wrapBracketedPaste } from '../utils/bracketed-paste'
 import { runMonacoAddToChatIfFocused } from '../utils/add-to-chat-monaco-bridge'
 
+function isTypingContext(target: EventTarget | null): boolean {
+  const element = target instanceof HTMLElement
+    ? target
+    : document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+  if (!element) return false
+  if (element.isContentEditable) return true
+  if (element.closest('input, textarea, select, [role="textbox"], [contenteditable="true"]')) return true
+  if (element.closest('[class*="monaco-editor"]')) return true
+  if (element.closest('[class*="terminalInner"]')) return true
+  return false
+}
+
 export function useShortcuts() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -141,6 +155,20 @@ export function useShortcuts() {
         return
       }
 
+      // ── Sidebar-first workspace switching: Cmd+[ / Cmd+] ──
+      if (!shift && !alt && e.key === '[') {
+        if (isTypingContext(e.target)) return
+        consume()
+        store.prevWorkspace()
+        return
+      }
+      if (!shift && !alt && e.key === ']') {
+        if (isTypingContext(e.target)) return
+        consume()
+        store.nextWorkspace()
+        return
+      }
+
       // ── Workspace switching: Cmd+Option+Up / Cmd+Option+Down ──
       if (!shift && alt && e.key === 'ArrowUp') {
         consume()
@@ -229,11 +257,12 @@ export function useShortcuts() {
         return
       }
 
-      // Cmd+1..9 — activate tab by index within the active workspace (1-based).
+      // Cmd+1..9 — switch projects by visible sidebar order (1-based).
       if (!shift && !alt && /^Digit[1-9]$/.test(e.code)) {
+        if (isTypingContext(e.target)) return
         consume()
         const n = Number(e.code.slice(5))
-        store.switchToTabByIndex(n - 1)
+        store.switchToProjectByIndex(n - 1)
         return
       }
 

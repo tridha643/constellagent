@@ -34,6 +34,12 @@ import {
 } from './split-helpers'
 import { formatChatContext } from '../utils/chat-context-formatter'
 import { wrapBracketedPaste } from '../utils/bracketed-paste'
+import {
+  getSwitchableVisibleProjects,
+  getVisibleProjects,
+  getVisibleWorkspaces,
+  resolveProjectTargetWorkspace as resolveSidebarProjectTargetWorkspace,
+} from './sidebar-navigation'
 import { formatReviewForAgent } from '../utils/review-formatter'
 import { maybeShowStaleMainToast } from '../utils/ipc-stale-main'
 import { pathsEqualOrAlias } from '../../shared/agent-plan-path'
@@ -306,6 +312,22 @@ function normalizeSidebarActionOrder(raw: SidebarActionId[] | undefined): Sideba
   return result
 }
 
+function pruneLastActiveWorkspaceByProjectId(
+  lastActiveWorkspaceByProjectId: Record<string, string>,
+  projects: Project[],
+  workspaces: Workspace[],
+): Record<string, string> {
+  const validProjectIds = new Set(projects.map((project) => project.id))
+  const validWorkspaceIds = new Set(workspaces.map((workspace) => workspace.id))
+  const next: Record<string, string> = {}
+  for (const [projectId, workspaceId] of Object.entries(lastActiveWorkspaceByProjectId)) {
+    if (validProjectIds.has(projectId) && validWorkspaceIds.has(workspaceId)) {
+      next[projectId] = workspaceId
+    }
+  }
+  return next
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
   workspaces: [],
@@ -317,6 +339,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   rightPanelMode: 'files',
   rightPanelOpen: true,
   sidebarCollapsed: false,
+  collapsedProjectIds: new Set<string>(),
+  lastActiveWorkspaceByProjectId: {},
   lastSavedTabId: null,
   workspaceDialogProjectId: null,
   settings: { ...DEFAULT_SETTINGS },
@@ -390,6 +414,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const tabMap = { ...s.lastActiveTabByWorkspace }
       for (const wsId of removedWsIds) delete tabMap[wsId]
+      const collapsedProjectIds = new Set(s.collapsedProjectIds)
+      collapsedProjectIds.delete(id)
+      const lastActiveWorkspaceByProjectId = pruneLastActiveWorkspaceByProjectId(
+        s.lastActiveWorkspaceByProjectId,
+        newProjects,
+        newWorkspaces,
+      )
 
       const activeWorkspaceId =
         s.activeWorkspaceId && removedWsIds.has(s.activeWorkspaceId)
@@ -410,6 +441,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         ghAvailability: newGhAvailability,
         worktreeSyncStatus: newWorktreeSyncStatus,
         graphiteStacks: newGraphiteStacks,
+        collapsedProjectIds,
+        lastActiveWorkspaceByProjectId,
         activeWorkspaceId,
         activeTabId,
         lastActiveTabByWorkspace: tabMap,
@@ -429,6 +462,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       workspaces: [...s.workspaces, workspace],
       activeWorkspaceId: workspace.id,
+      lastActiveWorkspaceByProjectId: {
+        ...s.lastActiveWorkspaceByProjectId,
+        [workspace.projectId]: workspace.id,
+      },
     }))
   },
 
@@ -457,6 +494,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       newWorktreeSyncStatus.delete(id)
       const newGraphiteStacks = new Map(s.graphiteStacks)
       newGraphiteStacks.delete(id)
+      const lastActiveWorkspaceByProjectId = pruneLastActiveWorkspaceByProjectId(
+        s.lastActiveWorkspaceByProjectId,
+        s.projects,
+        newWorkspaces,
+      )
       return {
         workspaces: newWorkspaces,
         tabs: newTabs,
@@ -464,6 +506,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeClaudeWorkspaceIds: newActiveClaude,
         worktreeSyncStatus: newWorktreeSyncStatus,
         graphiteStacks: newGraphiteStacks,
+        lastActiveWorkspaceByProjectId,
         lastActiveTabByWorkspace: tabMap,
         planBuildTerminalByPlanPath,
         activeWorkspaceId:
@@ -540,6 +583,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         tabMap[s.activeWorkspaceId] = s.activeTabId
       }
 
+      const lastActiveWorkspaceByProjectId = { ...s.lastActiveWorkspaceByProjectId }
+      const currentWorkspace = s.activeWorkspaceId
+        ? s.workspaces.find((workspace) => workspace.id === s.activeWorkspaceId)
+        : undefined
+      if (currentWorkspace) {
+        lastActiveWorkspaceByProjectId[currentWorkspace.projectId] = currentWorkspace.id
+      }
+
+      const nextWorkspace = id
+        ? s.workspaces.find((workspace) => workspace.id === id)
+        : undefined
+      if (nextWorkspace) {
+        lastActiveWorkspaceByProjectId[nextWorkspace.projectId] = nextWorkspace.id
+      }
+
       const wsTabs = s.tabs.filter((t) => t.workspaceId === id)
       const newUnread = new Set(s.unreadWorkspaceIds)
       if (id) newUnread.delete(id)
@@ -554,6 +612,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeWorkspaceId: id,
         activeTabId,
         lastActiveTabByWorkspace: tabMap,
+        lastActiveWorkspaceByProjectId,
         unreadWorkspaceIds: newUnread,
       }
     }),
@@ -611,6 +670,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
 
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+
+  toggleProjectCollapsed: (projectId) => set((s) => {
+    const collapsedProjectIds = new Set(s.collapsedProjectIds)
+    if (collapsedProjectIds.has(projectId)) collapsedProjectIds.delete(projectId)
+    else collapsedProjectIds.add(projectId)
+    return { collapsedProjectIds }
+  }),
 
   nextTab: () => {
     const s = get()
@@ -819,27 +885,37 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   nextWorkspace: () => {
     const s = get()
-    if (s.workspaces.length <= 1) return
-    // Build visual order: workspaces grouped by project, matching sidebar display
-    const ordered = s.projects.flatMap((p) =>
-      s.workspaces.filter((w) => w.projectId === p.id),
-    )
+    const ordered = getVisibleWorkspaces(s.projects, s.workspaces, s.collapsedProjectIds)
     if (ordered.length <= 1) return
-    const idx = ordered.findIndex((w) => w.id === s.activeWorkspaceId)
-    const next = ordered[(idx + 1) % ordered.length]
-    get().setActiveWorkspace(next.id)
+    const idx = ordered.findIndex((workspace) => workspace.id === s.activeWorkspaceId)
+    const next = idx === -1 ? ordered[0] : ordered[(idx + 1) % ordered.length]
+    if (next) get().setActiveWorkspace(next.id)
   },
 
   prevWorkspace: () => {
     const s = get()
-    if (s.workspaces.length <= 1) return
-    const ordered = s.projects.flatMap((p) =>
-      s.workspaces.filter((w) => w.projectId === p.id),
-    )
+    const ordered = getVisibleWorkspaces(s.projects, s.workspaces, s.collapsedProjectIds)
     if (ordered.length <= 1) return
-    const idx = ordered.findIndex((w) => w.id === s.activeWorkspaceId)
-    const prev = ordered[(idx - 1 + ordered.length) % ordered.length]
-    get().setActiveWorkspace(prev.id)
+    const idx = ordered.findIndex((workspace) => workspace.id === s.activeWorkspaceId)
+    const prev = idx === -1 ? ordered[ordered.length - 1] : ordered[(idx - 1 + ordered.length) % ordered.length]
+    if (prev) get().setActiveWorkspace(prev.id)
+  },
+
+  switchToProjectByIndex: (index) => {
+    const s = get()
+    const orderedProjects = getSwitchableVisibleProjects(
+      s.projects,
+      s.workspaces,
+      s.lastActiveWorkspaceByProjectId,
+    )
+    const project = orderedProjects[index]
+    if (!project) return
+    const target = resolveSidebarProjectTargetWorkspace(
+      project.id,
+      s.workspaces,
+      s.lastActiveWorkspaceByProjectId,
+    )
+    if (target) get().setActiveWorkspace(target.id)
   },
 
   switchToTabByIndex: (index) => {
@@ -1808,6 +1884,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeWorkspaceId,
       activeTabId,
       lastActiveTabByWorkspace: data.lastActiveTabByWorkspace ?? {},
+      collapsedProjectIds: new Set(),
+      lastActiveWorkspaceByProjectId: activeWorkspaceId
+        ? Object.fromEntries(
+            workspaces
+              .filter((workspace) => workspace.id === activeWorkspaceId)
+              .map((workspace) => [workspace.projectId, workspace.id]),
+          )
+        : {},
       settings,
       worktreeSyncStatus: new Map(),
       graphiteStacks: new Map(),
@@ -1828,6 +1912,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get()
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
     return ws ? s.projects.find((p) => p.id === ws.projectId) : undefined
+  },
+
+  visibleProjects: () => {
+    const s = get()
+    return getVisibleProjects(s.projects)
+  },
+
+  visibleWorkspaces: () => {
+    const s = get()
+    return getVisibleWorkspaces(s.projects, s.workspaces, s.collapsedProjectIds)
+  },
+
+  resolveProjectTargetWorkspace: (projectId) => {
+    const s = get()
+    return resolveSidebarProjectTargetWorkspace(
+      projectId,
+      s.workspaces,
+      s.lastActiveWorkspaceByProjectId,
+    )
   },
 }))
 
@@ -1861,12 +1964,18 @@ function pruneDetachedHeadWorkspaces(): void {
     const activeTabId = newTabs.some((t) => t.id === s.activeTabId)
       ? s.activeTabId
       : (newTabs.find((t) => t.workspaceId === activeWorkspaceId)?.id ?? newTabs[0]?.id ?? null)
+    const lastActiveWorkspaceByProjectId = pruneLastActiveWorkspaceByProjectId(
+      s.lastActiveWorkspaceByProjectId,
+      s.projects,
+      newWorkspaces,
+    )
 
     return {
       workspaces: newWorkspaces,
       tabs: newTabs,
       activeWorkspaceId,
       activeTabId,
+      lastActiveWorkspaceByProjectId,
       lastActiveTabByWorkspace: tabMap,
       planBuildTerminalByPlanPath: planBuildMapForTabs(s.planBuildTerminalByPlanPath, newTabs),
     }
@@ -2001,7 +2110,17 @@ async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Pr
     if (activeWorkspaceId === null && additions.length > 0) {
       activeWorkspaceId = additions[0].id
     }
-    return { workspaces: nextWorkspaces, activeWorkspaceId }
+    const lastActiveWorkspaceByProjectId = pruneLastActiveWorkspaceByProjectId(
+      activeWorkspaceId && additions.some((workspace) => workspace.id === activeWorkspaceId)
+        ? {
+            ...s.lastActiveWorkspaceByProjectId,
+            [additions.find((workspace) => workspace.id === activeWorkspaceId)!.projectId]: activeWorkspaceId,
+          }
+        : s.lastActiveWorkspaceByProjectId,
+      s.projects,
+      nextWorkspaces,
+    )
+    return { workspaces: nextWorkspaces, activeWorkspaceId, lastActiveWorkspaceByProjectId }
   })
 }
 

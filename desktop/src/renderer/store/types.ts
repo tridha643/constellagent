@@ -221,6 +221,10 @@ export interface AppState {
   rightPanelMode: RightPanelMode
   rightPanelOpen: boolean
   sidebarCollapsed: boolean
+  /** Ephemeral: manually collapsed project sections in the left sidebar. */
+  collapsedProjectIds: Set<string>
+  /** Ephemeral: most recently active workspace per project for project hotkeys. */
+  lastActiveWorkspaceByProjectId: Record<string, string>
   lastSavedTabId: string | null
   workspaceDialogProjectId: string | null
   settings: Settings
@@ -268,6 +272,7 @@ export interface AppState {
   setRightPanelMode: (mode: RightPanelMode) => void
   toggleRightPanel: () => void
   toggleSidebar: () => void
+  toggleProjectCollapsed: (projectId: string) => void
   nextTab: () => void
   prevTab: () => void
   createTerminalForActiveWorkspace: () => Promise<void>
@@ -295,6 +300,7 @@ export interface AppState {
   openCommitDiffTab: (workspaceId: string, hash: string, message: string) => void
   nextWorkspace: () => void
   prevWorkspace: () => void
+  switchToProjectByIndex: (index: number) => void
   switchToTabByIndex: (index: number) => void
   closeAllWorkspaceTabs: () => void
   focusOrCreateTerminal: () => Promise<void>
@@ -380,6 +386,9 @@ export interface AppState {
   // Derived
   activeWorkspaceTabs: () => Tab[]
   activeProject: () => Project | undefined
+  visibleProjects: () => Project[]
+  visibleWorkspaces: () => Workspace[]
+  resolveProjectTargetWorkspace: (projectId: string) => Workspace | undefined
 }
 
 export type SidebarActionId = 'add-project' | 'automations' | 'plans' | 'settings' | 'review'
