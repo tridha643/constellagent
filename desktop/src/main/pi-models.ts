@@ -9,6 +9,7 @@ import {
   resolvePiModelList,
   type PiModelCacheRecord,
 } from '../shared/pi-models'
+import { cliEnvWithStandardPath } from './cli-env'
 
 const execFileAsync = promisify(execFile)
 const PI_MODEL_TIMEOUT_MS = 10_000
@@ -41,12 +42,21 @@ async function listPiModelsFromCli(): Promise<PiModelOption[]> {
     return parsePiListModelsOrThrow([fixtureStdout, fixtureStderr].filter(Boolean).join('\n'))
   }
 
-  const { stdout, stderr } = await execFileAsync('pi', ['--list-models'], {
+  // `pi --list-models` writes the table to stderr when stdout is not a TTY. Under Electron,
+  // relying on execFile's stderr capture has proven flaky; merge streams via the shell.
+  const env = cliEnvWithStandardPath()
+  const opts = {
+    env,
     timeout: PI_MODEL_TIMEOUT_MS,
     maxBuffer: PI_MODEL_MAX_BUFFER,
-  })
+    encoding: 'utf8' as const,
+  }
+  const merged =
+    process.platform === 'win32'
+      ? (await execFileAsync('cmd.exe', ['/d', '/s', '/c', 'pi --list-models 2>&1'], opts)).stdout
+      : (await execFileAsync('/bin/sh', ['-c', 'pi --list-models 2>&1'], opts)).stdout
 
-  return parsePiListModelsOrThrow([stdout, stderr].filter(Boolean).join('\n'))
+  return parsePiListModelsOrThrow(merged)
 }
 
 export async function listPiModels(): Promise<PiModelOption[]> {

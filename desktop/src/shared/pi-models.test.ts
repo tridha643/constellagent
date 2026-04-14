@@ -49,6 +49,18 @@ warning: cached credentials expired
   it('treats an explicit no-models response as an empty result', () => {
     expect(parsePiListModelsOrThrow('No models available right now')).toEqual([])
   })
+
+  it('parses rows when the runtime sends the table on stderr only (pi when stdout is not a TTY)', () => {
+    const stderr = `
+provider      model                        context
+anthropic     claude-sonnet-4-5            200K
+google        gemini-2-5-pro              200K
+`
+    expect(parsePiListModels(stderr)).toEqual([
+      { provider: 'anthropic', model: 'claude-sonnet-4-5', id: 'anthropic/claude-sonnet-4-5' },
+      { provider: 'google', model: 'gemini-2-5-pro', id: 'google/gemini-2-5-pro' },
+    ])
+  })
 })
 
 describe('resolvePiModelSelectState', () => {
