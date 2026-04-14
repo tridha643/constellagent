@@ -145,6 +145,16 @@ test('formatAskUserQuestionDetails joins multiple questions with newlines', () =
   assert.equal(text, 'A: One — alpha\nB: X, Y')
 })
 
+test('askUserQuestion prompt guidance reflects batched clarification behavior', () => {
+  const api = new FakeAPI()
+  registerAskUserQuestion(api as any)
+  const tool = api.tools.find((candidate) => candidate.name === 'askUserQuestion')
+  assert.ok(tool)
+  assert.match(tool.promptSnippet, /initial batch of 3-4 strong questions/i)
+  assert.ok(Array.isArray(tool.promptGuidelines))
+  assert.ok(tool.promptGuidelines.some((line: string) => /deeper repo investigation/i.test(line)))
+})
+
 test('askUserQuestion accepts raw space for multi-select toggles and submits from review', async () => {
   const harness = await createInteractiveHarness({
     questions: [
@@ -207,4 +217,43 @@ test('askUserQuestion keeps multi-select enter as a toggle until review submit',
   const result = await harness.result
   assert.equal(result.details.cancelled, false)
   assert.deepEqual(result.details.answers[0]?.selectedOptions, ['API'])
+})
+
+test('askUserQuestion headless mode auto-selects when PI_CONSTELL_HEADLESS_CLARIFICATION=1 and hasUI is false', async () => {
+  const prev = process.env.PI_CONSTELL_HEADLESS_CLARIFICATION
+  process.env.PI_CONSTELL_HEADLESS_CLARIFICATION = '1'
+  try {
+    let completed: AskUserQuestionDetails | undefined
+    const api = new FakeAPI()
+    registerAskUserQuestion(api as any, {
+      onComplete: async (d) => {
+        completed = d
+      },
+    })
+    const tool = api.tools.find((candidate) => candidate.name === 'askUserQuestion')
+    assert.ok(tool)
+    const ctx = { hasUI: false, ui: {} }
+    const result = await tool.execute(
+      'tc',
+      {
+        questions: [
+          {
+            question: 'Pick one',
+            header: 'Scope',
+            options: [{ label: 'A' }, { label: 'B' }],
+          },
+        ],
+      },
+      undefined,
+      () => {},
+      ctx as any,
+    )
+    assert.equal(result.details.cancelled, false)
+    assert.equal((result.details as AskUserQuestionDetails).answers[0]?.answer, 'A')
+    assert.ok(completed)
+    assert.equal(completed.cancelled, false)
+  } finally {
+    if (prev === undefined) delete process.env.PI_CONSTELL_HEADLESS_CLARIFICATION
+    else process.env.PI_CONSTELL_HEADLESS_CLARIFICATION = prev
+  }
 })
