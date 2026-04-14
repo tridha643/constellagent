@@ -1,6 +1,6 @@
 {
   "name": "pi-constell-plan",
-  "version": "0.1.3",
+  "version": "0.1.6",
   "description": "Claude Code-style plan mode for pi with interactive clarifying questions and Constellagent-compatible plan exports.",
   "type": "module",
   "keywords": [
