@@ -21,10 +21,13 @@ import {
   planAgentToPtyAgentType,
   type PiModelOption,
 } from '../../../shared/plan-build-command'
+import { resolvePiModelSelectState } from '../../../shared/pi-models'
 import type { AgentType } from '../../store/types'
 import styles from './MarkdownPreview.module.css'
 
 const BUILD_TIMEOUT_MS = 5 * 60 * 1000
+
+type PiModelLoadState = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
 
 function stripYamlFrontmatterForPreview(content: string): string {
   return content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '')
@@ -54,6 +57,7 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
   const [building, setBuilding] = useState(false)
   const [userHome, setUserHome] = useState<string | undefined>(undefined)
   const [piModels, setPiModels] = useState<PiModelOption[]>([])
+  const [piModelLoadState, setPiModelLoadState] = useState<PiModelLoadState>('idle')
   const relocateRef = useRef<HTMLDivElement>(null)
   const openFileTab = useAppStore((s) => s.openFileTab)
   const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
@@ -85,18 +89,41 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
     () => effectivePlanHarness(meta.buildHarness, currentAgent as PlanAgent | null),
     [meta.buildHarness, currentAgent],
   )
+  const piModelSelectState = useMemo(
+    () => resolvePiModelSelectState(piModels, meta.codingAgent),
+    [piModels, meta.codingAgent],
+  )
 
   const agentPresets = useMemo(() => {
     if (!effectiveHarness) return []
     if (effectiveHarness === 'pi-constell') {
-      return piModels.map((model) => ({ label: model.id, cliModel: model.id }))
+      return piModelSelectState.presets
     }
     return PLAN_MODEL_PRESETS[effectiveHarness] ?? []
-  }, [effectiveHarness, piModels])
+  }, [effectiveHarness, piModelSelectState.presets])
   const modelSelectValue = useMemo(() => {
-    if (!effectiveHarness || !meta.codingAgent) return ''
+    if (!effectiveHarness) return ''
+    if (effectiveHarness === 'pi-constell') return piModelSelectState.value
+    if (!meta.codingAgent) return ''
     return canonicalPlanModelValue(effectiveHarness, meta.codingAgent)
-  }, [effectiveHarness, meta.codingAgent])
+  }, [effectiveHarness, meta.codingAgent, piModelSelectState.value])
+  const hasSelectedAgentPreset = effectiveHarness === 'pi-constell'
+    ? piModelSelectState.hasSelectedPreset
+    : !!modelSelectValue && agentPresets.some((preset) => preset.cliModel === modelSelectValue)
+  const supportsCustomAgentInput = effectiveHarness !== 'pi-constell'
+  const modelSelectPlaceholder = useMemo(() => {
+    if (effectiveHarness !== 'pi-constell') return 'No model'
+    switch (piModelLoadState) {
+      case 'loading':
+        return 'Loading PI models...'
+      case 'empty':
+        return 'No PI models found'
+      case 'error':
+        return 'PI models unavailable'
+      default:
+        return 'No model'
+    }
+  }, [effectiveHarness, piModelLoadState])
 
   const folderHarnessLabel = useMemo(
     () => RELOCATE_TARGETS.find((t) => t.agent === currentAgent)?.label ?? 'folder',
@@ -106,16 +133,28 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
   useEffect(() => {
     if (effectiveHarness !== 'pi-constell') {
       setPiModels([])
+      setPiModelLoadState('idle')
       return
     }
     let cancelled = false
+    setPiModelLoadState('loading')
     window.api.app.listPiModels().then((models) => {
-      if (!cancelled) setPiModels(models)
+      if (cancelled) return
+      setPiModels(models)
+      setPiModelLoadState(models.length > 0 ? 'ready' : 'empty')
     }).catch(() => {
-      if (!cancelled) setPiModels([])
+      if (cancelled) return
+      setPiModels([])
+      setPiModelLoadState('error')
     })
     return () => { cancelled = true }
   }, [effectiveHarness])
+
+  useEffect(() => {
+    if (effectiveHarness === 'pi-constell' && customAgent) {
+      setCustomAgent(false)
+    }
+  }, [effectiveHarness, customAgent])
 
   const loadContent = useCallback(async () => {
     try {
@@ -315,6 +354,7 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
 
   const handleAgentSelect = useCallback(async (value: string) => {
     if (value === '__custom') {
+      if (!supportsCustomAgentInput) return
       setCustomAgent(true)
       setCustomInput(meta.codingAgent ?? '')
       return
@@ -325,7 +365,7 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
     } catch {
       addToast({ id: crypto.randomUUID(), message: 'Failed to update coding agent', type: 'error' })
     }
-  }, [filePath, meta.codingAgent, addToast])
+  }, [filePath, meta.codingAgent, addToast, supportsCustomAgentInput])
 
   const handleCustomAgentSubmit = useCallback(async () => {
     setCustomAgent(false)
@@ -423,7 +463,7 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
                   <option key={agent} value={agent}>{label}</option>
                 ))}
               </select>
-              {customAgent ? (
+              {customAgent && supportsCustomAgentInput ? (
                 <input
                   className={styles.customAgentInput}
                   value={customInput}
@@ -440,17 +480,17 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
                   onChange={(e) => handleAgentSelect(e.target.value)}
                   title="Model for selected harness (value is the CLI --model id)"
                 >
-                  <option value="">No model</option>
+                  <option value="">{modelSelectPlaceholder}</option>
                   {agentPresets.map((p) => (
                     <option key={p.cliModel} value={p.cliModel}>
                       {p.label} ({p.cliModel})
                     </option>
                   ))}
                   {effectiveHarness && meta.codingAgent
-                    && !findPlanModelPreset(effectiveHarness, meta.codingAgent) && (
-                    <option value={modelSelectValue}>{meta.codingAgent}</option>
+                    && !hasSelectedAgentPreset && (
+                    <option value={modelSelectValue}>{modelSelectValue}</option>
                   )}
-                  <option value="__custom">Custom…</option>
+                  {supportsCustomAgentInput && <option value="__custom">Custom…</option>}
                 </select>
               )}
 
