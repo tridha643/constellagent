@@ -14,12 +14,20 @@ export interface AskUserQuestionInputQuestion {
   multiSelect?: boolean
 }
 
+export interface AskUserQuestionOptionMapping {
+  letter: string
+  index: number
+  label: string
+}
+
 export interface AskUserQuestionAnswer {
   question: string
   header: string
   answer: string | string[]
   wasCustom: boolean
   selectedOptions: string[]
+  /** Preset-option identity map so free text like "A then B" stays grounded in real choices. */
+  optionMappings?: AskUserQuestionOptionMapping[]
   /** Optional free-text elaboration alongside preset choice(s). Omitted when empty for backward compatibility. */
   details?: string
 }
@@ -74,10 +82,28 @@ function isSpaceToggleInput(data: string): boolean {
   return data === ' ' || matchesKey(data, Key.space)
 }
 
+function optionLetter(index: number): string {
+  return String.fromCharCode(65 + index)
+}
+
+function buildOptionMappings(options: AskUserQuestionOption[]): AskUserQuestionOptionMapping[] {
+  return options.map((option, index) => ({
+    letter: optionLetter(index),
+    index: index + 1,
+    label: option.label,
+  }))
+}
+
+function summarizeOptionMappings(optionMappings: AskUserQuestionOptionMapping[] | undefined): string {
+  if (!optionMappings?.length) return ''
+  return optionMappings.map((mapping) => `${mapping.letter}/${mapping.index}=${mapping.label}`).join(', ')
+}
+
 function summarizeAskUserQuestionAnswer(answer: AskUserQuestionAnswer): string {
   const value = Array.isArray(answer.answer) ? answer.answer.join(', ') : answer.answer
+  const mapping = summarizeOptionMappings(answer.optionMappings)
   const detail = answer.details?.trim()
-  return `${answer.header}: ${value}${detail ? ` — ${detail}` : ''}`
+  return `${answer.header}: ${value}${mapping ? ` (choices: ${mapping})` : ''}${detail ? ` — ${detail}` : ''}`
 }
 
 export function summarizeAskUserQuestionAnswers(answers: AskUserQuestionAnswer[]): string {
@@ -94,13 +120,14 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
     name: 'askUserQuestion',
     label: 'Ask User Question',
     description: 'Ask the user one to four clarifying questions with Claude Code-style keyboard navigation and custom free-text answers.',
-    promptSnippet: 'Ask the user clarifying multiple-choice questions with keyboard navigation and custom free-text answers. In plan mode, ask one question at a time and wait for the answer before the next question.',
+    promptSnippet: 'Ask the user clarifying multiple-choice questions with keyboard navigation and custom free-text answers. In plan mode, prefer a strong first round of 3-4 questions, then only ask 1-2 focused follow-ups if the plan changes materially.',
     promptGuidelines: [
       'Use askUserQuestion as the blocking clarification step before drafting a plan when important scope, behavior, or validation choices are still unresolved.',
-      'In plan mode, prefer exactly 1 question per call and wait for the answer before asking the next follow-up question.',
+      'In plan mode, prefer 3-4 strong questions in the first call, then 1-2 focused follow-ups only when new ambiguity remains.',
       'Keep to 1-4 questions per call and 2-4 strong options per question.',
       'Prefer short headers, include tradeoffs in option descriptions, and include a recommended option when you have a strong default.',
       'Users can pick preset option(s) and still add optional extra details; multi-select uses spacebar to toggle the highlighted option.',
+      'Option summaries include explicit letter/index mappings such as A/1 and B/2 so free-text follow-up like "A then B" stays grounded in the preset choices.',
     ],
     parameters: AskUserQuestionParams,
 
@@ -184,6 +211,7 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
         function buildAnswers(): AskUserQuestionAnswer[] {
           return questions.map((question) => {
             const state = questionStates.get(question.header)!
+            const optionMappings = buildOptionMappings(question.options)
             if (state.customOnlyAnswer) {
               return {
                 question: question.question,
@@ -191,6 +219,7 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
                 answer: state.customOnlyAnswer,
                 wasCustom: true,
                 selectedOptions: [],
+                optionMappings,
               }
             }
 
@@ -206,6 +235,7 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
               answer: question.multiSelect ? selectedOptions : (selectedOptions[0] ?? ''),
               wasCustom: false,
               selectedOptions,
+              optionMappings,
             }
             if (trimmedDetails) base.details = trimmedDetails
             return base
@@ -397,6 +427,7 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
                 : isDetails
                   ? { label: 'Extra details (optional)', description: 'Add nuance on top of your preset choice(s).' }
                   : question.options[index]!
+              const optionToken = !isDetails && !isCustom ? `${optionLetter(index)} / ${index + 1}` : null
               const active = index === currentIndex()
               const selected = !isDetails && !isCustom && state.selected.has(index)
               const detailsFilled = isDetails && Boolean(state.extraDetails?.trim())
@@ -409,7 +440,8 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
                       : (selected ? '(•)' : '( )'))
               const prefix = active ? theme.fg('accent', '> ') : '  '
               const color = active ? 'accent' : 'text'
-              add(`${prefix}${theme.fg(color, `${marker} ${option.label}`)}`)
+              const label = optionToken ? `${optionToken} ${option.label}` : option.label
+              add(`${prefix}${theme.fg(color, `${marker} ${label}`)}`)
               if (option.description) add(`     ${theme.fg('muted', option.description)}`)
               if (isCustom && state.customOnlyAnswer) add(`     ${theme.fg('success', `Current: ${state.customOnlyAnswer}`)}`)
               if (isDetails && state.extraDetails?.trim()) {
@@ -472,9 +504,11 @@ export default function registerAskUserQuestion(pi: ExtensionAPI, hooks: AskUser
       return new Text(details.answers.map((answer) => {
         const value = Array.isArray(answer.answer) ? answer.answer.join(', ') : answer.answer
         const prefix = answer.wasCustom ? theme.fg('muted', '(custom) ') : ''
+        const mapping = summarizeOptionMappings(answer.optionMappings)
         const detail = answer.details?.trim()
+        const mappingSuffix = mapping ? theme.fg('muted', ` (choices: ${mapping})`) : ''
         const detailSuffix = detail ? theme.fg('muted', ` — ${detail}`) : ''
-        return `${theme.fg('success', '\u2713 ')}${theme.fg('accent', answer.header)}: ${prefix}${value}${detailSuffix}`
+        return `${theme.fg('success', '\u2713 ')}${theme.fg('accent', answer.header)}: ${prefix}${value}${mappingSuffix}${detailSuffix}`
       }).join('\n'), 0, 0)
     },
   })

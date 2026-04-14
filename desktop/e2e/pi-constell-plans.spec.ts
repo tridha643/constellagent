@@ -5,6 +5,58 @@ import { execSync } from 'child_process'
 import { homedir } from 'os'
 
 const appPath = resolve(__dirname, '../out/main/index.js')
+const PI_CONSTELL_PLAN_BODY = `---
+constellagent:
+  built: false
+  codingAgent: "anthropic/claude-sonnet-4-5"
+  buildHarness: "pi-constell-plan"
+---
+# Improve plan mode questionnaire UX
+
+## Open Questions / Assumptions
+- Scope: Hardening.
+
+## Phases
+
+### Phase 1
+Goal: Enforce a clarification gate.
+
+Why this phase boundary makes sense: It lands the core safety behavior first.
+
+Main code areas:
+- extensions
+- tests
+- docs
+
+Task breakdown:
+- Add coverage for write blocking and prompt instructions.
+
+Tests:
+- Run package verify and confirm askUserQuestion is mandatory.
+
+How I'll validate:
+- Confirm the plan is saved under ~/.pi-constell/plans.
+
+### Phase 2
+Goal: Confirm later phases remain visible in the app.
+
+Why this phase boundary makes sense: Preview rendering should show the full saved plan.
+
+Main code areas:
+- desktop
+
+Task breakdown:
+- Open the saved PI plan in preview.
+
+Tests:
+- Run the PI Constell desktop e2e.
+
+How I'll validate:
+- Confirm Phase 2 renders after Phase 1.
+
+## Recommendation
+- Start with Phase 1.
+`
 
 async function launchApp(): Promise<{ app: ElectronApplication; window: Page }> {
   const app = await electron.launch({ args: [appPath], env: { ...process.env, CI_TEST: '1' } })
@@ -63,7 +115,7 @@ test.describe('PI Constell plan discovery', () => {
       mkdirSync(cursorDir, { recursive: true })
 
       const cursorPlan = join(cursorDir, 'cursor-plan.md')
-      writeFileSync(piConstellPlan, '# PI Constell plan\n')
+      writeFileSync(piConstellPlan, PI_CONSTELL_PLAN_BODY)
       writeFileSync(cursorPlan, '# Cursor plan\n')
       const now = new Date()
       utimesSync(piConstellPlan, now, now)
@@ -103,7 +155,7 @@ test.describe('PI Constell plan discovery', () => {
 
       const claudePlan = join(claudeDir, 'older-claude-plan.md')
       writeFileSync(claudePlan, '# Older Claude plan\n')
-      writeFileSync(piConstellPlan, '# Newest PI Constell plan\n')
+      writeFileSync(piConstellPlan, PI_CONSTELL_PLAN_BODY)
       const now = new Date()
       utimesSync(claudePlan, new Date(now.getTime() - 120_000), new Date(now.getTime() - 120_000))
       utimesSync(piConstellPlan, now, now)
@@ -121,6 +173,9 @@ test.describe('PI Constell plan discovery', () => {
         return { type: tab?.type, filePath: tab?.filePath }
       })
       expect(active).toEqual({ type: 'markdownPreview', filePath: piConstellPlan })
+      await expect(window.getByText('Phase 1', { exact: true })).toBeVisible()
+      await expect(window.getByText('Phase 2', { exact: true })).toBeVisible()
+      await expect(window.getByText('constellagent:', { exact: false })).toHaveCount(0)
     } finally {
       rmSync(piConstellPlan, { force: true })
       await app.close()

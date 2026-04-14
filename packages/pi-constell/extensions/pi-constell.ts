@@ -96,7 +96,7 @@ export default function piConstell(pi: ExtensionAPI): void {
     }
 
     const label = relativePlanPath(ctx) ?? lastSavedPath?.replace(`${ctx.cwd}/`, '') ?? 'plan mode'
-    const gateLabel = clarificationGateOpen ? 'ready' : 'ask 1 question'
+    const gateLabel = clarificationGateOpen ? 'ready' : 'clarify first'
     ctx.ui.setStatus('pi-constell-plan', ctx.ui.theme.fg('warning', `⏸ PI Constell Plan → ${label} · ${gateLabel}`))
   }
 
@@ -105,7 +105,7 @@ export default function piConstell(pi: ExtensionAPI): void {
     planModeEnabled = true
     previousTools = pi.getActiveTools()
     pi.setActiveTools(PLAN_MODE_TOOLS)
-    ctx.ui.notify('pi-constell-plan enabled. Ask one clarifying question before the active plan file becomes writable.', 'info')
+    ctx.ui.notify('pi-constell-plan enabled. Start with a strong clarification round before the active plan file becomes writable.', 'info')
     updateStatus(ctx)
     persistState()
   }
@@ -128,6 +128,16 @@ export default function piConstell(pi: ExtensionAPI): void {
   pi.registerCommand('plan', {
     description: 'Toggle pi-constell-plan mode',
     handler: async (_args, ctx) => togglePlanMode(ctx),
+  })
+
+  pi.registerCommand('plan-off', {
+    description: 'Leave pi-constell-plan mode explicitly',
+    handler: async (_args, ctx) => disablePlanMode(ctx),
+  })
+
+  pi.registerCommand('agent', {
+    description: 'Return to normal agent mode',
+    handler: async (_args, ctx) => disablePlanMode(ctx),
   })
 
   pi.registerCommand('plan-save', {
@@ -196,7 +206,7 @@ export default function piConstell(pi: ExtensionAPI): void {
     return {
       message: {
         customType: 'pi-constell-plan-mode',
-        content: `[PI CONSTELL PLAN MODE ACTIVE]\nYou are in plan mode.\n\nRules:\n- Investigate the repo with read-only tools before planning.\n- Your first substantive action must be askUserQuestion. Treat it as a blocking prerequisite before drafting or saving the plan.\n- Ask exactly one clarification question per askUserQuestion call, wait for the answer, and continue asking follow-ups one at a time until material ambiguities are resolved.\n- Prefer reading the codebase over asking the user when the answer is discoverable from the repo.\n- Each question should offer 2-4 strong options with concise tradeoffs, and include a recommended answer in the option descriptions when you have a strong default.\n- Until askUserQuestion completes successfully for this prompt, write/edit is blocked even for the active plan file.\n- You may use write/edit only for the active plan file: ${activePlanPath}\n- Do not modify any other project file.\n- Produce a concise markdown implementation plan with sections for \"## Open Questions / Assumptions\", \"## Proposed PR Stack\", per-phase validation details, and \"## Recommendation\".\n- For each planned phase, include: Goal, Why this is a good PR boundary, Main code areas likely to change, Unit tests, E2E validation, DB verification, and Linear.\n- After the plan is approved, execution should stop after phase 1 and wait for approval before PR creation or later phases.\n- Prefer a strong action-oriented title so the saved filename is useful documentation.\n\n${clarificationGateOpen ? `Clarification gate: satisfied for this prompt.\nLatest clarifications:\n${activeClarifications ?? 'None recorded.'}` : 'Clarification gate: pending. Ask one clarifying question with askUserQuestion before drafting the plan.'}\n\n${planContent ? `Current plan file contents:\n\n${planContent}` : 'The active plan file is empty; create or refine it as needed once the clarification gate is open.'}`,
+        content: `[PI CONSTELL PLAN MODE ACTIVE]\nYou are in plan mode.\n\nRules:\n- Investigate the repo with read-only tools before planning.\n- Your first substantive action must be askUserQuestion. Treat it as a blocking prerequisite before drafting or saving the plan.\n- Start with 3-4 strong clarification questions in one askUserQuestion call when the repo investigation leaves material ambiguity. If the plan later changes materially, ask 1-2 focused follow-up questions; never exceed 4 in a single call.\n- Prefer reading the codebase over asking the user when the answer is discoverable from the repo.\n- Each question should offer 2-4 strong options with concise tradeoffs and a recommended answer when you have a strong default.\n- Clarification summaries preserve explicit option mappings like A/1 and B/2 so free text such as \"A then B\" stays grounded in the preset choices.\n- Until askUserQuestion completes successfully for this prompt, write/edit is blocked even for the active plan file.\n- You may use write/edit only for the active plan file: ${activePlanPath}\n- Do not modify any other project file.\n- Read-only help commands are allowed in plan mode.\n- Use /plan-off or /agent to leave plan mode explicitly.\n- Produce a concise markdown implementation plan with sections for \"## Open Questions / Assumptions\", \"## Phases\", and \"## Recommendation\".\n- Write the full phase plan now. Do not stop the document at Phase 1; include every planned phase needed to complete the work.\n- Cover all required prompt constraints, validation details, and tradeoffs, but keep the writing tight so the plan is detailed without becoming overbearing.\n- For each phase, include: Goal, why the phase boundary makes sense, main code areas, task breakdown, tests, and how you will validate the work.\n- Include E2E, storage, and runtime validation details when they matter.\n- After the plan is approved, execution should stop after phase 1 and wait for approval before later phases, but the written plan should still include those later phases.\n- Prefer a strong action-oriented title so the saved filename is useful documentation.\n\n${clarificationGateOpen ? `Clarification gate: satisfied for this prompt.\nLatest clarifications:\n${activeClarifications ?? 'None recorded.'}` : 'Clarification gate: pending. Ask an initial clarification round with askUserQuestion before drafting the plan.'}\n\n${planContent ? `Current plan file contents:\n\n${planContent}` : 'The active plan file is empty; create or refine it as needed once the clarification gate is open.'}`,
         display: false,
       },
     }

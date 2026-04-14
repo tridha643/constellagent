@@ -26,6 +26,10 @@ import styles from './MarkdownPreview.module.css'
 
 const BUILD_TIMEOUT_MS = 5 * 60 * 1000
 
+function stripYamlFrontmatterForPreview(content: string): string {
+  return content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '')
+}
+
 const RELOCATE_TARGETS: { agent: PlanAgent; label: string }[] = [
   { agent: 'cursor', label: 'Cursor' },
   { agent: 'claude-code', label: 'Claude' },
@@ -72,6 +76,10 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
 
   const isPlan = isAgentPlanPath(worktreePath ?? '', filePath, userHome)
   const currentAgent = agentForPlanPath(worktreePath ?? '', filePath, userHome)
+  const renderedContent = useMemo(
+    () => (isPlan && content !== null ? stripYamlFrontmatterForPreview(content) : content),
+    [content, isPlan],
+  )
 
   const effectiveHarness = useMemo(
     () => effectivePlanHarness(meta.buildHarness, currentAgent as PlanAgent | null),
@@ -512,7 +520,7 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
       </div>
       <div className={styles.scrollArea}>
         <AddToChatMarkdownSurface filePath={filePath} className={styles.content}>
-          <MarkdownRenderer>{content}</MarkdownRenderer>
+          <MarkdownRenderer>{renderedContent ?? ''}</MarkdownRenderer>
         </AddToChatMarkdownSurface>
       </div>
     </div>
