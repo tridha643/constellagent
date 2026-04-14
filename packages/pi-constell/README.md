@@ -5,9 +5,10 @@
 ## Features
 
 - `/plan` toggles planning mode
+- `/plan-off` and `/agent` leave planning mode explicitly
 - codebase remains read-only in plan mode
 - `askUserQuestion` is a blocking prerequisite before plan writing or auto-save
-- plan mode asks clarifying questions one at a time before drafting the plan
+- plan mode starts with a stronger first clarification round, then asks smaller follow-ups only if the plan changes materially
 - only the active plan file is writable in plan mode, and only after a clarification round completes
 - `askUserQuestion` supports 1-4 clarifying questions with:
   - `Tab` / `Shift+Tab` question cycling
@@ -15,8 +16,10 @@
   - multi-select support (spacebar toggles the highlighted preset option)
   - optional `Extra details (optional)` free-text on top of preset choices
   - `My own thoughts` for a fully custom answer when presets do not fit
+  - explicit option mappings like `A/1`, `B/2`, etc. in the saved clarification context
 - plan storage is created on install at `~/.pi-constell/plans/`
 - plans are exported to `~/.pi-constell/plans/`, completely outside the repo and never git-trackable by default
+- Constellagent can discover PI Constell plans directly from `~/.pi-constell/plans/`
 - saved plans use stronger action-oriented filenames such as:
   - `improve-plan-mode-questionnaire-ux.md`
   - `add-claude-style-ask-user-question.md`
@@ -43,12 +46,15 @@ In plan mode pi will:
 
 - investigate the repo with read-only tools before planning
 - require `askUserQuestion` before the plan file becomes writable
-- ask follow-up questions one at a time until ambiguities are resolved
+- start with 3-4 strong clarification questions when needed, then use 1-2 focused follow-ups only when ambiguity remains
 - prefer codebase inspection over asking when the answer is already discoverable in the repo
 - let the model write or edit only the active plan file in `~/.pi-constell/plans/`
-- preserve structured clarification context, including optional `Extra details`
+- preserve structured clarification context, including optional `Extra details` and explicit option mappings such as `A/1=...`
+- allow read-only help commands while plan mode is active
 - save Constellagent-compatible markdown plans with frontmatter
-- generate concise PR-stack style plans with explicit validation sections and better saved filenames
+- write the full multi-phase plan now, even though later execution should still pause after phase 1 for approval
+- keep the plan detailed enough to cover the required constraints and validation, but concise enough to stay readable
+- generate concise phase-based plans with explicit validation sections and better saved filenames
 
 ## askUserQuestion payload
 

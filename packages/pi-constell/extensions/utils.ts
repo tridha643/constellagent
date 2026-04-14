@@ -103,6 +103,10 @@ const SAFE_PATTERNS = [
   /^\s*htop\b/,
   /^\s*git\s+(status|log|diff|show|branch|remote|config\s+--get)/i,
   /^\s*git\s+ls-/i,
+  /^\s*pi\s+(?:-h|--help)\b/i,
+  /^\s*pi\s+help(?:\s+\S+)?\b/i,
+  /^\s*pi\s+\/help\b/i,
+  /^\s*pi\s+\/(?:plan|plan-save|plan-off|agent)\s+--help\b/i,
   /^\s*node\s+--version/i,
   /^\s*python\s+--version/i,
   /^\s*jq\b/,
@@ -157,6 +161,8 @@ function hasPlanShape(text: string): boolean {
   if (/^\s*#{1,6}\s+plan\b/im.test(text)) return true
   if (/^\s*#{1,6}\s+goal\b/im.test(text) && /^\s*#{1,6}\s+plan\b/im.test(text)) return true
   if (/^\s*#{1,6}\s+open questions(?:\s*\/\s*assumptions)?\b/im.test(text) && /^\s*#{1,6}\s+proposed pr stack\b/im.test(text)) return true
+  if (/^\s*#{1,6}\s+open questions(?:\s*\/\s*assumptions)?\b/im.test(text) && /^\s*#{1,6}\s+phases\b/im.test(text) && /^\s*#{1,6}\s+recommendation\b/im.test(text)) return true
+  if (/^\s*#{1,6}\s+phases\b/im.test(text) && /^\s*#{1,6}\s+recommendation\b/im.test(text)) return true
   if (/\bplan\s*:/i.test(text) && /^\s*1[.)]\s+/m.test(text)) return true
   if (/^\s*1[.)]\s+/m.test(text) && /^\s*2[.)]\s+/m.test(text)) return true
   return false

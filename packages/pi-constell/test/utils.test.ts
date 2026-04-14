@@ -12,8 +12,10 @@ async function removeIfExists(path: string): Promise<void> {
 test('isSafeCommand blocks destructive shell commands', () => {
   assert.equal(isSafeCommand('ls -la'), true)
   assert.equal(isSafeCommand('git status'), true)
+  assert.equal(isSafeCommand('pi -h'), true)
   assert.equal(isSafeCommand('rm -rf src'), false)
   assert.equal(isSafeCommand('npm publish'), false)
+  assert.equal(isSafeCommand('pi /plan'), false)
 })
 
 test('derivePlanTitle prefers a specific heading', () => {
@@ -65,6 +67,37 @@ Ship faster
   assert.match(result!.markdown, /^# Publish Plan Npm/m)
 })
 
+test('buildPlanMarkdown accepts phase-based plan output', () => {
+  const result = buildPlanMarkdown(`## Open Questions / Assumptions
+- None.
+
+## Phases
+
+### Phase 1
+Goal: Ship faster.
+
+Why this phase boundary makes sense: Keep the change focused.
+
+Main code areas:
+- extension
+
+Task breakdown:
+- Add tests.
+
+Tests:
+- Run verify.
+
+How I'll validate:
+- Check the saved plan.
+
+## Recommendation
+- Start with Phase 1.`, {
+    prompt: 'improve the plan mode questionnaire ux',
+  })
+  assert.ok(result)
+  assert.match(result!.markdown, /^# Improve Plan Mode Questionnaire Ux/m)
+})
+
 test('getPlanDir stores plans under the user home directory', () => {
   assert.equal(getPlanDir(), join(homedir(), '.pi-constell', 'plans'))
 })
@@ -93,9 +126,30 @@ test('savePlanFile writes frontmatter and renames when a better title appears', 
   const initial = await allocatePlanPath(cwd, `Working Plan ${Date.now()}`)
   const saved = await savePlanFile(cwd, `# Improve plan mode questionnaire UX
 
-## Plan
-1. Add tests
-2. Publish`, 'anthropic/sonnet', {
+## Open Questions / Assumptions
+- None.
+
+## Phases
+
+### Phase 1
+Goal: Add tests.
+
+Why this phase boundary makes sense: It keeps the rollout simple.
+
+Main code areas:
+- extensions
+
+Task breakdown:
+- Add tests.
+
+Tests:
+- Run verify.
+
+How I'll validate:
+- Confirm the file saves.
+
+## Recommendation
+- Start with Phase 1.`, 'anthropic/sonnet', {
     prompt: 'improve the plan mode questionnaire ux',
   }, initial)
 

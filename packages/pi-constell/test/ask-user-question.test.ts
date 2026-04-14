@@ -117,6 +117,27 @@ test('summarizeAskUserQuestionAnswers preserves multiline details as-is', () => 
   )
 })
 
+test('summarizeAskUserQuestionAnswers includes option mappings for preset references', () => {
+  const answers: AskUserQuestionAnswer[] = [
+    {
+      question: 'Q?',
+      header: 'Stack',
+      answer: ['API', 'UI'],
+      wasCustom: false,
+      selectedOptions: ['API', 'UI'],
+      optionMappings: [
+        { letter: 'A', index: 1, label: 'API' },
+        { letter: 'B', index: 2, label: 'UI' },
+      ],
+      details: 'A then B.',
+    },
+  ]
+  assert.equal(
+    summarizeAskUserQuestionAnswers(answers),
+    'Stack: API, UI (choices: A/1=API, B/2=UI) — A then B.',
+  )
+})
+
 test('formatAskUserQuestionDetails returns null when cancelled', () => {
   assert.equal(formatAskUserQuestionDetails({ cancelled: true, answers: [] }), null)
 })
@@ -161,7 +182,7 @@ test('askUserQuestion accepts raw space for multi-select toggles and submits fro
   })
 
   harness.send(' ')
-  assert.match(harness.render(), /\[x\] API/)
+  assert.match(harness.render(), /\[x\] A \/ 1 API/)
   assert.doesNotMatch(harness.render(), /Review your answers/)
 
   harness.send('\t')
@@ -176,6 +197,10 @@ test('askUserQuestion accepts raw space for multi-select toggles and submits fro
       answer: ['API'],
       wasCustom: false,
       selectedOptions: ['API'],
+      optionMappings: [
+        { letter: 'A', index: 1, label: 'API' },
+        { letter: 'B', index: 2, label: 'UI' },
+      ],
     },
   ])
 })
@@ -197,7 +222,7 @@ test('askUserQuestion keeps multi-select enter as a toggle until review submit',
 
   harness.send('\r')
   const questionView = harness.render()
-  assert.match(questionView, /\[x\] API/)
+  assert.match(questionView, /\[x\] A \/ 1 API/)
   assert.match(questionView, /Which areas should this plan cover\?/)
   assert.doesNotMatch(questionView, /Review your answers/)
 
@@ -207,4 +232,8 @@ test('askUserQuestion keeps multi-select enter as a toggle until review submit',
   const result = await harness.result
   assert.equal(result.details.cancelled, false)
   assert.deepEqual(result.details.answers[0]?.selectedOptions, ['API'])
+  assert.deepEqual(result.details.answers[0]?.optionMappings, [
+    { letter: 'A', index: 1, label: 'API' },
+    { letter: 'B', index: 2, label: 'UI' },
+  ])
 })

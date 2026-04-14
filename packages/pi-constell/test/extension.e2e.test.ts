@@ -16,6 +16,7 @@ type CustomQuestionResult = {
     answer: string | string[]
     wasCustom: boolean
     selectedOptions: string[]
+    optionMappings?: Array<{ letter: string; index: number; label: string }>
     details?: string
   }>
 }
@@ -84,11 +85,36 @@ function extractActivePlanPath(message: string): string {
   return activePath!
 }
 
-test('extension registers askUserQuestion and plan command', () => {
+test('extension registers askUserQuestion and plan mode commands', () => {
   const api = new FakeAPI()
   piConstell(api as any)
   assert.ok(api.tools.some((tool) => tool.name === 'askUserQuestion'))
   assert.ok(api.commands.has('plan'))
+  assert.ok(api.commands.has('plan-off'))
+  assert.ok(api.commands.has('agent'))
+  assert.ok(api.commands.has('plan-save'))
+})
+
+test('plan mode allows help commands but still blocks mutating shell commands', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
+  const api = new FakeAPI()
+  piConstell(api as any)
+  const ctx = createCtx(cwd)
+
+  await api.commands.get('plan')!.handler('', ctx)
+
+  const [allowedHelp] = await emit(api, 'tool_call', {
+    toolName: 'bash',
+    input: { command: 'pi -h' },
+  }, ctx)
+  assert.equal(allowedHelp, undefined)
+
+  const [blockedMutating] = await emit(api, 'tool_call', {
+    toolName: 'bash',
+    input: { command: 'pi /plan' },
+  }, ctx)
+  assert.equal(blockedMutating?.block, true)
+  assert.match(blockedMutating?.reason ?? '', /read-only shell commands/)
 })
 
 test('plan mode requires askUserQuestion before plan writing or auto-save', async () => {
@@ -104,8 +130,12 @@ test('plan mode requires askUserQuestion before plan writing or auto-save', asyn
 
   const message = beforeAgentStart?.message?.content ?? ''
   assert.match(message, /Your first substantive action must be askUserQuestion/)
-  assert.match(message, /Ask exactly one clarification question per askUserQuestion call/)
-  assert.match(message, /## Proposed PR Stack/)
+  assert.match(message, /Start with 3-4 strong clarification questions/)
+  assert.match(message, /Read-only help commands are allowed in plan mode/)
+  assert.match(message, /\/plan-off or \/agent/)
+  assert.match(message, /## Phases/)
+  assert.match(message, /Write the full phase plan now/)
+  assert.match(message, /detailed without becoming overbearing/)
 
   const activePath = extractActivePlanPath(message)
   const blockedPlanWrite = await emit(api, 'tool_call', {
@@ -125,15 +155,41 @@ test('plan mode requires askUserQuestion before plan writing or auto-save', asyn
 ## Open Questions / Assumptions
 - None.
 
-## Proposed PR Stack
-1. Phase 1 / PR 1
-- Goal: Tighten the planner.
-- Why this is a good PR boundary: It is focused.
-- Main code areas likely to change: extensions.
-- Unit tests: Add coverage.
-- E2E validation: Run verify.
-- DB verification: N/A.
-- Linear: 1 ticket.
+## Phases
+
+### Phase 1
+Goal: Tighten the planner.
+
+Why this phase boundary makes sense: It is focused.
+
+Main code areas:
+- extensions
+
+Task breakdown:
+- Add coverage.
+
+Tests:
+- Run verify.
+
+How I'll validate:
+- Check the plan file saves correctly.
+
+### Phase 2
+Goal: Verify the app opens the saved plan cleanly.
+
+Why this phase boundary makes sense: Discovery is separate from the plan-writing contract.
+
+Main code areas:
+- desktop
+
+Task breakdown:
+- Confirm the plan appears in the app.
+
+Tests:
+- Run the focused desktop plan test.
+
+How I'll validate:
+- Open the saved plan from ~/.pi-constell/plans.
 
 ## Recommendation
 - Start with Phase 1.` },
@@ -162,6 +218,10 @@ test('completed clarification round opens the gate and keeps plan files out of g
         answer: 'Hardening',
         wasCustom: false,
         selectedOptions: ['Hardening'],
+        optionMappings: [
+          { letter: 'A', index: 1, label: 'Hardening' },
+          { letter: 'B', index: 2, label: 'Fast publish' },
+        ],
       },
     ],
   })
@@ -185,7 +245,7 @@ test('completed clarification round opens the gate and keeps plan files out of g
       },
     ],
   }, new AbortController().signal, () => {}, ctx)
-  assert.match(result.content[0]?.text ?? '', /Scope: Hardening/)
+  assert.match(result.content[0]?.text ?? '', /Scope: Hardening \(choices: A\/1=Hardening, B\/2=Fast publish\)/)
 
   const allowedPlanWrite = await emit(api, 'tool_call', {
     toolName: 'write',
@@ -203,15 +263,43 @@ test('completed clarification round opens the gate and keeps plan files out of g
 ## Open Questions / Assumptions
 - Scope: Hardening.
 
-## Proposed PR Stack
-1. Phase 1 / PR 1
-- Goal: Enforce a clarification gate.
-- Why this is a good PR boundary: It lands the core safety behavior first.
-- Main code areas likely to change: extensions, tests, docs.
-- Unit tests: Add coverage for write blocking and prompt instructions.
-- E2E validation: Run package verify and confirm askUserQuestion is mandatory.
-- DB verification: N/A.
-- Linear: 1 ticket.
+## Phases
+
+### Phase 1
+Goal: Enforce a clarification gate.
+
+Why this phase boundary makes sense: It lands the core safety behavior first.
+
+Main code areas:
+- extensions
+- tests
+- docs
+
+Task breakdown:
+- Add coverage for write blocking and prompt instructions.
+
+Tests:
+- Run package verify and confirm askUserQuestion is mandatory.
+
+How I'll validate:
+- Confirm the plan is saved under ~/.pi-constell/plans.
+
+### Phase 2
+Goal: Confirm later phases remain visible in the app.
+
+Why this phase boundary makes sense: Preview rendering should show the full saved plan.
+
+Main code areas:
+- desktop
+
+Task breakdown:
+- Open the saved PI plan in preview.
+
+Tests:
+- Run the PI Constell desktop e2e.
+
+How I'll validate:
+- Confirm Phase 2 renders after Phase 1.
 
 ## Recommendation
 - Start with Phase 1.` },
