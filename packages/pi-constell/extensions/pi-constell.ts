@@ -2,9 +2,10 @@ import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { AssistantMessage, TextContent } from '@mariozechner/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent'
 import registerAskUserQuestion, { formatAskUserQuestionDetails, type AskUserQuestionDetails } from './ask-user-question.js'
-import { buildTaskHandoffPrompt, writeTaskHandoff } from './task-handoff.js'
 import { ensureActivePlanPath, isSafeCommand, notifyConstellagent, readPlanFile, resolvePlanToolPath, savePlanFile } from './utils.js'
 
+const PLAN_MODE_TOOLS = ['read', 'bash', 'grep', 'find', 'ls', 'write', 'edit', 'askUserQuestion']
+const FALLBACK_NORMAL_TOOLS = ['read', 'bash', 'edit', 'write']
 const STATE_TYPE = 'pi-constell-plan-state'
 
 interface PersistedState {
@@ -52,8 +53,6 @@ export default function piConstell(pi: ExtensionAPI): void {
   let lastClarifications: string | null = null
   let clarificationGateOpen = false
   let lastClarifiedPrompt: string | null = null
-  const PLAN_MODE_TOOLS = ['read', 'bash', 'grep', 'find', 'ls', 'write', 'edit', 'askUserQuestion']
-  const FALLBACK_NORMAL_TOOLS = ['read', 'bash', 'grep', 'find', 'ls', 'edit', 'write']
 
   registerAskUserQuestion(pi, {
     onComplete: async (details) => {
@@ -97,7 +96,7 @@ export default function piConstell(pi: ExtensionAPI): void {
     }
 
     const label = relativePlanPath(ctx) ?? lastSavedPath?.replace(`${ctx.cwd}/`, '') ?? 'plan mode'
-    const gateLabel = clarificationGateOpen ? 'ready' : 'clarify first'
+    const gateLabel = clarificationGateOpen ? 'ready' : 'ask 1 question'
     ctx.ui.setStatus('pi-constell-plan', ctx.ui.theme.fg('warning', `⏸ PI Constell Plan → ${label} · ${gateLabel}`))
   }
 
@@ -106,7 +105,7 @@ export default function piConstell(pi: ExtensionAPI): void {
     planModeEnabled = true
     previousTools = pi.getActiveTools()
     pi.setActiveTools(PLAN_MODE_TOOLS)
-    ctx.ui.notify('pi-constell-plan enabled. Investigate deeply, ask 3-4 clarifying questions up front, then write only to the active plan file.', 'info')
+    ctx.ui.notify('pi-constell-plan enabled. Ask one clarifying question before the active plan file becomes writable.', 'info')
     updateStatus(ctx)
     persistState()
   }
@@ -137,16 +136,6 @@ export default function piConstell(pi: ExtensionAPI): void {
       const target = activePlanPath ?? lastSavedPath
       ctx.ui.notify(target ? `Plan file: ${target}` : 'No plan file has been created yet.', 'info')
     },
-  })
-
-  pi.registerCommand('plan-off', {
-    description: 'Disable pi-constell-plan mode',
-    handler: async (_args, ctx) => disablePlanMode(ctx),
-  })
-
-  pi.registerCommand('agent', {
-    description: 'Return to normal agent mode by disabling pi-constell-plan',
-    handler: async (_args, ctx) => disablePlanMode(ctx),
   })
 
   pi.on('tool_call', async (event, ctx) => {
@@ -200,7 +189,6 @@ export default function piConstell(pi: ExtensionAPI): void {
     const activeClarifications = clarificationGateOpen ? lastClarifications : null
     activePlanPath = await ensureActivePlanPath(ctx.cwd, { prompt: lastPrompt, clarifications: activeClarifications }, activePlanPath)
     const planContent = activePlanPath ? await readPlanFile(activePlanPath) : null
-    const taskPrompt = buildTaskHandoffPrompt(process.env.AGENT_ORCH_WS_ID?.trim() || null)
 
     persistState()
     updateStatus(ctx)
@@ -208,7 +196,7 @@ export default function piConstell(pi: ExtensionAPI): void {
     return {
       message: {
         customType: 'pi-constell-plan-mode',
-        content: `[PI CONSTELL PLAN MODE ACTIVE]\nYou are in plan mode.\n\nRules:\n- Investigate the repo deeply with read-only tools before planning.\n- Use askUserQuestion as the blocking clarification step before drafting or saving the plan.\n- For the initial clarification round, ask 3-4 strong questions in a single askUserQuestion call after you have done enough repo investigation to make the options sharp.\n- For follow-up clarification after the plan changes, prefer 1-2 questions and never exceed 4 questions in one askUserQuestion call.\n- Prefer reading the codebase over asking the user when the answer is discoverable from the repo.\n- Each question should offer 2-4 strong options with concise tradeoffs, and include a recommended answer when you have a strong default.\n- Until askUserQuestion completes successfully for this prompt, write/edit is blocked even for the active plan file.\n- You may use write/edit only for the active plan file under ~/.pi-constell/plans/: ${activePlanPath}\n- Durable task handoff files may be written only under ~/.pi/<workspaceId>/tasks/.\n- Do not modify any other project file directly while planning.\n- Produce a concise markdown implementation plan organized by phases only.\n- Required sections: \"## Open Questions / Assumptions\", \"## Phases\", and \"## Recommendation\".\n- For each phase, include: Goal, Why this phase boundary is good, Main code areas likely to change, Task breakdown, Unit tests, E2E validation, and any storage/runtime verification.\n- Write clear phase headings and task breakdowns so the saved plan can seed durable handoff metadata and an initial workspace task graph.\n- After the plan is approved, execution should stop after phase 1 and wait for approval before later phases.\n- Prefer a strong action-oriented title so the saved filename is useful documentation.\n\n${clarificationGateOpen ? `Clarification gate: satisfied for this prompt.\nLatest clarifications:\n${activeClarifications ?? 'None recorded.'}` : 'Clarification gate: pending. Investigate first, then ask a batched askUserQuestion round before drafting the plan.'}\n\n${taskPrompt ? `${taskPrompt}\n\n` : ''}${planContent ? `Current plan file contents:\n\n${planContent}` : 'The active plan file is empty; create or refine it as needed once the clarification gate is open.'}`,
+        content: `[PI CONSTELL PLAN MODE ACTIVE]\nYou are in plan mode.\n\nRules:\n- Investigate the repo with read-only tools before planning.\n- Your first substantive action must be askUserQuestion. Treat it as a blocking prerequisite before drafting or saving the plan.\n- Ask exactly one clarification question per askUserQuestion call, wait for the answer, and continue asking follow-ups one at a time until material ambiguities are resolved.\n- Prefer reading the codebase over asking the user when the answer is discoverable from the repo.\n- Each question should offer 2-4 strong options with concise tradeoffs, and include a recommended answer in the option descriptions when you have a strong default.\n- Until askUserQuestion completes successfully for this prompt, write/edit is blocked even for the active plan file.\n- You may use write/edit only for the active plan file: ${activePlanPath}\n- Do not modify any other project file.\n- Produce a concise markdown implementation plan with sections for \"## Open Questions / Assumptions\", \"## Proposed PR Stack\", per-phase validation details, and \"## Recommendation\".\n- For each planned phase, include: Goal, Why this is a good PR boundary, Main code areas likely to change, Unit tests, E2E validation, DB verification, and Linear.\n- After the plan is approved, execution should stop after phase 1 and wait for approval before PR creation or later phases.\n- Prefer a strong action-oriented title so the saved filename is useful documentation.\n\n${clarificationGateOpen ? `Clarification gate: satisfied for this prompt.\nLatest clarifications:\n${activeClarifications ?? 'None recorded.'}` : 'Clarification gate: pending. Ask one clarifying question with askUserQuestion before drafting the plan.'}\n\n${planContent ? `Current plan file contents:\n\n${planContent}` : 'The active plan file is empty; create or refine it as needed once the clarification gate is open.'}`,
         display: false,
       },
     }
@@ -247,15 +235,6 @@ export default function piConstell(pi: ExtensionAPI): void {
     activePlanPath = saved.path
     lastSavedPath = saved.path
     lastSavedText = text
-    await writeTaskHandoff({
-      workspaceId: process.env.AGENT_ORCH_WS_ID?.trim() || null,
-      planPath: saved.path,
-      planTitle: saved.title,
-      planText: text,
-      codingAgent: currentModelId(ctx),
-      prompt: lastPrompt,
-      clarifications: lastClarifications,
-    }).catch(() => null)
     updateStatus(ctx)
     persistState()
     ctx.ui.notify(`pi-constell-plan saved plan: ${saved.path}`, 'info')
