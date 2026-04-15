@@ -185,8 +185,6 @@ export function App() {
                         tab={t}
                         active={t.id === activeTabId}
                         worktreePath={ws?.worktreePath}
-                        workspaceName={ws?.name}
-                        branch={ws?.branch}
                       />
                     )
                   })}
