@@ -375,13 +375,13 @@ test.describe('Keyboard shortcuts', () => {
     }
   })
 
-  test('Cmd+[ and Cmd+] switch visible workspaces', async () => {
+  test('Cmd+[ and Cmd+] cycle workspaces within the active project only', async () => {
     const repoA = createTestRepo('shortcut-workspace-a')
     const repoB = createTestRepo('shortcut-workspace-b')
     const { app, window } = await launchApp()
 
     try {
-      await setupSidebarProjects(window, [
+      const setup = await setupSidebarProjects(window, [
         {
           name: 'project-alpha',
           repoPath: repoA,
@@ -400,23 +400,14 @@ test.describe('Keyboard shortcuts', () => {
       ])
       await window.waitForTimeout(1500)
 
-      const snapshotBefore = await window.evaluate(() => {
-        const s = (window as any).__store.getState()
-        return {
-          activeBranch: s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch,
-          visibleBranches: s.visibleWorkspaces().map((workspace: any) => workspace.branch),
-        }
-      })
-      expect(snapshotBefore.activeBranch).toBe('branch-b1')
-      expect(snapshotBefore.visibleBranches).toContain('branch-a1')
-      expect(snapshotBefore.visibleBranches).toContain('branch-a2')
-      expect(snapshotBefore.visibleBranches).toContain('branch-b1')
+      const projectAlpha = setup[0]
+      const alphaSecondId = projectAlpha.workspaces[1].id
 
-      const currentIndex = snapshotBefore.visibleBranches.indexOf(snapshotBefore.activeBranch)
-      expect(currentIndex).toBeGreaterThanOrEqual(0)
-      const expectedPrevBranch = snapshotBefore.visibleBranches[
-        (currentIndex - 1 + snapshotBefore.visibleBranches.length) % snapshotBefore.visibleBranches.length
-      ]
+      await window.evaluate((workspaceId: string) => {
+        const store = (window as any).__store.getState()
+        store.setActiveWorkspace(workspaceId)
+      }, alphaSecondId)
+      await window.waitForTimeout(300)
 
       await window.keyboard.press('Meta+[')
       await window.waitForTimeout(500)
@@ -425,7 +416,7 @@ test.describe('Keyboard shortcuts', () => {
         const s = (window as any).__store.getState()
         return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
       })
-      expect(activeBranch).toBe(expectedPrevBranch)
+      expect(activeBranch).toBe('branch-a1')
 
       await window.keyboard.press('Meta+]')
       await window.waitForTimeout(500)
@@ -434,7 +425,33 @@ test.describe('Keyboard shortcuts', () => {
         const s = (window as any).__store.getState()
         return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
       })
-      expect(activeBranch).toBe(snapshotBefore.activeBranch)
+      expect(activeBranch).toBe('branch-a2')
+
+      const betaBranchWsId = setup[1].workspaces[0].id
+      await window.evaluate((workspaceId: string) => {
+        const store = (window as any).__store.getState()
+        store.setActiveWorkspace(workspaceId)
+      }, betaBranchWsId)
+      await window.waitForTimeout(300)
+
+      await window.keyboard.press('Meta+[')
+      await window.waitForTimeout(500)
+
+      activeBranch = await window.evaluate(() => {
+        const s = (window as any).__store.getState()
+        return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
+      })
+      // Git reconcile adds the primary repo checkout (usually `main`) as a second workspace in the same project.
+      expect(activeBranch).toBe('main')
+
+      await window.keyboard.press('Meta+]')
+      await window.waitForTimeout(500)
+
+      activeBranch = await window.evaluate(() => {
+        const s = (window as any).__store.getState()
+        return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
+      })
+      expect(activeBranch).toBe('branch-b1')
     } finally {
       await app.close()
     }

@@ -208,6 +208,7 @@ const api = {
       ipcRenderer.invoke(IPC.APP_ADD_PROJECT_PATH, dirPath),
     openInEditor: (dirPath: string, cliCommand: string, extraArgs?: string[], openMode?: string) =>
       ipcRenderer.invoke(IPC.APP_OPEN_IN_EDITOR, dirPath, cliCommand, extraArgs, openMode) as Promise<{ success: boolean; error?: string }>,
+    relaunch: () => ipcRenderer.invoke(IPC.APP_RELAUNCH) as Promise<void>,
   },
 
   skills: {

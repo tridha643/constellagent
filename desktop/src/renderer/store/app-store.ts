@@ -35,6 +35,7 @@ import {
 import { formatChatContext } from '../utils/chat-context-formatter'
 import { wrapBracketedPaste } from '../utils/bracketed-paste'
 import {
+  getRenderableProjectWorkspaces,
   getSwitchableVisibleProjects,
   getVisibleProjects,
   getVisibleWorkspaces,
@@ -897,6 +898,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     const ordered = getVisibleWorkspaces(s.projects, s.workspaces, s.collapsedProjectIds)
     if (ordered.length <= 1) return
     const idx = ordered.findIndex((workspace) => workspace.id === s.activeWorkspaceId)
+    const prev = idx === -1 ? ordered[ordered.length - 1] : ordered[(idx - 1 + ordered.length) % ordered.length]
+    if (prev) get().setActiveWorkspace(prev.id)
+  },
+
+  nextWorkspaceInActiveProject: () => {
+    const s = get()
+    const active = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+    if (!active) return
+    const ordered = getRenderableProjectWorkspaces(s.workspaces, active.projectId)
+    if (ordered.length <= 1) return
+    const idx = ordered.findIndex((w) => w.id === s.activeWorkspaceId)
+    const next = idx === -1 ? ordered[0] : ordered[(idx + 1) % ordered.length]
+    if (next) get().setActiveWorkspace(next.id)
+  },
+
+  prevWorkspaceInActiveProject: () => {
+    const s = get()
+    const active = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+    if (!active) return
+    const ordered = getRenderableProjectWorkspaces(s.workspaces, active.projectId)
+    if (ordered.length <= 1) return
+    const idx = ordered.findIndex((w) => w.id === s.activeWorkspaceId)
     const prev = idx === -1 ? ordered[ordered.length - 1] : ordered[(idx - 1 + ordered.length) % ordered.length]
     if (prev) get().setActiveWorkspace(prev.id)
   },

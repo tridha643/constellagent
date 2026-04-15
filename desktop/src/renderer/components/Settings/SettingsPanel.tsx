@@ -8,6 +8,7 @@ import {
 } from '../../../shared/worktree-credentials'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { APPEARANCE_THEME_OPTIONS, type AppearanceThemeId } from '../../theme/appearance'
+import { shouldConfirmAppRestart } from './restart-app'
 import styles from './SettingsPanel.module.css'
 
 const SHORTCUTS = [
@@ -759,11 +760,46 @@ function McpServersSection() {
 
 export function SettingsPanel() {
   const settings = useAppStore((s) => s.settings)
+  const tabs = useAppStore((s) => s.tabs)
   const updateSettings = useAppStore((s) => s.updateSettings)
   const toggleSettings = useAppStore((s) => s.toggleSettings)
+  const showConfirmDialog = useAppStore((s) => s.showConfirmDialog)
+  const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
+  const addToast = useAppStore((s) => s.addToast)
+  const [restarting, setRestarting] = useState(false)
 
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     updateSettings({ [key]: value })
+  }
+
+  const triggerRestart = async () => {
+    if (restarting) return
+    setRestarting(true)
+    try {
+      await window.api.app.relaunch()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to restart Constellagent'
+      addToast({ id: crypto.randomUUID(), message, type: 'error' })
+      setRestarting(false)
+    }
+  }
+
+  const requestRestart = () => {
+    if (restarting) return
+    if (shouldConfirmAppRestart(settings.confirmOnClose, tabs)) {
+      showConfirmDialog({
+        title: 'Restart app',
+        message: 'Restart Constellagent now? Some open files have unsaved changes that will be lost.',
+        confirmLabel: 'Restart',
+        tip: 'Use this after pulling or rebuilding so the main process and preload scripts fully reload.',
+        onConfirm: () => {
+          dismissConfirmDialog()
+          void triggerRestart()
+        },
+      })
+      return
+    }
+    void triggerRestart()
   }
 
   useEffect(() => {
@@ -900,6 +936,23 @@ export function SettingsPanel() {
               placeholder="code"
             />
           )}
+
+          <div className={styles.row}>
+            <div className={styles.rowText}>
+              <div className={styles.rowLabel}>Restart app</div>
+              <div className={styles.rowDescription}>
+                Fully quit and reopen Constellagent so main-process and preload changes reload after pulls or rebuilds.
+              </div>
+            </div>
+            <button
+              type="button"
+              className={styles.actionBtn}
+              onClick={requestRestart}
+              disabled={restarting}
+            >
+              {restarting ? 'Restarting...' : 'Restart'}
+            </button>
+          </div>
         </div>
 
         <div className={styles.section}>
