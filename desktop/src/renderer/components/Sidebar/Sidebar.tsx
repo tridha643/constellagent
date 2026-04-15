@@ -7,10 +7,7 @@ import {
   type PrLinkProvider,
   type SidebarActionId,
 } from "../../store/types";
-import {
-  getRenderableProjectWorkspaces,
-  getSwitchableVisibleProjects,
-} from "../../store/sidebar-navigation";
+import { getRenderableProjectWorkspaces } from "../../store/sidebar-navigation";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
 import type { OpenPrInfo, GithubLookupError } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
@@ -497,17 +494,6 @@ export function Sidebar() {
     toggleProjectCollapsed(id);
     if (openProjectPrPopoverId === id) closeProjectPrModal();
   }, [closeProjectPrModal, openProjectPrPopoverId, toggleProjectCollapsed]);
-
-  const projectShortcutIndexById = useMemo(() => {
-    const switchableProjects = getSwitchableVisibleProjects(
-      projects,
-      workspaces,
-      lastActiveWorkspaceByProjectId,
-    ).slice(0, 9);
-    return new Map(
-      switchableProjects.map((project, index) => [project.id, index + 1]),
-    );
-  }, [lastActiveWorkspaceByProjectId, projects, workspaces]);
 
   const handleAddProject = useCallback(async () => {
     const dirPath = await window.api.app.selectDirectory();
@@ -1211,7 +1197,6 @@ export function Sidebar() {
             workspaces,
             project.id,
           );
-          const projectShortcutIndex = projectShortcutIndexById.get(project.id);
 
           return (
             <div
@@ -1261,15 +1246,6 @@ export function Sidebar() {
                   ▶
                 </span>
                 <span className={styles.projectName}>{project.name}</span>
-                {projectShortcutIndex ? (
-                  <span
-                    className={styles.projectShortcutKeycap}
-                    data-testid={`project-shortcut-${projectShortcutIndex}`}
-                    title={`⌘${projectShortcutIndex}`}
-                  >
-                    {projectShortcutIndex}
-                  </span>
-                ) : null}
                 <Tooltip label="Project settings">
                   <button
                     className={styles.settingsBtn}
