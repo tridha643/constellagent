@@ -291,12 +291,19 @@ export function useShortcuts() {
       }
 
       // Cmd+1..9 — switch projects by visible sidebar order (1-based).
-      if (!shift && !alt && /^Digit[1-9]$/.test(e.code)) {
-        if (isTypingContext(e.target)) return
-        consume()
-        const n = Number(e.code.slice(5))
-        store.switchToProjectByIndex(n - 1)
-        return
+      // Intentionally not gated on isTypingContext: Monaco/xterm count as typing targets,
+      // but these shortcuts should still work from editor and terminal.
+      // Use e.key fallback: some hosts (Electron + xterm focus) omit or vary `code` for ⌘digit.
+      if (!shift && !alt) {
+        let n: number | undefined
+        const fromCode = /^Digit([1-9])$/.exec(e.code) ?? /^Numpad([1-9])$/.exec(e.code)
+        if (fromCode) n = Number(fromCode[1])
+        else if (e.key >= '1' && e.key <= '9') n = Number(e.key)
+        if (n !== undefined) {
+          consume()
+          store.switchToProjectByIndex(n - 1)
+          return
+        }
       }
 
       // ── Panels ──

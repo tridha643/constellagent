@@ -119,6 +119,23 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
         term.loadAddon(webLinksAddon)
         term.open(termDiv)
 
+        // ⌘1–9: xterm can see the keydown before/without the same capture path as `useShortcuts`
+        // in some Electron focus cases — handle here so project switching always works from PTY focus.
+        term.attachCustomKeyEventHandler((ev: KeyboardEvent) => {
+          if (ev.type !== 'keydown') return true
+          const cmd = ev.metaKey || ev.ctrlKey
+          if (!cmd || ev.shiftKey || ev.altKey) return true
+          let n: number | undefined
+          const fromCode = /^Digit([1-9])$/.exec(ev.code) ?? /^Numpad([1-9])$/.exec(ev.code)
+          if (fromCode) n = Number(fromCode[1])
+          else if (ev.key >= '1' && ev.key <= '9') n = Number(ev.key)
+          if (n === undefined) return true
+          ev.preventDefault()
+          ev.stopPropagation()
+          useAppStore.getState().switchToProjectByIndex(n - 1)
+          return false
+        })
+
         if (disposed) {
           term.dispose()
           return
