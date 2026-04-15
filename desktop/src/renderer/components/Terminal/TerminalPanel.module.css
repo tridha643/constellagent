@@ -1,4 +1,4 @@
-/* Terminal surface inside the chat shell. */
+/* Terminal fills container with zero chrome. */
 
 .terminalContainer {
   /* Absolute-fill so all terminals stack and share the same dimensions.
@@ -6,9 +6,9 @@
      width/height and preserve TUI state while backgrounded. */
   position: absolute;
   inset: 0;
-  background: transparent;
+  background: var(--term-bg);
   overflow: hidden;
-  padding: 22px 18px 56px 20px;
+  padding: 4px 0 0 8px;
   box-sizing: border-box;
 }
 
@@ -26,23 +26,23 @@
 .splitPane {
   width: 100%;
   height: 100%;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.01)),
-    var(--term-bg);
+  background: var(--term-bg);
   overflow: hidden;
-  padding: 14px 12px 12px 14px;
+  padding: 4px 0 0 8px;
   box-sizing: border-box;
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 18px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  border-left: 1px solid transparent;
+  border-top: 1px solid transparent;
+}
+
+/* First child in a split doesn't need the separator border */
+.splitPane:first-child {
+  border-left: none;
+  border-top: none;
 }
 
 .splitPane.focusedPane {
   border-color: var(--border-accent);
-  box-shadow:
-    0 0 0 1px rgba(123, 147, 189, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 /* Inner div where xterm renders (outside React's control). */
