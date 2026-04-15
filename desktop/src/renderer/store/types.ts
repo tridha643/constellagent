@@ -300,6 +300,10 @@ export interface AppState {
   openCommitDiffTab: (workspaceId: string, hash: string, message: string) => void
   nextWorkspace: () => void
   prevWorkspace: () => void
+  /** Next workspace in sidebar order within the active project only. */
+  nextWorkspaceInActiveProject: () => void
+  /** Previous workspace in sidebar order within the active project only. */
+  prevWorkspaceInActiveProject: () => void
   switchToProjectByIndex: (index: number) => void
   switchToTabByIndex: (index: number) => void
   closeAllWorkspaceTabs: () => void

@@ -35,6 +35,7 @@ import { lookupPersistedProjectRepo } from './persisted-state'
 import { GithubPollService } from './github-poll-service'
 import { listPiModels } from './pi-models'
 import { CommitMessageService } from './commit-message-service'
+import { requestAppRelaunch } from './app-relaunch'
 import {
   deleteProjectStartupCommands,
   getProjectStartupCommands,
@@ -708,6 +709,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.APP_GENERATE_COMMIT_MESSAGE, async (_e, worktreePath: string) => {
     return CommitMessageService.generateWithPi(worktreePath)
+  })
+
+  ipcMain.handle(IPC.APP_RELAUNCH, () => {
+    requestAppRelaunch({ relaunch: () => app.relaunch(), quit: () => app.quit() })
   })
 
   // Accepts a path directly (for testing — avoids dialog.showOpenDialog)

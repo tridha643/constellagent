@@ -267,6 +267,66 @@ test.describe('Workspace project sections should not auto-collapse', () => {
     }
   })
 
+  test('project shortcut expands a collapsed target and restores its last active workspace', async () => {
+    const repoA = createTestRepo('collapse-project-shortcut-a')
+    const repoB = createTestRepo('collapse-project-shortcut-b')
+    const { app, window } = await launchApp()
+
+    try {
+      await window.evaluate(async ({ repoA, repoB }: { repoA: string; repoB: string }) => {
+        const store = (window as any).__store.getState()
+        store.hydrateState({ projects: [], workspaces: [] })
+
+        const projAId = crypto.randomUUID()
+        store.addProject({ id: projAId, name: 'project-alpha', repoPath: repoA })
+        const wtA1 = await (window as any).api.git.createWorktree(repoA, 'ws-shortcut-a1', 'branch-shortcut-a1', true)
+        const wsA1 = crypto.randomUUID()
+        store.addWorkspace({
+          id: wsA1, name: 'ws-shortcut-a1', branch: 'branch-shortcut-a1', worktreePath: wtA1, projectId: projAId,
+        })
+        const wtA2 = await (window as any).api.git.createWorktree(repoA, 'ws-shortcut-a2', 'branch-shortcut-a2', true)
+        const wsA2 = crypto.randomUUID()
+        store.addWorkspace({
+          id: wsA2, name: 'ws-shortcut-a2', branch: 'branch-shortcut-a2', worktreePath: wtA2, projectId: projAId,
+        })
+
+        const projBId = crypto.randomUUID()
+        store.addProject({ id: projBId, name: 'project-beta', repoPath: repoB })
+        const wtB1 = await (window as any).api.git.createWorktree(repoB, 'ws-shortcut-b1', 'branch-shortcut-b1', true)
+        const wsB1 = crypto.randomUUID()
+        store.addWorkspace({
+          id: wsB1, name: 'ws-shortcut-b1', branch: 'branch-shortcut-b1', worktreePath: wtB1, projectId: projBId,
+        })
+
+        store.setActiveWorkspace(wsA2)
+        store.setActiveWorkspace(wsB1)
+      }, { repoA, repoB })
+
+      await window.waitForTimeout(1000)
+
+      const projectAlphaHeader = window.locator('[class*="projectHeader"]', { hasText: 'project-alpha' }).first()
+      const wsA2 = window.locator('[class*="workspaceItem"]', { hasText: 'branch-shortcut-a2' })
+      await projectAlphaHeader.click()
+      await window.waitForTimeout(300)
+
+      await expect(wsA2).not.toBeVisible()
+
+      await window.keyboard.press('Meta+1')
+      await window.waitForTimeout(300)
+
+      await expect(wsA2).toBeVisible()
+      const activeBranch = await window.evaluate(() => {
+        const s = (window as any).__store.getState()
+        return s.workspaces.find((w: any) => w.id === s.activeWorkspaceId)?.branch
+      })
+      expect(activeBranch).toBe('branch-shortcut-a2')
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoA)
+      cleanupTestRepo(repoB)
+    }
+  })
+
   test('manually collapsed project stays collapsed when switching workspaces', async () => {
     const repoA = createTestRepo('collapse-manual-a')
     const repoB = createTestRepo('collapse-manual-b')

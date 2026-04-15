@@ -190,17 +190,15 @@ export function useShortcuts() {
         return
       }
 
-      // ── Sidebar-first workspace switching: Cmd+[ / Cmd+] ──
-      if (!shift && !alt && e.key === '[') {
-        if (isTypingContext(e.target)) return
+      // Cmd+[ / Cmd+]: prev/next workspace within the active project only (Option+Up/Down still cycles all visible workspaces).
+      if (!shift && !alt && e.code === 'BracketLeft') {
         consume()
-        store.prevWorkspace()
+        store.prevWorkspaceInActiveProject()
         return
       }
-      if (!shift && !alt && e.key === ']') {
-        if (isTypingContext(e.target)) return
+      if (!shift && !alt && e.code === 'BracketRight') {
         consume()
-        store.nextWorkspace()
+        store.nextWorkspaceInActiveProject()
         return
       }
 

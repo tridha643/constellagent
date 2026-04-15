@@ -91,6 +91,8 @@ export const IPC = {
   APP_LIST_PI_MODELS: 'app:list-pi-models',
   /** Generate a commit message from current uncommitted changes using PI. */
   APP_GENERATE_COMMIT_MESSAGE: 'app:generate-commit-message',
+  /** Fully quit and relaunch the app (main + preload pick up rebuilds). */
+  APP_RELAUNCH: 'app:relaunch',
 
   // Claude Code integration
   CLAUDE_TRUST_PATH: 'claude:trust-path',
