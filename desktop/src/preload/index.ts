@@ -15,6 +15,7 @@ import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
 import type { GraphiteCreateOptions, GraphiteStackAction, GraphiteStackActionResult, GraphiteStackInfo } from '../shared/graphite-types'
 import type { ReviewComment } from '../shared/review-types'
 import type { ContextWindowData } from '../shared/context-window-types'
+import type { QuickOpenSearchRequest, QuickOpenSearchResult } from '../shared/quick-open-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 
 const api = {
@@ -164,6 +165,8 @@ const api = {
       ipcRenderer.invoke(IPC.FS_GET_TREE, dirPath),
     getTreeWithStatus: (dirPath: string) =>
       ipcRenderer.invoke(IPC.FS_GET_TREE_WITH_STATUS, dirPath),
+    quickOpenSearch: (worktreePath: string, request: QuickOpenSearchRequest) =>
+      ipcRenderer.invoke(IPC.FS_QUICK_OPEN_SEARCH, worktreePath, request) as Promise<QuickOpenSearchResult>,
     readFile: (filePath: string) =>
       ipcRenderer.invoke(IPC.FS_READ_FILE, filePath),
     writeFile: (filePath: string, content: string) =>

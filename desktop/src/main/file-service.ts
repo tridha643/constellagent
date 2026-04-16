@@ -3,6 +3,7 @@ import { homedir } from 'os'
 import { join, basename, relative } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { FileFinder } from '@ff-labs/fff-node'
 import {
   AGENT_PLAN_RELATIVE_DIRS,
   PLAN_DIR_TO_AGENT,
@@ -11,6 +12,7 @@ import {
   relativePathInWorktree,
 } from '../shared/agent-plan-path'
 import type { AgentPlanEntry, PlanAgent, PlanMeta } from '../shared/agent-plan-path'
+import type { QuickOpenSearchItem, QuickOpenSearchRequest, QuickOpenSearchResult } from '../shared/quick-open-types'
 import { readPlanMetaPrefix, readPlanMeta, writePlanMeta } from './plan-meta'
 
 export { AGENT_PLAN_RELATIVE_DIRS, readPlanMeta, writePlanMeta }
@@ -40,7 +42,28 @@ function isAlwaysVisibleFileName(name: string): boolean {
   return name === '.gitignore' || name.startsWith('.env')
 }
 
+function normalizeRootPath(pathValue: string): string {
+  return pathValue.replace(/[\\/]+$/, '') || pathValue
+}
+
+function quickOpenScoreTotal(score: { total?: number } | undefined): number {
+  return score?.total ?? 0
+}
+
+interface QuickOpenFinderState {
+  finder: FileFinder
+  ready: Promise<void>
+}
+
+interface QuickOpenFallbackFile {
+  name: string
+  path: string
+  relativePath: string
+}
+
 export class FileService {
+  private static quickOpenFinders = new Map<string, Promise<QuickOpenFinderState>>()
+  private static quickOpenFallbackFiles = new Map<string, Promise<QuickOpenFallbackFile[]>>()
   static async getTree(dirPath: string, depth = 0): Promise<FileNode[]> {
     if (depth > 8) return [] // prevent infinite recursion
 
@@ -185,11 +208,274 @@ export class FileService {
 
   static async writeFile(filePath: string, content: string): Promise<void> {
     await fsWriteFile(filePath, content, 'utf-8')
+    this.invalidateQuickOpenCachesForPath(filePath)
   }
 
   static async deleteFile(filePath: string): Promise<void> {
     const info = await stat(filePath)
     await rm(filePath, { recursive: info.isDirectory(), force: false })
+    this.invalidateQuickOpenCachesForPath(filePath)
+  }
+
+  private static flattenQuickOpenFiles(nodes: FileNode[], basePath: string): QuickOpenFallbackFile[] {
+    const result: QuickOpenFallbackFile[] = []
+
+    const walk = (list: FileNode[]) => {
+      for (const node of list) {
+        if (node.type === 'file') {
+          result.push({
+            name: node.name,
+            path: node.path,
+            relativePath: node.path.startsWith(basePath)
+              ? node.path.slice(basePath.length + 1)
+              : node.path,
+          })
+          continue
+        }
+        if (node.children) walk(node.children)
+      }
+    }
+
+    walk(nodes)
+    return result
+  }
+
+  private static async getQuickOpenFallbackFiles(worktreePath: string): Promise<QuickOpenFallbackFile[]> {
+    const normalizedPath = normalizeRootPath(worktreePath)
+    const existing = this.quickOpenFallbackFiles.get(normalizedPath)
+    if (existing) return existing
+
+    const created = this.getTree(normalizedPath)
+      .then((nodes) => this.flattenQuickOpenFiles(nodes, normalizedPath))
+      .catch((error) => {
+        this.quickOpenFallbackFiles.delete(normalizedPath)
+        throw error
+      })
+
+    this.quickOpenFallbackFiles.set(normalizedPath, created)
+    return created
+  }
+
+  private static fuzzyMatchQuickOpen(query: string, target: string): number[] | null {
+    const lowerQuery = query.toLowerCase()
+    const lowerTarget = target.toLowerCase()
+    const indices: number[] = []
+    let qi = 0
+
+    for (let ti = 0; ti < lowerTarget.length && qi < lowerQuery.length; ti += 1) {
+      if (lowerTarget[ti] === lowerQuery[qi]) {
+        indices.push(ti)
+        qi += 1
+      }
+    }
+
+    return qi === lowerQuery.length ? indices : null
+  }
+
+  private static fallbackQuickOpenScore(relativePath: string, indices: number[]): number {
+    const nameStart = relativePath.lastIndexOf('/') + 1
+    const nameMatchCount = indices.filter((i) => i >= nameStart).length
+    return -nameMatchCount * 10 + indices.length + relativePath.length
+  }
+
+  private static async fallbackQuickOpenSearch(
+    worktreePath: string,
+    request: QuickOpenSearchRequest,
+    error?: string,
+  ): Promise<QuickOpenSearchResult> {
+    const query = request.query ?? ''
+    const normalizedQuery = query.trim().toLowerCase()
+    const limit = Math.max(1, Math.min(request.limit ?? 50, 200))
+    const files = await this.getQuickOpenFallbackFiles(worktreePath)
+
+    if (!normalizedQuery) {
+      return {
+        state: 'ready',
+        items: files.slice(0, limit).map((file) => ({
+          path: file.path,
+          relativePath: file.relativePath,
+          fileName: file.name,
+          score: 0,
+          matchType: 'fallback',
+        })),
+        totalMatched: files.length,
+        totalFiles: files.length,
+        error,
+      }
+    }
+
+    const matches: QuickOpenSearchItem[] = []
+    for (const file of files) {
+      const indices = this.fuzzyMatchQuickOpen(query, file.relativePath)
+      if (!indices) continue
+
+      const lowerRelativePath = file.relativePath.toLowerCase()
+      const lowerFileName = file.name.toLowerCase()
+      matches.push({
+        path: file.path,
+        relativePath: file.relativePath,
+        fileName: file.name,
+        score: this.fallbackQuickOpenScore(file.relativePath, indices),
+        matchType: 'fallback',
+        exactMatch: lowerRelativePath === normalizedQuery || lowerFileName === normalizedQuery,
+      })
+    }
+
+    matches.sort((a, b) => {
+      if (a.score !== b.score) return a.score - b.score
+      return a.relativePath.localeCompare(b.relativePath)
+    })
+
+    return {
+      state: 'ready',
+      items: matches.slice(0, limit),
+      totalMatched: matches.length,
+      totalFiles: files.length,
+      error,
+    }
+  }
+
+  private static invalidateQuickOpenCachesForPath(targetPath: string): void {
+    const normalizedTarget = toPosixPath(normalizeRootPath(targetPath))
+    const rootsToRefresh = new Set<string>()
+
+    for (const root of this.quickOpenFallbackFiles.keys()) {
+      const normalizedRoot = toPosixPath(normalizeRootPath(root))
+      if (normalizedTarget === normalizedRoot || normalizedTarget.startsWith(normalizedRoot + '/')) {
+        this.quickOpenFallbackFiles.delete(root)
+        rootsToRefresh.add(root)
+      }
+    }
+
+    for (const root of this.quickOpenFinders.keys()) {
+      const normalizedRoot = toPosixPath(normalizeRootPath(root))
+      if (normalizedTarget === normalizedRoot || normalizedTarget.startsWith(normalizedRoot + '/')) {
+        rootsToRefresh.add(root)
+      }
+    }
+
+    for (const root of rootsToRefresh) {
+      void this.refreshQuickOpenSearch(root)
+    }
+  }
+
+  static async refreshQuickOpenSearch(worktreePath: string): Promise<void> {
+    const normalizedPath = normalizeRootPath(worktreePath)
+    this.quickOpenFallbackFiles.delete(normalizedPath)
+
+    const finderPromise = this.quickOpenFinders.get(normalizedPath)
+    if (!finderPromise) return
+
+    try {
+      const { finder } = await finderPromise
+      const scan = finder.scanFiles()
+      if (!scan.ok) {
+        this.quickOpenFinders.delete(normalizedPath)
+        return
+      }
+
+      const refresh = finder.refreshGitStatus()
+      if (!refresh.ok) {
+        this.quickOpenFinders.delete(normalizedPath)
+      }
+    } catch {
+      this.quickOpenFinders.delete(normalizedPath)
+    }
+  }
+
+  static disposeQuickOpenSearch(): void {
+    const seen = new Set<Promise<QuickOpenFinderState>>()
+    for (const promise of this.quickOpenFinders.values()) {
+      if (seen.has(promise)) continue
+      seen.add(promise)
+      void promise.then(({ finder }) => finder.destroy()).catch(() => {})
+    }
+    this.quickOpenFinders.clear()
+    this.quickOpenFallbackFiles.clear()
+  }
+
+  private static async getQuickOpenFinder(worktreePath: string): Promise<QuickOpenFinderState> {
+    const normalizedPath = normalizeRootPath(worktreePath)
+    const existing = this.quickOpenFinders.get(normalizedPath)
+    if (existing) return existing
+
+    const created = (async (): Promise<QuickOpenFinderState> => {
+      if (!FileFinder.isAvailable()) {
+        throw new Error('fff binary is not available on this machine')
+      }
+
+      FileFinder.ensureLoaded()
+      const result = FileFinder.create({
+        basePath: normalizedPath,
+        aiMode: true,
+      })
+      if (!result.ok) {
+        throw new Error(`Failed to initialize fff quick-open search: ${result.error}`)
+      }
+
+      const finder = result.value
+      const ready = finder.waitForScan(5_000).then((waited) => {
+        if (!waited.ok) throw new Error(waited.error)
+      })
+
+      return { finder, ready }
+    })().catch((error) => {
+      this.quickOpenFinders.delete(normalizedPath)
+      throw error
+    })
+
+    this.quickOpenFinders.set(normalizedPath, created)
+    return created
+  }
+
+  static async quickOpenSearch(worktreePath: string, request: QuickOpenSearchRequest): Promise<QuickOpenSearchResult> {
+    const normalizedPath = normalizeRootPath(worktreePath)
+    const query = request.query ?? ''
+    const limit = Math.max(1, Math.min(request.limit ?? 50, 200))
+
+    if (!query.trim()) {
+      return this.fallbackQuickOpenSearch(normalizedPath, { ...request, limit })
+    }
+
+    try {
+      const { finder, ready } = await this.getQuickOpenFinder(normalizedPath)
+      const progress = finder.getScanProgress()
+      if (progress.ok && progress.value.isScanning) {
+        await Promise.race([
+          ready,
+          new Promise<void>((resolve) => setTimeout(resolve, 250)),
+        ])
+      }
+
+      const search = finder.fileSearch(query, {
+        pageSize: limit,
+        currentFile: request.currentFile,
+      })
+      if (!search.ok) {
+        throw new Error(search.error)
+      }
+
+      const nextProgress = finder.getScanProgress()
+      const items: QuickOpenSearchItem[] = search.value.items.slice(0, limit).map((item, index) => ({
+        path: item.path,
+        relativePath: item.relativePath,
+        fileName: item.fileName,
+        gitStatus: item.gitStatus,
+        score: quickOpenScoreTotal(search.value.scores[index]),
+        matchType: search.value.scores[index]?.matchType,
+        exactMatch: search.value.scores[index]?.exactMatch,
+      }))
+
+      return {
+        state: nextProgress.ok && nextProgress.value.isScanning ? 'indexing' : 'ready',
+        items,
+        totalMatched: search.value.totalMatched,
+        totalFiles: search.value.totalFiles,
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Quick open search failed'
+      return this.fallbackQuickOpenSearch(normalizedPath, { ...request, limit }, message)
+    }
   }
 
   /** Collect `.md`/`.mdx` under `root/.cursor/plans`, `root/.claude/plans`, etc. */

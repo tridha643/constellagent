@@ -21,6 +21,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@ff-labs/fff-node": "^0.5.2",
     "@libsql/client": "^0.17.2",
     "@monaco-editor/react": "^4.7.0",
     "@openrouter/ai-sdk-provider": "^2.3.3",
