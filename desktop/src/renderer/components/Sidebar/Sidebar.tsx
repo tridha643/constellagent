@@ -14,7 +14,6 @@ import { WorkspaceDialog } from "./WorkspaceDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
 import { Tooltip } from "../Tooltip/Tooltip";
-import { GraphiteStack } from "./GraphiteStack";
 import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME, CONSTELLAGENT_PROJECT_MIME } from "../../utils/add-to-chat";
 import { ContextWindowIndicator } from "./ContextWindowIndicator";
 import styles from "./Sidebar.module.css";
@@ -386,7 +385,6 @@ export function Sidebar() {
   const settings = useAppStore((s) => s.settings);
   const setGhAvailability = useAppStore((s) => s.setGhAvailability);
   const worktreeSyncMap = useAppStore((s) => s.worktreeSyncStatus);
-  const graphiteStacks = useAppStore((s) => s.graphiteStacks);
   const collapsedProjectIds = useAppStore((s) => s.collapsedProjectIds);
   const toggleProjectCollapsed = useAppStore((s) => s.toggleProjectCollapsed);
   const lastActiveWorkspaceByProjectId = useAppStore((s) => s.lastActiveWorkspaceByProjectId);
@@ -415,7 +413,6 @@ export function Sidebar() {
     Record<string, string | null>
   >({});
   const [pullingPrKey, setPullingPrKey] = useState<string | null>(null);
-  const [pullingStackPrKey, setPullingStackPrKey] = useState<string | null>(null);
   const [projectPrSearch, setProjectPrSearch] = useState("");
   const draggingWorkspaceIdRef = useRef<string | null>(null);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
@@ -550,28 +547,12 @@ export function Sidebar() {
       worktreePath: string,
     ) => {
       const wsId = crypto.randomUUID();
-      let graphiteUiTrunkBranch: string | undefined;
-      try {
-        if (
-          await window.api.git.isSecondaryWorktreeRoot(
-            project.repoPath,
-            worktreePath,
-          )
-        ) {
-          graphiteUiTrunkBranch = branch;
-        }
-      } catch {
-        // Best effort — fall back to default Graphite UI trunk detection.
-      }
       addWorkspace({
         id: wsId,
         name,
         branch,
         worktreePath,
         projectId: project.id,
-        ...(graphiteUiTrunkBranch
-          ? { graphiteUiTrunkBranch }
-          : {}),
       });
 
       let startupSettings =
@@ -738,7 +719,6 @@ export function Sidebar() {
       newBranch: boolean,
       force = false,
       baseBranch?: string,
-      graphiteParentBranch?: string,
     ) => {
       if (workspaceCreation) return;
       const requestId = crypto.randomUUID();
@@ -759,9 +739,6 @@ export function Sidebar() {
           settings.worktreeCredentialRules,
         );
         const createdBranch = await window.api.git.getCurrentBranch(worktreePath).catch(() => branch);
-        if (newBranch && graphiteParentBranch) {
-          await window.api.graphite.setBranchParent(project.repoPath, createdBranch, graphiteParentBranch).catch(() => {});
-        }
         setWorkspaceCreation((prev) => {
           if (!prev || prev.requestId !== requestId) return prev;
           return { ...prev, message: START_TERMINAL_MESSAGE };
@@ -791,7 +768,7 @@ export function Sidebar() {
             destructive: true,
             onConfirm: () => {
               dismissConfirmDialog();
-              handleCreateWorkspace(project, name, branch, newBranch, true, baseBranch, graphiteParentBranch);
+              handleCreateWorkspace(project, name, branch, newBranch, true, baseBranch);
             },
           });
           return;
@@ -947,65 +924,6 @@ export function Sidebar() {
       finishCreateWorkspace,
       showConfirmDialog,
       dismissConfirmDialog,
-      addToast,
-      settings.worktreeCredentialRules,
-    ],
-  );
-
-  const handlePullGraphiteStack = useCallback(
-    async (project: Project, pr: OpenPrInfo) => {
-      const prKey = `${project.id}:${pr.number}`;
-      if (pullingStackPrKey || workspaceCreation) return;
-      setPullingStackPrKey(prKey);
-
-      try {
-        // Discover the stack for this PR's branch
-        const headBranch = sanitizeBranchName(pr.headRefName) || `pr-${pr.number}`;
-        const stackBranches = await window.api.graphite.getStackForPr(
-          project.repoPath,
-          headBranch,
-        );
-
-        if (!stackBranches || stackBranches.length === 0) {
-          addToast({
-            id: crypto.randomUUID(),
-            message: `No Graphite stack found for branch "${headBranch}"`,
-            type: "error",
-          });
-          return;
-        }
-
-        const stackName = uniqueWorkspaceName(
-          `stack-${pr.number}`,
-          project.id,
-          workspaces,
-        );
-
-        const { worktreePath, branch } = await window.api.graphite.cloneStack(
-          project.repoPath,
-          stackName,
-          stackBranches,
-          settings.worktreeCredentialRules,
-        );
-
-        await finishCreateWorkspace(project, stackName, branch, worktreePath);
-        closeProjectPrModal();
-      } catch (err) {
-        const msg =
-          err instanceof Error
-            ? err.message
-            : `Failed to pull Graphite stack for PR #${pr.number}`;
-        addToast({ id: crypto.randomUUID(), message: msg, type: "error" });
-      } finally {
-        setPullingStackPrKey((prev) => (prev === prKey ? null : prev));
-      }
-    },
-    [
-      pullingStackPrKey,
-      workspaceCreation,
-      workspaces,
-      finishCreateWorkspace,
-      closeProjectPrModal,
       addToast,
       settings.worktreeCredentialRules,
     ],
@@ -1308,7 +1226,7 @@ export function Sidebar() {
                         key={ws.id}
                         className={`${styles.workspaceItem} ${
                           ws.id === activeWorkspaceId ? styles.active : ""
-                        } ${unreadWorkspaceIds.has(ws.id) ? styles.unread : ""} ${activeClaudeWorkspaceIds.has(ws.id) ? styles.claudeActive : ""} ${draggedWsId === ws.id ? styles.workspaceItemDragging : ""} ${dropTargetWsId === ws.id && draggedWsId !== ws.id ? styles.workspaceItemDropTarget : ""} ${graphiteStacks.has(ws.id) && (graphiteStacks.get(ws.id)?.branches.length ?? 0) > 1 ? styles.graphiteWorkspace : ""}`}
+                        } ${unreadWorkspaceIds.has(ws.id) ? styles.unread : ""} ${activeClaudeWorkspaceIds.has(ws.id) ? styles.claudeActive : ""} ${draggedWsId === ws.id ? styles.workspaceItemDragging : ""} ${dropTargetWsId === ws.id && draggedWsId !== ws.id ? styles.workspaceItemDropTarget : ""}`}
                         draggable={!isEditing}
                         onClick={() =>
                           !isEditing && handleSelectWorkspace(ws.id)
@@ -1405,11 +1323,6 @@ export function Sidebar() {
                             />
                             <WorkspaceSyncIndicator workspaceId={ws.id} />
                           </span>
-                          <GraphiteStack
-                            workspaceId={ws.id}
-                            projectId={ws.projectId}
-                            worktreePath={ws.worktreePath}
-                          />
                         </div>
                         <Tooltip label="Delete workspace">
                           <button
@@ -1625,8 +1538,7 @@ export function Sidebar() {
                       ws.branch === localBranch,
                   );
                   const isPulling = pullingPrKey === prKey;
-                  const isPullingStack = pullingStackPrKey === prKey;
-                  const disablePull = !!workspaceCreation || !!pullingPrKey || !!pullingStackPrKey;
+                  const disablePull = !!workspaceCreation || !!pullingPrKey;
 
                   return (
                     <div key={pr.number} className={styles.projectPrRow}>
@@ -1695,17 +1607,6 @@ export function Sidebar() {
                               ? "Pulling..."
                               : "Pull locally"}
                         </button>
-                        {projectPrModalProject.prLinkProvider === "graphite" && !existingWorkspace && (
-                          <button
-                            className={styles.projectPrPullBtn}
-                            onClick={() => {
-                              void handlePullGraphiteStack(projectPrModalProject, pr);
-                            }}
-                            disabled={disablePull}
-                          >
-                            {isPullingStack ? "Pulling stack..." : "Pull stack"}
-                          </button>
-                        )}
                       </div>
                     </div>
                   );
@@ -1719,7 +1620,7 @@ export function Sidebar() {
       {dialogProject && (
         <WorkspaceDialog
           project={dialogProject}
-          onConfirm={(name, branch, newBranch, baseBranch, graphiteParentBranch) => {
+          onConfirm={(name, branch, newBranch, baseBranch) => {
             handleCreateWorkspace(
               dialogProject,
               name,
@@ -1727,7 +1628,6 @@ export function Sidebar() {
               newBranch,
               false,
               baseBranch,
-              graphiteParentBranch,
             );
           }}
           onCancel={() => {
@@ -1742,12 +1642,10 @@ export function Sidebar() {
       {editingProject && (
         <ProjectSettingsDialog
           project={editingProject}
-          onSave={({ startupCommands, prLinkProvider, graphiteNewBranchSource, graphitePreferredTrunk }) => {
+          onSave={({ startupCommands, prLinkProvider }) => {
             updateProject(editingProject.id, {
               startupCommands,
               prLinkProvider,
-              graphiteNewBranchSource,
-              graphitePreferredTrunk,
             });
             setEditingProject(null);
           }}

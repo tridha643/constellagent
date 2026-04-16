@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 import { existsSync } from 'fs'
 import { promisify } from 'util'
 import { basename, dirname, join, resolve } from 'path'
+import { GRAPHITE_DEFAULT_BRANCH_ONLY_ERROR, GRAPHITE_SINGLE_ACTION_ERROR } from '../shared/graphite-types'
 import type {
   GraphiteBranchInfo,
   GraphiteCreateBranchOption,
@@ -332,6 +333,46 @@ export class GraphiteService {
     return branch
   }
 
+  private static normalizeBranch(branch: string): string {
+    return branch.trim().replace(/^refs\/heads\//, '').replace(/^origin\//, '')
+  }
+
+  private static ensureDefaultBranchName(branch: string, defaultBranch: string): string {
+    const normalizedBranch = this.normalizeBranch(branch)
+    const normalizedDefaultBranch = this.normalizeBranch(defaultBranch)
+    if (!normalizedDefaultBranch) throw new Error('Default branch is required for Graphite stack actions.')
+    if (normalizedBranch !== normalizedDefaultBranch) {
+      throw new Error(GRAPHITE_DEFAULT_BRANCH_ONLY_ERROR)
+    }
+    return normalizedBranch
+  }
+
+  private static async ensureDefaultBranch(worktreePath: string, defaultBranch: string): Promise<string> {
+    const branch = await this.currentBranch(worktreePath)
+    return this.ensureDefaultBranchName(branch, defaultBranch)
+  }
+
+  private static async resolveRepoDefaultBranch(repoPath: string): Promise<string> {
+    const remoteHeadRef = await git(['symbolic-ref', 'refs/remotes/origin/HEAD'], repoPath).catch(() => '')
+    if (remoteHeadRef) return this.normalizeBranch(remoteHeadRef.replace(/^refs\/remotes\//, ''))
+
+    const current = this.normalizeBranch(await this.currentBranch(repoPath).catch(() => ''))
+    if (['main', 'master', 'production'].includes(current)) return current
+
+    for (const candidate of ['main', 'master', 'production']) {
+      const exists = await git(['rev-parse', '--verify', `refs/heads/${candidate}`], repoPath)
+        .then(() => true, () => false)
+      if (exists) return candidate
+    }
+
+    return this.normalizeBranch(await GitService.getDefaultBranch(repoPath))
+  }
+
+  private static async ensureRepoDefaultBranch(repoPath: string): Promise<string> {
+    const defaultBranch = await this.resolveRepoDefaultBranch(repoPath)
+    return this.ensureDefaultBranch(repoPath, defaultBranch)
+  }
+
   private static async hasStagedChanges(worktreePath: string): Promise<boolean> {
     try {
       await execFileAsync('git', ['diff', '--cached', '--quiet'], { cwd: worktreePath })
@@ -448,6 +489,7 @@ export class GraphiteService {
   }
 
   static async setBranchParent(repoPath: string, branch: string, parent: string): Promise<void> {
+    await this.ensureRepoDefaultBranch(repoPath)
     const branchName = branch.trim()
     const parentName = parent.trim()
     if (!branchName) throw new Error('Graphite branch name is required')
@@ -463,12 +505,11 @@ export class GraphiteService {
     defaultBranch: string,
     stackBranchName?: string,
   ): Promise<GraphiteStackActionResult> {
+    const baseBranch = this.normalizeBranch(defaultBranch)
+    let branch = await this.ensureDefaultBranch(worktreePath, baseBranch)
+    if (action !== 'start-stack') throw new Error(GRAPHITE_SINGLE_ACTION_ERROR)
+
     await this.ensureGtAvailable()
-
-    const baseBranch = defaultBranch.trim().replace(/^origin\//, '')
-    if (!baseBranch) throw new Error('Default branch is required for Graphite stack actions.')
-
-    let branch = await this.currentBranch(worktreePath)
     await this.ensureInitialized(repoPath, baseBranch)
     await this.ensureTracked(repoPath, worktreePath, branch, baseBranch)
 
@@ -528,6 +569,7 @@ export class GraphiteService {
     prBranches: { name: string; parent: string | null }[],
     credentialRules?: WorktreeCredentialRule[],
   ): Promise<{ worktreePath: string; branch: string }> {
+    await this.ensureRepoDefaultBranch(repoPath)
     if (prBranches.length === 0) throw new Error('No branches in stack')
 
     // Fetch latest

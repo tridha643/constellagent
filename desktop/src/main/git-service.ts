@@ -394,7 +394,7 @@ export class GitService {
       if (ref) return ref.replace('refs/remotes/', '')
 
       // Fallback for repos where origin/HEAD is unset.
-      for (const candidate of ['origin/main', 'origin/master']) {
+      for (const candidate of ['origin/main', 'origin/master', 'origin/production']) {
         const exists = await git(['rev-parse', '--verify', `refs/remotes/${candidate}`], repoPath)
           .then(() => true, () => false)
         if (exists) return candidate
@@ -404,7 +404,7 @@ export class GitService {
     const local = await git(['rev-parse', '--abbrev-ref', 'HEAD'], repoPath).catch(() => '')
     if (local && local !== 'HEAD') return local
 
-    for (const candidate of ['main', 'master']) {
+    for (const candidate of ['main', 'master', 'production']) {
       const exists = await git(['rev-parse', '--verify', `refs/heads/${candidate}`], repoPath)
         .then(() => true, () => false)
       if (exists) return candidate
