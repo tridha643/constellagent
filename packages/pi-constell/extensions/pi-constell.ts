@@ -2,7 +2,6 @@ import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { AssistantMessage, TextContent } from '@mariozechner/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent'
 import registerAskUserQuestion, { formatAskUserQuestionDetails, type AskUserQuestionDetails } from './ask-user-question.js'
-import registerSuggestPlanModeSwitch from './suggest-plan-mode-switch.js'
 import {
   ensureActivePlanPath,
   isSafeCommand,
@@ -10,7 +9,6 @@ import {
   readPlanFile,
   resolvePlanToolPath,
   savePlanFile,
-  shouldSuggestPlanModeSwitch,
 } from './utils.js'
 
 const PLAN_MODE_TOOLS = ['read', 'bash', 'grep', 'find', 'ls', 'write', 'edit', 'askUserQuestion']
@@ -62,8 +60,6 @@ export default function piConstell(pi: ExtensionAPI): void {
   let lastClarifications: string | null = null
   let clarificationGateOpen = false
   let lastClarifiedPrompt: string | null = null
-  let currentPrompt: string | null = null
-  let suppressedPlanSwitchPrompt: string | null = null
 
   function persistState(): void {
     pi.appendEntry(STATE_TYPE, {
@@ -118,35 +114,6 @@ export default function piConstell(pi: ExtensionAPI): void {
     else enablePlanMode(ctx)
   }
 
-  function syncPromptScopedState(prompt: string | null | undefined): string | null {
-    const normalized = prompt ?? null
-    if (normalized !== currentPrompt) {
-      suppressedPlanSwitchPrompt = null
-    }
-    currentPrompt = normalized
-    return currentPrompt
-  }
-
-  function isPlanSwitchSuppressedForCurrentPrompt(): boolean {
-    return Boolean(currentPrompt && suppressedPlanSwitchPrompt === currentPrompt)
-  }
-
-  function suppressPlanSwitchForCurrentPrompt(_outcome: 'declined' | 'timed_out' | 'unavailable'): void {
-    suppressedPlanSwitchPrompt = currentPrompt
-  }
-
-  async function activatePlanModeForPrompt(ctx: ExtensionContext, prompt: string | null): Promise<string | null> {
-    const targetPrompt = prompt ?? currentPrompt ?? lastPrompt
-    lastPrompt = targetPrompt
-    clarificationGateOpen = false
-    lastClarifiedPrompt = null
-    activePlanPath = await ensureActivePlanPath(ctx.cwd, { prompt: targetPrompt, clarifications: null }, activePlanPath)
-    enablePlanMode(ctx)
-    updateStatus(ctx)
-    persistState()
-    return activePlanPath
-  }
-
   registerAskUserQuestion(pi, {
     onComplete: async (details) => {
       if (!planModeEnabled) return
@@ -156,18 +123,6 @@ export default function piConstell(pi: ExtensionAPI): void {
       lastClarifiedPrompt = lastPrompt
       clarificationGateOpen = true
       persistState()
-    },
-  })
-
-  registerSuggestPlanModeSwitch(pi, {
-    isPlanModeEnabled: () => planModeEnabled,
-    isSuppressedForPrompt: () => isPlanSwitchSuppressedForCurrentPrompt(),
-    onAccepted: async (ctx) => activatePlanModeForPrompt(ctx, currentPrompt),
-    onDeclinedOrTimedOut: async (outcome) => {
-      suppressPlanSwitchForCurrentPrompt(outcome)
-    },
-    onUnavailable: async () => {
-      suppressPlanSwitchForCurrentPrompt('unavailable')
     },
   })
 
@@ -241,22 +196,12 @@ export default function piConstell(pi: ExtensionAPI): void {
   })
 
   pi.on('before_agent_start', async (event, ctx) => {
-    const nextPrompt = syncPromptScopedState(event.prompt)
-
     if (!planModeEnabled) {
       updateStatus(ctx)
-      if (nextPrompt && !isPlanSwitchSuppressedForCurrentPrompt() && shouldSuggestPlanModeSwitch(nextPrompt)) {
-        return {
-          message: {
-            customType: 'pi-constell-plan-mode-nudge',
-            content: `[PI CONSTELL PLAN MODE SUGGESTION]\nThis request looks planning-heavy. Before editing or switching modes yourself, call suggestPlanModeSwitch once to ask the user whether to enter plan mode.\n- Never auto-switch. Explicit user acceptance is required.\n- If the user declines or the prompt times out, stay in normal agent mode and do not ask again during this prompt.\n- If the user accepts, immediately follow plan mode rules for this same prompt: investigate first, use askUserQuestion before any write/edit, and only write to the active plan file after that clarification round completes.`,
-            display: false,
-          },
-        }
-      }
       return
     }
 
+    const nextPrompt = event.prompt ?? null
     const promptChanged = nextPrompt !== lastPrompt
     lastPrompt = nextPrompt
     if (promptChanged || lastClarifiedPrompt !== lastPrompt) clarificationGateOpen = false
@@ -332,8 +277,6 @@ export default function piConstell(pi: ExtensionAPI): void {
       clarificationGateOpen = stateEntry.data.clarificationGateOpen ?? clarificationGateOpen
       lastClarifiedPrompt = stateEntry.data.lastClarifiedPrompt ?? lastClarifiedPrompt
     }
-
-    currentPrompt = lastPrompt
 
     if (planModeEnabled) {
       previousTools = pi.getActiveTools()

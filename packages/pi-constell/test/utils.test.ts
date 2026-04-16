@@ -10,7 +10,6 @@ import {
   getPlanDir,
   isSafeCommand,
   savePlanFile,
-  shouldSuggestPlanModeSwitch,
   slugifyPlanTitle,
 } from '../extensions/utils.js'
 
@@ -25,22 +24,6 @@ test('isSafeCommand blocks destructive shell commands', () => {
   assert.equal(isSafeCommand('rm -rf src'), false)
   assert.equal(isSafeCommand('npm publish'), false)
   assert.equal(isSafeCommand('pi /plan'), false)
-})
-
-test('shouldSuggestPlanModeSwitch flags planning-heavy prompts', () => {
-  assert.equal(
-    shouldSuggestPlanModeSwitch('Design the architecture and phased migration plan for switching modes across the extension and tests.'),
-    true,
-  )
-  assert.equal(
-    shouldSuggestPlanModeSwitch('Break down a multi-step refactor and compare rollout options for the whole repo workflow.'),
-    true,
-  )
-})
-
-test('shouldSuggestPlanModeSwitch skips small direct edits', () => {
-  assert.equal(shouldSuggestPlanModeSwitch('Fix a typo in the README title.'), false)
-  assert.equal(shouldSuggestPlanModeSwitch('Rename a single variable in one file.'), false)
 })
 
 test('derivePlanTitle prefers a specific heading', () => {
