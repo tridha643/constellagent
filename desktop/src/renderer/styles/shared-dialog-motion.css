@@ -1,0 +1,43 @@
+/**
+ * Shared modal overlay / dialog enter+exit keyframes (single source; avoids duplicating
+ * identical @keyframes across Sidebar + RightPanel dialog CSS modules).
+ */
+@keyframes constellagent-dialog-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes constellagent-dialog-body-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes constellagent-dialog-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes constellagent-dialog-body-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}

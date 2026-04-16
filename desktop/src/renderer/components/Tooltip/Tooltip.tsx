@@ -1,11 +1,21 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect, cloneElement } from 'react'
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  cloneElement,
+  type ReactNode,
+} from 'react'
 import { createPortal } from 'react-dom'
 import styles from './Tooltip.module.css'
 
 interface Props {
-  label: string
+  label: ReactNode
   shortcut?: string
   position?: 'top' | 'bottom'
+  /** Wider tooltip with wrapped lines (e.g. context stats). */
+  multiline?: boolean
   children: React.ReactElement<Record<string, unknown>>
 }
 
@@ -18,7 +28,7 @@ const TOOLTIP_HEIGHT_EST = 28
 
 let lastTooltipHidden = 0
 
-export function Tooltip({ label, shortcut, position = 'top', children }: Props) {
+export function Tooltip({ label, shortcut, position = 'top', multiline = false, children }: Props) {
   const [visible, setVisible] = useState(false)
   const [entered, setEntered] = useState(false)
   const [instant, setInstant] = useState(false)
@@ -127,13 +137,13 @@ export function Tooltip({ label, shortcut, position = 'top', children }: Props) 
       {visible && createPortal(
         <div
           ref={tooltipRef}
-          className={`${styles.tooltip} ${resolvedPos === 'bottom' ? styles.bottom : styles.top}`}
+          className={`${styles.tooltip} ${multiline ? styles.multiline : ''} ${resolvedPos === 'bottom' ? styles.bottom : styles.top}`}
           data-entered={entered}
           data-instant={instant}
           style={{ left: coords.x, top: coords.y }}
         >
-          <span className={styles.label}>{label}</span>
-          {shortcut && <kbd className={styles.kbd}>{shortcut}</kbd>}
+          <div className={styles.label}>{label}</div>
+          {shortcut ? <kbd className={styles.kbd}>{shortcut}</kbd> : null}
         </div>,
         document.body,
       )}

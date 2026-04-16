@@ -13,6 +13,7 @@ import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
 import { CommentBubble, CommentComposer, HunkActionAnnotation } from './AnnotationBubble'
 import annotationUi from './AnnotationBubble.module.css'
 import styles from './Editor.module.css'
+import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
 
 const DIFFS_THEME = 'pierre-dark' as const
 
@@ -482,7 +483,7 @@ export function FileStrip({
 }) {
   const scrollTo = (filePath: string) => {
     const el = document.getElementById(`diff-${filePath}`)
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    el?.scrollIntoView({ behavior: getPreferredScrollBehavior(), block: 'start' })
   }
 
   return (

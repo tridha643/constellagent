@@ -14,6 +14,7 @@ import { ensureAppearanceMonacoThemes, getAppearanceMonacoThemeName } from '../.
 import styles from './Editor.module.css'
 
 import { getLanguage } from '../../utils/language-map'
+import { usePrefersReducedMotion } from '../../hooks/use-prefers-reduced-motion'
 import { isLspLanguage, getOrCreateClient, notifyDidOpen, notifyDidClose } from '../../services/lsp-client-manager'
 
 // Configure TS/JS built-in language features
@@ -73,6 +74,7 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   const notifyTabSaved = useAppStore((s) => s.notifyTabSaved)
   const addToast = useAppStore((s) => s.addToast)
   const settings = useAppStore((s) => s.settings)
+  const prefersReducedMotion = usePrefersReducedMotion()
   const runAddToChatRef = useRef<() => void>(() => {})
 
   // Git gutter decorations (no-op when worktreePath is undefined or editor not mounted)
@@ -335,8 +337,8 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
             scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
             padding: { top: 8, bottom: 8 },
             renderLineHighlight: 'line',
-            cursorBlinking: 'smooth',
-            smoothScrolling: true,
+            cursorBlinking: prefersReducedMotion ? 'solid' : 'smooth',
+            smoothScrolling: !prefersReducedMotion,
             tabSize: 2,
             wordWrap: 'off',
             automaticLayout: true,

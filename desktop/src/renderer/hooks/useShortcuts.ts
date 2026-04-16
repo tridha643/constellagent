@@ -171,8 +171,8 @@ export function useShortcuts() {
         }
       }
 
-      // ── Quick open: Cmd+P ──
-      if (!shift && !alt && e.key === 'p') {
+      // ── Quick open: Cmd+F ──
+      if (!shift && !alt && e.code === 'KeyF') {
         consume()
         store.toggleQuickOpen()
         return

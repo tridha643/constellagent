@@ -6,7 +6,7 @@
   align-items: center;
   justify-content: center;
   z-index: 100;
-  animation: overlayFadeIn 180ms var(--ease-out) both;
+  animation: constellagent-dialog-overlay-in 180ms var(--ease-out) both;
 }
 
 .dialog {
@@ -20,7 +20,7 @@
   gap: var(--space-4);
   box-shadow: var(--shadow-lg);
   transform-origin: center;
-  animation: dialogEnter 180ms var(--ease-out) both;
+  animation: constellagent-dialog-body-in 180ms var(--ease-out) both;
 }
 
 .title {
@@ -129,43 +129,13 @@
   pointer-events: none;
 }
 
-@keyframes overlayFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes dialogEnter {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
 /* Exit animations */
 .overlayExiting {
-  animation: overlayFadeOut 140ms var(--ease-out) both;
+  animation: constellagent-dialog-overlay-out 140ms var(--ease-out) both;
 }
 
 .dialogExiting {
-  animation: dialogExit 140ms var(--ease-out) both;
-}
-
-@keyframes overlayFadeOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-@keyframes dialogExit {
-  from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(0.97); }
+  animation: constellagent-dialog-body-out 140ms var(--ease-out) both;
 }
 
 @media (hover: hover) and (pointer: fine) {

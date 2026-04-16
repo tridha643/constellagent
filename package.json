@@ -6,11 +6,13 @@
     "katex": "^0.16.45"
   },
   "scripts": {
+    "build:pi-gui-packages": "bun run --cwd packages/pi-gui-session-driver build && bun run --cwd packages/pi-gui-catalogs build && bun run --cwd packages/pi-gui-pi-sdk-driver build",
+    "postinstall": "bun run build:pi-gui-packages",
     "setup": "bun install && bun run --cwd desktop rebuild",
-    "dev": "bun run --cwd desktop dev",
+    "dev": "bun run build:pi-gui-packages && bun run --cwd desktop dev",
+    "build": "bun run build:pi-gui-packages && bun run --cwd desktop build",
     "dev:isolated": "sh scripts/dev-isolated.sh",
     "dev-isolated": "sh scripts/dev-isolated.sh",
-    "build": "bun run --cwd desktop build",
     "test": "bun run --cwd desktop test",
     "test:automations": "bun run --cwd desktop test:automations",
     "test:automations:e2e": "bun run --cwd desktop test:automations:e2e",

@@ -7,6 +7,7 @@ import { DiffFileSection, FileStrip, type DiffFileData } from '../Editor/DiffFil
 import { AnnotationsSummary } from './AnnotationsSummary'
 import { TourRail } from './TourRail'
 import { resolveAnnotationPathForDiff } from '../../utils/annotation-diff-path'
+import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
 import styles from './HunkReview.module.css'
 
 const MIN_PANEL_WIDTH = 480
@@ -407,9 +408,9 @@ export function HunkReview({ worktreePath }: Props) {
         const rootRect = root.getBoundingClientRect()
         const elRect = target.getBoundingClientRect()
         const top = elRect.top - rootRect.top + root.scrollTop
-        root.scrollTo({ top: Math.max(0, top - 12), behavior: 'smooth' })
+        root.scrollTo({ top: Math.max(0, top - 12), behavior: getPreferredScrollBehavior() })
       } else {
-        target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        target.scrollIntoView({ behavior: getPreferredScrollBehavior(), block: 'nearest' })
       }
       requestAnimationFrame(() => {
         const b = document.querySelector(`[data-annotation-id="${annotation.id}"]`)

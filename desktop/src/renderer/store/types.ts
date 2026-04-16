@@ -92,6 +92,7 @@ export type Tab = {
   | { type: 'diff'; commitHash?: string; commitMessage?: string }
   | { type: 'markdownPreview'; filePath: string; title: string }
   | { type: 't3code'; title: string; serverUrl: string }
+  | { type: 'pi-thread'; title: string }
 )
 
 export type RightPanelMode = 'files' | 'changes' | 'graph'
@@ -271,6 +272,8 @@ export interface AppState {
   nextTab: () => void
   prevTab: () => void
   createTerminalForActiveWorkspace: () => Promise<void>
+  /** Pi SDK agent thread (non-PTY); catalog under app userData. */
+  createPiThreadForActiveWorkspace: () => Promise<void>
   /** Launch a new terminal tab with a pre-written command (plan builds, no session resume). */
   launchAgentTerminalWithCommand: (opts: {
     workspaceId: string

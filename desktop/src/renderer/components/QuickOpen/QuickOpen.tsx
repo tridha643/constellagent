@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import type { QuickOpenSearchItem, QuickOpenSearchResult } from '../../../shared/quick-open-types'
+import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
 import styles from './QuickOpen.module.css'
 
 interface Props {
@@ -138,7 +139,7 @@ export function QuickOpen({ worktreePath }: Props) {
     const list = listRef.current
     if (!list) return
     const item = list.children[selectedIndex] as HTMLElement | undefined
-    if (item) item.scrollIntoView({ block: 'nearest' })
+    if (item) item.scrollIntoView({ block: 'nearest', behavior: getPreferredScrollBehavior() })
   }, [selectedIndex])
 
   const openSelected = useCallback(() => {

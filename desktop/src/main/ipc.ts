@@ -7,6 +7,7 @@ import { watch, type FSWatcher } from 'fs'
 import { execFile, type ExecFileException } from 'child_process'
 import { promisify } from 'util'
 import { IPC } from '../shared/ipc-channels'
+import type { HostUiResponse } from '@pi-gui/session-driver'
 import type { PlanAgent } from '../shared/agent-plan-path'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
@@ -43,6 +44,8 @@ import {
   listProjectStartupSettings,
   setProjectStartupCommands,
 } from './project-startup-settings'
+import { getConstellPiHost } from './pi-host-service'
+import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 
 const ptyManager = new PtyManager()
 const worktreeSyncService = new WorktreeSyncService()
@@ -1318,6 +1321,49 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.PROJECT_STARTUP_SETTINGS_PATH, async () => {
     return getProjectStartupSettingsPath()
   })
+
+  // ── Pi SDK (in-process) ──
+  const piHost = getConstellPiHost()
+  ipcMain.handle(IPC.PI_GET_STATE, async () => piHost.getState())
+  ipcMain.handle(IPC.PI_GET_SELECTED_TRANSCRIPT, async () => piHost.getSelectedTranscript())
+  ipcMain.handle(IPC.PI_SYNC_WORKSPACE, async (_e, workspacePath: string, displayName?: string) =>
+    piHost.syncWorkspace(workspacePath, displayName),
+  )
+  ipcMain.handle(
+    IPC.PI_SELECT_SESSION,
+    async (_e, target: { workspaceId: string; sessionId: string }) => piHost.selectSession(target),
+  )
+  ipcMain.handle(
+    IPC.PI_CREATE_SESSION,
+    async (_e, input: { workspaceId: string; title?: string }) => piHost.createSession(input),
+  )
+  ipcMain.handle(IPC.PI_SUBMIT_COMPOSER, async (_e, text: string) => piHost.submitComposer(text))
+  ipcMain.handle(IPC.PI_UPDATE_COMPOSER_DRAFT, async (_e, draft: string) => piHost.updateComposerDraft(draft))
+  ipcMain.handle(IPC.PI_CANCEL_CURRENT_RUN, async () => piHost.cancelCurrentRun())
+  ipcMain.handle(IPC.PI_SET_COMPOSER_ATTACHMENTS, async (_e, attachments: ComposerAttachment[]) =>
+    piHost.setComposerAttachments(attachments),
+  )
+  ipcMain.handle(IPC.PI_REMOVE_COMPOSER_ATTACHMENT, async (_e, attachmentId: string) =>
+    piHost.removeComposerAttachment(attachmentId),
+  )
+  ipcMain.handle(
+    IPC.PI_SET_SESSION_MODEL,
+    async (_e, selection: { provider: string; modelId: string }) => piHost.setSessionModel(selection),
+  )
+  ipcMain.handle(IPC.PI_SET_SESSION_THINKING_LEVEL, async (_e, level: string) =>
+    piHost.setSessionThinkingLevel(level),
+  )
+  ipcMain.handle(
+    IPC.PI_CONTEXT_USAGE,
+    async (_e, target: { workspaceId: string; sessionId: string }) => {
+      const ws = typeof target?.workspaceId === 'string' ? target.workspaceId : ''
+      const sid = typeof target?.sessionId === 'string' ? target.sessionId : ''
+      if (!ws || !sid) return null
+      return piHost.getContextUsageSnapshot({ workspaceId: ws, sessionId: sid })
+    },
+  )
+  ipcMain.handle(IPC.PI_RESPOND_HOST_UI, async (_e, response: HostUiResponse) => piHost.respondToHostUi(response))
+  ipcMain.handle(IPC.PI_EXTENSION_TUI_INPUT, async (_e, data: string) => piHost.sendExtensionTuiInput(data))
 }
 
 export function getGithubPollService(): GithubPollService {

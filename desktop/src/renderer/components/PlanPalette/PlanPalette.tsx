@@ -6,6 +6,7 @@ import { CursorIcon } from '../Icons/CursorIcon'
 import { OpenCodeIcon } from '../Icons/OpenCodeIcon'
 import { PiIcon } from '../Icons/PiIcon'
 import claudeIcon from '../../assets/agent-icons/claude.svg'
+import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
 import openaiIcon from '../../assets/agent-icons/openai.svg'
 import qoStyles from '../QuickOpen/QuickOpen.module.css'
 import styles from './PlanPalette.module.css'
@@ -189,7 +190,7 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
     const list = listRef.current
     if (!list) return
     const item = list.children[selectedIndex] as HTMLElement | undefined
-    if (item) item.scrollIntoView({ block: 'nearest' })
+    if (item) item.scrollIntoView({ block: 'nearest', behavior: getPreferredScrollBehavior() })
   }, [selectedIndex])
 
   const openSelected = useCallback(() => {

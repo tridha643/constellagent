@@ -9,6 +9,7 @@ import { FileEditor } from './components/Editor/FileEditor'
 import { DiffViewer } from './components/Editor/DiffEditor'
 import { MarkdownPreview } from './components/MarkdownPreview/MarkdownPreview'
 import { T3CodeView } from './components/T3CodeView/T3CodeView'
+import { PiThreadPanel } from './components/PiThread/PiThreadPanel'
 import { RightPanel } from './components/RightPanel/RightPanel'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
 import { AutomationsPanel } from './components/Automations/AutomationsPanel'
@@ -242,6 +243,15 @@ export function App() {
                         <T3CodeView
                           key={activeTab.id}
                           serverUrl={activeTab.serverUrl}
+                          active={true}
+                        />
+                      )}
+
+                      {activeTab?.type === 'pi-thread' && tabWorkspace && (
+                        <PiThreadPanel
+                          key={activeTab.id}
+                          worktreePath={tabWorkspace.worktreePath}
+                          workspaceLabel={tabWorkspace.name}
                           active={true}
                         />
                       )}
