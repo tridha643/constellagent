@@ -53,7 +53,6 @@ import {
 import { normalizeWorktreeCredentialRules } from '../../shared/worktree-credentials'
 
 const DEFAULT_PR_LINK_PROVIDER = 'github' as const
-const DEFAULT_GRAPHITE_NEW_BRANCH_SOURCE = 'trunk' as const
 
 /** Removed Phone Control settings — strip from persisted JSON so old installs do not re-save them. */
 const LEGACY_PHONE_CONTROL_SETTING_KEYS = [
@@ -118,13 +117,20 @@ function normalizeProject(project: Project): Project {
   const preferredTrunk = typeof project.graphitePreferredTrunk === 'string'
     ? project.graphitePreferredTrunk.trim() || null
     : null
-  return {
+  const normalized: Project = {
     ...project,
     prLinkProvider: project.prLinkProvider ?? DEFAULT_PR_LINK_PROVIDER,
-    graphiteNewBranchSource: project.graphiteNewBranchSource ?? DEFAULT_GRAPHITE_NEW_BRANCH_SOURCE,
-    graphitePreferredTrunk: preferredTrunk,
     startupCommands: normalizeHydratedStartupCommands(project.startupCommands),
   }
+  if (project.graphiteNewBranchSource !== 'trunk' && project.graphiteNewBranchSource !== 'branch') {
+    delete normalized.graphiteNewBranchSource
+  }
+  if (preferredTrunk) {
+    normalized.graphitePreferredTrunk = preferredTrunk
+  } else {
+    delete normalized.graphitePreferredTrunk
+  }
+  return normalized
 }
 
 function startupCommandsEqual(a: StartupCommand[] | undefined, b: StartupCommand[] | undefined): boolean {
@@ -359,8 +365,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   ghAvailability: new Map(),
   gitFileStatuses: new Map(),
   worktreeSyncStatus: new Map(),
-  graphiteStacks: new Map(),
-  graphiteStackExpanded: false,
   lastKnownRemoteHead: {},
   activeMonacoEditor: null,
   planBuildTerminalByPlanPath: {},
@@ -407,10 +411,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       newGhAvailability.delete(id)
 
       const newWorktreeSyncStatus = new Map(s.worktreeSyncStatus)
-      const newGraphiteStacks = new Map(s.graphiteStacks)
       for (const ws of s.workspaces.filter((w) => w.projectId === id)) {
         newWorktreeSyncStatus.delete(ws.id)
-        newGraphiteStacks.delete(ws.id)
       }
 
       const tabMap = { ...s.lastActiveTabByWorkspace }
@@ -441,7 +443,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         prStatusMap: newPrStatusMap,
         ghAvailability: newGhAvailability,
         worktreeSyncStatus: newWorktreeSyncStatus,
-        graphiteStacks: newGraphiteStacks,
         collapsedProjectIds,
         lastActiveWorkspaceByProjectId,
         activeWorkspaceId,
@@ -493,8 +494,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       delete tabMap[id]
       const newWorktreeSyncStatus = new Map(s.worktreeSyncStatus)
       newWorktreeSyncStatus.delete(id)
-      const newGraphiteStacks = new Map(s.graphiteStacks)
-      newGraphiteStacks.delete(id)
       const lastActiveWorkspaceByProjectId = pruneLastActiveWorkspaceByProjectId(
         s.lastActiveWorkspaceByProjectId,
         s.projects,
@@ -506,7 +505,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         unreadWorkspaceIds: newUnread,
         activeClaudeWorkspaceIds: newActiveClaude,
         worktreeSyncStatus: newWorktreeSyncStatus,
-        graphiteStacks: newGraphiteStacks,
         lastActiveWorkspaceByProjectId,
         lastActiveTabByWorkspace: tabMap,
         planBuildTerminalByPlanPath,
@@ -1739,20 +1737,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { worktreeSyncStatus: next }
     }),
 
-  setGraphiteStack: (workspaceId, stack) =>
-    set((s) => {
-      const next = new Map(s.graphiteStacks)
-      if (stack) {
-        next.set(workspaceId, stack)
-      } else {
-        next.delete(workspaceId)
-      }
-      return { graphiteStacks: next }
-    }),
-
-  toggleGraphiteStackExpanded: () =>
-    set((s) => ({ graphiteStackExpanded: !s.graphiteStackExpanded })),
-
   setContextWindowData: (data) => set({ contextWindowData: data }),
 
   addAutomation: (automation) =>
@@ -1790,19 +1774,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (existing) {
       set({ activeTabId: existing.id })
       return
-    }
-
-    // Ensure the worktree is on the correct branch before starting T3.
-    // Graphite stack branch takes priority over the stored workspace branch.
-    const project = s.projects.find((p) => p.id === ws.projectId)
-    if (project) {
-      try {
-        const stack = await window.api.graphite.getStack(project.repoPath, ws.worktreePath)
-        if (stack && stack.currentBranch !== ws.branch) {
-          await window.api.graphite.checkoutBranch(ws.worktreePath, stack.currentBranch)
-          get().updateWorkspaceBranch(ws.id, stack.currentBranch)
-        }
-      } catch { /* graphite info is best-effort */ }
     }
 
     try {
@@ -1910,8 +1881,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         : {},
       settings,
       worktreeSyncStatus: new Map(),
-      graphiteStacks: new Map(),
-      graphiteStackExpanded: false,
       lastKnownRemoteHead: {},
       activeMonacoEditor: null,
       planBuildTerminalByPlanPath: {},
@@ -2017,8 +1986,7 @@ async function resolveListedWorktreeBranch(
  * Merge git worktrees from `git worktree list` (plus t3's `~/.t3/worktrees/…` scan) into the store
  * when they are missing from persisted state. The sidebar only renders app workspaces.
  *
- * Also repairs persisted rows stuck with branch `HEAD` / empty when git now reports a real branch,
- * and pins `graphiteUiTrunkBranch` for newly merged linked worktrees.
+ * Also repairs persisted rows stuck with branch `HEAD` / empty when git now reports a real branch.
  */
 async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Promise<void> {
   pruneDetachedHeadWorkspaces()
@@ -2078,22 +2046,12 @@ async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Pr
       const fallbackName = path.split(/[/\\]/).filter(Boolean).pop() || 'workspace'
       const name = branch || fallbackName
 
-      let graphiteUiTrunkBranch: string | undefined
-      try {
-        if (branch && (await window.api.git.isSecondaryWorktreeRoot(project.repoPath, path))) {
-          graphiteUiTrunkBranch = branch
-        }
-      } catch {
-        /* best-effort */
-      }
-
       additions.push({
         id: crypto.randomUUID(),
         name,
         branch,
         worktreePath: path,
         projectId: project.id,
-        ...(graphiteUiTrunkBranch ? { graphiteUiTrunkBranch } : {}),
       })
     }
   }

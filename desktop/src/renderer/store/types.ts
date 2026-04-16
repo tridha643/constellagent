@@ -1,7 +1,6 @@
 import type { editor } from 'monaco-editor'
 import type { PrInfo } from '@shared/github-types'
 import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
-import type { GraphiteStackInfo } from '@shared/graphite-types'
 import type { ContextWindowData } from '@shared/context-window-types'
 import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '../../shared/automation-types'
 import type { WorktreeCredentialRule } from '../../shared/worktree-credentials'
@@ -243,10 +242,6 @@ export interface AppState {
   gitFileStatuses: Map<string, Map<string, string>>
   /** Per-workspace worktree sync status (key = workspace id) */
   worktreeSyncStatus: Map<string, WorkspaceSyncInfo>
-  /** Graphite stack info per workspace (key = workspace id). Ephemeral, not persisted. */
-  graphiteStacks: Map<string, GraphiteStackInfo>
-  /** Whether graphite stack pills are expanded (show all) or collapsed (show 3). Ephemeral. */
-  graphiteStackExpanded: boolean
   /** Last seen `git ls-remote origin HEAD` hash per project (background poller) */
   lastKnownRemoteHead: Record<string, string>
   activeMonacoEditor: editor.IStandaloneCodeEditor | null
@@ -367,8 +362,6 @@ export interface AppState {
   setPrStatuses: (projectId: string, statuses: Record<string, PrInfo | null>) => void
   setGhAvailability: (projectId: string, available: boolean) => void
   setWorktreeSyncStatus: (projectId: string, workspaces: Record<string, WorkspaceSyncInfo>) => void
-  setGraphiteStack: (workspaceId: string, stack: GraphiteStackInfo | null) => void
-  toggleGraphiteStackExpanded: () => void
   setContextWindowData: (data: ContextWindowData | null) => void
 
   // Automation actions

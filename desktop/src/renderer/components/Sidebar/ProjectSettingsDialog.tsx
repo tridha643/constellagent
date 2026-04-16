@@ -1,7 +1,6 @@
 import { useState, useCallback, useLayoutEffect, useRef, useEffect } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type {
-  GraphiteNewBranchSource,
   Project,
   PrLinkProvider,
   StartupCommand,
@@ -19,8 +18,6 @@ interface Props {
   onSave: (settings: {
     startupCommands: StartupCommand[]
     prLinkProvider: PrLinkProvider
-    graphiteNewBranchSource: GraphiteNewBranchSource
-    graphitePreferredTrunk: string | null
   }) => void
   onCancel: () => void
 }
@@ -34,18 +31,6 @@ function normalizeStartupCommands(list: StartupCommand[] | undefined): StartupCo
   return list
     .filter((c) => c.command?.trim())
     .map((c) => ({ name: c.name ?? '', command: c.command }))
-}
-
-function uniqueNonEmpty(values: Array<string | null | undefined>): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const value of values) {
-    const normalized = value?.trim()
-    if (!normalized || seen.has(normalized)) continue
-    seen.add(normalized)
-    out.push(normalized)
-  }
-  return out
 }
 
 interface StartupCommandRowProps {
@@ -181,49 +166,8 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
   const [prLinkProvider, setPrLinkProvider] = useState<PrLinkProvider>(
     project.prLinkProvider ?? 'github'
   )
-  const [graphiteNewBranchSource, setGraphiteNewBranchSource] = useState<GraphiteNewBranchSource>(
-    project.graphiteNewBranchSource ?? 'trunk',
-  )
-  const [graphitePreferredTrunk, setGraphitePreferredTrunk] = useState(project.graphitePreferredTrunk ?? '')
-  const [graphiteTrunks, setGraphiteTrunks] = useState<string[]>([])
   const enabledSkills = Array.isArray(settings.skills) ? settings.skills.filter((s) => s?.enabled) : []
   const enabledSubagents = Array.isArray(settings.subagents) ? settings.subagents.filter((s) => s?.enabled) : []
-
-  useEffect(() => {
-    let cancelled = false
-
-    const loadGraphiteInfo = async () => {
-      const api = getRendererApi()
-      if (!api?.git || !api?.graphite) {
-        if (!cancelled) setGraphiteTrunks(uniqueNonEmpty([project.graphitePreferredTrunk]))
-        return
-      }
-      try {
-        const [defaultBranchRef, createOptions] = await Promise.all([
-          api.git.getDefaultBranch(project.repoPath).catch(() => ''),
-          api.graphite.getCreateOptions(project.repoPath).catch((err) => {
-            maybeShowStaleMainToast(err, addToast)
-            return null
-          }),
-        ])
-        if (cancelled) return
-        const defaultBranch = defaultBranchRef.replace(/^origin\//, '')
-        setGraphiteTrunks(uniqueNonEmpty([
-          project.graphitePreferredTrunk,
-          defaultBranch,
-          ...(createOptions?.trunks ?? []),
-        ]))
-      } catch {
-        // Should be unreachable because individual calls are guarded, but keep a fallback.
-        if (!cancelled) setGraphiteTrunks(uniqueNonEmpty([project.graphitePreferredTrunk]))
-      }
-    }
-
-    void loadGraphiteInfo()
-    return () => {
-      cancelled = true
-    }
-  }, [project.repoPath, project.graphitePreferredTrunk])
 
   // Expanded rows keyed by stable _id
   const [expandedCommandRows, setExpandedCommandRows] = useState<Set<number>>(() => {
@@ -342,10 +286,8 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
     onSave({
       startupCommands: normalized.length > 0 ? normalized : [],
       prLinkProvider,
-      graphiteNewBranchSource,
-      graphitePreferredTrunk: graphitePreferredTrunk.trim() || null,
     })
-  }, [commands, onSave, prLinkProvider, graphiteNewBranchSource, graphitePreferredTrunk])
+  }, [commands, onSave, prLinkProvider])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -449,34 +391,6 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
           <option value="github">GitHub</option>
           <option value="graphite">Graphite</option>
           <option value="devinreview">Devin Review</option>
-        </select>
-
-        <label className={styles.label}>Graphite Worktree Creation</label>
-        <div className={styles.hint}>
-          Default how new Graphite branches start. Use a preferred trunk for repos with multiple live trunks or stacks.
-        </div>
-        <select
-          className={styles.selectInput}
-          value={graphiteNewBranchSource}
-          onChange={(e) => setGraphiteNewBranchSource(e.target.value as GraphiteNewBranchSource)}
-        >
-          <option value="trunk">Default new Graphite branches from trunk</option>
-          <option value="branch">Default to choosing a Graphite branch in the modal</option>
-        </select>
-
-        <label className={styles.label}>Preferred Graphite Trunk</label>
-        <div className={styles.hint}>
-          Optional. Used as the default trunk in the New Workspace modal when multiple trunks are available.
-        </div>
-        <select
-          className={styles.selectInput}
-          value={graphitePreferredTrunk}
-          onChange={(e) => setGraphitePreferredTrunk(e.target.value)}
-        >
-          <option value="">Auto-detect</option>
-          {graphiteTrunks.map((trunk) => (
-            <option key={trunk} value={trunk}>{trunk}</option>
-          ))}
         </select>
 
         <label className={styles.label}>Skills & Subagents</label>

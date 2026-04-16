@@ -14,11 +14,11 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page }> 
   return { app, window }
 }
 
-function createTestRepo(name: string): string {
+function createTestRepo(name: string, defaultBranch = 'main'): string {
   const repoPath = join('/tmp', `test-repo-${name}-${Date.now()}`)
   mkdirSync(repoPath, { recursive: true })
   execSync('git init', { cwd: repoPath })
-  execSync('git checkout -b main', { cwd: repoPath })
+  execSync(`git checkout -b ${defaultBranch}`, { cwd: repoPath })
   execSync('git config user.email "test@test.com"', { cwd: repoPath })
   execSync('git config user.name "Test"', { cwd: repoPath })
   writeFileSync(join(repoPath, 'README.md'), '# Test Repo\n')
@@ -377,7 +377,7 @@ test.describe('Git staging functionality', () => {
     }
   })
 
-  test('feature worktree shows Submit Stack button even with no working tree changes', async () => {
+  test('feature worktree hides Graphite controls with no working tree changes', async () => {
     const repoPath = createTestRepo('staging-graphite-submit-visible')
     const realRepo = realpathSync(repoPath)
     const { app, window } = await launchApp()
@@ -391,7 +391,9 @@ test.describe('Git staging functionality', () => {
       await window.locator('button', { hasText: 'Changes' }).click()
       await window.waitForTimeout(1200)
 
-      await expect(window.locator('button', { hasText: 'Submit Stack' })).toBeVisible({ timeout: 5000 })
+      await expect(window.locator('button', { hasText: 'Submit Stack' })).toHaveCount(0)
+      await expect(window.locator('button', { hasText: 'Add stack' })).toHaveCount(0)
+      await expect(window.locator('button', { hasText: 'Start Stack' })).toHaveCount(0)
       await expect(window.locator('[class*="emptyText"]', { hasText: 'No changes in this worktree' })).toBeVisible()
     } finally {
       await app.close()
@@ -399,7 +401,7 @@ test.describe('Git staging functionality', () => {
     }
   })
 
-  test('staged changes select Start Stack on trunk and Add to Stack on feature branches', async () => {
+  test('staged changes show Start Stack on the default branch and hide Graphite on feature branches', async () => {
     const repoPath = createTestRepo('staging-graphite-labels')
     const realRepo = realpathSync(repoPath)
     const { app, window } = await launchApp()
@@ -429,14 +431,38 @@ test.describe('Git staging functionality', () => {
       await window.locator('button', { hasText: 'Changes' }).click()
       await window.waitForTimeout(1200)
 
-      await expect(window.locator('button', { hasText: 'Add stack' })).toBeVisible({ timeout: 5000 })
+      await expect(window.locator('button', { hasText: 'Add stack' })).toHaveCount(0)
+      await expect(window.locator('button', { hasText: 'Submit Stack' })).toHaveCount(0)
+      await expect(window.locator('button', { hasText: 'Start Stack' })).toHaveCount(0)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
     }
   })
 
-  test('linked worktree with graphiteUiTrunkBranch pin shows Start Stack on home branch', async () => {
+  test('staged changes show Start Stack on a production default branch', async () => {
+    const repoPath = createTestRepo('staging-graphite-production', 'production')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      writeFileSync(join(realRepo, 'README.md'), '# Production stack\n')
+      await window.evaluate(async (repo: string) => {
+        await (window as any).api.git.stage(repo, ['README.md'])
+      }, realRepo)
+
+      await mountWorkspace(window, realRepo, realRepo, 'production', 'production')
+      await window.locator('button', { hasText: 'Changes' }).click()
+      await window.waitForTimeout(1200)
+
+      await expect(window.locator('button', { hasText: 'Start Stack' })).toBeVisible({ timeout: 5000 })
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('legacy graphiteUiTrunkBranch pin does not expose Graphite off main', async () => {
     const repoPath = createTestRepo('staging-graphite-pin')
     const realRepo = realpathSync(repoPath)
     const { app, window } = await launchApp()
@@ -462,7 +488,7 @@ test.describe('Git staging functionality', () => {
       await window.locator('button', { hasText: 'Changes' }).click()
       await window.waitForTimeout(1200)
 
-      await expect(window.locator('button', { hasText: 'Start Stack' })).toBeVisible({ timeout: 5000 })
+      await expect(window.locator('button', { hasText: 'Start Stack' })).toHaveCount(0)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

@@ -15,11 +15,11 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page }> 
   return { app, window }
 }
 
-function createGraphiteRepo(name: string): string {
+function createGraphiteRepo(name: string, defaultBranch = 'main'): string {
   const repoPath = join('/tmp', `test-graphite-${name}-${Date.now()}`)
   mkdirSync(repoPath, { recursive: true })
   execSync('git init', { cwd: repoPath })
-  execSync('git checkout -b main', { cwd: repoPath })
+  execSync(`git checkout -b ${defaultBranch}`, { cwd: repoPath })
   writeFileSync(join(repoPath, 'README.md'), '# Test\n')
   execSync('git add . && git commit -m "init"', { cwd: repoPath })
   execSync('git checkout -b feat-a', { cwd: repoPath })
@@ -151,12 +151,53 @@ test.describe('Graphite stack metadata parsing', () => {
     }
   })
 
-  test('writes branch parent metadata for newly created Graphite children', async () => {
+  test('writes branch parent metadata only from the default branch', async () => {
     const repoPath = createGraphiteRepo('set-parent')
     writeGraphiteSqliteDb(repoPath, [
       { name: 'feat-a', parent: 'main' },
       { name: 'feat-b', parent: 'feat-a' },
     ])
+
+    const { app, window } = await launchApp()
+    try {
+      const rejected = await window.evaluate(async (repo: string) => {
+        try {
+          await (window as any).api.graphite.setBranchParent(repo, 'feat-c', 'feat-b')
+          return ''
+        } catch (err) {
+          return err instanceof Error ? err.message : String(err)
+        }
+      }, repoPath)
+      expect(rejected).toContain('Graphite actions are only available on the default branch.')
+
+      execSync('git checkout main', { cwd: repoPath })
+
+      await window.evaluate(async (repo: string) => {
+        await (window as any).api.graphite.setBranchParent(repo, 'feat-c', 'feat-b')
+      }, repoPath)
+
+      const options = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.graphite.getCreateOptions(repo)
+      }, repoPath)
+
+      expect(options).not.toBeNull()
+      expect(options.branches.find((branch: { name: string }) => branch.name === 'feat-c')).toMatchObject({
+        parent: 'feat-b',
+        trunk: 'main',
+      })
+    } finally {
+      await app.close()
+      cleanupRepo(repoPath)
+    }
+  })
+
+  test('allows branch parent metadata from a production default branch', async () => {
+    const repoPath = createGraphiteRepo('set-parent-production', 'production')
+    writeGraphiteSqliteDb(repoPath, [
+      { name: 'feat-a', parent: 'production' },
+      { name: 'feat-b', parent: 'feat-a' },
+    ])
+    execSync('git checkout production', { cwd: repoPath })
 
     const { app, window } = await launchApp()
     try {
@@ -171,8 +212,36 @@ test.describe('Graphite stack metadata parsing', () => {
       expect(options).not.toBeNull()
       expect(options.branches.find((branch: { name: string }) => branch.name === 'feat-c')).toMatchObject({
         parent: 'feat-b',
-        trunk: 'main',
+        trunk: 'production',
       })
+    } finally {
+      await app.close()
+      cleanupRepo(repoPath)
+    }
+  })
+
+  test('rejects stack actions outside the default branch before invoking the Graphite CLI', async () => {
+    const repoPath = createGraphiteRepo('action-default-only')
+
+    const { app, window } = await launchApp()
+    try {
+      const message = await window.evaluate(async (repo: string) => {
+        try {
+          await (window as any).api.graphite.runStackAction(
+            repo,
+            repo,
+            'start-stack',
+            'test message',
+            'main',
+            null,
+          )
+          return ''
+        } catch (err) {
+          return err instanceof Error ? err.message : String(err)
+        }
+      }, repoPath)
+
+      expect(message).toContain('Graphite actions are only available on the default branch.')
     } finally {
       await app.close()
       cleanupRepo(repoPath)
