@@ -21,19 +21,12 @@ type CustomQuestionResult = {
   }>
 }
 
-type PlanModeSwitchResult = {
-  outcome: 'accepted' | 'declined' | 'timed_out' | 'already_active' | 'suppressed' | 'unavailable'
-  activePlanPath?: string | null
-  secondsRemaining?: number
-  suppressedForPrompt?: boolean
-}
-
 class FakeAPI {
   tools: any[] = []
   commands = new Map<string, any>()
   flags = new Map<string, unknown>()
   events = new Map<string, Handler[]>()
-  activeTools = ['read', 'bash', 'edit', 'write', 'suggestPlanModeSwitch']
+  activeTools = ['read', 'bash', 'edit', 'write']
   entries: Array<{ type: string; customType: string; data: unknown }> = []
 
   registerTool(tool: any): void { this.tools.push(tool) }
@@ -107,114 +100,27 @@ test('extension registers planning tools and plan mode commands', () => {
   const api = new FakeAPI()
   piConstell(api as any)
   assert.ok(api.tools.some((tool) => tool.name === 'askUserQuestion'))
-  assert.ok(api.tools.some((tool) => tool.name === 'suggestPlanModeSwitch'))
   assert.ok(api.commands.has('plan'))
   assert.ok(api.commands.has('plan-off'))
   assert.ok(api.commands.has('agent'))
   assert.ok(api.commands.has('plan-save'))
 })
 
-test('normal mode nudges planning-heavy prompts but skips small direct edits', async () => {
+test('normal mode does not inject plan-mode switch nudge', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
   const api = new FakeAPI()
   piConstell(api as any)
   const ctx = createCtx({ cwd })
 
-  const [planningNudge] = await emit(api, 'before_agent_start', {
+  const [planningHeavy] = await emit(api, 'before_agent_start', {
     prompt: 'Design the architecture and migration approach for switching from agent mode into plan mode across the extension and tests.',
   }, ctx)
-  assert.match(planningNudge?.message?.content ?? '', /call suggestPlanModeSwitch once/)
-  assert.match(planningNudge?.message?.content ?? '', /Never auto-switch/)
+  assert.equal(planningHeavy, undefined)
 
-  const [smallEditNudge] = await emit(api, 'before_agent_start', {
+  const [smallEdit] = await emit(api, 'before_agent_start', {
     prompt: 'Fix a typo in the README title.',
   }, ctx)
-  assert.equal(smallEditNudge, undefined)
-})
-
-test('accepted suggestPlanModeSwitch enables plan mode immediately and keeps the clarification gate closed', async () => {
-  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
-  const api = new FakeAPI()
-  piConstell(api as any)
-  const ctx = createCtx({
-    cwd,
-    customResponses: [
-      { outcome: 'accepted', secondsRemaining: 12, suppressedForPrompt: false } satisfies PlanModeSwitchResult,
-    ],
-  })
-
-  await emit(api, 'before_agent_start', {
-    prompt: 'Refactor the extension architecture and add tests for a user-approved plan mode switch.',
-  }, ctx)
-
-  const tool = getTool(api, 'suggestPlanModeSwitch')
-  const result = await tool.execute('tool-call-id', {
-    reason: 'This request spans runtime behavior, TUI consent, prompt guidance, and tests.',
-  }, new AbortController().signal, () => {}, ctx)
-
-  assert.equal((result.details as PlanModeSwitchResult).outcome, 'accepted')
-  assert.match(result.content[0]?.text ?? '', /Switch into plan mode immediately for this same prompt/)
-  assert.deepEqual(api.activeTools, ['read', 'bash', 'grep', 'find', 'ls', 'write', 'edit', 'askUserQuestion'])
-
-  const activePath = String((result.details as PlanModeSwitchResult).activePlanPath)
-  assert.match(activePath, new RegExp(`^${homedir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\.pi-constell/plans/`))
-  assert.match(ctx._statuses.get('pi-constell-plan') ?? '', /clarify first/)
-
-  const [blockedWrite] = await emit(api, 'tool_call', {
-    toolName: 'write',
-    input: { path: activePath, content: '# Draft plan' },
-  }, ctx)
-  assert.equal(blockedWrite?.block, true)
-  assert.match(blockedWrite?.reason ?? '', /askUserQuestion clarification round/)
-})
-
-test('declined switch suppresses repeated asks only for the current prompt', async () => {
-  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
-  const api = new FakeAPI()
-  piConstell(api as any)
-  const ctx = createCtx({
-    cwd,
-    customResponses: [
-      { outcome: 'declined', secondsRemaining: 9, suppressedForPrompt: true } satisfies PlanModeSwitchResult,
-    ],
-  })
-
-  const prompt = 'Plan a multi-step migration for the extension state model and validation flow.'
-  await emit(api, 'before_agent_start', { prompt }, ctx)
-
-  const tool = getTool(api, 'suggestPlanModeSwitch')
-  const declined = await tool.execute('tool-call-id', {}, new AbortController().signal, () => {}, ctx)
-  assert.equal((declined.details as PlanModeSwitchResult).outcome, 'declined')
-  assert.match(declined.content[0]?.text ?? '', /do not ask again during this prompt/)
-  assert.deepEqual(api.activeTools, ['read', 'bash', 'edit', 'write', 'suggestPlanModeSwitch'])
-
-  const repeated = await tool.execute('tool-call-id-2', {}, new AbortController().signal, () => {}, ctx)
-  assert.equal((repeated.details as PlanModeSwitchResult).outcome, 'suppressed')
-
-  const [suppressedNudge] = await emit(api, 'before_agent_start', { prompt }, ctx)
-  assert.equal(suppressedNudge, undefined)
-
-  const [freshNudge] = await emit(api, 'before_agent_start', {
-    prompt: 'Design a phased rollout for plan mode consent, state restore, and countdown UX across multiple packages.',
-  }, ctx)
-  assert.match(freshNudge?.message?.content ?? '', /call suggestPlanModeSwitch once/)
-})
-
-test('non-interactive suggestPlanModeSwitch is a safe no-op that leaves agent mode unchanged', async () => {
-  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
-  const api = new FakeAPI()
-  piConstell(api as any)
-  const ctx = createCtx({ cwd, hasUI: false })
-
-  await emit(api, 'before_agent_start', {
-    prompt: 'Plan a broad architecture refactor across the extension and tests.',
-  }, ctx)
-
-  const tool = getTool(api, 'suggestPlanModeSwitch')
-  const result = await tool.execute('tool-call-id', {}, new AbortController().signal, () => {}, ctx)
-  assert.equal((result.details as PlanModeSwitchResult).outcome, 'unavailable')
-  assert.match(result.content[0]?.text ?? '', /Continue in normal agent mode/)
-  assert.deepEqual(api.activeTools, ['read', 'bash', 'edit', 'write', 'suggestPlanModeSwitch'])
+  assert.equal(smallEdit, undefined)
 })
 
 test('plan mode allows help commands but still blocks mutating shell commands', async () => {

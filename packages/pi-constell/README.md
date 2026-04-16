@@ -1,15 +1,12 @@
 # pi-constell-plan
 
-`pi-constell-plan` adds a Claude Code-style plan mode to pi, including an agent-requested consent flow that can switch a planning-heavy prompt into plan mode without ever auto-switching.
+`pi-constell-plan` adds a Claude Code-style plan mode to pi. You enter plan mode explicitly with `pi --plan` or `/plan`; normal agent mode does not inject plan-mode prompts or a model-facing switch tool.
 
 ## Features
 
 - `/plan` toggles planning mode manually
+- `pi --plan` starts a session already in plan mode
 - `/plan-off` and `/agent` leave planning mode explicitly
-- `suggestPlanModeSwitch` lets the model request plan mode from normal agent mode, but only after explicit user approval
-- the consent UI is inline/native, shows clear **Accept plan mode** vs **Stay in agent mode** actions, and times out after 15 seconds
-- decline/timeout suppresses re-asking only for the current prompt; later prompts can suggest plan mode again
-- non-interactive sessions fall back to a safe no-op and stay in normal agent mode
 - codebase remains read-only in plan mode
 - `askUserQuestion` is a blocking prerequisite before plan writing or auto-save
 - plan mode starts with a stronger first clarification round, then asks smaller follow-ups only if the plan changes materially
@@ -42,21 +39,19 @@ pi update
 
 ## Usage
 
-### Manual plan mode
+### Plan mode
+
+```bash
+pi --plan
+```
+
+Or toggle inside a session:
 
 ```bash
 pi /plan
 ```
 
-### Agent-requested switching
-
-For planning-heavy prompts, the model can call `suggestPlanModeSwitch` while still in normal mode. The extension will:
-
-- show a 15 second consent prompt
-- switch only if the user accepts
-- keep the current prompt in agent mode on decline/timeout
-- suppress repeated plan-mode requests for that same prompt only
-- immediately apply plan-mode rules after acceptance, even mid-turn
+Use `/plan-off` or `/agent` to return to normal mode. Planning-heavy work should be done after you enable plan mode yourself; the extension does not prompt to switch from normal mode.
 
 ## What plan mode does
 
@@ -73,23 +68,6 @@ In plan mode pi will:
 - write the full multi-phase plan now, even though later execution should still pause after phase 1 for approval
 - keep the plan detailed enough to cover the required constraints and validation, but concise enough to stay readable
 - generate concise phase-based plans with explicit validation sections and better saved filenames
-
-## Prompt guidance for `suggestPlanModeSwitch`
-
-The model should prefer `suggestPlanModeSwitch` for requests like:
-
-- broad refactors
-- architecture or workflow changes
-- migrations
-- ambiguous multi-file changes
-- requests that obviously need phased planning, tradeoffs, or rollout decisions
-
-The model should avoid it for:
-
-- small direct edits
-- single-file fixes
-- typos, copy changes, or simple renames
-- straightforward implementation tasks that do not need a planning pass
 
 ## `askUserQuestion` payload
 
