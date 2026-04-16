@@ -12,6 +12,7 @@ import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-crea
 import type { OpenPrInfo, GithubLookupError } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
+import { GraphiteStack } from "./GraphiteStack";
 
 import { Tooltip } from "../Tooltip/Tooltip";
 import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME, CONSTELLAGENT_PROJECT_MIME } from "../../utils/add-to-chat";
@@ -385,6 +386,7 @@ export function Sidebar() {
   const settings = useAppStore((s) => s.settings);
   const setGhAvailability = useAppStore((s) => s.setGhAvailability);
   const worktreeSyncMap = useAppStore((s) => s.worktreeSyncStatus);
+  const graphiteStacks = useAppStore((s) => s.graphiteStacks);
   const collapsedProjectIds = useAppStore((s) => s.collapsedProjectIds);
   const toggleProjectCollapsed = useAppStore((s) => s.toggleProjectCollapsed);
   const lastActiveWorkspaceByProjectId = useAppStore((s) => s.lastActiveWorkspaceByProjectId);
@@ -1226,7 +1228,7 @@ export function Sidebar() {
                         key={ws.id}
                         className={`${styles.workspaceItem} ${
                           ws.id === activeWorkspaceId ? styles.active : ""
-                        } ${unreadWorkspaceIds.has(ws.id) ? styles.unread : ""} ${activeClaudeWorkspaceIds.has(ws.id) ? styles.claudeActive : ""} ${draggedWsId === ws.id ? styles.workspaceItemDragging : ""} ${dropTargetWsId === ws.id && draggedWsId !== ws.id ? styles.workspaceItemDropTarget : ""}`}
+                        } ${unreadWorkspaceIds.has(ws.id) ? styles.unread : ""} ${activeClaudeWorkspaceIds.has(ws.id) ? styles.claudeActive : ""} ${draggedWsId === ws.id ? styles.workspaceItemDragging : ""} ${dropTargetWsId === ws.id && draggedWsId !== ws.id ? styles.workspaceItemDropTarget : ""} ${graphiteStacks.has(ws.id) && (graphiteStacks.get(ws.id)?.branches.length ?? 0) > 1 ? styles.graphiteWorkspace : ""}`}
                         draggable={!isEditing}
                         onClick={() =>
                           !isEditing && handleSelectWorkspace(ws.id)
@@ -1323,6 +1325,12 @@ export function Sidebar() {
                             />
                             <WorkspaceSyncIndicator workspaceId={ws.id} />
                           </span>
+                          <GraphiteStack
+                            workspaceId={ws.id}
+                            worktreePath={ws.worktreePath}
+                            repoPath={project.repoPath}
+                            graphitePreferredTrunk={project.graphitePreferredTrunk}
+                          />
                         </div>
                         <Tooltip label="Delete workspace">
                           <button
