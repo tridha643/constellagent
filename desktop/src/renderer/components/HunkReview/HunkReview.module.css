@@ -243,6 +243,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .backdrop {
+    backdrop-filter: none;
+  }
+
   .resizeGrip { transition: none; }
   .toggleOption:active,
   .closeBtn:active,

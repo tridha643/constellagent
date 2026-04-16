@@ -889,6 +889,134 @@
   min-width: 0;
 }
 
+<<<<<<< Updated upstream
+=======
+/* ── Graphite Stack Visualization ── */
+/* Nested box color depth: sidebar (#191919) → worktree (#222830) → pills (#2a2a2a / #1e2d42)
+   No borders — depth comes purely from background color stepping. */
+
+.graphiteWorkspace {
+  /* No extra background — visual depth comes from the graphiteStack container */
+}
+
+.graphiteWorkspace.active {
+  background: var(--accent-blue-glow);
+}
+
+/* Worktree container — the outer box */
+.graphiteStack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px;
+  margin-top: 4px;
+  background: var(--surface-worktree);
+  border-radius: var(--radius-lg);  /* 8px — outer container gets larger radius */
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-primary) 15%, transparent) transparent;
+}
+
+/* Collapsed: show ~3 pills then scroll. 3*24px pills + 2*3px gaps + 10px padding = 88px */
+.graphiteStackCollapsed {
+  max-height: 88px;
+}
+
+/* Expand/collapse toggle at bottom of stack */
+.graphiteStackToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 100ms var(--ease-out), background-color 100ms var(--ease-out), transform 100ms var(--ease-out);
+}
+
+.graphiteStackToggle:active {
+  transform: scale(0.97);
+}
+
+/* Branch pill — inner cards */
+.graphiteBranch {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-md);  /* 5px — inner pills get smaller radius than container */
+  background: var(--surface-branch);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-align: left;
+  line-height: 16px;
+  transition: background-color 100ms ease,
+              color 100ms ease,
+              opacity 100ms ease,
+              transform 100ms var(--ease-out);
+}
+
+.graphiteBranch:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.graphiteBranch:disabled {
+  cursor: default;
+}
+
+/* Checking state — dim without layout shift */
+.graphiteBranchChecking {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Current branch — steel-blue wash */
+.graphiteBranchCurrent {
+  color: var(--accent-blue);
+  font-weight: var(--weight-semibold);
+  background: var(--surface-branch-active);
+}
+
+.graphiteBranchName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Hover states — gated for pointer devices only */
+@media (hover: hover) and (pointer: fine) {
+  .graphiteBranch:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--surface-branch-hover);
+  }
+
+  .graphiteBranchCurrent:hover {
+    color: var(--accent-blue);
+    background: var(--surface-branch-active-hover);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graphiteBranch {
+    /* Keep color + opacity transitions for comprehension; drop transform */
+    transition: background-color 100ms ease,
+                color 100ms ease,
+                opacity 100ms ease;
+  }
+  .graphiteBranch:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+>>>>>>> Stashed changes
 /* ── PR Status (inline with branch meta) ── */
 
 .prInline {
@@ -997,7 +1125,6 @@
   border-color: var(--accent-orange-dim);
   background: var(--accent-orange-dim);
   animation: ciPendingTint 1.9s ease-in-out infinite;
-  will-change: color, border-color, text-shadow;
 }
 
 .prApproved {
@@ -1178,6 +1305,16 @@
     transform: none;
   }
   .prCiPending {
+    animation: none;
+  }
+
+  .projectPrLoadingSpinner,
+  .syncIndicatorSyncing {
+    animation: none;
+  }
+
+  .workspaceItem.claudeActive::after,
+  .workspaceItem.unread.claudeActive::after {
     animation: none;
   }
   .actionButtonDragging {

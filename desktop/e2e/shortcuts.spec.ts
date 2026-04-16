@@ -134,7 +134,7 @@ test.describe('Keyboard shortcuts', () => {
     }
   })
 
-  test('Cmd+P opens quick open and opens the top fuzzy match', async () => {
+  test('Cmd+F opens quick open and opens the top fuzzy match', async () => {
     const repoPath = createTestRepo('shortcut-p')
     const { app, window } = await launchApp()
 
@@ -142,7 +142,7 @@ test.describe('Keyboard shortcuts', () => {
       await setupWorkspaceWithTerminal(window, repoPath)
       await window.waitForTimeout(2000)
 
-      await window.keyboard.press('Meta+p')
+      await window.keyboard.press('Meta+f')
       const quickOpenInput = window.getByPlaceholder('Search files by name...')
       await expect(quickOpenInput).toBeVisible({ timeout: 5000 })
 
@@ -158,7 +158,7 @@ test.describe('Keyboard shortcuts', () => {
     }
   })
 
-  test('Cmd+P opens quick open and opens the selected file', async () => {
+  test('Cmd+F opens quick open and opens the selected file', async () => {
     const repoPath = createTestRepo('shortcut-p')
     mkdirSync(join(repoPath, 'src/components'), { recursive: true })
     writeFileSync(join(repoPath, 'src/components/SearchTarget.tsx'), 'export const SearchTarget = () => null\n')
@@ -172,7 +172,7 @@ test.describe('Keyboard shortcuts', () => {
       await setupWorkspace(window, repoPath, 'quick-open')
       await window.waitForTimeout(1500)
 
-      await window.keyboard.press('Meta+p')
+      await window.keyboard.press('Meta+f')
 
       const input = window.locator('input[placeholder="Search files by name..."]')
       await expect(input).toBeVisible({ timeout: 5000 })

@@ -3,6 +3,7 @@ import type { DiffAnnotation } from '@shared/diff-annotation-types'
 import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
+import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
 import { DiffFileSection, FileStrip, type DiffFileData } from './DiffFileSection'
 import styles from './Editor.module.css'
 
@@ -284,7 +285,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
       // Small delay to let tab render if newly created
       requestAnimationFrame(() => {
         const el = document.getElementById(`diff-${filePath}`)
-        el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        el?.scrollIntoView({ behavior: getPreferredScrollBehavior(), block: 'start' })
       })
     }
     window.addEventListener('diff:scrollToFile', handler)

@@ -715,6 +715,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
+  createPiThreadForActiveWorkspace: async () => {
+    const s = get()
+    if (!s.activeWorkspaceId) return
+    const wsTabs = s.tabs.filter((t) => t.workspaceId === s.activeWorkspaceId)
+    const piCount = wsTabs.filter((t) => t.type === 'pi-thread').length
+    get().addTab({
+      id: crypto.randomUUID(),
+      workspaceId: s.activeWorkspaceId,
+      type: 'pi-thread',
+      title: piCount === 0 ? 'PI Chat' : `PI Chat ${piCount + 1}`,
+    })
+  },
+
   launchAgentTerminalWithCommand: async (opts) => {
     const { workspaceId, worktreePath, title, command, agentType } = opts
 

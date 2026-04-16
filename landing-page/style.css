@@ -35,6 +35,9 @@
   --font-serif: 'Instrument Serif', Georgia, serif;
   --font-sans:  'Instrument Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono:  'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+
+  /* Motion — strong ease-out for enters and hovers (Emil-style) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 /* --- Reset --- */
@@ -73,7 +76,6 @@ img { display: block; max-width: 100%; }
   opacity: 0.03;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
   background-repeat: repeat;
-  will-change: transform;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -89,7 +91,7 @@ img { display: block; max-width: 100%; }
   backdrop-filter: blur(12px) saturate(150%);
   -webkit-backdrop-filter: blur(12px) saturate(150%);
   border-bottom: 1px solid var(--border);
-  transition: transform 0.3s ease;
+  transition: transform 220ms var(--ease-out);
 }
 
 .nav.nav-hidden {
@@ -132,7 +134,7 @@ img { display: block; max-width: 100%; }
 .nav-links a {
   font-size: 0.875rem;
   color: var(--text-secondary);
-  transition: color 0.2s;
+  transition: color 180ms ease;
 }
 
 .nav-links a:hover {
@@ -151,7 +153,11 @@ img { display: block; max-width: 100%; }
   cursor: pointer;
   border-radius: 8px;
   padding: 12px 24px;
-  transition: all 0.2s ease;
+  transition:
+    background-color 200ms var(--ease-out),
+    color 200ms var(--ease-out),
+    box-shadow 220ms var(--ease-out),
+    border-color 200ms var(--ease-out);
   white-space: nowrap;
   text-decoration: none;
   position: relative;
@@ -193,7 +199,7 @@ img { display: block; max-width: 100%; }
       rgba(202, 124, 95, 0.4) 75%
     ) border-box;
   animation: spin-border 4s linear infinite;
-  transition: box-shadow 0.3s ease, color 0.2s ease;
+  transition: box-shadow 220ms var(--ease-out), color 200ms var(--ease-out);
 }
 
 .btn-secondary:hover {
@@ -221,7 +227,6 @@ img { display: block; max-width: 100%; }
   width: 100%;
   height: 100vh;
   z-index: 0;
-  will-change: transform;
 }
 
 .hero-grid {
@@ -521,7 +526,7 @@ img { display: block; max-width: 100%; }
 .animate-in {
   opacity: 0;
   transform: translateY(20px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
+  transition: opacity 480ms var(--ease-out), transform 480ms var(--ease-out);
 }
 
 .animate-in.visible {
@@ -529,18 +534,18 @@ img { display: block; max-width: 100%; }
   transform: translateY(0);
 }
 
-/* Feature card stagger */
+/* Feature card stagger — keep under ~250ms total (Emil stagger band) */
 .feature-card:nth-child(1) { transition-delay: 0ms; }
-.feature-card:nth-child(2) { transition-delay: 80ms; }
-.feature-card:nth-child(3) { transition-delay: 160ms; }
-.feature-card:nth-child(4) { transition-delay: 240ms; }
-.feature-card:nth-child(5) { transition-delay: 320ms; }
-.feature-card:nth-child(6) { transition-delay: 400ms; }
+.feature-card:nth-child(2) { transition-delay: 50ms; }
+.feature-card:nth-child(3) { transition-delay: 100ms; }
+.feature-card:nth-child(4) { transition-delay: 150ms; }
+.feature-card:nth-child(5) { transition-delay: 200ms; }
+.feature-card:nth-child(6) { transition-delay: 250ms; }
 
 /* Step stagger */
 .step:nth-child(1) { transition-delay: 0ms; }
-.step:nth-child(3) { transition-delay: 150ms; }
-.step:nth-child(5) { transition-delay: 300ms; }
+.step:nth-child(3) { transition-delay: 80ms; }
+.step:nth-child(5) { transition-delay: 160ms; }
 
 /* ═══════════════════════════════════════════════════════
    REDUCED MOTION

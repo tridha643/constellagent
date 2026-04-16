@@ -12,7 +12,7 @@ import { shouldConfirmAppRestart } from './restart-app'
 import styles from './SettingsPanel.module.css'
 
 const SHORTCUTS = [
-  { action: 'Quick open file', keys: '⌘P' },
+  { action: 'Quick open file', keys: '⌘F' },
   { action: 'New terminal', keys: '⌘T' },
   { action: 'Close pane / tab', keys: '⌘W' },
   { action: 'Close all tabs', keys: '⇧⌘W' },

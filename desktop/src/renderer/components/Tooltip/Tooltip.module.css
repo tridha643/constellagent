@@ -37,6 +37,20 @@
   transition-duration: 0ms;
 }
 
+.multiline {
+  white-space: normal;
+  max-width: min(280px, calc(100vw - 16px));
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.multiline .label {
+  white-space: normal;
+  line-height: 1.4;
+}
+
 .label {
   font-family: var(--font-ui);
   font-size: var(--text-xs);

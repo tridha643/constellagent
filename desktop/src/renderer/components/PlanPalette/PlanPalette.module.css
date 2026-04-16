@@ -50,8 +50,10 @@
   white-space: nowrap;
 }
 
-.chip:hover {
-  background: rgba(255, 255, 255, 0.04);
+@media (hover: hover) and (pointer: fine) {
+  .chip:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
 }
 
 .chipActive {

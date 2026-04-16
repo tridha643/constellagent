@@ -3,7 +3,7 @@ import { homedir } from 'os'
 import { join, basename, relative } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { FileFinder } from '@ff-labs/fff-node'
+import type { FileFinder as FileFinderType } from '@ff-labs/fff-node'
 import {
   AGENT_PLAN_RELATIVE_DIRS,
   PLAN_DIR_TO_AGENT,
@@ -50,8 +50,18 @@ function quickOpenScoreTotal(score: { total?: number } | undefined): number {
   return score?.total ?? 0
 }
 
+type FffNodeModule = typeof import('@ff-labs/fff-node')
+let fffNodeModulePromise: Promise<FffNodeModule> | null = null
+
+function loadFffNodeModule(): Promise<FffNodeModule> {
+  if (!fffNodeModulePromise) {
+    fffNodeModulePromise = import('@ff-labs/fff-node')
+  }
+  return fffNodeModulePromise
+}
+
 interface QuickOpenFinderState {
-  finder: FileFinder
+  finder: FileFinderType
   ready: Promise<void>
 }
 
@@ -400,6 +410,7 @@ export class FileService {
     if (existing) return existing
 
     const created = (async (): Promise<QuickOpenFinderState> => {
+      const { FileFinder } = await loadFffNodeModule()
       if (!FileFinder.isAvailable()) {
         throw new Error('fff binary is not available on this machine')
       }
@@ -414,6 +425,7 @@ export class FileService {
       }
 
       const finder = result.value
+      console.info('[quick-open] file indexing started', { worktreePath: normalizedPath })
       const ready = finder.waitForScan(5_000).then((waited) => {
         if (!waited.ok) throw new Error(waited.error)
       })

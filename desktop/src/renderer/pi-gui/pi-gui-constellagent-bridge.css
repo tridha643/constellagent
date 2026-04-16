@@ -1,0 +1,552 @@
+/**
+ * PI Chat (pi-gui) uses its own semantic tokens (--main, --accent, …).
+ * Remap them to Constellagent appearance variables so the panel tracks
+ * Settings → Default vs Absolutely (and any future presets on :root).
+ */
+.pi-gui-scope {
+  color-scheme: dark;
+  /* Snappier than browser default — Emil-style strong ease-out for surfaces / hovers */
+  --pi-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --pi-ease-ui: cubic-bezier(0.33, 1, 0.68, 1);
+  --window: var(--surface-0);
+  --sidebar: var(--surface-1);
+  --main: var(--surface-1);
+  --surface: var(--surface-2);
+  --surface-muted: var(--surface-0);
+  --line: var(--border-default);
+  --line-strong: var(--border-strong);
+  --text: var(--text-primary);
+  --text-strong: var(--text-primary);
+  --muted: var(--text-secondary);
+  --muted-strong: var(--text-secondary);
+  --muted-soft: var(--text-tertiary);
+  --muted-subtle: var(--text-tertiary);
+  --muted-icon: var(--text-tertiary);
+  --muted-path: var(--text-ghost);
+  --muted-settings: var(--text-tertiary);
+  --accent: var(--accent-blue);
+  --error: var(--accent-red);
+  --error-ink: var(--status-danger-1);
+  --border: var(--border-default);
+  --ink: var(--text-primary);
+  --ink-strong: var(--text-primary);
+  --button-primary-bg: var(--primary);
+  --button-primary-border: var(--primary);
+  --button-primary-ink: var(--primary-foreground);
+  --button-primary-hover-bg: color-mix(in srgb, var(--primary) 84%, var(--surface-0) 16%);
+  --button-primary-hover-border: color-mix(in srgb, var(--primary) 84%, var(--surface-0) 16%);
+  --button-primary-disabled-bg: var(--surface-3);
+  --button-primary-disabled-border: var(--border-default);
+  --button-primary-disabled-ink: var(--text-ghost);
+
+  /*
+   * Pi interactive TUI — @mariozechner/pi-coding-agent dist/modes/interactive/theme/dark.json
+   * colors.border → vars.blue; thinkingMedium…Xhigh (low = empty ring — uses border focus only).
+   */
+  --pi-tui-border-focus: #5f87ff;
+  --pi-tui-thinking-medium: #81a2be;
+  --pi-tui-thinking-high: #b294bb;
+  --pi-tui-thinking-xhigh: #d183e8;
+}
+
+:root:not(.dark) .pi-gui-scope {
+  /* Pi interactive TUI — light.json (medium…xhigh; low = empty). */
+  --pi-tui-border-focus: #547da7;
+  --pi-tui-thinking-medium: #5a8080;
+  --pi-tui-thinking-high: #875f87;
+  --pi-tui-thinking-xhigh: #8b008b;
+}
+
+/* Replace pi-gui :root.dark accents (purple/blue) with the active preset accent */
+:root.dark .pi-gui-scope .message__content :not(pre) > code {
+  background: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+:root.dark .pi-gui-scope .message__content pre {
+  color: var(--text-primary);
+  border-color: var(--line);
+}
+
+:root.dark .pi-gui-scope .message__content a {
+  color: var(--accent-blue);
+}
+
+:root.dark .pi-gui-scope .composer {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-1) 0%, transparent) 0%,
+    color-mix(in srgb, var(--surface-1) 92%, transparent) 24%,
+    var(--surface-1) 54%
+  );
+}
+
+:root.dark .pi-gui-scope .composer__surface--drag-active {
+  border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 16%, var(--surface-2) 84%);
+  box-shadow: 0 0 0 3px var(--accent-blue-dim), 0 12px 28px rgba(0, 0, 0, 0.36);
+}
+
+:root.dark .pi-gui-scope .composer__drop-indicator {
+  background: var(--accent-blue-dim);
+  color: var(--text-primary);
+}
+
+:root.dark .pi-gui-scope .queued-composer-message--editing {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px var(--accent-blue-dim);
+}
+
+:root.dark .pi-gui-scope .queued-composer-message__mode--followUp {
+  background: var(--accent-blue-dim);
+  color: var(--text-primary);
+}
+
+:root.dark .pi-gui-scope .queued-composer-message__mode--steer {
+  background: color-mix(in srgb, var(--accent-blue) 22%, var(--surface-2) 78%);
+  color: var(--text-primary);
+}
+
+:root.dark .pi-gui-scope .diff-line--header {
+  background: var(--accent-blue-dim);
+}
+
+:root.dark .pi-gui-scope mark.thread-find-match {
+  background: var(--status-pending-dim);
+  color: var(--status-pending-1);
+}
+
+:root.dark .pi-gui-scope mark.thread-find-active {
+  background: var(--status-warning-dim);
+  color: var(--status-warning-1);
+}
+
+/* ── Transcript: Codex-style — assistant text on the canvas (no card), monospace, wide padding.
+   User rows: dark-readable surface (pi-gui’s light hex had no :root.dark override). */
+
+:root.dark .pi-gui-scope .timeline-pane--thread {
+  padding: 0 28px 20px 24px;
+}
+
+:root.dark .pi-gui-scope .timeline-item__bubble {
+  box-sizing: border-box;
+  max-width: min(620px, 100%);
+  width: fit-content;
+  min-width: 0;
+  border: none;
+  background: color-mix(in srgb, var(--text-primary) 5%, var(--surface-2));
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+
+:root.dark .pi-gui-scope .timeline-item__bubble .message__content {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+:root.dark .pi-gui-scope .timeline-item--assistant {
+  max-width: min(920px, 100%);
+}
+
+:root.dark .pi-gui-scope .timeline-item--assistant .message__content {
+  padding: 12px 8px 28px 4px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-primary);
+}
+
+:root.dark .pi-gui-scope .timeline-item__attachment {
+  border-color: var(--border-default);
+  background: color-mix(in srgb, var(--surface-2) 92%, var(--accent-blue) 8%);
+}
+
+:root.dark .pi-gui-scope .timeline-item__attachment--file {
+  background: var(--surface-0);
+}
+
+:root.dark .pi-gui-scope .timeline-item--summary-card {
+  border: 1px solid color-mix(in srgb, var(--status-pending-1) 35%, var(--border-default));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--status-pending-1) 10%, var(--surface-0)) 0%,
+    var(--surface-0) 100%
+  );
+}
+
+:root.dark .pi-gui-scope .timeline-item__summary-eyebrow {
+  color: var(--status-pending-1);
+}
+
+:root.dark .pi-gui-scope .timeline-item__copy {
+  color: var(--muted);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  :root.dark .pi-gui-scope .timeline-item__copy:hover {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--surface-2) 88%, var(--border-default) 12%);
+  }
+
+  :root.dark .pi-gui-scope .timeline-item__copy.timeline-item__copy--copied:hover {
+    color: color-mix(in srgb, var(--accent-green) 90%, var(--text-primary) 10%);
+    background: color-mix(in srgb, var(--accent-green) 14%, var(--surface-2) 86%);
+  }
+}
+
+:root.dark .pi-gui-scope .timeline-item__copy--copied {
+  color: var(--accent-green);
+  background: color-mix(in srgb, var(--accent-green) 12%, var(--surface-0) 88%);
+}
+
+:root.dark .pi-gui-scope .timeline-summary::before,
+:root.dark .pi-gui-scope .timeline-summary::after {
+  background: var(--border-subtle);
+}
+
+/* “New activity below” — was white chip + light ink (illegible in dark app) */
+:root.dark .pi-gui-scope .timeline-jump {
+  border: 1px solid var(--border-default);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  border-radius: 12px;
+  cursor: pointer;
+  transition:
+    background 140ms var(--pi-ease-ui),
+    border-color 140ms var(--pi-ease-ui),
+    box-shadow 140ms var(--pi-ease-out);
+}
+
+:root.dark .pi-gui-scope .timeline-jump:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+:root.dark .pi-gui-scope .timeline-jump:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* Thread pane: fill flex column and keep vertical scroll contained (Codex-style log) */
+:root.dark .pi-gui-scope .timeline-pane.timeline-pane--thread {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Composer chrome: smooth border/shadow; focus-within ring. Border animates on reasoning change (state feedback, not key repeat). */
+:root.dark .pi-gui-scope .composer__surface {
+  transition:
+    border-color 200ms var(--pi-ease-out),
+    box-shadow 220ms var(--pi-ease-out),
+    background-color 180ms var(--pi-ease-ui);
+}
+
+/* Default focus: Pi TUI colors.border (vars.blue). */
+:root.dark .pi-gui-scope .composer__surface:focus-within:not([data-reasoning]) {
+  border-color: color-mix(in srgb, var(--pi-tui-border-focus) 52%, var(--border-default));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--pi-tui-border-focus) 34%, transparent),
+    0 12px 32px rgba(0, 0, 0, 0.22);
+}
+
+/* Reasoning tier — Pi TUI medium…xhigh (low uses :not([data-reasoning]) default ring). */
+:root.dark .pi-gui-scope .composer__surface[data-reasoning="medium"]:focus-within {
+  border-color: color-mix(in srgb, var(--pi-tui-thinking-medium) 54%, var(--border-default));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--pi-tui-thinking-medium) 34%, transparent),
+    0 12px 32px rgba(0, 0, 0, 0.22);
+}
+
+:root.dark .pi-gui-scope .composer__surface[data-reasoning="high"]:focus-within {
+  border-color: color-mix(in srgb, var(--pi-tui-thinking-high) 56%, var(--border-default));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--pi-tui-thinking-high) 36%, transparent),
+    0 12px 34px rgba(0, 0, 0, 0.24);
+}
+
+:root.dark .pi-gui-scope .composer__surface[data-reasoning="xhigh"]:focus-within {
+  border-color: color-mix(in srgb, var(--pi-tui-thinking-xhigh) 58%, var(--border-default));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--pi-tui-thinking-xhigh) 38%, transparent),
+    0 12px 36px rgba(0, 0, 0, 0.26);
+}
+
+:root.dark .pi-gui-scope .button--primary:not(:disabled) {
+  transition:
+    transform 130ms var(--pi-ease-out),
+    background 160ms var(--pi-ease-ui),
+    border-color 160ms var(--pi-ease-ui),
+    color 160ms var(--pi-ease-ui);
+}
+
+:root.dark .pi-gui-scope .button--primary:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+:root.dark .pi-gui-scope .composer__attach {
+  transition:
+    transform 130ms var(--pi-ease-out),
+    border-color 160ms var(--pi-ease-ui),
+    background 160ms var(--pi-ease-ui),
+    color 160ms var(--pi-ease-ui);
+}
+
+:root.dark .pi-gui-scope .composer__attach:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+:root.dark .pi-gui-scope .composer__attach--image {
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+  color: var(--muted-strong);
+}
+
+:root.dark .pi-gui-scope .composer__send--circle {
+  background: #c8c8d0;
+  color: #0e0e12;
+}
+
+:root.dark .pi-gui-scope .composer__send--circle:hover:not(:disabled) {
+  background: #d6d6de;
+}
+
+:root.dark .pi-gui-scope .composer__send--circle.composer__send--stop {
+  background: color-mix(in srgb, var(--accent-red) 30%, var(--surface-2));
+  color: #ffd6d6;
+}
+
+:root.dark .pi-gui-scope .composer__send--circle.composer__send--stop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-red) 38%, var(--surface-2));
+}
+
+/* Dark Pi: context ring with readable contrast */
+:root.dark .pi-gui-scope .pi-context-ring__outer {
+  stroke: color-mix(in srgb, var(--muted) 55%, var(--surface-2) 45%);
+  opacity: 0.5;
+}
+
+:root.dark .pi-gui-scope .pi-context-ring__track {
+  stroke: color-mix(in srgb, var(--muted) 48%, var(--surface-2) 52%);
+  opacity: 0.42;
+}
+
+:root.dark .pi-gui-scope .pi-context-ring__arc--low {
+  stroke: color-mix(in srgb, #c4c6d4 82%, var(--surface-0) 18%);
+  opacity: 0.85;
+}
+
+:root.dark .pi-gui-scope .pi-context-ring__arc--mid {
+  stroke: color-mix(in srgb, var(--accent-yellow, #e6c84d) 55%, #e8e8ee 45%);
+  opacity: 0.9;
+}
+
+:root.dark .pi-gui-scope .pi-context-ring__arc--high {
+  stroke: color-mix(in srgb, var(--accent-red, #f07178) 50%, #ffd6d6 50%);
+  opacity: 0.95;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root.dark .pi-gui-scope .composer__surface,
+  :root.dark .pi-gui-scope .button--primary,
+  :root.dark .pi-gui-scope .composer__attach,
+  :root.dark .pi-gui-scope .composer__send--circle,
+  :root.dark .pi-gui-scope .timeline-jump {
+    transition: none;
+  }
+
+  :root.dark .pi-gui-scope .button--primary:active,
+  :root.dark .pi-gui-scope .composer__attach:active,
+  :root.dark .pi-gui-scope .composer__send--circle:active {
+    transform: none;
+  }
+
+  :root.dark .pi-gui-scope .pi-context-ring__arc,
+  :root.dark .pi-gui-scope .pi-context-ring__arc--low,
+  :root.dark .pi-gui-scope .pi-context-ring__arc--mid,
+  :root.dark .pi-gui-scope .pi-context-ring__arc--high {
+    transition: none;
+  }
+}
+
+/* File diff chrome — match preset greens / reds */
+:root.dark .pi-gui-scope .diff-stat-add,
+:root.dark .pi-gui-scope .diff-line--added .diff-line__number,
+:root.dark .pi-gui-scope .diff-line--added .diff-line__sign {
+  color: var(--accent-green);
+}
+
+:root.dark .pi-gui-scope .diff-stat-del,
+:root.dark .pi-gui-scope .diff-line--removed .diff-line__sign {
+  color: var(--accent-red);
+}
+
+:root.dark .pi-gui-scope .diff-line--added {
+  background: var(--accent-green-dim);
+  box-shadow: inset 3px 0 0 var(--accent-green);
+}
+
+:root.dark .pi-gui-scope .diff-line--removed {
+  background: var(--accent-red-dim);
+  box-shadow: inset 3px 0 0 var(--accent-red);
+}
+
+:root.dark .pi-gui-scope .diff-line--added .diff-line__content {
+  color: color-mix(in srgb, var(--accent-green) 36%, var(--text-primary));
+}
+
+:root.dark .pi-gui-scope .diff-line--removed .diff-line__content {
+  color: color-mix(in srgb, var(--accent-red) 34%, var(--text-primary));
+}
+
+:root.dark .pi-gui-scope .diff-document__summary {
+  background: var(--surface-0);
+}
+
+:root.dark .pi-gui-scope .diff-file__body {
+  background: var(--surface-0);
+}
+
+:root.dark .pi-gui-scope .diff-document--single .diff-inline {
+  background: var(--surface-0);
+  border-color: var(--border-default);
+}
+
+/* Slash / runtime menu — Cursor-like narrow column, preset surfaces, tighter rhythm */
+:root.dark .pi-gui-scope .composer__menus {
+  left: 0;
+  right: auto;
+  width: min(340px, calc(100% - 4px));
+  max-width: 100%;
+}
+
+:root.dark .pi-gui-scope .slash-menu,
+:root.dark .pi-gui-scope .slash-menu.slash-menu--options {
+  width: 100%;
+  max-height: min(380px, 42vh);
+  padding: 4px;
+  gap: 2px;
+  border-radius: 10px;
+  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--surface-2) 96%, transparent);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.38);
+}
+
+:root.dark .pi-gui-scope .slash-menu__section + .slash-menu__section {
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top-color: var(--border-subtle);
+}
+
+:root.dark .pi-gui-scope .slash-menu__section-title {
+  padding: 4px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 6px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__item {
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__item--skill {
+  padding-block: 6px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__icon {
+  width: 16px;
+  height: 16px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__line {
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+:root.dark .pi-gui-scope .slash-menu__description {
+  font-size: 11px;
+  line-height: 1.38;
+}
+
+:root.dark .pi-gui-scope .slash-menu__command,
+:root.dark .pi-gui-scope .slash-menu__command--skill {
+  font-size: 10px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__skill-badge {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+:root.dark .pi-gui-scope .slash-menu__item--active,
+:root.dark .pi-gui-scope .slash-menu__item:hover {
+  background: var(--accent-blue-dim);
+}
+
+:root.dark .pi-gui-scope .slash-menu__search {
+  padding: 6px 8px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 2px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__option {
+  padding: 6px 8px;
+  gap: 8px;
+  border-radius: 8px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__option-title {
+  font-size: 12px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__option-description {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+:root.dark .pi-gui-scope .slash-menu__option--active,
+:root.dark .pi-gui-scope .slash-menu__option:hover {
+  background: var(--accent-blue-dim);
+}
+
+:root.dark .pi-gui-scope .slash-menu__option--active::after {
+  background: var(--accent-blue);
+}
+
+:root.dark .pi-gui-scope .slash-menu__empty {
+  padding: 8px;
+  gap: 4px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__empty-title {
+  font-size: 12px;
+}
+
+:root.dark .pi-gui-scope .slash-menu__empty-description {
+  font-size: 11px;
+}
