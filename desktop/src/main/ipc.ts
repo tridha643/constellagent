@@ -568,6 +568,10 @@ export function registerIpcHandlers(): void {
     return tree
   })
 
+  ipcMain.handle(IPC.FS_QUICK_OPEN_SEARCH, async (_e, worktreePath: string, request: import('../shared/quick-open-types').QuickOpenSearchRequest) => {
+    return FileService.quickOpenSearch(worktreePath, request)
+  })
+
   ipcMain.handle(IPC.FS_READ_FILE, async (_e, filePath: string) => {
     try {
       return await FileService.readFile(filePath)
@@ -640,6 +644,7 @@ export function registerIpcHandlers(): void {
         // Debounce: wait 500ms of quiet before notifying
         if (entry.timer) clearTimeout(entry.timer)
         entry.timer = setTimeout(() => {
+          void FileService.refreshQuickOpenSearch(dirPath)
           for (const [id, subscriber] of entry.subscribers.entries()) {
             if (subscriber.webContents.isDestroyed()) {
               entry.totalRefs = Math.max(0, entry.totalRefs - subscriber.refs)
@@ -1327,6 +1332,7 @@ export function cleanupAll(): void {
   githubPollService.stop()
   lspService.shutdown()
   AnnotationService.cleanupAll()
+  FileService.disposeQuickOpenSearch()
   t3codeService.stopAll()
   guestTabSwitchListeners.clear()
   closeAllAgentFS().catch(() => {})

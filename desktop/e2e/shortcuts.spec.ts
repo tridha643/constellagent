@@ -26,33 +26,44 @@ function createTestRepo(name: string): string {
   execSync('git init', { cwd: repoPath })
   execSync('git checkout -b main', { cwd: repoPath })
   writeFileSync(join(repoPath, 'README.md'), '# Test Repo\n')
+  mkdirSync(join(repoPath, 'src'), { recursive: true })
+  writeFileSync(join(repoPath, 'src/index.ts'), 'console.log("hello world")\n')
+  writeFileSync(join(repoPath, 'src/utils.ts'), 'export function add(a: number, b: number) { return a + b }\n')
   execSync('git add .', { cwd: repoPath })
   execSync('git commit -m "initial commit"', { cwd: repoPath })
   return repoPath
 }
 
-async function setupWorkspaceWithTerminal(window: Page, repoPath: string) {
-  return await window.evaluate(async (repo: string) => {
+async function setupWorkspace(window: Page, repoPath: string, suffix = '1') {
+  return await window.evaluate(async ({ repo, name }: { repo: string; name: string }) => {
     const store = (window as any).__store.getState()
     store.hydrateState({ projects: [], workspaces: [] })
 
     const projectId = crypto.randomUUID()
     store.addProject({ id: projectId, name: 'test-repo', repoPath: repo })
 
-    const worktreePath = await (window as any).api.git.createWorktree(repo, 'ws-1', 'branch-1', true)
+    const worktreePath = await (window as any).api.git.createWorktree(repo, `ws-${name}`, `branch-${name}`, true)
 
     const wsId = crypto.randomUUID()
     store.addWorkspace({
-      id: wsId, name: 'ws-1', branch: 'branch-1', worktreePath, projectId,
+      id: wsId, name: `ws-${name}`, branch: `branch-${name}`, worktreePath, projectId,
     })
 
+    return { wsId, worktreePath, projectId }
+  }, { repo: repoPath, name: suffix })
+}
+
+async function setupWorkspaceWithTerminal(window: Page, repoPath: string) {
+  const workspace = await setupWorkspace(window, repoPath)
+  return await window.evaluate(async ({ wsId, worktreePath, projectId }) => {
+    const store = (window as any).__store.getState()
     const ptyId = await (window as any).api.pty.create(worktreePath)
     store.addTab({
       id: crypto.randomUUID(), workspaceId: wsId, type: 'terminal', title: 'Terminal 1', ptyId,
     })
 
     return { ptyId, wsId, worktreePath, projectId }
-  }, repoPath)
+  }, workspace)
 }
 
 async function setupSidebarProjects(window: Page, projects: SidebarProjectSetup[]) {
@@ -118,6 +129,63 @@ test.describe('Keyboard shortcuts', () => {
 
       const tabsAfter = await window.locator('[class*="tabTitle"]').count()
       expect(tabsAfter).toBe(2)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('Cmd+P opens quick open and opens the top fuzzy match', async () => {
+    const repoPath = createTestRepo('shortcut-p')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspaceWithTerminal(window, repoPath)
+      await window.waitForTimeout(2000)
+
+      await window.keyboard.press('Meta+p')
+      const quickOpenInput = window.getByPlaceholder('Search files by name...')
+      await expect(quickOpenInput).toBeVisible({ timeout: 5000 })
+
+      await quickOpenInput.fill('utils')
+      await window.waitForTimeout(1000)
+      await window.keyboard.press('Enter')
+      await window.waitForTimeout(1500)
+
+      await expect(window.locator('[class*="tabTitle"]', { hasText: 'utils.ts' })).toBeVisible({ timeout: 5000 })
+      await expect(window.locator('.monaco-editor').first()).toBeVisible({ timeout: 10000 })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('Cmd+P opens quick open and opens the selected file', async () => {
+    const repoPath = createTestRepo('shortcut-p')
+    mkdirSync(join(repoPath, 'src/components'), { recursive: true })
+    writeFileSync(join(repoPath, 'src/components/SearchTarget.tsx'), 'export const SearchTarget = () => null\n')
+    writeFileSync(join(repoPath, 'src/components/Secondary.tsx'), 'export const Secondary = () => null\n')
+    execSync('git add .', { cwd: repoPath })
+    execSync('git commit -m "add quick open files"', { cwd: repoPath })
+
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspace(window, repoPath, 'quick-open')
+      await window.waitForTimeout(1500)
+
+      await window.keyboard.press('Meta+p')
+
+      const input = window.locator('input[placeholder="Search files by name..."]')
+      await expect(input).toBeVisible({ timeout: 5000 })
+      await input.fill('SearchTarget')
+
+      const result = window.locator('[class*="resultItem"]', { hasText: 'SearchTarget.tsx' }).first()
+      await expect(result).toBeVisible({ timeout: 5000 })
+
+      await window.keyboard.press('Enter')
+
+      await expect(window.locator('[class*="tabTitle"]', { hasText: 'SearchTarget.tsx' })).toBeVisible({
+        timeout: 10000,
+      })
     } finally {
       await app.close()
     }
