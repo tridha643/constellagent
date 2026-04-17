@@ -17,6 +17,7 @@ import type { ReviewComment } from '../shared/review-types'
 import type { HostUiResponse, PiContextUsageSnapshot } from '@pi-gui/session-driver'
 import type { ContextWindowData } from '../shared/context-window-types'
 import type { QuickOpenSearchRequest, QuickOpenSearchResult } from '../shared/quick-open-types'
+import type { CodeSearchRequest, CodeSearchResult } from '../shared/code-search-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 
@@ -169,6 +170,8 @@ const api = {
       ipcRenderer.invoke(IPC.FS_GET_TREE_WITH_STATUS, dirPath),
     quickOpenSearch: (worktreePath: string, request: QuickOpenSearchRequest) =>
       ipcRenderer.invoke(IPC.FS_QUICK_OPEN_SEARCH, worktreePath, request) as Promise<QuickOpenSearchResult>,
+    codeSearch: (worktreePath: string, request: CodeSearchRequest) =>
+      ipcRenderer.invoke(IPC.FS_CODE_SEARCH, worktreePath, request) as Promise<CodeSearchResult>,
     readFile: (filePath: string) =>
       ipcRenderer.invoke(IPC.FS_READ_FILE, filePath),
     writeFile: (filePath: string, content: string) =>

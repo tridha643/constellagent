@@ -575,6 +575,10 @@ export function registerIpcHandlers(): void {
     return FileService.quickOpenSearch(worktreePath, request)
   })
 
+  ipcMain.handle(IPC.FS_CODE_SEARCH, async (_e, worktreePath: string, request: import('../shared/code-search-types').CodeSearchRequest) => {
+    return FileService.codeSearch(worktreePath, request)
+  })
+
   ipcMain.handle(IPC.FS_READ_FILE, async (_e, filePath: string) => {
     try {
       return await FileService.readFile(filePath)
