@@ -3,7 +3,7 @@ import { homedir } from 'os'
 import { join, basename, relative } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import type { FileFinder as FileFinderType } from '@ff-labs/fff-node'
+import type { FileFinder as FileFinderType, GrepCursor } from '@ff-labs/fff-node'
 import {
   AGENT_PLAN_RELATIVE_DIRS,
   PLAN_DIR_TO_AGENT,
@@ -12,6 +12,13 @@ import {
   relativePathInWorktree,
 } from '../shared/agent-plan-path'
 import type { AgentPlanEntry, PlanAgent, PlanMeta } from '../shared/agent-plan-path'
+import type { CodeSearchItem, CodeSearchRequest, CodeSearchResult } from '../shared/code-search-types'
+import {
+  buildCodeSearchPreview,
+  isDeveloperCodeSearchPath,
+  prepareCodeSearchRequest,
+  sortAndCapCodeSearchItems,
+} from '../shared/code-search-utils'
 import type { QuickOpenSearchItem, QuickOpenSearchRequest, QuickOpenSearchResult } from '../shared/quick-open-types'
 import { readPlanMetaPrefix, readPlanMeta, writePlanMeta } from './plan-meta'
 
@@ -71,9 +78,16 @@ interface QuickOpenFallbackFile {
   relativePath: string
 }
 
+interface CodeSearchFallbackFile {
+  name: string
+  path: string
+  relativePath: string
+}
+
 export class FileService {
   private static quickOpenFinders = new Map<string, Promise<QuickOpenFinderState>>()
   private static quickOpenFallbackFiles = new Map<string, Promise<QuickOpenFallbackFile[]>>()
+  private static codeSearchFallbackFiles = new Map<string, Promise<CodeSearchFallbackFile[]>>()
   static async getTree(dirPath: string, depth = 0): Promise<FileNode[]> {
     if (depth > 8) return [] // prevent infinite recursion
 
@@ -345,6 +359,450 @@ export class FileService {
     }
   }
 
+  private static async collectCodeSearchFallbackRelativePaths(
+    basePath: string,
+    relativeDir = '',
+    depth = 0,
+  ): Promise<string[]> {
+    if (depth > 16) return []
+
+    const absoluteDir = relativeDir ? join(basePath, relativeDir) : basePath
+    let entries: import('fs').Dirent[]
+    try {
+      entries = await readdir(absoluteDir, { withFileTypes: true }) as import('fs').Dirent[]
+    } catch {
+      return []
+    }
+
+    const files: string[] = []
+    for (const entry of entries) {
+      if (SKIP_DIRS.has(entry.name)) continue
+
+      const nextRelativePath = relativeDir ? join(relativeDir, entry.name) : entry.name
+      if (entry.isDirectory()) {
+        files.push(...await this.collectCodeSearchFallbackRelativePaths(basePath, nextRelativePath, depth + 1))
+        continue
+      }
+
+      if (entry.isFile()) {
+        files.push(toPosixPath(nextRelativePath))
+      }
+    }
+
+    return files
+  }
+
+  private static async getCodeSearchFallbackFiles(worktreePath: string): Promise<CodeSearchFallbackFile[]> {
+    const normalizedPath = normalizeRootPath(worktreePath)
+    const existing = this.codeSearchFallbackFiles.get(normalizedPath)
+    if (existing) return existing
+
+    const created = (async () => {
+      let relativePaths: string[] = []
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['ls-files', '--others', '--cached', '--exclude-standard'],
+          { cwd: normalizedPath },
+        )
+        relativePaths = stdout
+          .split('\n')
+          .map((value) => toPosixPath(value.trim()))
+          .filter(Boolean)
+      } catch {
+        relativePaths = await this.collectCodeSearchFallbackRelativePaths(normalizedPath)
+      }
+
+      const unique = [...new Set(relativePaths)].sort((left, right) => left.localeCompare(right))
+      return unique.map((relativePath) => ({
+        name: basename(relativePath),
+        path: join(normalizedPath, relativePath),
+        relativePath,
+      }))
+    })().catch((error) => {
+      this.codeSearchFallbackFiles.delete(normalizedPath)
+      throw error
+    })
+
+    this.codeSearchFallbackFiles.set(normalizedPath, created)
+    return created
+  }
+
+  private static async resolveCodeSearchScopeFiles(
+    worktreePath: string,
+    scope: CodeSearchRequest['scope'],
+  ): Promise<{ files: CodeSearchFallbackFile[]; preferredPathOrder?: string[] }> {
+    const files = await this.getCodeSearchFallbackFiles(worktreePath)
+    const fileByRelativePath = new Map(files.map((file) => [file.relativePath, file]))
+
+    if (!scope || scope.kind === 'workspace') {
+      return {
+        files: files.filter((file) => isDeveloperCodeSearchPath(file.relativePath)),
+      }
+    }
+
+    const requestedPaths = scope.kind === 'activeFile' ? [scope.filePath] : scope.filePaths
+    const resolved: CodeSearchFallbackFile[] = []
+    const seen = new Set<string>()
+
+    for (const filePath of requestedPaths) {
+      const relativePath = relativePathInWorktree(worktreePath, filePath)
+      if (relativePath == null || relativePath === '') continue
+      const normalizedRelativePath = toPosixPath(relativePath)
+      if (!isDeveloperCodeSearchPath(normalizedRelativePath) || seen.has(normalizedRelativePath)) continue
+      seen.add(normalizedRelativePath)
+      const existing = fileByRelativePath.get(normalizedRelativePath)
+      resolved.push(existing ?? {
+        name: basename(normalizedRelativePath),
+        path: join(worktreePath, normalizedRelativePath),
+        relativePath: normalizedRelativePath,
+      })
+    }
+
+    return {
+      files: resolved,
+      preferredPathOrder: resolved.map((file) => file.path),
+    }
+  }
+
+  private static toCodeSearchItem(match: {
+    path: string
+    relativePath: string
+    fileName: string
+    gitStatus?: string
+    lineNumber: number
+    col: number
+    lineContent: string
+    matchRanges: [number, number][]
+  }): CodeSearchItem {
+    const preview = buildCodeSearchPreview(match.lineContent, match.matchRanges)
+    return {
+      path: match.path,
+      relativePath: toPosixPath(match.relativePath),
+      fileName: match.fileName,
+      gitStatus: match.gitStatus,
+      lineNumber: match.lineNumber,
+      column: match.col + 1,
+      preview: preview.preview,
+      matchRanges: preview.matchRanges,
+      previewTruncated: preview.previewTruncated,
+    }
+  }
+
+  private static async runWorkspaceCodeSearchWithFff(
+    finder: FileFinderType,
+    request: ReturnType<typeof prepareCodeSearchRequest>,
+    scopeFiles: CodeSearchFallbackFile[],
+  ): Promise<Omit<CodeSearchResult, 'state' | 'error' | 'candidateFileCount'>> {
+    const scopeRelativePaths = new Set(scopeFiles.map((file) => file.relativePath))
+    const rawItems: CodeSearchItem[] = []
+    let searchedFileCount = 0
+    let regexFallbackError: string | undefined
+    let cursor: GrepCursor | null = null
+    let hasMore = false
+
+    for (let page = 0; page < 12; page += 1) {
+      const search: ReturnType<FileFinderType['grep']> = request.mode === 'regex'
+        ? finder.grep(request.query, {
+            cursor,
+            mode: 'regex',
+            maxFileSize: request.maxFileSizeBytes,
+            maxMatchesPerFile: request.maxMatchesPerFile,
+          })
+        : finder.multiGrep({
+            patterns: [request.query],
+            cursor,
+            maxFileSize: request.maxFileSizeBytes,
+            maxMatchesPerFile: request.maxMatchesPerFile,
+          })
+
+      if (!search.ok) {
+        throw new Error(search.error)
+      }
+
+      searchedFileCount += search.value.totalFilesSearched
+      regexFallbackError ??= search.value.regexFallbackError
+
+      for (const match of search.value.items) {
+        if (!scopeRelativePaths.has(toPosixPath(match.relativePath))) continue
+        rawItems.push(this.toCodeSearchItem(match))
+      }
+
+      if (rawItems.length > request.limit) {
+        hasMore = true
+        break
+      }
+
+      cursor = search.value.nextCursor
+      if (!cursor) break
+      hasMore = true
+    }
+
+    const capped = sortAndCapCodeSearchItems(rawItems, {
+      limit: request.limit,
+      maxMatchesPerFile: request.maxMatchesPerFile,
+    })
+
+    return {
+      items: capped.items,
+      totalMatched: capped.totalMatched,
+      searchedFileCount,
+      hasMore: capped.hasMore || hasMore,
+      regexFallbackError,
+    }
+  }
+
+  private static async runExplicitCodeSearchWithFff(
+    finder: FileFinderType,
+    request: ReturnType<typeof prepareCodeSearchRequest>,
+    scopeFiles: CodeSearchFallbackFile[],
+    preferredPathOrder: string[],
+  ): Promise<Omit<CodeSearchResult, 'state' | 'error' | 'candidateFileCount'>> {
+    const rawItems: CodeSearchItem[] = []
+    let searchedFileCount = 0
+    let regexFallbackError: string | undefined
+
+    for (const file of scopeFiles) {
+      if (rawItems.length > request.limit) break
+
+      if (file.relativePath.includes(' ')) {
+        const fallback = await this.fallbackSearchFile(file, request)
+        searchedFileCount += fallback.searchedFileCount
+        regexFallbackError ??= fallback.regexFallbackError
+        rawItems.push(...fallback.items)
+        continue
+      }
+
+      const constrainedQuery = `${file.relativePath} ${request.query}`
+      const search = finder.grep(constrainedQuery, {
+        mode: request.mode,
+        maxFileSize: request.maxFileSizeBytes,
+        maxMatchesPerFile: request.maxMatchesPerFile,
+      })
+      if (!search.ok) {
+        throw new Error(search.error)
+      }
+
+      searchedFileCount += search.value.totalFilesSearched
+      regexFallbackError ??= search.value.regexFallbackError
+      rawItems.push(...search.value.items.map((match) => this.toCodeSearchItem(match)))
+    }
+
+    const capped = sortAndCapCodeSearchItems(rawItems, {
+      limit: request.limit,
+      maxMatchesPerFile: request.maxMatchesPerFile,
+      preferredPathOrder,
+    })
+
+    return {
+      items: capped.items,
+      totalMatched: capped.totalMatched,
+      searchedFileCount,
+      hasMore: capped.hasMore,
+      regexFallbackError,
+    }
+  }
+
+  private static fallbackLineMatchRanges(
+    lineContent: string,
+    query: string,
+    mode: ReturnType<typeof prepareCodeSearchRequest>['mode'],
+  ): { matchRanges: Array<[number, number]>; regexFallbackError?: string } {
+    if (!query) {
+      return { matchRanges: [] }
+    }
+
+    const caseInsensitive = query === query.toLowerCase()
+    const collectPlainMatches = () => {
+      const haystack = caseInsensitive ? lineContent.toLowerCase() : lineContent
+      const needle = caseInsensitive ? query.toLowerCase() : query
+      const matchRanges: Array<[number, number]> = []
+      let startIndex = 0
+
+      while (needle && startIndex <= haystack.length) {
+        const foundIndex = haystack.indexOf(needle, startIndex)
+        if (foundIndex < 0) break
+        matchRanges.push([foundIndex, foundIndex + needle.length])
+        startIndex = foundIndex + Math.max(needle.length, 1)
+      }
+
+      return matchRanges
+    }
+
+    if (mode !== 'regex') {
+      return { matchRanges: collectPlainMatches() }
+    }
+
+    try {
+      const flags = caseInsensitive ? 'gi' : 'g'
+      const regex = new RegExp(query, flags)
+      const matchRanges: Array<[number, number]> = []
+      let match: RegExpExecArray | null
+      while ((match = regex.exec(lineContent)) !== null) {
+        const value = match[0] ?? ''
+        matchRanges.push([match.index, match.index + value.length])
+        if (value.length === 0) regex.lastIndex += 1
+      }
+      return { matchRanges }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid regular expression'
+      return {
+        matchRanges: collectPlainMatches(),
+        regexFallbackError: message,
+      }
+    }
+  }
+
+  private static async fallbackSearchFile(
+    file: CodeSearchFallbackFile,
+    request: ReturnType<typeof prepareCodeSearchRequest>,
+  ): Promise<{ items: CodeSearchItem[]; searchedFileCount: number; regexFallbackError?: string }> {
+    try {
+      const info = await stat(file.path)
+      if (!info.isFile() || info.size > request.maxFileSizeBytes) {
+        return { items: [], searchedFileCount: 0 }
+      }
+    } catch {
+      return { items: [], searchedFileCount: 0 }
+    }
+
+    let content: string
+    try {
+      content = await fsReadFile(file.path, 'utf-8')
+    } catch {
+      return { items: [], searchedFileCount: 0 }
+    }
+
+    const items: CodeSearchItem[] = []
+    const lines = content.split(/\r?\n/)
+    let regexFallbackError: string | undefined
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index] ?? ''
+      const match = this.fallbackLineMatchRanges(line, request.query, request.mode)
+      regexFallbackError ??= match.regexFallbackError
+      if (match.matchRanges.length === 0) continue
+      const preview = buildCodeSearchPreview(line, match.matchRanges)
+      items.push({
+        path: file.path,
+        relativePath: file.relativePath,
+        fileName: file.name,
+        lineNumber: index + 1,
+        column: match.matchRanges[0]?.[0] != null ? match.matchRanges[0][0] + 1 : 1,
+        preview: preview.preview,
+        matchRanges: preview.matchRanges,
+        previewTruncated: preview.previewTruncated,
+      })
+      if (items.length >= request.maxMatchesPerFile) break
+    }
+
+    return {
+      items,
+      searchedFileCount: 1,
+      regexFallbackError,
+    }
+  }
+
+  private static async fallbackCodeSearch(
+    worktreePath: string,
+    request: ReturnType<typeof prepareCodeSearchRequest>,
+    error?: string,
+  ): Promise<CodeSearchResult> {
+    const scope = await this.resolveCodeSearchScopeFiles(worktreePath, request.scope)
+    const rawItems: CodeSearchItem[] = []
+    let searchedFileCount = 0
+    let regexFallbackError: string | undefined
+
+    for (const file of scope.files) {
+      if (rawItems.length > request.limit) break
+      const fileResult = await this.fallbackSearchFile(file, request)
+      searchedFileCount += fileResult.searchedFileCount
+      regexFallbackError ??= fileResult.regexFallbackError
+      rawItems.push(...fileResult.items)
+    }
+
+    const capped = sortAndCapCodeSearchItems(rawItems, {
+      limit: request.limit,
+      maxMatchesPerFile: request.maxMatchesPerFile,
+      preferredPathOrder: scope.preferredPathOrder,
+    })
+
+    return {
+      state: 'ready',
+      items: capped.items,
+      totalMatched: capped.totalMatched,
+      candidateFileCount: scope.files.length,
+      searchedFileCount,
+      hasMore: capped.hasMore,
+      error,
+      regexFallbackError,
+    }
+  }
+
+  static async codeSearch(worktreePath: string, request: CodeSearchRequest): Promise<CodeSearchResult> {
+    const normalizedPath = normalizeRootPath(worktreePath)
+    const preparedRequest = prepareCodeSearchRequest(request)
+    if (!preparedRequest.query.trim()) {
+      return {
+        state: 'ready',
+        items: [],
+        totalMatched: 0,
+        candidateFileCount: 0,
+        searchedFileCount: 0,
+        hasMore: false,
+      }
+    }
+
+    try {
+      const scope = await this.resolveCodeSearchScopeFiles(normalizedPath, preparedRequest.scope)
+      if (scope.files.length === 0) {
+        return {
+          state: 'ready',
+          items: [],
+          totalMatched: 0,
+          candidateFileCount: 0,
+          searchedFileCount: 0,
+          hasMore: false,
+        }
+      }
+
+      const { finder, ready } = await this.getQuickOpenFinder(normalizedPath)
+      const progress = finder.getScanProgress()
+      if (progress.ok && progress.value.isScanning) {
+        await Promise.race([
+          ready,
+          new Promise<void>((resolve) => setTimeout(resolve, 250)),
+        ])
+      }
+
+      const result = scope.preferredPathOrder
+        ? await this.runExplicitCodeSearchWithFff(finder, preparedRequest, scope.files, scope.preferredPathOrder)
+        : await this.runWorkspaceCodeSearchWithFff(finder, preparedRequest, scope.files)
+
+      const nextProgress = finder.getScanProgress()
+      return {
+        state: nextProgress.ok && nextProgress.value.isScanning ? 'indexing' : 'ready',
+        candidateFileCount: scope.files.length,
+        ...result,
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Code search failed'
+      try {
+        return await this.fallbackCodeSearch(normalizedPath, preparedRequest, message)
+      } catch {
+        return {
+          state: 'error',
+          items: [],
+          totalMatched: 0,
+          candidateFileCount: 0,
+          searchedFileCount: 0,
+          hasMore: false,
+          error: message,
+        }
+      }
+    }
+  }
+
   private static invalidateQuickOpenCachesForPath(targetPath: string): void {
     const normalizedTarget = toPosixPath(normalizeRootPath(targetPath))
     const rootsToRefresh = new Set<string>()
@@ -353,6 +811,14 @@ export class FileService {
       const normalizedRoot = toPosixPath(normalizeRootPath(root))
       if (normalizedTarget === normalizedRoot || normalizedTarget.startsWith(normalizedRoot + '/')) {
         this.quickOpenFallbackFiles.delete(root)
+        rootsToRefresh.add(root)
+      }
+    }
+
+    for (const root of this.codeSearchFallbackFiles.keys()) {
+      const normalizedRoot = toPosixPath(normalizeRootPath(root))
+      if (normalizedTarget === normalizedRoot || normalizedTarget.startsWith(normalizedRoot + '/')) {
+        this.codeSearchFallbackFiles.delete(root)
         rootsToRefresh.add(root)
       }
     }
@@ -372,6 +838,7 @@ export class FileService {
   static async refreshQuickOpenSearch(worktreePath: string): Promise<void> {
     const normalizedPath = normalizeRootPath(worktreePath)
     this.quickOpenFallbackFiles.delete(normalizedPath)
+    this.codeSearchFallbackFiles.delete(normalizedPath)
 
     const finderPromise = this.quickOpenFinders.get(normalizedPath)
     if (!finderPromise) return
@@ -402,6 +869,7 @@ export class FileService {
     }
     this.quickOpenFinders.clear()
     this.quickOpenFallbackFiles.clear()
+    this.codeSearchFallbackFiles.clear()
   }
 
   private static async getQuickOpenFinder(worktreePath: string): Promise<QuickOpenFinderState> {
