@@ -173,7 +173,7 @@ export function QuickOpen({ worktreePath }: Props) {
   }, [closeQuickOpen, openSelected, results.length])
 
   const emptyMessage = !hasLoaded
-    ? 'Loading...'
+    ? null
     : searchState === 'indexing'
       ? 'Indexing files...'
       : searchState === 'error'
@@ -197,7 +197,21 @@ export function QuickOpen({ worktreePath }: Props) {
         </div>
         <div className={styles.results} ref={listRef}>
           {results.length === 0 ? (
-            <div className={styles.empty}>{emptyMessage}</div>
+            <div className={styles.empty}>
+              {!hasLoaded ? (
+                <div
+                  role="status"
+                  aria-busy="true"
+                  aria-label="Loading search results"
+                  style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', width: '100%' }}
+                >
+                  <div className="shimmer-block" style={{ width: '72%', height: 13 }} />
+                  <div className="shimmer-block" style={{ width: '56%', height: 13 }} />
+                </div>
+              ) : (
+                emptyMessage
+              )}
+            </div>
           ) : (
             results.map((item, index) => (
               <div

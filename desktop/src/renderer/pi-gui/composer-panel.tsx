@@ -3,6 +3,7 @@ import {
   type Dispatch,
   type DragEvent,
   type KeyboardEvent,
+  type ReactNode,
   type RefObject,
   type SetStateAction,
 } from "react";
@@ -72,6 +73,7 @@ interface ComposerPanelProps {
   readonly extensionDock?: ExtensionDockModel;
   readonly extensionDockExpanded: boolean;
   readonly onToggleExtensionDock: () => void;
+  readonly thinkingSlot?: ReactNode;
   /** When set, show the Pi context ring for this open session. */
   readonly piContextSessionRef?: SessionRef;
 }
@@ -124,6 +126,7 @@ export function ComposerPanel({
   extensionDock,
   extensionDockExpanded,
   onToggleExtensionDock,
+  thinkingSlot,
   piContextSessionRef,
 }: ComposerPanelProps) {
   const hasComposerInput = composerDraft.trim().length > 0 || attachments.length > 0;
@@ -179,6 +182,7 @@ export function ComposerPanel({
           extensionDock={extensionDock}
           extensionDockExpanded={extensionDockExpanded}
           onToggleExtensionDock={onToggleExtensionDock}
+          thinkingSlot={thinkingSlot}
           footer={(
             <div className="composer__footer">
               <div className="composer__footer-row">

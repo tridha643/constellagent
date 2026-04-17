@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { MarkdownRenderer } from "@/components/MarkdownRenderer/MarkdownRenderer";
 import { segmentMessageForInlineChips, type MessageSegment } from "./message-inline-segments";
 
 const REMARK_PLUGINS = [remarkGfm];
@@ -66,7 +67,16 @@ function segmentToNode(segment: MessageSegment, index: number): ReactNode {
   }
 }
 
-export function MessageMarkdown({ text }: { readonly text: string }) {
+export function MessageMarkdown({
+  text,
+  preferStreamdown = false,
+  isStreaming = false,
+}: {
+  readonly text: string;
+  /** Use Streamdown (Shiki, GFM) when there are no inline file/skill chips. */
+  readonly preferStreamdown?: boolean;
+  readonly isStreaming?: boolean;
+}) {
   const segments = useMemo(() => segmentMessageForInlineChips(text), [text]);
   const hasChips = segments.some((s) => s.kind !== "text");
 
@@ -74,6 +84,10 @@ export function MessageMarkdown({ text }: { readonly text: string }) {
     <div className="message__content">
       {hasChips ? (
         <div className="message__content--segmented">{segments.map((seg, i) => segmentToNode(seg, i))}</div>
+      ) : preferStreamdown ? (
+        <MarkdownRenderer isStreaming={isStreaming} className="message__streamdown">
+          {text}
+        </MarkdownRenderer>
       ) : (
         <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
           {text}

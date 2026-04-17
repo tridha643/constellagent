@@ -130,8 +130,9 @@ export function ModelSelector({
       }
     };
 
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+    const handleEscape = (event: Event) => {
+      const ke = event as globalThis.KeyboardEvent;
+      if (ke.key === "Escape") {
         setOpen("none");
       }
     };

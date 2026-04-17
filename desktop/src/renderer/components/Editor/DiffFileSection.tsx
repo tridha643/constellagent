@@ -4,7 +4,6 @@ import {
   FileDiff,
   type DiffLineAnnotation,
   type FileDiffMetadata,
-  type RenderHeaderMetadataProps,
 } from '@pierre/diffs/react'
 import { getSingularPatch, diffAcceptRejectHunk } from '@pierre/diffs'
 import type { DiffAnnotation, DiffAnnotationSide } from '@shared/diff-annotation-types'
@@ -358,7 +357,7 @@ export const DiffFileSection = memo(function DiffFileSection({
   // ── Pierre native header metadata slot ──
 
   const renderHeaderMetadata = useCallback(
-    (_props: RenderHeaderMetadataProps) => (
+    (_props: unknown) => (
       <div className={styles.headerMeta}>
         <span className={`${styles.headerMetaBadge} ${styles[data.status] || ''}`}>
           {STATUS_LABELS[data.status] || '?'}

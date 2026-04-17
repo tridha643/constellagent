@@ -855,6 +855,13 @@ export function SettingsPanel() {
             value={settings.editorFontSize}
             onChange={(v) => update('editorFontSize', v)}
           />
+
+          <ToggleRow
+            label="Editor: full TypeScript checking"
+            description="Runs Monaco semantic checks (module resolution, types). Off by default—the in-app editor has no workspace node_modules, so many imports look like errors until you enable this for local syntax-only editing."
+            value={settings.editorMonacoSemanticDiagnostics}
+            onChange={(v) => update('editorMonacoSemanticDiagnostics', v)}
+          />
         </div>
 
         <div className={styles.section}>

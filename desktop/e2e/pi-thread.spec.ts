@@ -28,6 +28,64 @@ function createTestRepo(name: string): string {
   return repoPath
 }
 
+async function setupWorkspaceWithTwoPiThreads(
+  window: Page,
+  repoPath: string,
+): Promise<{
+  wsId: string
+  worktreePath: string
+  tabA: string
+  tabB: string
+  sessionA?: string
+  sessionB?: string
+  setupError?: string
+}> {
+  return await window.evaluate(async (repo: string) => {
+    const getState = (window as unknown as { __store: { getState: () => any } }).__store.getState
+    try {
+      const store = getState()
+      store.hydrateState({ projects: [], workspaces: [] })
+      const projectId = crypto.randomUUID()
+      store.addProject({ id: projectId, name: 'test-repo', repoPath: repo })
+      const worktreePath = await (window as unknown as { api: { git: { createWorktree: (...a: unknown[]) => Promise<string> } } }).api.git.createWorktree(
+        repo,
+        'test-ws',
+        'test-branch',
+        true,
+      )
+      const wsId = crypto.randomUUID()
+      store.addWorkspace({
+        id: wsId,
+        name: 'test-ws',
+        branch: 'test-branch',
+        worktreePath,
+        projectId,
+      })
+      await store.createPiThreadForActiveWorkspace()
+      await store.createPiThreadForActiveWorkspace()
+      const tabs = getState().tabs.filter((t: { type: string }) => t.type === 'pi-thread')
+      const a = tabs[tabs.length - 2]
+      const b = tabs[tabs.length - 1]
+      return {
+        wsId,
+        worktreePath,
+        tabA: a.id as string,
+        tabB: b.id as string,
+        sessionA: a.piSessionId as string | undefined,
+        sessionB: b.piSessionId as string | undefined,
+      }
+    } catch (e) {
+      return {
+        wsId: '',
+        worktreePath: '',
+        tabA: '',
+        tabB: '',
+        setupError: e instanceof Error ? e.message : String(e),
+      }
+    }
+  }, repoPath)
+}
+
 async function setupWorkspaceWithPiThread(window: Page, repoPath: string) {
   return await window.evaluate(async (repo: string) => {
     const store = (window as unknown as { __store: { getState: () => any } }).__store.getState()
@@ -78,6 +136,68 @@ test.describe('PI thread tab', () => {
       await window.getByTestId('composer').fill(sendText)
       await window.getByTestId('send').click()
       await expect(window.getByTestId('transcript')).toContainText(sendText, { timeout: 15000 })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('two PI Chat tabs bind different Pi sessions', async () => {
+    const repoPath = createTestRepo('pi-thread-multi')
+    const { app, window } = await launchApp()
+
+    try {
+      const setup = await setupWorkspaceWithTwoPiThreads(window, repoPath)
+      if (setup.setupError) {
+        throw new Error(`setupWorkspaceWithTwoPiThreads: ${setup.setupError}`)
+      }
+      const { tabA, tabB } = setup
+      await window.waitForTimeout(2500)
+      const tabsInfo = await window.evaluate(() => {
+        const tabs = (window as unknown as { __store: { getState: () => { tabs: { type: string; piSessionId?: string }[] } } }).__store
+          .getState()
+          .tabs.filter((t) => t.type === 'pi-thread')
+        return tabs.map((t) => ({ id: t.id, piSessionId: t.piSessionId }))
+      })
+      if (tabsInfo.length < 2) {
+        throw new Error(`Expected 2 pi-thread tabs, got ${JSON.stringify(tabsInfo)}`)
+      }
+      const sessionA = tabsInfo[tabsInfo.length - 2].piSessionId
+      const sessionB = tabsInfo[tabsInfo.length - 1].piSessionId
+      if (!sessionA || !sessionB) {
+        throw new Error(`Missing piSessionId on tab(s): ${JSON.stringify(tabsInfo)}`)
+      }
+      if (sessionA === sessionB) {
+        throw new Error(`Both PI tabs bound to same session: ${JSON.stringify(tabsInfo)}`)
+      }
+
+      const sendA = `e2e-pi-tab-a-${Date.now()}`
+      await window.evaluate(
+        (id) => (window as unknown as { __store: { getState: () => any } }).__store.getState().setActiveTab(id),
+        tabA,
+      )
+      await window.waitForTimeout(800)
+      await window.getByTestId('composer').fill(sendA)
+      await window.getByTestId('send').click()
+      await expect(window.getByTestId('transcript')).toContainText(sendA, { timeout: 15000 })
+
+      const sendB = `e2e-pi-tab-b-${Date.now()}`
+      await window.evaluate(
+        (id) => (window as unknown as { __store: { getState: () => any } }).__store.getState().setActiveTab(id),
+        tabB,
+      )
+      await window.waitForTimeout(800)
+      await window.getByTestId('composer').fill(sendB)
+      await window.getByTestId('send').click()
+      await expect(window.getByTestId('transcript')).toContainText(sendB, { timeout: 15000 })
+      await expect(window.getByTestId('transcript')).not.toContainText(sendA)
+
+      await window.evaluate(
+        (id) => (window as unknown as { __store: { getState: () => any } }).__store.getState().setActiveTab(id),
+        tabA,
+      )
+      await window.waitForTimeout(800)
+      await expect(window.getByTestId('transcript')).toContainText(sendA, { timeout: 10000 })
+      await expect(window.getByTestId('transcript')).not.toContainText(sendB)
     } finally {
       await app.close()
     }

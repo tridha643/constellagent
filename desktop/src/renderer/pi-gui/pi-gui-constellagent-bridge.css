@@ -5,9 +5,6 @@
  */
 .pi-gui-scope {
   color-scheme: dark;
-  /* Snappier than browser default — Emil-style strong ease-out for surfaces / hovers */
-  --pi-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --pi-ease-ui: cubic-bezier(0.33, 1, 0.68, 1);
   --window: var(--surface-0);
   --sidebar: var(--surface-1);
   --main: var(--surface-1);
@@ -220,15 +217,17 @@
   border-radius: 12px;
   cursor: pointer;
   transition:
-    background 140ms var(--pi-ease-ui),
-    border-color 140ms var(--pi-ease-ui),
-    box-shadow 140ms var(--pi-ease-out);
+    background 140ms var(--ease-ui),
+    border-color 140ms var(--ease-ui),
+    box-shadow 140ms var(--ease-out);
 }
 
-:root.dark .pi-gui-scope .timeline-jump:hover {
-  background: var(--surface-3);
-  border-color: var(--border-strong);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+@media (hover: hover) and (pointer: fine) {
+  :root.dark .pi-gui-scope .timeline-jump:hover {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  }
 }
 
 :root.dark .pi-gui-scope .timeline-jump:focus-visible {
@@ -248,9 +247,9 @@
 /* Composer chrome: smooth border/shadow; focus-within ring. Border animates on reasoning change (state feedback, not key repeat). */
 :root.dark .pi-gui-scope .composer__surface {
   transition:
-    border-color 200ms var(--pi-ease-out),
-    box-shadow 220ms var(--pi-ease-out),
-    background-color 180ms var(--pi-ease-ui);
+    border-color 200ms var(--ease-out),
+    box-shadow 220ms var(--ease-out),
+    background-color 180ms var(--ease-ui);
 }
 
 /* Default focus: Pi TUI colors.border (vars.blue). */
@@ -285,10 +284,10 @@
 
 :root.dark .pi-gui-scope .button--primary:not(:disabled) {
   transition:
-    transform 130ms var(--pi-ease-out),
-    background 160ms var(--pi-ease-ui),
-    border-color 160ms var(--pi-ease-ui),
-    color 160ms var(--pi-ease-ui);
+    transform 130ms var(--ease-out),
+    background 160ms var(--ease-ui),
+    border-color 160ms var(--ease-ui),
+    color 160ms var(--ease-ui);
 }
 
 :root.dark .pi-gui-scope .button--primary:active:not(:disabled) {
@@ -297,10 +296,10 @@
 
 :root.dark .pi-gui-scope .composer__attach {
   transition:
-    transform 130ms var(--pi-ease-out),
-    border-color 160ms var(--pi-ease-ui),
-    background 160ms var(--pi-ease-ui),
-    color 160ms var(--pi-ease-ui);
+    transform 130ms var(--ease-out),
+    border-color 160ms var(--ease-ui),
+    background 160ms var(--ease-ui),
+    color 160ms var(--ease-ui);
 }
 
 :root.dark .pi-gui-scope .composer__attach:active:not(:disabled) {

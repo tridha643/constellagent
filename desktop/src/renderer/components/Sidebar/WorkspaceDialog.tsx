@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Project } from '../../store/types'
 import { parsePrUrl, parsePrNumber } from '../../../shared/pr-url'
+import { useExitAnimation } from '../../hooks/useExitAnimation'
 import styles from './WorkspaceDialog.module.css'
+
+/** Match exit keyframes in WorkspaceDialog.module.css */
+const EXIT_MS = 140
 
 /** Live-sanitize a string into a valid git branch name as the user types */
 function toBranchName(input: string): string {
@@ -61,7 +65,9 @@ export function WorkspaceDialog({
   const [basePickerOpen, setBasePickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const basePickerRef = useRef<HTMLDivElement>(null)
-  const [exiting, setExiting] = useState(false)
+  const [open, setOpen] = useState(true)
+  const { shouldRender, animating } = useExitAnimation(open, EXIT_MS)
+  const exiting = animating === 'exit'
 
   useEffect(() => {
     let cancelled = false
@@ -200,14 +206,23 @@ export function WorkspaceDialog({
 
   const animateExit = useCallback(() => {
     if (exiting || isCreating) return
-    setExiting(true)
-    setTimeout(() => onCancel(), 150)
-  }, [exiting, isCreating, onCancel])
+    setOpen(false)
+  }, [exiting, isCreating])
+
+  useEffect(() => {
+    if (!shouldRender) {
+      onCancel()
+    }
+  }, [shouldRender, onCancel])
 
   const createDisabled = !name.trim()
     || isCreating
     || prResolving
     || (isNewBranch && !baseBranch.trim())
+
+  if (!shouldRender) {
+    return null
+  }
 
   return (
     <div className={`${styles.overlay} ${exiting ? styles.overlayExiting : ''}`} onClick={animateExit}>

@@ -48,6 +48,51 @@
   color: var(--accent-red);
 }
 
+.sessionSelect {
+  margin-left: auto;
+  max-width: min(240px, 42vw);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-0);
+  color: var(--text-primary);
+}
+
+.toolbarBtn {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-0);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .toolbarBtn:hover {
+    background: color-mix(in srgb, var(--text-primary) 8%, var(--surface-0));
+  }
+}
+
+.retryLink {
+  font-size: 11px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-blue);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.errorBox {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+}
+
 .timeline {
   flex: 1;
   min-height: 0;

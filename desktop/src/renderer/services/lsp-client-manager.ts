@@ -4,7 +4,12 @@
  * All initialization is async and non-blocking — editor mounts immediately.
  */
 
-const LSP_LANGUAGES = new Set(['python', 'go', 'rust'])
+import { getLanguage } from '../utils/language-map'
+
+/** Spawn keys matching main-process `LSP_SERVERS[].language` in `lsp-config.ts`. */
+const LSP_LANGUAGES = new Set(['python', 'go', 'rust', 'typescript', 'prisma'])
+
+const TS_JS_MONACO_LANGS = new Set(['typescript', 'typescriptreact', 'javascript', 'javascriptreact'])
 
 interface LspClient {
   ws: WebSocket
@@ -23,6 +28,21 @@ function clientKey(language: string, workspace: string): string {
 
 export function isLspLanguage(language: string): boolean {
   return LSP_LANGUAGES.has(language)
+}
+
+/** LSP process / WebSocket key for this file (e.g. all TS/JS Monaco langs share `typescript`). */
+export function getLspServerKeyForPath(filePath: string): string | null {
+  const lang = getLanguage(filePath)
+  if (TS_JS_MONACO_LANGS.has(lang)) return 'typescript'
+  if (lang === 'prisma' || filePath.toLowerCase().endsWith('.prisma')) return 'prisma'
+  if (LSP_LANGUAGES.has(lang)) return lang
+  return null
+}
+
+/** `languageId` for `textDocument/didOpen` (must match what each server expects). */
+export function getLspTextDocumentLanguageId(filePath: string): string {
+  if (filePath.toLowerCase().endsWith('.prisma')) return 'prisma'
+  return getLanguage(filePath)
 }
 
 export async function getOrCreateClient(language: string, workspace: string): Promise<LspClient | null> {

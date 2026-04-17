@@ -46,8 +46,16 @@
   font-size: 11px;
   font-family: var(--font-ui);
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  transition:
+    background var(--motion-fast),
+    border-color var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--motion-micro) var(--ease-press);
   white-space: nowrap;
+}
+
+.chip:active {
+  transform: scale(0.97);
 }
 
 @media (hover: hover) and (pointer: fine) {

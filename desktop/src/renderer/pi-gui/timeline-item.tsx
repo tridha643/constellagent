@@ -1,9 +1,17 @@
 import type { SessionTranscriptMessage } from "@pi-gui/pi-sdk-driver";
 import type { TimelineActivity, TimelineToolCall, TimelineSummary, TranscriptMessage } from "@shared/pi/timeline-types";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { MessageMarkdown } from "./message-markdown";
 import { countDiffFiles, InlineDiff, extractDiffFromOutput, syntheticUnifiedDiffFromWriteToolInput } from "./diff-inline";
 import { ChevronRightIcon, CopyIcon, FileIcon } from "./icons";
+
+/** Matches `makeActivityItem("Working…")` in main-process timeline (`pi-timeline.ts`). */
+const PI_GUI_WORKING_ACTIVITY_LABEL = "Working…";
+
+function isPiGuiWorkingActivity(item: TimelineActivity): boolean {
+  return item.label === PI_GUI_WORKING_ACTIVITY_LABEL;
+}
 
 /** Plain text to copy — assistant / summary messages only (not user prompts). */
 function aiMessageCopyText(item: SessionTranscriptMessage): string {
@@ -57,17 +65,26 @@ export function TimelineItem({
   item,
   expandedToolCallIds,
   onToggleToolCall,
+  assistantStreamMessageId,
+  sessionRunning = false,
 }: {
   readonly item: TranscriptMessage;
   readonly expandedToolCallIds?: ReadonlySet<string>;
   readonly onToggleToolCall?: (callId: string) => void;
+  /** When set, this assistant message is still receiving tokens (Streamdown streaming mode). */
+  readonly assistantStreamMessageId?: string | null;
+  /** In-flight tool rows are shown only in the live “Tool activity” strip under the thread. */
+  readonly sessionRunning?: boolean;
 }) {
   switch (item.kind) {
     case "message":
-      return <TimelineMessage item={item} />;
+      return <TimelineMessage item={item} assistantStreamMessageId={assistantStreamMessageId} />;
     case "activity":
       return <TimelineActivityItem item={item} />;
     case "tool":
+      if (sessionRunning && item.status === "running") {
+        return null;
+      }
       return (
         <TimelineToolCallItem
           item={item}
@@ -82,9 +99,17 @@ export function TimelineItem({
   }
 }
 
-function TimelineMessage({ item }: { readonly item: SessionTranscriptMessage }) {
+function TimelineMessage({
+  item,
+  assistantStreamMessageId,
+}: {
+  readonly item: SessionTranscriptMessage;
+  readonly assistantStreamMessageId?: string | null;
+}) {
   const copyText = item.role === "user" ? "" : aiMessageCopyText(item);
   const copyControl = copyText ? <TimelineMessageCopyButton text={copyText} messageId={item.id} /> : null;
+  const streamThisAssistant =
+    item.role === "assistant" && assistantStreamMessageId !== undefined && assistantStreamMessageId === item.id;
 
   if (item.role === "user") {
     return (
@@ -130,7 +155,7 @@ function TimelineMessage({ item }: { readonly item: SessionTranscriptMessage }) 
           </div>
           {copyControl}
         </div>
-        <MessageMarkdown text={item.text} />
+        <MessageMarkdown text={item.text} preferStreamdown />
       </article>
     );
   }
@@ -138,12 +163,22 @@ function TimelineMessage({ item }: { readonly item: SessionTranscriptMessage }) 
   return (
     <article className="timeline-item timeline-item--assistant">
       {copyControl ? <div className="timeline-item__message-toolbar timeline-item__message-toolbar--assistant">{copyControl}</div> : null}
-      <MessageMarkdown text={item.text} />
+      <MessageMarkdown text={item.text} preferStreamdown isStreaming={streamThisAssistant} />
     </article>
   );
 }
 
 function TimelineActivityItem({ item }: { readonly item: TimelineActivity }) {
+  if (isPiGuiWorkingActivity(item)) {
+    return (
+      <div className="timeline-activity timeline-activity--working" data-testid="pi-working-activity">
+        <ThinkingIndicator className="min-w-0 flex-1 px-0 py-1" data-testid="pi-thinking-indicator" />
+        {item.detail ? <span className="timeline-activity__detail">{item.detail}</span> : null}
+        {item.metadata ? <span className="timeline-activity__meta">{item.metadata}</span> : null}
+      </div>
+    );
+  }
+
   return (
     <div className={`timeline-activity timeline-activity--${item.tone ?? "neutral"}`}>
       <span className="timeline-activity__label">{item.label}</span>

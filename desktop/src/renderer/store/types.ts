@@ -93,7 +93,7 @@ export type Tab = {
   | { type: 'diff'; commitHash?: string; commitMessage?: string }
   | { type: 'markdownPreview'; filePath: string; title: string }
   | { type: 't3code'; title: string; serverUrl: string }
-  | { type: 'pi-thread'; title: string }
+  | { type: 'pi-thread'; title: string; piSessionId?: string; piSessionTitle?: string }
 )
 
 export type RightPanelMode = 'files' | 'changes' | 'graph'
@@ -152,6 +152,8 @@ export interface Settings {
   hunkReviewWidthPx?: number
   terminalFontSize: number
   editorFontSize: number
+  /** When false, Monaco skips TS/JS semantic checks (no node_modules in-browser). Syntax errors still show. */
+  editorMonacoSemanticDiagnostics: boolean
   favoriteEditor: FavoriteEditor
   favoriteEditorCustom: string
   mcpServers: McpServer[]
@@ -173,6 +175,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hunkReviewWidthPx: undefined,
   terminalFontSize: 14,
   editorFontSize: 13,
+  editorMonacoSemanticDiagnostics: false,
   favoriteEditor: 'cursor',
   favoriteEditorCustom: '',
   mcpServers: [],
@@ -278,6 +281,8 @@ export interface AppState {
   createTerminalForActiveWorkspace: () => Promise<void>
   /** Pi SDK agent thread (non-PTY); catalog under app userData. */
   createPiThreadForActiveWorkspace: () => Promise<void>
+  /** Update bound Pi session for a PI Chat tab (multi-chat per worktree). */
+  setPiThreadSessionBinding: (tabId: string, piSessionId: string, title?: string) => void
   /** Launch a new terminal tab with a pre-written command (plan builds, no session resume). */
   launchAgentTerminalWithCommand: (opts: {
     workspaceId: string

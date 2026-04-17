@@ -6,6 +6,7 @@ import {
   type Project,
   type PrLinkProvider,
   type SidebarActionId,
+  type StartupCommand,
 } from "../../store/types";
 import { getRenderableProjectWorkspaces } from "../../store/sidebar-navigation";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
@@ -568,9 +569,14 @@ export function Sidebar() {
         maybeShowStaleMainToast(err, addToast);
       }
 
-      const commands = (startupSettings
+      const commands: StartupCommand[] = startupSettings
         .filter((cmd) => typeof cmd.command === 'string' && cmd.command.trim())
-        .map((cmd) => ({ name: typeof cmd.name === 'string' ? cmd.name : '', command: cmd.command })));
+        .map((cmd) => ({
+          name: typeof cmd.name === 'string' ? cmd.name : '',
+          command: cmd.command,
+          waitFor: cmd.waitFor,
+          waitCondition: cmd.waitCondition,
+        }))
 
       // Pre-trust worktree in Claude Code if any command uses claude
       if (commands.some((c) => c.command.trim().startsWith("claude"))) {

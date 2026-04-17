@@ -592,8 +592,9 @@ export function HunkReview({ worktreePath }: Props) {
 
         {/* Content */}
         {loading ? (
-          <div className={styles.emptyState}>
-            <span className={styles.emptyText}>Loading changes...</span>
+          <div className={styles.emptyState} role="status" aria-busy="true" aria-label="Loading changes">
+            <div className="shimmer-block" style={{ width: 'min(200px, 70%)', height: 14, marginBottom: 10 }} />
+            <div className="shimmer-block" style={{ width: 'min(260px, 85%)', height: 14 }} />
           </div>
         ) : files.length === 0 ? (
           <div className={styles.emptyState}>
@@ -612,7 +613,7 @@ export function HunkReview({ worktreePath }: Props) {
                 worktreeAnnotations={annotations}
                 onAnnotationsChanged={loadAnnotations}
                 showPatchAnchorNote={false}
-                activeTourAnnotationId={reviewMode === 'tour' ? activeTourStepId : undefined}
+                activeTourAnnotationId={reviewMode === 'tour' ? (activeTourStepId ?? undefined) : undefined}
                 tourMode={reviewMode === 'tour'}
                 selectedCommentIds={selectedIds}
                 onToggleComment={toggleComment}

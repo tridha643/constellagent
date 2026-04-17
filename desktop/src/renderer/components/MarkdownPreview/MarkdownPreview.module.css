@@ -79,7 +79,7 @@
   font-family: var(--font-ui);
   cursor: pointer;
   max-width: 118px;
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--motion-fast);
 }
 
 .harnessSelect:focus {
@@ -99,7 +99,7 @@
   cursor: pointer;
   min-width: 180px;
   max-width: min(320px, 40vw);
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--motion-fast);
 }
 
 .agentSelect:focus {
@@ -241,6 +241,17 @@
   z-index: 100;
   min-width: 160px;
   padding: var(--space-1) 0;
+  opacity: 1;
+  transform: scale(1);
+  transform-origin: top right;
+  transition:
+    opacity var(--motion-default) var(--ease-out),
+    transform var(--motion-default) var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.97);
+  }
 }
 
 .relocateGroup {
@@ -262,7 +273,7 @@
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--motion-fast), color var(--motion-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {

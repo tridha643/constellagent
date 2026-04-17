@@ -44,6 +44,7 @@ import {
 import { formatReviewForAgent } from '../utils/review-formatter'
 import { maybeShowStaleMainToast } from '../utils/ipc-stale-main'
 import { pathsEqualOrAlias } from '../../shared/agent-plan-path'
+import type { DesktopAppState } from '../../shared/pi/pi-desktop-state'
 import {
   DEFAULT_AUTOMATION_COOLDOWN_MS,
   type AutomationAction,
@@ -726,15 +727,69 @@ export const useAppStore = create<AppState>((set, get) => ({
   createPiThreadForActiveWorkspace: async () => {
     const s = get()
     if (!s.activeWorkspaceId) return
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+    if (!ws) return
+
     const wsTabs = s.tabs.filter((t) => t.workspaceId === s.activeWorkspaceId)
     const piCount = wsTabs.filter((t) => t.type === 'pi-thread').length
-    get().addTab({
-      id: crypto.randomUUID(),
-      workspaceId: s.activeWorkspaceId,
-      type: 'pi-thread',
-      title: piCount === 0 ? 'PI Chat' : `PI Chat ${piCount + 1}`,
-    })
+    const fallbackTitle = piCount === 0 ? 'PI Chat' : `PI Chat ${piCount + 1}`
+
+    const tabId = crypto.randomUUID()
+    try {
+      let piState = (await window.api.pi.syncWorkspace(ws.worktreePath, ws.name)) as DesktopAppState
+      const piWs =
+        piState.workspaces.find((w) => pathsEqualOrAlias(w.path, ws.worktreePath)) ??
+        piState.workspaces.find((w) => ws.worktreePath.startsWith(w.path)) ??
+        piState.workspaces.find((w) => w.path.startsWith(ws.worktreePath))
+
+      if (!piWs) {
+        get().addTab({
+          id: tabId,
+          workspaceId: s.activeWorkspaceId,
+          type: 'pi-thread',
+          title: fallbackTitle,
+        })
+        return
+      }
+
+      piState = (await window.api.pi.createSession({ workspaceId: piWs.id })) as DesktopAppState
+      const sessionId = piState.selectedSessionId
+      const updatedWs = piState.workspaces.find((w) => w.id === piWs.id)
+      const sess = updatedWs?.sessions.find((x) => x.id === sessionId)
+      const title = sess?.title?.trim() ? sess.title.trim() : fallbackTitle
+
+      get().addTab({
+        id: tabId,
+        workspaceId: s.activeWorkspaceId,
+        type: 'pi-thread',
+        title,
+        piSessionId: sessionId || undefined,
+        piSessionTitle: sess?.title,
+      })
+    } catch {
+      get().addTab({
+        id: tabId,
+        workspaceId: s.activeWorkspaceId,
+        type: 'pi-thread',
+        title: fallbackTitle,
+      })
+    }
   },
+
+  setPiThreadSessionBinding: (tabId, piSessionId, title) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId && t.type === 'pi-thread'
+          ? {
+              ...t,
+              piSessionId,
+              ...(title !== undefined
+                ? { title, piSessionTitle: title }
+                : {}),
+            }
+          : t,
+      ),
+    })),
 
   launchAgentTerminalWithCommand: async (opts) => {
     const { workspaceId, worktreePath, title, command, agentType } = opts

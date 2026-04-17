@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useExitAnimation } from '../../hooks/useExitAnimation'
 import styles from './ConfirmDialog.module.css'
 
 interface Props {
@@ -14,31 +15,43 @@ interface Props {
   onSecondaryConfirm?: () => void
 }
 
-const EXIT_DURATION = 150
+/** Match `overlayExiting` / `dialogExiting` duration in ConfirmDialog.module.css */
+const EXIT_MS = 140
 
 export function ConfirmDialog({ title, message, confirmLabel = 'Delete', onConfirm, onCancel, destructive = false, tip, loading = false, secondaryConfirmLabel, onSecondaryConfirm }: Props) {
-  const [exiting, setExiting] = useState(false)
+  const [open, setOpen] = useState(true)
+  const { shouldRender, animating } = useExitAnimation(open, EXIT_MS)
+  const pendingRef = useRef<(() => void) | null>(null)
+  const exiting = animating === 'exit'
 
-  const animateExit = useCallback((cb: () => void) => {
-    if (exiting) return
-    setExiting(true)
-    setTimeout(() => cb(), EXIT_DURATION)
-  }, [exiting])
+  const beginExit = useCallback((cb: () => void) => {
+    if (loading || exiting) return
+    pendingRef.current = cb
+    setOpen(false)
+  }, [loading, exiting])
+
+  useEffect(() => {
+    if (!shouldRender && pendingRef.current) {
+      const fn = pendingRef.current
+      pendingRef.current = null
+      fn()
+    }
+  }, [shouldRender])
 
   const handleCancel = useCallback(() => {
     if (loading) return
-    animateExit(onCancel)
-  }, [loading, animateExit, onCancel])
+    beginExit(onCancel)
+  }, [loading, beginExit, onCancel])
 
   const handleConfirm = useCallback(() => {
     if (loading) return
-    animateExit(onConfirm)
-  }, [loading, animateExit, onConfirm])
+    beginExit(onConfirm)
+  }, [loading, beginExit, onConfirm])
 
   const handleSecondary = useCallback(() => {
     if (loading || !onSecondaryConfirm) return
-    animateExit(onSecondaryConfirm)
-  }, [loading, animateExit, onSecondaryConfirm])
+    beginExit(onSecondaryConfirm)
+  }, [loading, beginExit, onSecondaryConfirm])
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (loading || exiting) return
@@ -55,6 +68,10 @@ export function ConfirmDialog({ title, message, confirmLabel = 'Delete', onConfi
   }, [handleKeyDown])
 
   const btnClass = destructive ? styles.destructiveBtn : styles.confirmBtn
+
+  if (!shouldRender) {
+    return null
+  }
 
   return (
     <div className={`${styles.overlay} ${exiting ? styles.overlayExiting : ''}`} onClick={loading ? undefined : handleCancel}>

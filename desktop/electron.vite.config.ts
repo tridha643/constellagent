@@ -21,6 +21,7 @@ export default defineConfig({
     plugins: [tailwindcss()],
     resolve: {
       alias: {
+        '@': resolve(__dirname, 'src/renderer'),
         '@shared': resolve(__dirname, 'src/shared')
       }
     },

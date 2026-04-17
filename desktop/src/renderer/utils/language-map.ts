@@ -4,6 +4,9 @@ const EXT_MAP: Record<string, string> = {
   tsx: 'typescriptreact',
   js: 'javascript',
   jsx: 'javascriptreact',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  prisma: 'prisma',
   json: 'json',
   md: 'markdown',
   css: 'css',
@@ -32,6 +35,7 @@ const FENCE_MAP: Record<string, string> = {
   typescriptreact: 'tsx',
   javascript: 'js',
   javascriptreact: 'jsx',
+  prisma: 'prisma',
   python: 'py',
   shell: 'sh',
 }

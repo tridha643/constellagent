@@ -1,0 +1,29 @@
+{
+  "nextId": 3,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Add a tiny test utility module",
+      "description": "Create a small `test_demo.py` (or equivalent in the repo language) with a `greet(name)` function that returns \"Hello, {name}!\" and a `add(a, b)` helper. Place it in an appropriate location matching the project structure.",
+      "status": "pending",
+      "activeForm": "Adding test utility module",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1776383641979,
+      "updatedAt": 1776383641979
+    },
+    {
+      "id": "2",
+      "subject": "Add minimal tests for the utility",
+      "description": "Add a minimal test file that asserts `greet` and `add` behave correctly. Use the project's existing test framework if any; otherwise a simple assert-based script is acceptable for this demo.",
+      "status": "pending",
+      "activeForm": "Adding minimal tests",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1776383642164,
+      "updatedAt": 1776383642164
+    }
+  ]
+}

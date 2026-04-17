@@ -137,8 +137,8 @@ async function buildPlanEditPayload(filePath: string, override?: PlanEditPayload
     return formatEditFilePayload({
       filePath,
       text: overrideText,
-      startLine: override.startLine,
-      endLine: override.endLine,
+      startLine: override?.startLine,
+      endLine: override?.endLine,
     })
   }
   if (override?.fullText) {

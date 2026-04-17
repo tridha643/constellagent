@@ -27,6 +27,18 @@ export const LSP_SERVERS: LspServerConfig[] = [
     args: [],
     extensions: ['.rs'],
   },
+  {
+    language: 'typescript',
+    command: 'typescript-language-server',
+    args: ['--stdio'],
+    extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'],
+  },
+  {
+    language: 'prisma',
+    command: 'prisma-language-server',
+    args: ['--stdio'],
+    extensions: ['.prisma'],
+  },
 ]
 
 export function isServerAvailable(command: string): boolean {

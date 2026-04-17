@@ -1,19 +1,20 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type { Toast } from '../../store/types'
+import { useExitAnimation } from '../../hooks/useExitAnimation'
 import styles from './Toast.module.css'
 
-const EXIT_MS = 160
+const EXIT_MS = 180
 const AUTO_DISMISS_MS = 5000
 
 function ToastItem({ toast }: { toast: Toast }) {
   const dismissToast = useAppStore((s) => s.dismissToast)
-  const [mounted, setMounted] = useState(false)
-  const [exiting, setExiting] = useState(false)
+  const [visible, setVisible] = useState(true)
+  const [entered, setEntered] = useState(false)
+  const { shouldRender, animating } = useExitAnimation(visible, EXIT_MS)
   const [hovered, setHovered] = useState(false)
   const [documentHidden, setDocumentHidden] = useState(() => document.hidden)
   const timerRef = useRef<number | null>(null)
-  const exitTimerRef = useRef<number | null>(null)
   const remainingRef = useRef(AUTO_DISMISS_MS)
   const startedAtRef = useRef(0)
 
@@ -25,21 +26,20 @@ function ToastItem({ toast }: { toast: Toast }) {
   }, [])
 
   const startExit = useCallback(() => {
-    if (exiting) return
+    if (!visible) return
     clearDismissTimer()
-    setExiting(true)
-    exitTimerRef.current = window.setTimeout(() => dismissToast(toast.id), EXIT_MS)
-  }, [clearDismissTimer, dismissToast, exiting, toast.id])
+    setVisible(false)
+  }, [clearDismissTimer, visible])
 
   const pauseDismiss = useCallback(() => {
-    if (exiting || timerRef.current === null) return
+    if (!visible || timerRef.current === null) return
     const elapsed = Date.now() - startedAtRef.current
     remainingRef.current = Math.max(0, remainingRef.current - elapsed)
     clearDismissTimer()
-  }, [clearDismissTimer, exiting])
+  }, [clearDismissTimer, visible])
 
   const resumeDismiss = useCallback(() => {
-    if (exiting) return
+    if (!visible) return
     clearDismissTimer()
     if (remainingRef.current <= 0) {
       startExit()
@@ -51,12 +51,18 @@ function ToastItem({ toast }: { toast: Toast }) {
       remainingRef.current = 0
       startExit()
     }, remainingRef.current)
-  }, [clearDismissTimer, exiting, startExit])
+  }, [clearDismissTimer, visible, startExit])
 
   useEffect(() => {
-    const raf = requestAnimationFrame(() => setMounted(true))
+    const raf = requestAnimationFrame(() => setEntered(true))
     return () => cancelAnimationFrame(raf)
   }, [])
+
+  useEffect(() => {
+    if (!shouldRender) {
+      dismissToast(toast.id)
+    }
+  }, [shouldRender, dismissToast, toast.id])
 
   useEffect(() => {
     const handleVisibility = () => setDocumentHidden(document.hidden)
@@ -71,14 +77,17 @@ function ToastItem({ toast }: { toast: Toast }) {
 
   useEffect(() => () => {
     clearDismissTimer()
-    if (exitTimerRef.current !== null) window.clearTimeout(exitTimerRef.current)
   }, [clearDismissTimer])
+
+  if (!shouldRender) {
+    return null
+  }
 
   return (
     <div
       className={`${styles.toast} ${styles[toast.type]}`}
-      data-mounted={mounted}
-      data-exiting={exiting}
+      data-mounted={entered && animating !== 'exit'}
+      data-exiting={animating === 'exit'}
       onClick={startExit}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
