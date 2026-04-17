@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AutomationAction, AutomationConfigLike, AutomationEventType, AutomationTrigger } from '../../../shared/automation-types'
+import type {
+  AutomationAction,
+  AutomationAgentType,
+  AutomationConfigLike,
+  AutomationEventType,
+  AutomationTrigger,
+} from '../../../shared/automation-types'
 import { DEFAULT_AUTOMATION_COOLDOWN_MS } from '../../../shared/automation-types'
 import { useAppStore } from '../../store/app-store'
 import type { Automation } from '../../store/types'
@@ -223,7 +229,7 @@ function AutomationForm({
   const [eventType, setEventType] = useState<AutomationEventType>(
     initialTrigger.type === 'event' ? initialTrigger.eventType : 'agent:stopped'
   )
-  const [agentTypes, setAgentTypes] = useState<string[]>(
+  const [agentTypes, setAgentTypes] = useState<AutomationAgentType[]>(
     initialTrigger.type === 'event'
       ? initialTrigger.filters?.filter((filter) => filter.field === 'agentType').map((filter) => filter.value) ?? []
       : []

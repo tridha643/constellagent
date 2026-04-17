@@ -6,6 +6,12 @@
   justify-content: center;
   padding-top: 15vh;
   z-index: 100;
+  opacity: 1;
+  transition: opacity var(--motion-default) var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+  }
 }
 
 .panel {
@@ -20,6 +26,36 @@
   overflow: hidden;
   align-self: flex-start;
   transform-origin: top center;
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity var(--motion-default) var(--ease-out),
+    transform var(--motion-default) var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .panel {
+    transition: none;
+  }
+
+  .overlay {
+    @starting-style {
+      opacity: 1;
+    }
+  }
+
+  .panel {
+    @starting-style {
+      opacity: 1;
+      transform: none;
+    }
+  }
 }
 
 .inputWrap {

@@ -1,7 +1,18 @@
-import { useCallback, useLayoutEffect, useRef, useState, type MutableRefObject, type RefCallback, type RefObject } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+  type RefCallback,
+  type RefObject,
+} from "react";
 import type { TranscriptMessage } from "@shared/pi/pi-desktop-state";
 import { ThreadSearchBar } from "./thread-search";
 import { TimelineItem } from "./timeline-item";
+import { getAssistantStreamMessageId } from "./transcript-stream";
 
 const OVERSCAN_PX = 720;
 const ROW_GAP_PX = 14;
@@ -28,6 +39,10 @@ interface ConversationTimelineProps {
   readonly showJumpToLatest: boolean;
   readonly onJumpToLatest: () => void;
   readonly onContentHeightChange: () => void;
+  /** When true, the last in-flight assistant message uses Streamdown streaming animation. */
+  readonly sessionRunning?: boolean;
+  /** Rendered after transcript rows (e.g. current running tool under “Working…”). */
+  readonly liveToolActivityFooter?: ReactNode;
 }
 
 export function ConversationTimeline({
@@ -40,9 +55,15 @@ export function ConversationTimeline({
   showJumpToLatest,
   onJumpToLatest,
   onContentHeightChange,
+  sessionRunning = false,
+  liveToolActivityFooter,
 }: ConversationTimelineProps) {
   const shouldVirtualize = !threadSearch.isOpen && transcript.length > VIRTUALIZATION_THRESHOLD;
   const [expandedToolCallIds, setExpandedToolCallIds] = useState<Set<string>>(() => new Set());
+  const assistantStreamMessageId = useMemo(
+    () => getAssistantStreamMessageId(transcript, sessionRunning),
+    [transcript, sessionRunning],
+  );
 
   useLayoutEffect(() => {
     const availableToolCallIds = new Set(
@@ -103,7 +124,17 @@ export function ConversationTimeline({
       ) : null}
       {isTranscriptLoading ? (
         <div className="timeline" data-testid="transcript">
-          <div className="timeline-empty">Loading transcript…</div>
+          <div
+            className="timeline-empty"
+            role="status"
+            aria-busy="true"
+            aria-label="Loading transcript"
+            style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 0" }}
+          >
+            <div className="shimmer-block" style={{ width: "72%", height: 14 }} />
+            <div className="shimmer-block" style={{ width: "88%", height: 14 }} />
+            <div className="shimmer-block" style={{ width: "64%", height: 14 }} />
+          </div>
         </div>
       ) : transcript.length === 0 ? (
         <div className="timeline" data-testid="transcript">
@@ -116,6 +147,8 @@ export function ConversationTimeline({
           onContentHeightChange={onContentHeightChange}
           expandedToolCallIds={expandedToolCallIds}
           onToggleToolCall={toggleToolCall}
+          assistantStreamMessageId={assistantStreamMessageId}
+          sessionRunning={sessionRunning}
         />
       ) : (
         <div className="timeline" data-testid="transcript">
@@ -125,10 +158,13 @@ export function ConversationTimeline({
               key={item.id}
               expandedToolCallIds={expandedToolCallIds}
               onToggleToolCall={toggleToolCall}
+              assistantStreamMessageId={assistantStreamMessageId}
+              sessionRunning={sessionRunning}
             />
           ))}
         </div>
       )}
+      {liveToolActivityFooter}
       {showJumpToLatest ? (
         <button className="timeline-jump" data-testid="timeline-jump" type="button" onClick={onJumpToLatest}>
           New activity below
@@ -144,17 +180,30 @@ function VirtualizedTranscriptList({
   onContentHeightChange,
   expandedToolCallIds,
   onToggleToolCall,
+  assistantStreamMessageId,
+  sessionRunning,
 }: {
   readonly transcript: readonly TranscriptMessage[];
   readonly timelinePaneRef: MutableRefObject<HTMLDivElement | null>;
   readonly onContentHeightChange: () => void;
   readonly expandedToolCallIds: ReadonlySet<string>;
   readonly onToggleToolCall: (callId: string) => void;
+  readonly assistantStreamMessageId: string | null;
+  readonly sessionRunning: boolean;
 }) {
   const measuredHeightsRef = useRef(new Map<string, number>());
   const [, setMeasurementVersion] = useState(0);
   const [viewport, setViewport] = useState({ scrollTop: 0, height: 0 });
   const previousTotalHeightRef = useRef(0);
+  const contentHeightRafRef = useRef<number | null>(null);
+
+  const scheduleOnContentHeightChange = useCallback(() => {
+    if (contentHeightRafRef.current != null) return;
+    contentHeightRafRef.current = requestAnimationFrame(() => {
+      contentHeightRafRef.current = null;
+      onContentHeightChange();
+    });
+  }, [onContentHeightChange]);
 
   useLayoutEffect(() => {
     const knownIds = new Set(transcript.map((item) => item.id));
@@ -200,6 +249,16 @@ function VirtualizedTranscriptList({
     };
   }, [timelinePaneRef]);
 
+  useLayoutEffect(
+    () => () => {
+      if (contentHeightRafRef.current != null) {
+        cancelAnimationFrame(contentHeightRafRef.current);
+        contentHeightRafRef.current = null;
+      }
+    },
+    [],
+  );
+
   const updateMeasuredHeight = useCallback((id: string, height: number) => {
     const nextHeight = Math.max(1, Math.ceil(height));
     const currentHeight = measuredHeightsRef.current.get(id);
@@ -226,8 +285,8 @@ function VirtualizedTranscriptList({
       return;
     }
     previousTotalHeightRef.current = totalHeight;
-    onContentHeightChange();
-  }, [onContentHeightChange, totalHeight]);
+    scheduleOnContentHeightChange();
+  }, [scheduleOnContentHeightChange, totalHeight]);
 
   const startOffset = Math.max(0, viewport.scrollTop - OVERSCAN_PX);
   const endOffset = viewport.scrollTop + viewport.height + OVERSCAN_PX;
@@ -246,6 +305,8 @@ function VirtualizedTranscriptList({
             onHeightChange={updateMeasuredHeight}
             expandedToolCallIds={expandedToolCallIds}
             onToggleToolCall={onToggleToolCall}
+            assistantStreamMessageId={assistantStreamMessageId}
+            sessionRunning={sessionRunning}
           />
         );
       })}
@@ -259,12 +320,16 @@ function MeasuredTimelineRow({
   onHeightChange,
   expandedToolCallIds,
   onToggleToolCall,
+  assistantStreamMessageId,
+  sessionRunning,
 }: {
   readonly item: TranscriptMessage;
   readonly top: number;
   readonly onHeightChange: (id: string, height: number) => void;
   readonly expandedToolCallIds: ReadonlySet<string>;
   readonly onToggleToolCall: (callId: string) => void;
+  readonly assistantStreamMessageId: string | null;
+  readonly sessionRunning: boolean;
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
 
@@ -295,6 +360,8 @@ function MeasuredTimelineRow({
         item={item}
         expandedToolCallIds={expandedToolCallIds}
         onToggleToolCall={onToggleToolCall}
+        assistantStreamMessageId={assistantStreamMessageId}
+        sessionRunning={sessionRunning}
       />
     </div>
   );

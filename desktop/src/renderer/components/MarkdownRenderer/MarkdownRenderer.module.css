@@ -8,8 +8,7 @@
   /* App root uses user-select: none; allow selecting plan / markdown text */
   user-select: text;
   -webkit-user-select: text;
-  /* Streamdown toolbar motion tokens (ease-out, ~140ms — see emil-design-eng) */
-  --sd-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Streamdown toolbar motion (~140ms — see emil-design-eng) */
   --sd-press-ms: 130ms;
   --sd-hover-ms: 140ms;
 }
@@ -262,9 +261,9 @@
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
   transition:
-    color var(--sd-hover-ms) var(--sd-ease-out),
-    background-color var(--sd-hover-ms) var(--sd-ease-out),
-    transform var(--sd-press-ms) var(--sd-ease-out);
+    color var(--sd-hover-ms) var(--ease-out),
+    background-color var(--sd-hover-ms) var(--ease-out),
+    transform var(--sd-press-ms) var(--ease-out);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -292,7 +291,7 @@
 /* Copy → check swap: subtle settle when SVG mounts (success feedback) */
 @media (prefers-reduced-motion: no-preference) {
   .wrapper [data-streamdown='code-block-copy-button'] svg {
-    animation: streamdownIconSettle 165ms var(--sd-ease-out);
+    animation: streamdownIconSettle 165ms var(--ease-out);
   }
 }
 

@@ -128,8 +128,11 @@ export class AutomationEngine {
       switch (filter.field) {
         case 'agentType':
           return event.agentType === filter.value
-        case 'branch':
-          return Boolean(event.branch) && branchPatternToRegExp(filter.pattern).test(event.branch)
+        case 'branch': {
+          const b = event.branch
+          if (!b) return false
+          return branchPatternToRegExp(filter.pattern).test(b)
+        }
         case 'toolName':
           return event.toolName === filter.value
         case 'workspaceId':

@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react'
+import { MotionConfig } from 'framer-motion'
 import { Allotment } from 'allotment'
 import 'allotment/dist/style.css'
 import { useAppStore } from './store/app-store'
@@ -149,6 +150,7 @@ export function App() {
   const allTerminals = allTabs.filter((t): t is Extract<typeof t, { type: 'terminal' }> => t.type === 'terminal')
 
   return (
+    <MotionConfig reducedMotion="user">
     <div className={styles.app}>
       <div className={styles.layout}>
         {settingsOpen ? (
@@ -255,6 +257,8 @@ export function App() {
                           worktreePath={tabWorkspace.worktreePath}
                           workspaceLabel={tabWorkspace.name}
                           active={true}
+                          boundSessionId={activeTab.piSessionId}
+                          piThreadTabId={activeTab.id}
                         />
                       )}
                     </>
@@ -300,5 +304,6 @@ export function App() {
       <AddToChatButton />
       <ToastContainer />
     </div>
+    </MotionConfig>
   )
 }

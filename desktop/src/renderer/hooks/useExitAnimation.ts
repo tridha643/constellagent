@@ -13,7 +13,7 @@ type AnimState = 'enter' | 'exit' | 'idle'
 export function useExitAnimation(visible: boolean, duration = 200) {
   const [shouldRender, setShouldRender] = useState(visible)
   const [animating, setAnimating] = useState<AnimState>(visible ? 'enter' : 'idle')
-  const timerRef = useRef<ReturnType<typeof setTimeout>>()
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     clearTimeout(timerRef.current)

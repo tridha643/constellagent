@@ -39,7 +39,7 @@ export function T3CodeView({ serverUrl }: Props) {
         ref={webviewRef as React.Ref<HTMLElement>}
         className={styles.webview}
         src={serverUrl}
-        allowpopups=""
+        allowpopups
       />
     </div>
   )

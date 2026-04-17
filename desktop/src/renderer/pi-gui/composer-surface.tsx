@@ -1,5 +1,5 @@
 import { useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import type { ComposerAttachment } from "@shared/pi/pi-desktop-state";
+import type { ComposerAttachment, QueuedComposerMessage } from "@shared/pi/pi-desktop-state";
 import type {
   ComposerSlashCommand,
   ComposerSlashCommandSection,
@@ -21,7 +21,7 @@ interface ComposerSurfaceProps {
   readonly setComposerDraft: (draft: string) => void;
   readonly composerRef: RefObject<HTMLTextAreaElement | null>;
   readonly attachments: readonly ComposerAttachment[];
-  readonly queuedMessages: readonly import("./desktop-state").QueuedComposerMessage[];
+  readonly queuedMessages: readonly QueuedComposerMessage[];
   readonly editingQueuedMessageId?: string;
   readonly slashSections: readonly ComposerSlashCommandSection[];
   readonly slashOptions: readonly ComposerSlashOption[];
@@ -56,6 +56,8 @@ interface ComposerSurfaceProps {
   readonly extensionDock?: ExtensionDockModel;
   readonly extensionDockExpanded?: boolean;
   readonly onToggleExtensionDock?: () => void;
+  /** Optional strip above the composer editor (e.g. thinking / tool activity). */
+  readonly thinkingSlot?: ReactNode;
   readonly footer: ReactNode;
 }
 
@@ -101,6 +103,7 @@ export function ComposerSurface({
   extensionDock,
   extensionDockExpanded = false,
   onToggleExtensionDock,
+  thinkingSlot,
   footer,
 }: ComposerSurfaceProps) {
   const [isDragActive, setIsDragActive] = useState(false);
@@ -218,6 +221,7 @@ export function ComposerSurface({
         onRemoveMessage={onRemoveQueuedMessage}
         onSteerMessage={onSteerQueuedMessage}
       />
+      {thinkingSlot}
       {attachments.length > 0 ? (
         <div className="composer__attachments">
           {attachments.map((attachment) => (

@@ -157,26 +157,35 @@
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
   /* ═══════════════════════════════════════════════════════
-     TRANSITIONS
+     MOTION — single namespace (use --motion-* in shorthand)
      ═══════════════════════════════════════════════════════ */
-  --transition-fast: 90ms var(--ease-out);
-  --transition-default: 150ms var(--ease-out);
-  --transition-slow: 220ms var(--ease-out);
-
   /* Easing curves */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  /* Hover / color crossfades (keyword-style asymmetric) */
+  --ease: ease;
+  /* Snappy :active / press release */
+  --ease-press: cubic-bezier(0.33, 1, 0.68, 1);
+  /* iOS-style drawers / side panels */
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Slightly softer UI chrome (former --pi-ease-ui) */
+  --ease-ui: cubic-bezier(0.33, 1, 0.68, 1);
 
   /* Duration tokens */
+  --duration-micro: 60ms;
   --duration-fast: 90ms;
   --duration-default: 150ms;
   --duration-slow: 220ms;
-  --duration-spinner: 0.8s;
+  --duration-exit-fast: 120ms;
+  --duration-modal: 300ms;
+  --duration-spinner: 0.6s;
 
-  /* Composite motion tokens (coexists with old --transition-*) */
-  --motion-fast: 90ms var(--ease-out);
-  --motion-default: 150ms var(--ease-out);
-  --motion-slow: 220ms var(--ease-out);
+  /* Composite motion (use as: transition: opacity var(--motion-default)) */
+  --motion-micro: var(--duration-micro) var(--ease-out);
+  --motion-fast: var(--duration-fast) var(--ease-out);
+  --motion-default: var(--duration-default) var(--ease-out);
+  --motion-slow: var(--duration-slow) var(--ease-out);
+  --motion-modal: var(--duration-modal) var(--ease-out);
 
   /* ═══════════════════════════════════════════════════════
      LAYOUT

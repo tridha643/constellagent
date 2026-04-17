@@ -20,6 +20,8 @@
 @source "../../../node_modules/@streamdown/mermaid/dist/*.js";
 @source "../../../node_modules/@streamdown/math/dist/*.js";
 @source "../../../node_modules/@streamdown/cjk/dist/*.js";
+@source "../components/**/*.tsx";
+@source "../lib/**/*.ts";
 
 /*
  * Streamdown ships minified JS; Tailwind’s scanner often misses classes inside twMerge/clsx calls.
@@ -90,6 +92,35 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  @keyframes shimmer {
+  0% {
+    background-position: 0% 0;
+    }
+  100% {
+    background-position: 100% 0;
+    }
+  }
+
+  --animate-accordion-down: accordion-down 0.2s var(--ease-out);
+  --animate-accordion-up: accordion-up 0.2s var(--ease-out);
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -139,8 +170,10 @@ body {
   border-radius: var(--radius-full);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--border-strong);
+@media (hover: hover) and (pointer: fine) {
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+  }
 }
 
 ::-webkit-scrollbar-corner {
@@ -155,6 +188,7 @@ body {
   outline: 1px solid var(--accent-blue);
   outline-offset: -1px;
   border-radius: var(--radius-sm);
+  transition: outline-color 90ms var(--ease-out);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -186,7 +220,7 @@ body {
 
 .sash-container .sash {
   background: var(--border-subtle) !important;
-  transition: background var(--transition-default) !important;
+  transition: background var(--motion-default) !important;
 }
 
 .sash-container .sash:hover,
@@ -199,11 +233,38 @@ body {
    ═══════════════════════════════════════════════════════ */
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+  *,
+  *::before,
+  *::after {
+    /* Surgical: allow spinners & meaningful CSS animations; kill transform-heavy transitions */
     transition-duration: 80ms !important;
+    transition-property: opacity, color, background-color, border-color, outline-color, fill, stroke !important;
     transition-delay: 0ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+.shimmer-text {
+    color: transparent;
+    background: linear-gradient(90deg, #a3a3a3 0%, #a3a3a3 35%, #525252 50%, #a3a3a3 65%, #a3a3a3 100%);
+    background-size: 300% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Block skeleton (loading placeholders) — same motion as .shimmer-text */
+.shimmer-block {
+  border-radius: var(--radius-sm);
+  min-height: 12px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text-tertiary) 22%, var(--surface-2)) 0%,
+    color-mix(in srgb, var(--text-tertiary) 22%, var(--surface-2)) 35%,
+    color-mix(in srgb, var(--text-tertiary) 35%, var(--surface-3)) 50%,
+    color-mix(in srgb, var(--text-tertiary) 22%, var(--surface-2)) 65%,
+    color-mix(in srgb, var(--text-tertiary) 22%, var(--surface-2)) 100%
+  );
+  background-size: 300% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
 }

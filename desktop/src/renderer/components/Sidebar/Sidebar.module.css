@@ -110,7 +110,7 @@
 
 .chevron {
   font-size: 8px;
-  transition: transform var(--transition-default);
+  transition: transform var(--motion-default);
   flex-shrink: 0;
   opacity: 0.6;
 }
@@ -372,7 +372,7 @@
   font-size: var(--text-sm);
   padding: var(--space-3) var(--space-4);
   outline: none;
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--motion-fast);
 }
 
 .projectPrSearchInput:focus {
@@ -961,9 +961,9 @@
   text-align: left;
   line-height: 16px;
   will-change: background-color, transform;
-  transition: background-color 100ms ease,
-              color 100ms ease,
-              opacity 100ms ease,
+  transition: background-color 100ms var(--ease-out),
+              color 100ms var(--ease-out),
+              opacity 100ms var(--ease-out),
               transform 100ms var(--ease-out);
 }
 
@@ -1011,9 +1011,9 @@
 @media (prefers-reduced-motion: reduce) {
   .graphiteBranch {
     /* Keep color + opacity transitions for comprehension; drop transform */
-    transition: background-color 100ms ease,
-                color 100ms ease,
-                opacity 100ms ease;
+    transition: background-color 100ms var(--ease-out),
+                color 100ms var(--ease-out),
+                opacity 100ms var(--ease-out);
   }
   .graphiteBranch:active:not(:disabled) {
     transform: none;
@@ -1323,7 +1323,7 @@
   }
   .actionButtonDragging {
     transform: none;
-    transition: opacity 100ms ease;
+    transition: opacity 100ms var(--ease-out);
   }
   .actionButtonDropTarget::before {
     animation: none;

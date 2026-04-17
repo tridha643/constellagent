@@ -132,7 +132,9 @@ export class ConstellPiHost {
 
   async initialize(): Promise<void> {
     if (!this.initPromise) {
-      this.initPromise = this.ensureDataDir().then(() => this.refreshState({ clearLastError: true }))
+      this.initPromise = this.ensureDataDir().then(async () => {
+        await this.refreshState({ clearLastError: true })
+      })
     }
     return this.initPromise
   }
@@ -469,10 +471,8 @@ export class ConstellPiHost {
       path: entry.path,
       displayName: entry.displayName,
     }
-    await this.driver.createSession(workspaceRef, { title: input.title })
-    const sessions = await this.driver.listSessions(input.workspaceId)
-    const last = sessions.sessions[sessions.sessions.length - 1]
-    const sessionId = last?.sessionRef.sessionId ?? ''
+    const snapshot = await this.driver.createSession(workspaceRef, { title: input.title })
+    const sessionId = snapshot.ref.sessionId
     return this.refreshState({
       selectedWorkspaceId: input.workspaceId,
       selectedSessionId: sessionId,

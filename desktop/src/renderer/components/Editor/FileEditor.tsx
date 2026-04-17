@@ -15,36 +15,30 @@ import styles from './Editor.module.css'
 
 import { getLanguage } from '../../utils/language-map'
 import { usePrefersReducedMotion } from '../../hooks/use-prefers-reduced-motion'
-import { isLspLanguage, getOrCreateClient, notifyDidOpen, notifyDidClose } from '../../services/lsp-client-manager'
+import {
+  getLspServerKeyForPath,
+  getLspTextDocumentLanguageId,
+  getOrCreateClient,
+  notifyDidClose,
+  notifyDidOpen,
+} from '../../services/lsp-client-manager'
+import { DEFAULT_SETTINGS } from '../../store/types'
+import {
+  applyMonacoTypeScriptCompilerDefaults,
+  applyMonacoTypeScriptDiagnostics,
+} from '../../utils/monaco-typescript-diagnostics'
+import { ensureMonacoPrismaLanguage } from '../../utils/monaco-prisma-language'
 
-// Configure TS/JS built-in language features
-let diagnosticsConfigured = false
+// Monaco themes + compiler defaults once; diagnostics follow Settings (see FileEditor effect).
+let monacoAppearanceAndCompilerReady = false
 loader.init().then((monaco) => {
-  if (diagnosticsConfigured) return
-  diagnosticsConfigured = true
-  ensureAppearanceMonacoThemes(monaco.editor)
-
-  const diagnosticsOptions = {
-    noSemanticValidation: false,
-    noSyntaxValidation: false,
-    noSuggestionDiagnostics: false,
+  if (!monacoAppearanceAndCompilerReady) {
+    monacoAppearanceAndCompilerReady = true
+    ensureAppearanceMonacoThemes(monaco.editor)
+    ensureMonacoPrismaLanguage(monaco)
+    applyMonacoTypeScriptCompilerDefaults(monaco)
   }
-  monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(diagnosticsOptions)
-  monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(diagnosticsOptions)
-
-  const compilerOptions = {
-    target: monaco.languages.typescript.ScriptTarget.ESNext,
-    module: monaco.languages.typescript.ModuleKind.ESNext,
-    moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
-    jsx: monaco.languages.typescript.JsxEmit.ReactJSX,
-    allowJs: true,
-    strict: true,
-    esModuleInterop: true,
-    skipLibCheck: true,
-    allowNonTsExtensions: true,
-  }
-  monaco.languages.typescript.typescriptDefaults.setCompilerOptions(compilerOptions)
-  monaco.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions)
+  applyMonacoTypeScriptDiagnostics(monaco, DEFAULT_SETTINGS.editorMonacoSemanticDiagnostics)
 })
 
 interface Props {
@@ -76,6 +70,18 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   const settings = useAppStore((s) => s.settings)
   const prefersReducedMotion = usePrefersReducedMotion()
   const runAddToChatRef = useRef<() => void>(() => {})
+
+  useEffect(() => {
+    let cancelled = false
+    void loader.init().then((monaco) => {
+      if (!cancelled) {
+        applyMonacoTypeScriptDiagnostics(monaco, settings.editorMonacoSemanticDiagnostics)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [settings.editorMonacoSemanticDiagnostics])
 
   // Git gutter decorations (no-op when worktreePath is undefined or editor not mounted)
   useGitGutter(editorInstance, filePath, worktreePath)
@@ -195,17 +201,18 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   const lspWorkspaceRef = useRef<string | null>(null)
 
   useEffect(() => {
-    const language = getLanguage(filePath)
-    if (!isLspLanguage(language) || !worktreePath) return
+    const serverKey = getLspServerKeyForPath(filePath)
+    if (!serverKey || !worktreePath) return
 
-    lspLanguageRef.current = language
+    lspLanguageRef.current = serverKey
     lspWorkspaceRef.current = worktreePath
     const fileUri = `file://${filePath}`
+    const docLang = getLspTextDocumentLanguageId(filePath)
 
     // Fire-and-forget: never blocks editor rendering
-    getOrCreateClient(language, worktreePath).then((client) => {
+    getOrCreateClient(serverKey, worktreePath).then((client) => {
       if (client && content !== null) {
-        notifyDidOpen(language, worktreePath!, fileUri, content, language)
+        notifyDidOpen(serverKey, worktreePath!, fileUri, content, docLang)
       }
     }).catch(() => {})
 
@@ -277,16 +284,23 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   if (content === null) {
     return (
       <div className={styles.editorContainer}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          color: 'var(--text-tertiary)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 'var(--text-sm)',
-        }}>
-          Loading...
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label="Loading file"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+            height: '100%',
+            padding: '0 24px',
+          }}
+        >
+          <div className="shimmer-block" style={{ width: 'min(360px, 70%)', height: 14 }} />
+          <div className="shimmer-block" style={{ width: 'min(280px, 55%)', height: 14 }} />
+          <div className="shimmer-block" style={{ width: 'min(320px, 62%)', height: 14 }} />
         </div>
       </div>
     )
@@ -332,7 +346,6 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
           options={{
             fontFamily: "'SF Mono', Menlo, 'Cascadia Code', monospace",
             fontSize: settings.editorFontSize,
-            lineHeight: 20,
             minimap: { enabled: false },
             scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
             padding: { top: 8, bottom: 8 },
