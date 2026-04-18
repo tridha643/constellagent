@@ -43,6 +43,7 @@ export function TerminalSplitContainer({ tab, active, worktreePath }: ContainerP
         node={tab.splitRoot}
         focusedPaneId={tab.focusedPaneId}
         onPaneFocus={handlePaneFocus}
+        browserTabId={tab.id}
         worktreePath={worktreePath}
       />
     </div>
@@ -68,6 +69,7 @@ export function FileTabSplitContainer({ tab, active, worktreePath }: { tab: File
         node={tab.splitRoot}
         focusedPaneId={tab.focusedPaneId}
         onPaneFocus={handlePaneFocus}
+        browserTabId={tab.id}
         worktreePath={worktreePath}
       />
     </div>
@@ -78,10 +80,11 @@ interface SplitTreeProps {
   node: SplitNode
   focusedPaneId: string | undefined
   onPaneFocus: (paneId: string) => void
+  browserTabId: string
   worktreePath?: string
 }
 
-function SplitTreeNode({ node, focusedPaneId, onPaneFocus, worktreePath }: SplitTreeProps) {
+function SplitTreeNode({ node, focusedPaneId, onPaneFocus, browserTabId, worktreePath }: SplitTreeProps) {
   if (node.type === 'leaf') {
     // Render file editor pane for file leaves
     if (node.contentType === 'file') {
@@ -89,6 +92,7 @@ function SplitTreeNode({ node, focusedPaneId, onPaneFocus, worktreePath }: Split
         <FileEditorPane
           filePath={node.filePath}
           paneId={node.id}
+          browserTabId={browserTabId}
           onFocus={onPaneFocus}
           isFocusedPane={node.id === focusedPaneId}
           worktreePath={worktreePath}
@@ -120,6 +124,7 @@ function SplitTreeNode({ node, focusedPaneId, onPaneFocus, worktreePath }: Split
             node={child}
             focusedPaneId={focusedPaneId}
             onPaneFocus={onPaneFocus}
+            browserTabId={browserTabId}
             worktreePath={worktreePath}
           />
         </Allotment.Pane>

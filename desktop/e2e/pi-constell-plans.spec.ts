@@ -270,6 +270,9 @@ test.describe('PI Constell plan discovery', () => {
       await openPlan(window, piConstellPlan)
       await expect(window.getByText('Short PI Plan')).toBeVisible({ timeout: 10000 })
 
+      const buildButton = window.getByRole('button', { name: 'Build', exact: true })
+      await expect(buildButton).toBeVisible({ timeout: 10000 })
+
       await window.evaluate(() => {
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
         while (walker.nextNode()) {
@@ -292,6 +295,13 @@ test.describe('PI Constell plan discovery', () => {
       const openSidecarButton = window.getByRole('button', { name: 'Open PI sidecar ⌘L' })
       await expect(openSidecarButton).toBeVisible({ timeout: 10000 })
       await openSidecarButton.click()
+
+      await window.waitForFunction(() => {
+        const s = (window as any).__store.getState()
+        const tab = s.tabs.find((t: any) => t.id === s.activeTabId)
+        return tab?.type === 'terminal'
+      }, { timeout: 10000 })
+      await expect(buildButton).toBeVisible({ timeout: 10000 })
 
       await expect.poll(() => readActiveTerminalText(window), { timeout: 10000 }).toContain('[edit_file]')
       const terminalText = await readActiveTerminalText(window)
@@ -496,6 +506,90 @@ test.describe('PI Constell plan discovery', () => {
     } finally {
       rmSync(piConstellPlan, { force: true })
       rmSync(userDataPath, { recursive: true, force: true })
+      await app.close()
+    }
+  })
+
+  test('Plan split after PI sidecar keeps Build usable for launching the agent terminal', async () => {
+    const repoPath = createTestRepo('pi-constell-build-after-sidecar')
+    const { app, window } = await launchApp()
+    const piConstellDir = join(homedir(), '.pi-constell', 'plans')
+    const piConstellPlan = join(piConstellDir, `build-after-sidecar-${Date.now()}.md`)
+
+    try {
+      await setupWorkspace(window, repoPath)
+      mkdirSync(piConstellDir, { recursive: true })
+      writeFileSync(piConstellPlan, PI_CONSTELL_PLAN_BODY)
+
+      await openPlan(window, piConstellPlan)
+      await expect(window.getByText('Phase 1', { exact: true })).toBeVisible({ timeout: 10000 })
+
+      const buildButton = window.getByRole('button', { name: 'Build', exact: true })
+      await expect(buildButton).toBeVisible({ timeout: 10000 })
+
+      await window.evaluate(() => {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+        while (walker.nextNode()) {
+          const node = walker.currentNode as Text
+          const value = node.textContent ?? ''
+          const start = value.indexOf('Phase 1')
+          if (start === -1) continue
+
+          const range = document.createRange()
+          range.setStart(node, start)
+          range.setEnd(node, start + 'Phase 1'.length)
+          const selection = window.getSelection()
+          selection?.removeAllRanges()
+          selection?.addRange(range)
+          return
+        }
+        throw new Error('Could not find Phase 1 text in the plan preview')
+      })
+
+      const openSidecarButton = window.getByRole('button', { name: 'Open PI sidecar ⌘L' })
+      await expect(openSidecarButton).toBeVisible({ timeout: 10000 })
+      await openSidecarButton.click()
+
+      await window.waitForFunction(() => {
+        const s = (window as any).__store.getState()
+        const tab = s.tabs.find((t: any) => t.id === s.activeTabId)
+        return tab?.type === 'terminal'
+      }, { timeout: 10000 })
+      await expect(buildButton).toBeVisible({ timeout: 10000 })
+
+      await buildButton.click()
+
+      await window.waitForFunction(() => {
+        const s = (window as any).__store.getState()
+        return s.tabs.some((t: any) => typeof t.title === 'string' && t.title.startsWith('Build:'))
+      }, { timeout: 15000 })
+    } finally {
+      rmSync(piConstellPlan, { force: true })
+      await app.close()
+    }
+  })
+
+  test('Workspace markdown preview does not show agent plan Build controls', async () => {
+    const repoPath = createTestRepo('pi-constell-non-plan-md')
+    const { app, window } = await launchApp()
+    const readmePath = join(repoPath, 'README.md')
+
+    try {
+      await setupWorkspace(window, repoPath)
+
+      await window.evaluate((filePath: string) => {
+        const store = (window as any).__store.getState()
+        store.openMarkdownPreview(filePath)
+      }, readmePath)
+
+      await window.waitForFunction((expectedPath) => {
+        const s = (window as any).__store.getState()
+        const tab = s.tabs.find((t: any) => t.id === s.activeTabId)
+        return tab?.type === 'markdownPreview' && tab?.filePath === expectedPath
+      }, readmePath)
+
+      await expect(window.getByRole('button', { name: 'Build', exact: true })).toHaveCount(0)
+    } finally {
       await app.close()
     }
   })
