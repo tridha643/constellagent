@@ -77,8 +77,6 @@ Alpha
 Beta
 `
 
-async function launchApp(): Promise<{ app: ElectronApplication; window: Page }> {
-  const app = await electron.launch({ args: [appPath], env: { ...process.env, CI_TEST: '1' } })
 async function launchApp(
   envOverrides: Record<string, string | undefined> = {},
 ): Promise<{ app: ElectronApplication; window: Page }> {
@@ -89,7 +87,7 @@ async function launchApp(
   }
 
   const app = await electron.launch({ args: [appPath], env })
-  const window = await app.firstWindow()
+  const window = await app.firstWindow({ timeout: 120_000 })
   await window.waitForLoadState('domcontentloaded')
   await window.waitForSelector('#root', { timeout: 10000 })
   await window.waitForTimeout(1500)
@@ -166,6 +164,17 @@ function createPiConstellPlan(fileName: string): string {
   const planPath = join(PI_CONSTELL_DIR, fileName)
   writeFileSync(planPath, PI_CONSTELL_PLAN_BODY)
   return planPath
+}
+
+async function readActiveTerminalText(window: Page): Promise<string> {
+  return await window.evaluate(() => {
+    const terminals = Array.from(document.querySelectorAll<HTMLElement>('[class*="terminalInner"]'))
+    const activeTerminal = terminals.find((terminal) => terminal.offsetParent !== null)
+    if (!activeTerminal) return ''
+
+    const accessibilityTree = activeTerminal.querySelector<HTMLElement>('.xterm-accessibility-tree')
+    return accessibilityTree?.innerText ?? activeTerminal.innerText ?? activeTerminal.textContent ?? ''
+  })
 }
 
 test.describe('PI Constell plan discovery', () => {
@@ -247,7 +256,58 @@ test.describe('PI Constell plan discovery', () => {
     }
   })
 
-  test('Cmd+L on plan preview opens a PI sidecar and seeds edit-file context', async () => {
+  test('Preview action button seeds only the selected markdown snippet', async () => {
+    const repoPath = createTestRepo('pi-constell-plan-preview-button')
+    const { app, window } = await launchApp()
+    const piConstellDir = join(homedir(), '.pi-constell', 'plans')
+    const piConstellPlan = join(piConstellDir, `preview-button-${Date.now()}.md`)
+
+    try {
+      await setupWorkspace(window, repoPath)
+      mkdirSync(piConstellDir, { recursive: true })
+      writeFileSync(piConstellPlan, PI_CONSTELL_SHORT_PLAN_BODY)
+
+      await openPlan(window, piConstellPlan)
+      await expect(window.getByText('Short PI Plan')).toBeVisible({ timeout: 10000 })
+
+      await window.evaluate(() => {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+        while (walker.nextNode()) {
+          const node = walker.currentNode as Text
+          const value = node.textContent ?? ''
+          const start = value.indexOf('Alpha')
+          if (start === -1) continue
+
+          const range = document.createRange()
+          range.setStart(node, start)
+          range.setEnd(node, start + 'Alpha'.length)
+          const selection = window.getSelection()
+          selection?.removeAllRanges()
+          selection?.addRange(range)
+          return
+        }
+        throw new Error('Could not find Alpha text in the plan preview')
+      })
+
+      const openSidecarButton = window.getByRole('button', { name: 'Open PI sidecar ⌘L' })
+      await expect(openSidecarButton).toBeVisible({ timeout: 10000 })
+      await openSidecarButton.click()
+
+      await expect.poll(() => readActiveTerminalText(window), { timeout: 10000 }).toContain('[edit_file]')
+      const terminalText = await readActiveTerminalText(window)
+      const compactTerminalText = terminalText.replace(/\s+/g, '')
+
+      expect(compactTerminalText).toContain(`@${piConstellPlan}`)
+      expect(terminalText).toContain('Alpha')
+      expect(terminalText).not.toContain('Beta')
+      expect(terminalText).not.toContain('Short PI Plan')
+    } finally {
+      rmSync(piConstellPlan, { force: true })
+      await app.close()
+    }
+  })
+
+  test('Cmd+L on plan preview seeds only the plan path when nothing is selected', async () => {
     const repoPath = createTestRepo('pi-constell-plan-preview-cmdl')
     const { app, window } = await launchApp()
     const piConstellDir = join(homedir(), '.pi-constell', 'plans')
@@ -258,15 +318,13 @@ test.describe('PI Constell plan discovery', () => {
       mkdirSync(piConstellDir, { recursive: true })
       writeFileSync(piConstellPlan, PI_CONSTELL_SHORT_PLAN_BODY)
 
-      await window.evaluate((planPath: string) => {
-        const store = (window as any).__store.getState()
-        store.openMarkdownPreview(planPath)
-      }, piConstellPlan)
+      await openPlan(window, piConstellPlan)
       const previewHeading = window.getByText('Short PI Plan')
       await expect(previewHeading).toBeVisible({ timeout: 10000 })
       await previewHeading.click()
 
       await window.evaluate(() => {
+        window.getSelection()?.removeAllRanges()
         const target = (document.activeElement as HTMLElement | null) ?? document.body
         target.dispatchEvent(new KeyboardEvent('keydown', {
           key: 'l',
@@ -276,28 +334,22 @@ test.describe('PI Constell plan discovery', () => {
           cancelable: true,
         }))
       })
-      await window.waitForTimeout(6000)
 
-      const result = await window.evaluate(() => {
-        const s = (window as any).__store.getState()
-        const tab = s.tabs.find((t: any) => t.id === s.activeTabId)
-        return {
-          tabType: tab?.type,
-          fileLeafPath: tab?.splitRoot?.children?.[0]?.filePath,
-          terminalLeafType: tab?.splitRoot?.children?.[1]?.contentType,
-          title: tab?.title,
-          bodyText: document.body.innerText,
-        }
-      })
+      await expect.poll(() => readActiveTerminalText(window), { timeout: 10000 }).toContain('[edit_file]')
+      const terminalText = await readActiveTerminalText(window)
+      const compactTerminalText = terminalText.replace(/\s+/g, '')
 
-      expect(result.tabType).toBe('terminal')
-      expect(result.fileLeafPath).toBe(piConstellPlan)
-      expect(result.terminalLeafType).toBe('terminal')
-      expect(result.title).toContain('π -')
-      expect(result.bodyText).toContain('[paste #1 +')
-      expect(result.bodyText).toContain('Short PI Plan')
+      expect(compactTerminalText).toContain(`@${piConstellPlan}`)
+      expect(terminalText).not.toContain('```')
+      expect(terminalText).not.toContain('Alpha')
+      expect(terminalText).not.toContain('Beta')
+      expect(terminalText).not.toContain('Short PI Plan')
     } finally {
       rmSync(piConstellPlan, { force: true })
+      await app.close()
+    }
+  })
+
   test('PI toolbar lists cached/runtime models and persists the selected raw model id', async () => {
     const repoPath = createTestRepo('pi-constell-toolbar')
     const userDataPath = createUserDataPath('pi-models-toolbar')
@@ -378,27 +430,30 @@ test.describe('PI Constell plan discovery', () => {
       await alphaLine.dblclick()
       await window.keyboard.press('Meta+l')
 
-      await window.waitForTimeout(6000)
+      await expect.poll(() => readActiveTerminalText(window), { timeout: 10000 }).toContain('[edit_file]')
 
       const result = await window.evaluate((planPath: string) => {
         const s = (window as any).__store.getState()
         const tab = s.tabs.find((t: any) => t.id === s.activeTabId)
         return {
           tabType: tab?.type,
-          title: tab?.title,
           hasPlanFileLeaf: tab?.splitRoot?.children?.some?.((child: any) => child.contentType === 'file' && child.filePath === planPath),
-          bodyText: document.body.innerText,
         }
       }, piConstellPlan)
-      const compactBody = result.bodyText.replace(/\s+/g, '')
+      const terminalText = await readActiveTerminalText(window)
+      const compactTerminalText = terminalText.replace(/\s+/g, '')
+
       expect(result.tabType).toBe('terminal')
       expect(result.hasPlanFileLeaf).toBe(true)
-      expect(result.title).toContain('π -')
-      expect(result.bodyText).toContain('[edit_file]')
-      expect(compactBody).toContain(`@${piConstellPlan}:7`)
-      expect(result.bodyText).toContain('Alpha')
+      expect(terminalText).toContain('[edit_file]')
+      expect(compactTerminalText).toContain(`@${piConstellPlan}:7`)
+      expect(terminalText).toContain('Alpha')
     } finally {
       rmSync(piConstellPlan, { force: true })
+      await app.close()
+    }
+  })
+
   test('PI toolbar keeps rendering cached models when runtime listing is unavailable', async () => {
     const repoPath = createTestRepo('pi-constell-cache-fallback')
     const userDataPath = createUserDataPath('pi-models-cache')

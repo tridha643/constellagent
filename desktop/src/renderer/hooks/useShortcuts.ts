@@ -146,7 +146,7 @@ export function useShortcuts() {
 
         if (previewFilePath && isPlanSidecarPath(previewFilePath)) {
           consume()
-          void openPlanEditSidecar(previewFilePath)
+          void openPlanEditSidecar(previewFilePath, { fallbackMode: 'header-only' })
           return
         }
 
@@ -166,7 +166,10 @@ export function useShortcuts() {
               : undefined
         if (activePlanFilePath && isPlanSidecarPath(activePlanFilePath)) {
           consume()
-          void openPlanEditSidecar(activePlanFilePath)
+          void openPlanEditSidecar(
+            activePlanFilePath,
+            activeTab?.type === 'markdownPreview' ? { fallbackMode: 'header-only' } : undefined,
+          )
           return
         }
       }

@@ -57,7 +57,7 @@ export function AddToChatMarkdownSurface({ filePath, children, className }: Prop
 
   const handleAdd = () => {
     if (isPlanSurface) {
-      void openPlanEditSidecar(filePath)
+      void openPlanEditSidecar(filePath, { fallbackMode: 'header-only' })
     } else {
       const text = window.getSelection()?.toString() ?? ''
       sendAddToChatText(filePath, 'markdown', text)
