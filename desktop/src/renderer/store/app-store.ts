@@ -28,6 +28,7 @@ import {
   normalizeSplitTree,
   getFocusedPtyId,
   resolvePtyForPlanSourceFilePath,
+  retargetFilePathInSplitRoot,
   graftTree,
   tabToSplitTree,
   resolveAgentPtyForContextInjection,
@@ -893,27 +894,40 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  retargetMarkdownPreviewTab: (tabId, newFilePath) => {
-    const title = newFilePath.split('/').pop() || 'Preview'
+  retargetPlanFilePathEverywhere: (oldPath, newPath) => {
+    if (oldPath === newPath) return
+    const previewTitle = newPath.split('/').pop() || 'Preview'
     set((s) => {
-      const old = s.tabs.find((t) => t.id === tabId && t.type === 'markdownPreview')
-      let planBuildTerminalByPlanPath = s.planBuildTerminalByPlanPath
-      if (old && old.type === 'markdownPreview' && old.filePath !== newFilePath) {
-        const terminalTabId = planBuildTerminalByPlanPath[old.filePath]
-        if (terminalTabId !== undefined) {
-          planBuildTerminalByPlanPath = { ...planBuildTerminalByPlanPath }
-          delete planBuildTerminalByPlanPath[old.filePath]
-          planBuildTerminalByPlanPath[newFilePath] = terminalTabId
+      let planBuildTerminalByPlanPath = { ...s.planBuildTerminalByPlanPath }
+      const terminalTabId = planBuildTerminalByPlanPath[oldPath]
+      if (terminalTabId !== undefined) {
+        delete planBuildTerminalByPlanPath[oldPath]
+        planBuildTerminalByPlanPath[newPath] = terminalTabId
+      }
+
+      const tabs = s.tabs.map((t) => {
+        if (t.type === 'markdownPreview' && t.filePath === oldPath) {
+          return { ...t, filePath: newPath, title: previewTitle }
         }
-      }
-      return {
-        planBuildTerminalByPlanPath,
-        tabs: s.tabs.map((t) =>
-          t.id === tabId && t.type === 'markdownPreview'
-            ? { ...t, filePath: newFilePath, title }
-            : t
-        ),
-      }
+        if (t.type === 'file') {
+          const nextPath = t.filePath === oldPath ? newPath : t.filePath
+          const nextSplit = t.splitRoot
+            ? retargetFilePathInSplitRoot(t.splitRoot, oldPath, newPath)
+            : undefined
+          if (nextPath !== t.filePath || nextSplit !== t.splitRoot) {
+            return { ...t, filePath: nextPath, splitRoot: nextSplit }
+          }
+        }
+        if (t.type === 'terminal' && t.splitRoot) {
+          const nextSplit = retargetFilePathInSplitRoot(t.splitRoot, oldPath, newPath)
+          if (nextSplit !== t.splitRoot) {
+            return { ...t, splitRoot: nextSplit }
+          }
+        }
+        return t
+      })
+
+      return { planBuildTerminalByPlanPath, tabs }
     })
   },
 

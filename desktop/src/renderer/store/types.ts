@@ -296,8 +296,11 @@ export interface AppState {
   notifyTabSaved: (tabId: string) => void
   openFileTab: (filePath: string) => void
   openMarkdownPreview: (filePath: string) => void
-  /** Point an existing markdown preview tab at a new path (e.g. after plan relocate). */
-  retargetMarkdownPreviewTab: (tabId: string, newFilePath: string) => void
+  /**
+   * Update every open surface that references an agent plan file (markdown preview tab, file tab,
+   * file leaves in terminal splits) and migrate `planBuildTerminalByPlanPath` when the on-disk path changes.
+   */
+  retargetPlanFilePathEverywhere: (oldPath: string, newPath: string) => void
   /** Remember which terminal tab was spawned for a plan (⌘L routing). */
   setPlanBuildTerminalForPlan: (planPath: string, terminalTabId: string) => void
   /** Open newest .md/.mdx across agent plan dirs (.cursor/plans, etc.) in the active workspace */

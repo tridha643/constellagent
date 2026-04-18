@@ -54,8 +54,20 @@
   padding: var(--space-2) var(--space-6);
   background: var(--surface-2);
   border-bottom: 1px solid var(--border-subtle);
-  height: 30px;
+  min-height: 30px;
   flex-shrink: 0;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.markdownToolbarEnd {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
 }
 
 .diffCommentHint {
@@ -72,6 +84,16 @@
   font-size: var(--text-sm);
   color: var(--text-secondary);
   font-family: var(--font-mono);
+}
+
+.diffToolbarRight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
 }
 
 .diffToggle {

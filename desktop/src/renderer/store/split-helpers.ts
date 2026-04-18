@@ -85,6 +85,20 @@ export function findLeafByPtyId(root: SplitNode, ptyId: string): (SplitLeaf & { 
   return null
 }
 
+/** Replace a file leaf path (e.g. after plan relocate) without changing tree shape. */
+export function retargetFilePathInSplitRoot(root: SplitNode, oldPath: string, newPath: string): SplitNode {
+  if (root.type === 'leaf') {
+    if (root.contentType === 'file' && root.filePath === oldPath) {
+      return { ...root, filePath: newPath }
+    }
+    return root
+  }
+  const left = retargetFilePathInSplitRoot(root.children[0], oldPath, newPath)
+  const right = retargetFilePathInSplitRoot(root.children[1], oldPath, newPath)
+  if (left === root.children[0] && right === root.children[1]) return root
+  return { ...root, children: [left, right] }
+}
+
 /** Build a split tree for a tab that can participate in tab-bar merges (terminal or file). */
 export function tabToSplitTree(tab: Tab): SplitNode | null {
   if (tab.type === 'terminal') {

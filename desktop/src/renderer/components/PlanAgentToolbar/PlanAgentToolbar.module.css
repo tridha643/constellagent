@@ -1,0 +1,223 @@
+.toolbarActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.harnessSelect {
+  padding: 2px var(--space-2);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  max-width: 118px;
+  transition: border-color var(--motion-fast);
+}
+
+.harnessSelect:focus {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.agentSelect {
+  padding: 2px var(--space-2);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  min-width: 180px;
+  max-width: min(320px, 40vw);
+  transition: border-color var(--motion-fast);
+}
+
+.agentSelect:focus {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  outline: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .harnessSelect:hover,
+  .agentSelect:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+    outline: none;
+  }
+}
+
+.customAgentInput {
+  padding: 2px var(--space-2);
+  background: var(--surface-1);
+  border: 1px solid var(--accent-blue);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  width: 110px;
+  outline: none;
+}
+
+.buildButton {
+  padding: 2px var(--space-3);
+  background: var(--accent-blue-glow, rgba(56, 139, 253, 0.15));
+  border: 1px solid var(--accent-blue, #388bfd);
+  border-radius: var(--radius-sm);
+  color: var(--accent-blue, #388bfd);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
+  white-space: nowrap;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .buildButton:hover {
+    background: var(--accent-blue, #388bfd);
+    color: #fff;
+  }
+}
+
+.buildButton:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.builtBadge {
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-tertiary);
+  transition: opacity var(--motion-fast);
+  white-space: nowrap;
+}
+
+.builtBadgeYes {
+  border-color: var(--accent-green, #3fb950);
+  color: var(--accent-green, #3fb950);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .builtBadge:hover {
+    opacity: 0.7;
+  }
+}
+
+.buildSpinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.buildSpinnerDot {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--accent-blue, #388bfd);
+  border-radius: 50%;
+  animation: buildSpin var(--duration-spinner) linear infinite;
+}
+
+@keyframes buildSpin {
+  to { transform: rotate(360deg); }
+}
+
+.relocateWrap {
+  position: relative;
+}
+
+.relocateButton {
+  padding: 2px var(--space-2);
+  background: none;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast);
+  line-height: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .relocateButton:hover {
+    background: var(--surface-3);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+}
+
+.relocateDropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.4));
+  z-index: 100;
+  min-width: 160px;
+  padding: var(--space-1) 0;
+  opacity: 1;
+  transform: scale(1);
+  transform-origin: top right;
+  transition:
+    opacity var(--motion-default) var(--ease-out),
+    transform var(--motion-default) var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.relocateGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.relocateGroup + .relocateGroup {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.relocateItem {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  padding: var(--space-2) var(--space-4);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .relocateItem:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buildSpinnerDot {
+    animation: none;
+    opacity: 0.92;
+  }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useImperativeHandle, forwardRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useImperativeHandle, forwardRef, useMemo } from 'react'
 import Editor, { loader } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { useAppStore } from '../../store/app-store'
@@ -6,6 +6,9 @@ import { useGitGutter } from '../../hooks/useGitGutter'
 import { MarkdownRenderer } from '../MarkdownRenderer/MarkdownRenderer'
 import { AddToChatMarkdownSurface } from '../AddToChat/AddToChatMarkdownSurface'
 import { sendAddToChatText, isPlanSidecarPath, openPlanEditSidecar } from '../../utils/add-to-chat'
+import { isAgentPlanPath } from '../../../shared/agent-plan-path'
+import { stripYamlFrontmatterForPreview } from '../../../shared/plan-markdown-preview'
+import { PlanAgentToolbar } from '../PlanAgentToolbar/PlanAgentToolbar'
 import {
   setMonacoAddToChatHandler,
   clearMonacoAddToChatHandler,
@@ -46,13 +49,16 @@ interface Props {
   filePath: string
   active: boolean
   worktreePath?: string
+  /** Browser tab id when `tabId` is a split pane id (defaults to `tabId`). */
+  containingTabId?: string
 }
 
 export interface FileEditorHandle {
   focus(): void
 }
 
-export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEditor({ tabId, filePath, active, worktreePath }, ref) {
+export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEditor({ tabId, filePath, active, worktreePath, containingTabId }, ref) {
+  const hostTabId = containingTabId ?? tabId
   const isMarkdown = filePath.endsWith('.md') || filePath.endsWith('.mdx')
   /** Prefer rendered view for agent-written plans when opening a markdown file tab. */
   const [previewMode, setPreviewMode] = useState(() =>
@@ -63,12 +69,26 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   const [editorInstance, setEditorInstance] = useState<editor.IStandaloneCodeEditor | null>(null)
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
   const currentContentRef = useRef<string>('')
+  const [userHome, setUserHome] = useState<string | undefined>(undefined)
   const setTabUnsaved = useAppStore((s) => s.setTabUnsaved)
   const setTabDeleted = useAppStore((s) => s.setTabDeleted)
   const notifyTabSaved = useAppStore((s) => s.notifyTabSaved)
   const addToast = useAppStore((s) => s.addToast)
   const settings = useAppStore((s) => s.settings)
   const prefersReducedMotion = usePrefersReducedMotion()
+
+  useEffect(() => {
+    void window.api.app.getHomeDir().then(setUserHome).catch(() => {})
+  }, [])
+
+  const isPlan = useMemo(
+    () => isMarkdown && isAgentPlanPath(worktreePath ?? '', filePath, userHome),
+    [isMarkdown, worktreePath, filePath, userHome],
+  )
+  const previewRenderedMarkdown = useMemo(() => {
+    if (!isMarkdown || content === null) return ''
+    return isPlan ? stripYamlFrontmatterForPreview(content) : content
+  }, [isMarkdown, content, isPlan])
   const runAddToChatRef = useRef<() => void>(() => {})
 
   useEffect(() => {
@@ -311,19 +331,30 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
       {isMarkdown && (
         <div className={styles.diffToolbar}>
           <span className={styles.diffLabel}>{filePath.split('/').pop()}</span>
-          <div className={styles.diffToggle}>
-            <button
-              className={`${styles.diffToggleOption} ${!previewMode ? styles.active : ''}`}
-              onClick={() => setPreviewMode(false)}
-            >
-              Source
-            </button>
-            <button
-              className={`${styles.diffToggleOption} ${previewMode ? styles.active : ''}`}
-              onClick={() => setPreviewMode(true)}
-            >
-              Preview
-            </button>
+          <div className={styles.markdownToolbarEnd}>
+            {isPlan && worktreePath && (
+              <PlanAgentToolbar
+                filePath={filePath}
+                worktreePath={worktreePath}
+                hostTabId={hostTabId}
+              />
+            )}
+            <div className={styles.diffToggle}>
+              <button
+                type="button"
+                className={`${styles.diffToggleOption} ${!previewMode ? styles.active : ''}`}
+                onClick={() => setPreviewMode(false)}
+              >
+                Source
+              </button>
+              <button
+                type="button"
+                className={`${styles.diffToggleOption} ${previewMode ? styles.active : ''}`}
+                onClick={() => setPreviewMode(true)}
+              >
+                Preview
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -331,7 +362,7 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
           <AddToChatMarkdownSurface filePath={filePath}>
             <div style={{ maxWidth: 760, margin: '0 auto' }}>
-              <MarkdownRenderer>{content}</MarkdownRenderer>
+              <MarkdownRenderer>{previewRenderedMarkdown}</MarkdownRenderer>
             </div>
           </AddToChatMarkdownSurface>
         </div>
