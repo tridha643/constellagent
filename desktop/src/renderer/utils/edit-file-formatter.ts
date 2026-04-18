@@ -9,6 +9,13 @@ interface EditFilePayloadInput {
   endLine?: number
 }
 
+export type EditFileFallbackMode = 'full-file' | 'header-only'
+
+interface PlanEditPayloadInput extends EditFilePayloadInput {
+  fullText?: string
+  fallbackMode?: EditFileFallbackMode
+}
+
 function truncateText(text: string): string {
   if (text.length <= MAX_EDIT_FILE_CHARS) return text
   return `${text.slice(0, MAX_EDIT_FILE_CHARS)}\n\n[...truncated]`
@@ -32,4 +39,27 @@ export function formatEditFilePayload({ filePath, text, startLine, endLine }: Ed
   }
 
   return `${header}\n\n\`\`\`${fence}\n${body}\n\`\`\``
+}
+
+export function formatPlanEditPayload({
+  filePath,
+  text,
+  startLine,
+  endLine,
+  fullText,
+  fallbackMode = 'full-file',
+}: PlanEditPayloadInput): string {
+  const trimmedText = text?.trim()
+  if (trimmedText) {
+    return formatEditFilePayload({ filePath, text: trimmedText, startLine, endLine })
+  }
+
+  if (fallbackMode === 'full-file') {
+    const trimmedFullText = fullText?.trim()
+    if (trimmedFullText) {
+      return formatEditFilePayload({ filePath, text: trimmedFullText })
+    }
+  }
+
+  return formatEditFilePayload({ filePath })
 }

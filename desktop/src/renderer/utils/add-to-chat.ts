@@ -9,7 +9,10 @@ import {
 } from '../store/split-helpers'
 import { AGENT_PLAN_RELATIVE_DIRS } from '../../shared/agent-plan-path'
 import { wrapBracketedPaste } from './bracketed-paste'
-import { formatEditFilePayload } from './edit-file-formatter'
+import {
+  formatPlanEditPayload,
+  type EditFileFallbackMode,
+} from './edit-file-formatter'
 import { getFocusedMonacoEditor } from './add-to-chat-monaco-bridge'
 
 /** Drag-and-drop MIME for absolute file paths from the file tree */
@@ -129,20 +132,21 @@ interface PlanEditPayloadOverride {
   startLine?: number
   endLine?: number
   fullText?: string
+  fallbackMode?: EditFileFallbackMode
 }
 
 async function buildPlanEditPayload(filePath: string, override?: PlanEditPayloadOverride): Promise<string> {
+  const fallbackMode = override?.fallbackMode ?? 'full-file'
   const overrideText = override?.text?.trim()
-  if (overrideText) {
-    return formatEditFilePayload({
+  if (overrideText || override?.fullText != null) {
+    return formatPlanEditPayload({
       filePath,
       text: overrideText,
       startLine: override?.startLine,
       endLine: override?.endLine,
+      fullText: override?.fullText,
+      fallbackMode,
     })
-  }
-  if (override?.fullText) {
-    return formatEditFilePayload({ filePath, text: override.fullText })
   }
 
   const editor = getFocusedMonacoEditor()
@@ -150,26 +154,25 @@ async function buildPlanEditPayload(filePath: string, override?: PlanEditPayload
   if (model?.uri.path === filePath) {
     const selection = editor?.getSelection()
     const selectedText = selection && !selection.isEmpty()
-      ? model.getValueInRange(selection).trim()
+      ? model.getValueInRange(selection)
       : ''
-    if (selectedText) {
-      return formatEditFilePayload({
-        filePath,
-        text: selectedText,
-        startLine: selection?.startLineNumber,
-        endLine: selection?.endLineNumber,
-      })
-    }
-    return formatEditFilePayload({ filePath, text: model.getValue() })
+    return formatPlanEditPayload({
+      filePath,
+      text: selectedText,
+      startLine: selection?.startLineNumber,
+      endLine: selection?.endLineNumber,
+      fullText: model.getValue(),
+      fallbackMode,
+    })
   }
 
-  const selectedText = window.getSelection()?.toString().trim() ?? ''
-  if (selectedText) {
-    return formatEditFilePayload({ filePath, text: selectedText })
+  const selectedText = window.getSelection()?.toString() ?? ''
+  if (selectedText.trim() || fallbackMode === 'header-only') {
+    return formatPlanEditPayload({ filePath, text: selectedText, fallbackMode })
   }
 
   const diskText = await window.api.fs.readFile(filePath)
-  return formatEditFilePayload({ filePath, text: diskText ?? '' })
+  return formatPlanEditPayload({ filePath, fullText: diskText ?? '', fallbackMode })
 }
 
 export function isPlanSidecarPath(filePath: string): boolean {
@@ -210,6 +213,7 @@ export async function openPlanEditSidecar(filePath: string, override?: PlanEditP
   const s = useAppStore.getState()
   if (!isPlanSidecarPath(filePath)) return false
 
+  const payload = await buildPlanEditPayload(filePath, override)
   const sidecar = await ensurePlanEditSidecar(filePath)
   if (!sidecar) {
     s.addToast({
@@ -226,7 +230,6 @@ export async function openPlanEditSidecar(filePath: string, override?: PlanEditP
     await new Promise((resolve) => window.setTimeout(resolve, PI_BOOT_DELAY_MS))
   }
 
-  const payload = await buildPlanEditPayload(filePath, override)
   window.api.pty.write(sidecar.ptyId, wrapBracketedPaste(payload))
   s.addToast({ id: crypto.randomUUID(), message: 'Opened PI edit sidecar', type: 'info' })
   return true
