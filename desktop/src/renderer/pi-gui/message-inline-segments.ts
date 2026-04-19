@@ -16,8 +16,9 @@ type RawMatch = {
   segment: Exclude<MessageSegment, { kind: "text" }>;
 };
 
+/** Known extensions for repo-relative path chips (demo files, data, configs, etc.). */
 const EXT =
-  "tsx?|mjsx?|jsx?|css|json|mdx?|md|less|scss|html|svg|rs|go|py|lock|toml|yaml|yml|wasm|mjs|cjs|vue|svelte|mts|cts";
+  "tsx?|mjsx?|jsx?|css|json|mdx?|md|txt|csv|tsv|log|less|scss|html|svg|rs|go|py|lock|toml|yaml|yml|wasm|mjs|cjs|vue|svelte|mts|cts|ini|cfg|conf|env|patch|sql|proto|graphql|gql|gradle|kt|kts|swift|rb|php|dart|nix|zig|h|hpp|cc|cpp|cxx|cs|fs|fsx|scala|sbt|dockerignore|gitattributes|editorconfig";
 
 /**
  * Absolute POSIX path — must include a second `/` so `/nia` is not a file (skill slash instead).

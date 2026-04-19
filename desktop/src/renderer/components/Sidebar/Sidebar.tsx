@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { useAppStore } from "../../store/app-store";
 import {
   DEFAULT_SIDEBAR_ACTION_ORDER,
@@ -32,6 +32,8 @@ const PR_PROVIDER_DOMAINS: Record<PrLinkProvider, string> = {
 };
 
 const VALID_SIDEBAR_ACTION_IDS = new Set<SidebarActionId>(DEFAULT_SIDEBAR_ACTION_ORDER);
+
+const LINEAR_ICON_SRC = new URL("../../assets/linear/linear-icon.svg", import.meta.url).href;
 
 function providerUrl(url: string, provider: PrLinkProvider): string {
   return url.replace("github.com", PR_PROVIDER_DOMAINS[provider]);
@@ -106,7 +108,7 @@ interface WorkspaceCreationState {
 
 interface ActionButtonConfig {
   id: SidebarActionId;
-  icon: string;
+  icon: ReactNode;
   label: string;
   tooltipLabel: string;
   shortcut?: string;
@@ -373,6 +375,7 @@ export function Sidebar() {
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog);
   const toggleSettings = useAppStore((s) => s.toggleSettings);
   const toggleAutomations = useAppStore((s) => s.toggleAutomations);
+  const toggleLinear = useAppStore((s) => s.toggleLinear);
   const toggleHunkReview = useAppStore((s) => s.toggleHunkReview);
   const openLatestAgentPlan = useAppStore((s) => s.openLatestAgentPlan);
   const sidebarActionOrder = useAppStore((s) => s.sidebarActionOrder);
@@ -1072,6 +1075,21 @@ export function Sidebar() {
       tooltipLabel: 'Automations',
       onClick: toggleAutomations,
     },
+    linear: {
+      id: 'linear',
+      icon: (
+        <img
+          src={LINEAR_ICON_SRC}
+          alt=""
+          width={16}
+          height={16}
+          style={{ display: "block" }}
+        />
+      ),
+      label: 'Linear',
+      tooltipLabel: 'Linear workspace',
+      onClick: toggleLinear,
+    },
     plans: {
       id: 'plans',
       icon: '≡',
@@ -1095,7 +1113,7 @@ export function Sidebar() {
       shortcut: '⌘,',
       onClick: toggleSettings,
     },
-  }), [isInitializingRepo, handleAddProject, toggleAutomations, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
+  }), [isInitializingRepo, handleAddProject, toggleAutomations, toggleLinear, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
 
   const orderedActions = useMemo(
     () => sidebarActionOrder.map((id) => actionButtonConfigs[id]),

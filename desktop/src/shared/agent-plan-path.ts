@@ -125,6 +125,27 @@ export interface AgentPlanEntry {
   planSourceRoot?: string
 }
 
+export interface AgentPlanSearchItem extends AgentPlanEntry {
+  relativePath: string
+  fileName: string
+  score: number
+  matchType?: string
+  exactMatch?: boolean
+}
+
+export interface AgentPlanSearchRequest {
+  query: string
+  limit?: number
+}
+
+export interface AgentPlanSearchResult {
+  state: 'ready' | 'indexing' | 'error'
+  items: AgentPlanSearchItem[]
+  totalMatched: number
+  totalFiles: number
+  error?: string
+}
+
 /** Constellagent-owned frontmatter metadata stored under a namespaced key. */
 export interface PlanMeta {
   built: boolean

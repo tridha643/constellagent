@@ -1,6 +1,12 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useAppStore } from '../../store/app-store'
-import { relativePathInWorktree, pathsEqualOrAlias } from '../../../shared/agent-plan-path'
+import {
+  relativePathInWorktree,
+  pathsEqualOrAlias,
+  type AgentPlanEntry,
+  type AgentPlanSearchItem,
+  type AgentPlanSearchResult,
+} from '../../../shared/agent-plan-path'
 import { GeminiIcon } from '../Icons/GeminiIcon'
 import { CursorIcon } from '../Icons/CursorIcon'
 import { OpenCodeIcon } from '../Icons/OpenCodeIcon'
@@ -11,14 +17,7 @@ import openaiIcon from '../../assets/agent-icons/openai.svg'
 import qoStyles from '../QuickOpen/QuickOpen.module.css'
 import styles from './PlanPalette.module.css'
 
-interface PlanEntry {
-  path: string
-  mtimeMs: number
-  agent: string
-  built?: boolean
-  codingAgent?: string | null
-  planSourceRoot?: string
-}
+interface PlanEntry extends AgentPlanEntry {}
 
 export interface PlanPaletteWorktreeOption {
   path: string
@@ -32,7 +31,6 @@ interface Props {
 }
 
 type AgentFilter = 'all' | 'cursor' | 'claude-code' | 'codex' | 'gemini' | 'opencode' | 'pi-constell'
-type SourceFilter = 'all' | 'worktree' | 'home'
 type WorktreeFilterKey = 'all' | '__home__' | string
 
 const AGENTS: { key: AgentFilter; label: string }[] = [
@@ -45,13 +43,9 @@ const AGENTS: { key: AgentFilter; label: string }[] = [
   { key: 'pi-constell', label: 'PI Constell' },
 ]
 
-const SOURCES: { key: SourceFilter; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'worktree', label: 'This worktree' },
-  { key: 'home', label: 'Home (~)' },
-]
-
 const PLAN_PALETTE_CACHE = new Map<string, PlanEntry[]>()
+const PLAN_SEARCH_LIMIT = 200
+const SEARCH_DEBOUNCE_MS = 80
 
 function basename(p: string): string {
   const i = p.lastIndexOf('/')
@@ -78,7 +72,7 @@ function formatAge(mtimeMs: number): string {
 }
 
 function entryMatchesWorktree(
-  entry: PlanEntry,
+  entry: PlanEntry | AgentPlanSearchItem,
   filter: WorktreeFilterKey,
   userHome: string | null,
   activeWorktree: string,
@@ -97,6 +91,49 @@ function entryMatchesWorktree(
   if (entry.planSourceRoot && pathsEqualOrAlias(entry.planSourceRoot, filter)) return true
   if (!entry.planSourceRoot) return relativePathInWorktree(filter, entry.path) !== null
   return false
+}
+
+function fuzzyMatch(query: string, target: string): number[] | null {
+  const lowerQuery = query.trim().toLowerCase()
+  if (!lowerQuery) return []
+
+  const lowerTarget = target.toLowerCase()
+  const indices: number[] = []
+  let qi = 0
+
+  for (let ti = 0; ti < lowerTarget.length && qi < lowerQuery.length; ti += 1) {
+    if (lowerTarget[ti] === lowerQuery[qi]) {
+      indices.push(ti)
+      qi += 1
+    }
+  }
+
+  return qi === lowerQuery.length ? indices : null
+}
+
+function HighlightedPlanPath({ text, query }: { text: string; query: string }) {
+  const indices = fuzzyMatch(query, text) ?? []
+  const set = new Set(indices)
+  const lastSlash = text.lastIndexOf('/')
+  const dir = lastSlash >= 0 ? text.slice(0, lastSlash + 1) : ''
+  const name = lastSlash >= 0 ? text.slice(lastSlash + 1) : text
+
+  const renderChars = (value: string, offset: number) =>
+    value.split('').map((ch, index) => {
+      const globalIndex = offset + index
+      return set.has(globalIndex) ? (
+        <span key={globalIndex} className={qoStyles.matchChar}>{ch}</span>
+      ) : (
+        <span key={globalIndex}>{ch}</span>
+      )
+    })
+
+  return (
+    <span className={qoStyles.resultPath}>
+      {dir && <span className={qoStyles.resultDir}>{renderChars(dir, 0)}</span>}
+      <span className={qoStyles.resultName}>{renderChars(name, dir.length)}</span>
+    </span>
+  )
 }
 
 function AgentChipIcon({ agent }: { agent: AgentFilter }) {
@@ -136,11 +173,17 @@ function dedupeWorktreeScanPaths(paths: string[]): string[] {
 export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
   const [query, setQuery] = useState('')
   const [plans, setPlans] = useState<PlanEntry[]>([])
+  const [searchedPlans, setSearchedPlans] = useState<AgentPlanSearchItem[]>([])
+  const [searchState, setSearchState] = useState<AgentPlanSearchResult['state']>('ready')
+  const [hasSearchLoaded, setHasSearchLoaded] = useState(false)
   const [userHome, setUserHome] = useState<string | null>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [agentFilter, setAgentFilter] = useState<AgentFilter>('all')
   const [worktreeFilter, setWorktreeFilter] = useState<WorktreeFilterKey>('all')
+  const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const requestIdRef = useRef(0)
+  const resolvedQueryRef = useRef('')
   const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
   const closePlanPalette = useAppStore((s) => s.closePlanPalette)
 
@@ -150,6 +193,10 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
   }, [projectWorktrees, worktreePath])
 
   const scanKey = pathsToScan.join('\0')
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
 
   useEffect(() => {
     void window.api.app.getHomeDir().then(setUserHome).catch(() => setUserHome(null))
@@ -169,22 +216,70 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
     return () => { cancelled = true }
   }, [scanKey, pathsToScan])
 
+  useEffect(() => {
+    if (!query.trim()) {
+      resolvedQueryRef.current = ''
+      setSearchedPlans([])
+      setSearchState('ready')
+      setHasSearchLoaded(false)
+      return
+    }
+
+    let cancelled = false
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+    const issuedQuery = query
+
+    const runSearch = () => {
+      void window.api.fs.searchAgentPlans(pathsToScan, {
+        query: issuedQuery,
+        limit: PLAN_SEARCH_LIMIT,
+      }).then((result) => {
+        if (cancelled || requestId !== requestIdRef.current) return
+        resolvedQueryRef.current = issuedQuery
+        setSearchedPlans(result.items)
+        setSearchState(result.state)
+        setHasSearchLoaded(true)
+      }).catch(() => {
+        if (cancelled || requestId !== requestIdRef.current) return
+        resolvedQueryRef.current = issuedQuery
+        setSearchedPlans([])
+        setSearchState('error')
+        setHasSearchLoaded(true)
+      })
+    }
+
+    setHasSearchLoaded(false)
+    const timeout = window.setTimeout(runSearch, SEARCH_DEBOUNCE_MS)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [query, pathsToScan])
+
+  const visiblePlans = query.trim() ? searchedPlans : plans
+
   const filtered = useMemo(() => {
-    let list = plans
+    let list = visiblePlans
     if (worktreeFilter !== 'all') {
       list = list.filter((p) => entryMatchesWorktree(p, worktreeFilter, userHome, worktreePath))
     }
     if (agentFilter !== 'all') {
       list = list.filter((p) => p.agent === agentFilter)
     }
-    if (query.trim()) {
-      const q = query.toLowerCase()
-      list = list.filter((p) => basename(p.path).toLowerCase().startsWith(q))
-    }
     return list.slice(0, 50)
-  }, [plans, query, agentFilter, worktreeFilter, userHome, worktreePath])
+  }, [visiblePlans, agentFilter, worktreeFilter, userHome, worktreePath])
 
   useEffect(() => { setSelectedIndex(0) }, [query, agentFilter, worktreeFilter])
+
+  useEffect(() => {
+    if (filtered.length === 0) {
+      setSelectedIndex(0)
+      return
+    }
+    setSelectedIndex((index) => Math.min(index, filtered.length - 1))
+  }, [filtered])
 
   useEffect(() => {
     const list = listRef.current
@@ -194,12 +289,13 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
   }, [selectedIndex])
 
   const openSelected = useCallback(() => {
+    if (query.trim() && resolvedQueryRef.current !== query) return
     const entry = filtered[selectedIndex]
     if (entry) {
       openMarkdownPreview(entry.path)
       closePlanPalette()
     }
-  }, [filtered, selectedIndex, openMarkdownPreview, closePlanPalette])
+  }, [closePlanPalette, filtered, openMarkdownPreview, query, selectedIndex])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -217,21 +313,32 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
     }
   }, [closePlanPalette, filtered.length, openSelected])
 
-  const prefixLen = query.trim().length
-
   const displayBaseForEntry = useCallback(
-    (entry: PlanEntry) => entry.planSourceRoot ?? worktreePath,
+    (entry: PlanEntry | AgentPlanSearchItem) => entry.planSourceRoot ?? worktreePath,
     [worktreePath],
   )
+
+  const emptyMessage = !query.trim()
+    ? (plans.length === 0 ? 'No plan files found' : 'No matching plans')
+    : !hasSearchLoaded
+      ? null
+      : searchState === 'indexing'
+        ? 'Indexing plans...'
+        : searchState === 'error'
+          ? 'Search unavailable'
+          : searchedPlans.length === 0
+            ? 'No matching plans'
+            : 'No plans match the current filters'
 
   return (
     <div className={qoStyles.overlay} onClick={closePlanPalette}>
       <div className={`${qoStyles.panel} ${styles.planPanel}`} onClick={(e) => e.stopPropagation()}>
         <div className={qoStyles.inputWrap}>
           <input
+            ref={inputRef}
             className={qoStyles.input}
             type="text"
-            placeholder="Search plans by name..."
+            placeholder="Search plans with fff..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -298,33 +405,37 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
         <div className={qoStyles.results} ref={listRef}>
           {filtered.length === 0 ? (
             <div className={qoStyles.empty}>
-              {plans.length === 0 ? 'No plan files found' : 'No matching plans'}
+              {query.trim() && !hasSearchLoaded ? (
+                <div
+                  role="status"
+                  aria-busy="true"
+                  aria-label="Loading plan search results"
+                  style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', width: '100%' }}
+                >
+                  <div className="shimmer-block" style={{ width: '72%', height: 13 }} />
+                  <div className="shimmer-block" style={{ width: '56%', height: 13 }} />
+                </div>
+              ) : (
+                emptyMessage
+              )}
             </div>
           ) : (
             filtered.map((entry, i) => {
-              const name = basename(entry.path)
               const base = displayBaseForEntry(entry)
               const rel = relPath(entry.path, base, userHome)
-              const dir = rel.slice(0, rel.length - name.length)
               return (
                 <div
                   key={entry.path}
                   className={`${qoStyles.resultItem} ${i === selectedIndex ? qoStyles.selected : ''}`}
-                  onClick={() => { openMarkdownPreview(entry.path); closePlanPalette() }}
+                  onClick={() => {
+                    if (query.trim() && resolvedQueryRef.current !== query) return
+                    openMarkdownPreview(entry.path)
+                    closePlanPalette()
+                  }}
                   onMouseEnter={() => setSelectedIndex(i)}
                 >
                   <AgentRowIcon agent={entry.agent} />
-                  <span className={qoStyles.resultPath}>
-                    {dir && <span className={qoStyles.resultDir}>{dir}</span>}
-                    <span className={qoStyles.resultName}>
-                      {prefixLen > 0 ? (
-                        <>
-                          <span className={qoStyles.matchChar}>{name.slice(0, prefixLen)}</span>
-                          {name.slice(prefixLen)}
-                        </>
-                      ) : name}
-                    </span>
-                  </span>
+                  <HighlightedPlanPath text={rel} query={query} />
                   {entry.codingAgent && (
                     <span className={styles.agentLabel} title={entry.codingAgent}>{entry.codingAgent}</span>
                   )}

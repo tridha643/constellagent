@@ -13,7 +13,14 @@ import type {
   SplitNode,
   Workspace,
 } from './types'
-import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_ACTION_ORDER } from './types'
+import {
+  DEFAULT_SETTINGS,
+  DEFAULT_SIDEBAR_ACTION_ORDER,
+  normalizeLinearIssueScope,
+  normalizeLinearIssuesPriorityPreset,
+  normalizeLinearWorkspaceTabOrder,
+  normalizeLinearWorkspaceView,
+} from './types'
 import { AGENT_PLAN_DIRS_LABEL } from '../utils/agent-plan-dirs'
 import { GEMINI_TAB_LABEL, isGeminiIdleOscTitle } from '../../shared/gemini-tab-title'
 import {
@@ -355,9 +362,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: { ...DEFAULT_SETTINGS },
   settingsOpen: false,
   automationsOpen: false,
+  linearPanelOpen: false,
   confirmDialog: null,
   toasts: [],
   quickOpenVisible: false,
+  linearQuickOpenVisible: false,
+  changesFileFind: null,
   planPaletteVisible: false,
   hunkReviewOpen: false,
   hunkReviewWorkspaceId: null,
@@ -1559,8 +1569,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSettings: (partial) =>
     set((s) => ({ settings: { ...s.settings, ...partial } })),
 
-  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen, automationsOpen: false })),
-  toggleAutomations: () => set((s) => ({ automationsOpen: !s.automationsOpen, settingsOpen: false })),
+  toggleSettings: () =>
+    set((s) => ({
+      settingsOpen: !s.settingsOpen,
+      automationsOpen: false,
+      linearPanelOpen: false,
+      linearQuickOpenVisible: false,
+    })),
+  toggleAutomations: () =>
+    set((s) => ({
+      automationsOpen: !s.automationsOpen,
+      settingsOpen: false,
+      linearPanelOpen: false,
+      linearQuickOpenVisible: false,
+    })),
+  toggleLinear: () =>
+    set((s) => {
+      const nextOpen = !s.linearPanelOpen
+      return {
+        linearPanelOpen: nextOpen,
+        settingsOpen: false,
+        automationsOpen: false,
+        linearQuickOpenVisible: nextOpen ? s.linearQuickOpenVisible : false,
+      }
+    }),
 
   showConfirmDialog: (dialog) => set({ confirmDialog: dialog }),
 
@@ -1576,9 +1608,38 @@ export const useAppStore = create<AppState>((set, get) => ({
   dismissToast: (id) =>
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
-  toggleQuickOpen: () => set((s) => ({ quickOpenVisible: !s.quickOpenVisible, planPaletteVisible: false })),
+  toggleQuickOpen: () => set((s) => {
+    const nextVisible = !s.quickOpenVisible
+    return {
+      quickOpenVisible: nextVisible,
+      planPaletteVisible: false,
+      changesFileFind: nextVisible ? null : s.changesFileFind,
+    }
+  }),
   closeQuickOpen: () => set({ quickOpenVisible: false }),
-  togglePlanPalette: () => set((s) => ({ planPaletteVisible: !s.planPaletteVisible, quickOpenVisible: false })),
+  openLinearQuickOpen: () =>
+    set((s) => {
+      if (!s.linearPanelOpen) return s
+      return {
+        linearQuickOpenVisible: true,
+        quickOpenVisible: false,
+        changesFileFind: null,
+        planPaletteVisible: false,
+        settings: { ...s.settings, linearWorkspaceToolbarTool: 'search' as const },
+      }
+    }),
+  closeLinearQuickOpen: () => set({ linearQuickOpenVisible: false }),
+  openChangesFileFind: (payload) => set({
+    changesFileFind: payload,
+    quickOpenVisible: false,
+    planPaletteVisible: false,
+  }),
+  closeChangesFileFind: () => set({ changesFileFind: null }),
+  togglePlanPalette: () => set((s) => ({
+    planPaletteVisible: !s.planPaletteVisible,
+    quickOpenVisible: false,
+    changesFileFind: null,
+  })),
   closePlanPalette: () => set({ planPaletteVisible: false }),
 
   toggleHunkReview: async () => {
@@ -1597,7 +1658,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       s.addToast({ id: `review-no-agent-${Date.now()}`, message: 'No agent detected', type: 'info' })
       return
     }
-    set({ hunkReviewOpen: true, hunkReviewWorkspaceId: ws.id, quickOpenVisible: false, planPaletteVisible: false })
+    set({
+      hunkReviewOpen: true,
+      hunkReviewWorkspaceId: ws.id,
+      quickOpenVisible: false,
+      planPaletteVisible: false,
+      changesFileFind: null,
+    })
   },
   closeHunkReview: () => set({ hunkReviewOpen: false, hunkReviewWorkspaceId: null }),
   submitHunkReview: async (selectedCommentIds?: Set<string>) => {
@@ -1947,6 +2014,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const settings = {
       ...settingsMerged,
+      linearWorkspaceView: normalizeLinearWorkspaceView(settingsMerged.linearWorkspaceView),
+      linearWorkspaceTabOrder: normalizeLinearWorkspaceTabOrder(
+        settingsMerged.linearWorkspaceTabOrder,
+      ),
+      linearIssueScope: normalizeLinearIssueScope(settingsMerged.linearIssueScope),
+      linearIssuesPriorityPreset: normalizeLinearIssuesPriorityPreset(
+        settingsMerged.linearIssuesPriorityPreset,
+      ),
       worktreeCredentialRules: normalizeWorktreeCredentialRules(settingsMerged.worktreeCredentialRules),
       skills: normalizeSkillEntries(settingsMerged.skills),
       subagents: normalizeSubagentEntries(settingsMerged.subagents),

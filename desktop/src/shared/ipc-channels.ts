@@ -66,6 +66,7 @@ export const IPC = {
   FS_GET_TREE_WITH_STATUS: 'fs:get-tree-with-status',
   FS_QUICK_OPEN_SEARCH: 'fs:quick-open-search',
   FS_CODE_SEARCH: 'fs:code-search',
+  FS_SEARCH_AGENT_PLANS: 'fs:search-agent-plans',
   FS_READ_FILE: 'fs:read-file',
   FS_WRITE_FILE: 'fs:write-file',
   FS_DELETE_FILE: 'fs:delete-file',
@@ -93,6 +94,10 @@ export const IPC = {
   APP_LIST_PI_MODELS: 'app:list-pi-models',
   /** Generate a commit message from current uncommitted changes using PI. */
   APP_GENERATE_COMMIT_MESSAGE: 'app:generate-commit-message',
+  /** Draft Linear issue title/body via Pi (optional worktree grounding). */
+  APP_GENERATE_LINEAR_ISSUE_DRAFT: 'app:generate-linear-issue-draft',
+  /** Draft Linear project update body via Pi. */
+  APP_GENERATE_LINEAR_UPDATE_DRAFT: 'app:generate-linear-update-draft',
   /** Fully quit and relaunch the app (main + preload pick up rebuilds). */
   APP_RELAUNCH: 'app:relaunch',
 
@@ -161,6 +166,12 @@ export const IPC = {
 
   // App file picker
   APP_SELECT_FILE: 'app:select-file',
+  /** Open https URLs in the system browser (allowlisted hosts, e.g. Linear). */
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
+  /** Renderer → main: POST Linear GraphQL (avoids renderer CORS on api.linear.app). */
+  LINEAR_GRAPHQL_REQUEST: 'linear:graphql-request',
+  /** Linear Cmd+F: synthetic filesystem + FileFinder.fileSearch (see LinearFffService). */
+  LINEAR_FFF_QUICK_OPEN: 'linear:fff-quick-open',
 
   // Review annotations (libSQL-backed, replaces hunk)
   REVIEW_COMMENT_ADD: 'review:comment-add',

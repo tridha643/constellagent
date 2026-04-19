@@ -158,6 +158,117 @@ test.describe('Keyboard shortcuts', () => {
     }
   })
 
+  test('Cmd+F opens Linear quick open when Linear panel is open', async () => {
+    const repoPath = createTestRepo('shortcut-linear-q')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspaceWithTerminal(window, repoPath)
+      await window.waitForTimeout(2000)
+
+      await window.evaluate(() => {
+        ;(window as unknown as { __store: { getState: () => { toggleLinear: () => void } } }).__store
+          .getState()
+          .toggleLinear()
+      })
+      await expect(window.getByTestId('linear-workspace-panel')).toBeVisible({ timeout: 5000 })
+
+      await window.keyboard.press('Meta+f')
+      const linearSearch = window.getByTestId('linear-quick-open-input')
+      await expect(linearSearch).toBeVisible({ timeout: 5000 })
+
+      const fileQuickOpen = window.getByPlaceholder('Search files by name...')
+      await expect(fileQuickOpen).not.toBeVisible()
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('Cmd+F uses file quick open when Linear panel is on Updates tab', async () => {
+    const repoPath = createTestRepo('shortcut-linear-updates-f')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspaceWithTerminal(window, repoPath)
+      await window.waitForTimeout(2000)
+
+      await window.evaluate(() => {
+        ;(window as unknown as { __store: { getState: () => { toggleLinear: () => void } } }).__store
+          .getState()
+          .toggleLinear()
+      })
+      await expect(window.getByTestId('linear-workspace-panel')).toBeVisible({ timeout: 5000 })
+
+      await window.getByRole('tab', { name: 'Updates' }).click()
+      await window.keyboard.press('Meta+f')
+      const fileQuickOpen = window.getByPlaceholder('Search files by name...')
+      await expect(fileQuickOpen).toBeVisible({ timeout: 5000 })
+      await expect(window.getByTestId('linear-quick-open-input')).not.toBeVisible()
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('Linear project update composer send stays disabled without project', async () => {
+    const repoPath = createTestRepo('shortcut-linear-send')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspaceWithTerminal(window, repoPath)
+      await window.waitForTimeout(2000)
+
+      await window.evaluate(() => {
+        ;(window as unknown as { __store: { getState: () => { toggleLinear: () => void } } }).__store
+          .getState()
+          .toggleLinear()
+      })
+      await expect(window.getByTestId('linear-workspace-panel')).toBeVisible({ timeout: 5000 })
+
+      const send = window.getByTestId('linear-composer-send')
+      await expect(send).toBeDisabled()
+
+      await window.getByTestId('linear-composer-body').fill('Some update body')
+      await expect(send).toBeDisabled()
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('Cmd+F opens Monaco find widget when code editor is focused', async () => {
+    const repoPath = createTestRepo('shortcut-find')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspaceWithTerminal(window, repoPath)
+      await window.waitForTimeout(2000)
+
+      await window.keyboard.press('Meta+f')
+      const quickOpenInput = window.getByPlaceholder('Search files by name...')
+      await expect(quickOpenInput).toBeVisible({ timeout: 5000 })
+      await quickOpenInput.fill('utils')
+      await window.waitForTimeout(1000)
+      await window.keyboard.press('Enter')
+      await window.waitForTimeout(2000)
+
+      const monaco = window.locator('[class*="monaco-editor"]').first()
+      await expect(monaco).toBeVisible({ timeout: 10000 })
+      await window.evaluate(() => {
+        const ta = document.querySelector('[class*="monaco-editor"] textarea.inputarea') as
+          | HTMLTextAreaElement
+          | null
+        ta?.focus()
+      })
+      await window.waitForTimeout(400)
+
+      await window.keyboard.press('Meta+f')
+      const findWidget = window.locator('[class*="monaco-editor"] .find-widget.visible').first()
+      await expect(findWidget).toBeVisible({ timeout: 15000 })
+      await expect(quickOpenInput).not.toBeVisible()
+    } finally {
+      await app.close()
+    }
+  })
+
   test('Cmd+F opens quick open and opens the selected file', async () => {
     const repoPath = createTestRepo('shortcut-p')
     mkdirSync(join(repoPath, 'src/components'), { recursive: true })

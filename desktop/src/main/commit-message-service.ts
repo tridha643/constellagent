@@ -1,69 +1,8 @@
-import { execFile, type ExecFileException } from 'child_process'
-import { homedir } from 'os'
-import { promisify } from 'util'
-import * as pty from 'node-pty'
-
-const execFileAsync = promisify(execFile)
-const PI_GENERATE_TIMEOUT_MS = 30_000
-const PI_GENERATE_MAX_BUFFER = 1024 * 1024
-const GIT_MAX_BUFFER = 10 * 1024 * 1024
-const PI_COMMIT_MESSAGE_MODEL = 'composer-2-fast'
-const PI_OUTPUT_IDLE_MS = 750
-const STATUS_MAX_CHARS = 4_000
-const SUMMARY_MAX_CHARS = 3_500
-const RECENT_COMMITS_MAX_CHARS = 1_000
+import type { ExecFileException } from 'child_process'
+import { buildCommitMessageSnapshot, type CommitMessageSnapshot } from './git-snapshot'
+import { runPiPrompt } from './pi-run-prompt'
 
 const CONVENTIONAL_COMMIT_RE = /^[a-z]+(?:\([^)]+\))?(?:!)?:\s+.+$/i
-
-interface CommitMessageSnapshot {
-  status: string
-  stagedSummary: string
-  unstagedSummary: string
-  recentCommits: string
-}
-
-function truncateSection(text: string, maxChars: number): string {
-  const trimmed = text.trim()
-  if (trimmed.length <= maxChars) return trimmed
-  const remaining = trimmed.length - maxChars
-  return `${trimmed.slice(0, maxChars).trimEnd()}\n... [truncated ${remaining} chars]`
-}
-
-async function git(args: string[], cwd: string): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, {
-    cwd,
-    maxBuffer: GIT_MAX_BUFFER,
-  })
-  return stdout.trim()
-}
-
-async function gitOrEmpty(args: string[], cwd: string): Promise<string> {
-  try {
-    return await git(args, cwd)
-  } catch {
-    return ''
-  }
-}
-
-async function buildSnapshot(worktreePath: string): Promise<CommitMessageSnapshot> {
-  const [status, stagedSummary, unstagedSummary, recentCommits] = await Promise.all([
-    git(['status', '--porcelain=v1', '-uall'], worktreePath),
-    gitOrEmpty(['diff', '--staged', '--stat', '--summary', '--find-renames'], worktreePath),
-    gitOrEmpty(['diff', '--stat', '--summary', '--find-renames'], worktreePath),
-    gitOrEmpty(['log', '--format=%s', '-n', '6'], worktreePath),
-  ])
-
-  if (!status.trim()) {
-    throw new Error('No uncommitted changes to summarize.')
-  }
-
-  return {
-    status: truncateSection(status, STATUS_MAX_CHARS),
-    stagedSummary: truncateSection(stagedSummary, SUMMARY_MAX_CHARS),
-    unstagedSummary: truncateSection(unstagedSummary, SUMMARY_MAX_CHARS),
-    recentCommits: truncateSection(recentCommits, RECENT_COMMITS_MAX_CHARS),
-  }
-}
 
 function buildPrompt(snapshot: CommitMessageSnapshot): string {
   const sections = [
@@ -134,100 +73,6 @@ function stripTerminalNoise(text: string): string {
     .replace(/\r/g, '')
 }
 
-async function runPiPrompt(prompt: string): Promise<string> {
-  return await new Promise((resolve, reject) => {
-    let output = ''
-    let settled = false
-    let sawMeaningfulOutput = false
-    let idleTimer: ReturnType<typeof setTimeout> | null = null
-
-    const proc = pty.spawn('pi', [
-      '--mode',
-      'text',
-      '--print',
-      '--no-session',
-      '--no-tools',
-      '--no-skills',
-      '--no-prompt-templates',
-      '--no-themes',
-      '--thinking',
-      'off',
-      '--model',
-      PI_COMMIT_MESSAGE_MODEL,
-      prompt,
-    ], {
-      name: 'xterm-256color',
-      cols: 80,
-      rows: 24,
-      cwd: homedir(),
-      env: {
-        ...process.env,
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-      } as Record<string, string>,
-    })
-
-    const clearIdleTimer = (): void => {
-      if (idleTimer) {
-        clearTimeout(idleTimer)
-        idleTimer = null
-      }
-    }
-
-    const finalize = (result: { ok: true; value: string } | { ok: false; error: Error }): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeoutTimer)
-      clearIdleTimer()
-      try {
-        proc.kill()
-      } catch {
-        // ignore kill failures after process exit
-      }
-      if (result.ok) resolve(result.value)
-      else reject(result.error)
-    }
-
-    const scheduleIdleFinish = (): void => {
-      if (!sawMeaningfulOutput) return
-      clearIdleTimer()
-      idleTimer = setTimeout(() => {
-        finalize({ ok: true, value: output })
-      }, PI_OUTPUT_IDLE_MS)
-    }
-
-    const timeoutTimer = setTimeout(() => {
-      finalize({ ok: false, error: new Error('Pi commit-message generation timed out.') })
-    }, PI_GENERATE_TIMEOUT_MS)
-
-    proc.onData((chunk) => {
-      output += chunk
-      if (stripTerminalNoise(chunk).trim()) {
-        sawMeaningfulOutput = true
-      }
-      if (output.length > PI_GENERATE_MAX_BUFFER) {
-        finalize({ ok: false, error: new Error('Pi commit-message generation produced too much output.') })
-        return
-      }
-      scheduleIdleFinish()
-    })
-
-    proc.onExit(({ exitCode }) => {
-      if (settled) return
-      const cleaned = stripTerminalNoise(output).trim()
-      if (cleaned) {
-        finalize({ ok: true, value: output })
-        return
-      }
-      if (exitCode === 0) {
-        finalize({ ok: false, error: new Error('Pi did not return a commit message.') })
-        return
-      }
-      finalize({ ok: false, error: new Error('Failed to generate a commit message with Pi.') })
-    })
-  })
-}
-
 function unwrapFence(text: string): string {
   const trimmed = stripTerminalNoise(text).trim()
   const fenceMatch = trimmed.match(/^```[\w-]*\n([\s\S]*?)\n```$/)
@@ -266,7 +111,7 @@ function normalizeCommitMessage(stdout: string): string {
 
 export class CommitMessageService {
   static async generateWithPi(worktreePath: string): Promise<string> {
-    const snapshot = await buildSnapshot(worktreePath)
+    const snapshot = await buildCommitMessageSnapshot(worktreePath)
 
     try {
       const stdout = await runPiPrompt(buildPrompt(snapshot))

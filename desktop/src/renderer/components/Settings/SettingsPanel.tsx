@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
-import type { Settings, FavoriteEditor, McpServer, AgentType, SkillEntry, SubagentEntry } from '../../store/types'
+import type {
+  Settings,
+  FavoriteEditor,
+  McpServer,
+  AgentType,
+  SkillEntry,
+  SubagentEntry,
+} from '../../store/types'
+import {
+  normalizeLinearIssueScope,
+  normalizeLinearIssuesPriorityPreset,
+} from '../../store/types'
 import {
   getDefaultWorktreeCredentialRules,
   normalizeWorktreeCredentialPattern,
@@ -9,10 +20,13 @@ import {
 import { Tooltip } from '../Tooltip/Tooltip'
 import { APPEARANCE_THEME_OPTIONS, type AppearanceThemeId } from '../../theme/appearance'
 import { shouldConfirmAppRestart } from './restart-app'
+import { linearFetchViewer } from '../../linear/linear-api'
 import styles from './SettingsPanel.module.css'
 
 const SHORTCUTS = [
-  { action: 'Quick open file', keys: '⌘F' },
+  { action: 'Find in file (when code editor is focused)', keys: '⌘F' },
+  { action: 'Find in changed files (diff tab, or Changes panel focused)', keys: '⌘F' },
+  { action: 'Quick open file (when editor not focused)', keys: '⌘F' },
   { action: 'New terminal', keys: '⌘T' },
   { action: 'Close pane / tab', keys: '⌘W' },
   { action: 'Close all tabs', keys: '⇧⌘W' },
@@ -678,6 +692,119 @@ function McpServerCard({ server, onDelete, onOpenConfig }: {
   )
 }
 
+function LinearSettingsSection({
+  apiKey,
+  onKeyChange,
+}: {
+  apiKey: string
+  onKeyChange: (v: string) => void
+}) {
+  const addToast = useAppStore((s) => s.addToast)
+  const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+  const [testing, setTesting] = useState(false)
+
+  const testConnection = async () => {
+    setTesting(true)
+    try {
+      const r = await linearFetchViewer(apiKey)
+      if (r.errors?.length) {
+        addToast({
+          id: crypto.randomUUID(),
+          type: 'error',
+          message: r.errors.map((e) => e.message).join('; '),
+        })
+      } else {
+        addToast({
+          id: crypto.randomUUID(),
+          type: 'info',
+          message: `Connected as ${r.data?.viewer?.name ?? 'Linear user'}`,
+        })
+      }
+    } catch (err) {
+      addToast({
+        id: crypto.randomUUID(),
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Connection test failed',
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const openLinearSecurity = () => {
+    void window.api.app.openExternal('https://linear.app/settings/account/security')
+  }
+
+  return (
+    <>
+      <div className={styles.sectionHint}>
+        Create a key under Linear → Settings → Account → Security. Stored locally in app settings (not the OS keychain).
+      </div>
+      <TextRow
+        label="Personal API Key"
+          description="Used by the Linear workspace panel. Never logged; sent to Linear only via the app main process."
+        value={apiKey}
+        onChange={onKeyChange}
+        password
+        placeholder="lin_api_…"
+      />
+      <div className={styles.row}>
+        <div className={styles.rowText}>
+          <div className={styles.rowLabel}>Manage keys in Linear</div>
+          <div className={styles.rowDescription}>Open Linear&apos;s security page to create or revoke keys.</div>
+        </div>
+        <button type="button" className={styles.actionBtn} onClick={openLinearSecurity}>
+          Open…
+        </button>
+      </div>
+      <div className={styles.row}>
+        <div className={styles.rowText}>
+          <div className={styles.rowLabel}>Test connection</div>
+          <div className={styles.rowDescription}>Runs a minimal viewer query against the Linear API.</div>
+        </div>
+        <button
+          type="button"
+          className={styles.actionBtn}
+          disabled={testing || !apiKey.trim()}
+          onClick={() => void testConnection()}
+        >
+          {testing ? 'Testing…' : 'Test'}
+        </button>
+      </div>
+      <SelectRow
+        label="Default issue list"
+        description="Starting scope for issues in the Linear panel (Issues view). You can change it in the panel anytime."
+        value={settings.linearIssueScope}
+        onChange={(v) =>
+          updateSettings({ linearIssueScope: normalizeLinearIssueScope(v) })
+        }
+        options={[
+          { value: 'assigned', label: 'Assigned to me' },
+          { value: 'created', label: 'Created by me' },
+        ]}
+      />
+      <SelectRow
+        label="Default priority filter"
+        description="Filters the Issues list client-side on loaded issues (not a server query)."
+        value={settings.linearIssuesPriorityPreset}
+        onChange={(v) =>
+          updateSettings({
+            linearIssuesPriorityPreset: normalizeLinearIssuesPriorityPreset(v),
+          })
+        }
+        options={[
+          { value: 'all', label: 'All priorities' },
+          { value: '1', label: 'Urgent' },
+          { value: '2', label: 'High' },
+          { value: '3', label: 'Medium' },
+          { value: '4', label: 'Low' },
+        ]}
+      />
+    </>
+  )
+}
+
 function McpServersSection() {
   const openFileTab = useAppStore((s) => s.openFileTab)
   const toggleSettings = useAppStore((s) => s.toggleSettings)
@@ -960,6 +1087,14 @@ export function SettingsPanel() {
               {restarting ? 'Restarting...' : 'Restart'}
             </button>
           </div>
+        </div>
+
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Linear</div>
+          <LinearSettingsSection
+            apiKey={settings.linearApiKey}
+            onKeyChange={(v) => update('linearApiKey', v)}
+          />
         </div>
 
         <div className={styles.section}>

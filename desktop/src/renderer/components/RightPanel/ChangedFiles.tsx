@@ -5,6 +5,7 @@ import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { PiIcon } from '../Icons/PiIcon'
 import styles from './RightPanel.module.css'
+import { registerChangesFindSource } from '../../utils/changes-file-find-bridge'
 
 const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
 
@@ -455,6 +456,18 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
       window.dispatchEvent(new CustomEvent('diff:scrollToFile', { detail: path }))
     })
   }, [openDiffTab, workspaceId])
+
+  useEffect(() => {
+    if (!isActive) return
+    return registerChangesFindSource('changes-panel', () => {
+      if (files.length === 0) return null
+      return {
+        worktreePath,
+        paths: files.map((f) => f.path),
+        onPick: (path) => { openDiff(path) },
+      }
+    })
+  }, [isActive, worktreePath, files, openDiff])
 
   if (loading) {
     return (

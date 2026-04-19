@@ -1,0 +1,481 @@
+/* Outer shell: error only — the composer “field” is one surface inside. */
+
+.shell {
+  /* Sizing tokens: override on a parent if multiple composers must match a custom width */
+  --linear-composer-radius: 20px;
+  --linear-composer-input-min-height: 220px;
+  --linear-composer-input-max-height: 420px;
+  --linear-composer-layer-min-height: 244px;
+
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: var(--space-2);
+  overflow: visible;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: min(100%, 900px);
+  margin-inline: auto;
+}
+
+/*
+ * Global `styles/global.css` sets `:focus-visible { outline: 1px solid var(--accent-blue); }`
+ * with the same specificity as `.bodyInput { outline: none }`, so load order can still show
+ * a full-field ring on the textarea. Scope beats the global rule and removes all composer chrome.
+ */
+.shell :focus,
+.shell :focus-visible {
+  outline: none;
+  outline-offset: 0;
+  box-shadow: none;
+}
+
+/* One well: no stroke — shape from fill + radius only */
+.composerSurface {
+  border-radius: var(--linear-composer-radius, 20px);
+  border: none;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--surface-2) 82%, var(--surface-1));
+  overflow: visible;
+}
+
+/* Textarea + overlaid toolbar share one box */
+.inputLayer {
+  position: relative;
+  min-height: var(--linear-composer-layer-min-height);
+  border-radius: inherit;
+}
+
+.bodyInput {
+  width: 100%;
+  min-height: var(--linear-composer-input-min-height);
+  max-height: var(--linear-composer-input-max-height);
+  margin: 0;
+  /* Reserve bottom space so typing never sits under the pills */
+  padding: var(--space-4) var(--space-4) 52px;
+  border: none;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-ui);
+  line-height: 1.45;
+  outline: none;
+  /* Explicit pseudo so we always win over global `:focus-visible` regardless of bundle order */
+  outline-offset: 0;
+  resize: none;
+  overflow: auto;
+  box-shadow: none;
+  display: block;
+  box-sizing: border-box;
+  vertical-align: top;
+}
+
+.bodyInput::placeholder {
+  color: var(--text-tertiary);
+}
+
+.inlineError {
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: color-mix(in srgb, #f87171 85%, var(--text-primary));
+  font-size: 12px;
+  font-family: var(--font-ui);
+  line-height: 1.35;
+}
+
+/* Pills live in the textarea’s inset — not a separate row */
+.pillStrip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 0 var(--space-3) var(--space-3);
+  /* Fade keeps long text readable as it scrolls behind the chips */
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--surface-2) 94%, var(--surface-1)) 0%,
+    color-mix(in srgb, var(--surface-2) 72%, transparent) 52%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.pillStrip .pillWrap,
+.pillStrip .sendWrap {
+  pointer-events: auto;
+}
+
+.pillRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pillWrap {
+  position: relative;
+}
+
+/* Chips sit on the field — no stroke; only a whisper of fill */
+.pillBtn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(220px, 48vw);
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: none;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pillBtn:hover {
+    background: color-mix(in srgb, var(--text-primary) 11%, transparent);
+  }
+}
+
+.pillBtn:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pillBtn {
+    transition: none;
+  }
+
+  .pillBtn:active {
+    transform: none;
+  }
+}
+
+.pillPrefix {
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.pillValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.pillChevron {
+  flex-shrink: 0;
+  opacity: 0.5;
+  font-size: 10px;
+}
+
+/* Read-only chip: same look as pillBtn, no menu */
+.pillStatic.pillBtn {
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pillStatic.pillBtn:hover {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  }
+}
+
+.pillStatic.pillBtn:active {
+  transform: none;
+}
+
+.pillWorkspace {
+  max-width: min(520px, 58vw);
+}
+
+.popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: min(280px, 86vw);
+  max-width: min(360px, 92vw);
+  max-height: min(52vh, 320px);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  border: none;
+  background: color-mix(in srgb, var(--surface-2) 96%, var(--surface-1));
+  box-shadow:
+    0 8px 28px color-mix(in srgb, #000 22%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--border-subtle) 35%, transparent);
+  overflow: hidden;
+  transform-origin: var(--transform-origin, top left);
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity var(--motion-default) var(--ease-out),
+    transform var(--motion-default) var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.pastPopover {
+  max-height: min(56vh, 360px);
+  min-height: 0;
+}
+
+/* Scroll region: base .popover uses overflow:hidden + flex; without this the list is clipped */
+.pastPopoverScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover {
+    transition: none;
+
+    @starting-style {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}
+
+.popoverSearch {
+  margin: var(--space-3) var(--space-3) var(--space-2);
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  font-family: var(--font-ui);
+}
+
+.popoverWorkspaceHint {
+  margin: 0 var(--space-3) var(--space-2);
+  padding: 0 2px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+}
+
+.projectPickLines {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
+}
+
+.projectPickMeta {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-tertiary);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popoverList {
+  overflow: auto;
+  padding: var(--space-1) 0;
+  max-height: 240px;
+}
+
+.popoverItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .popoverItem:hover {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  }
+}
+
+.popoverItemOn {
+  background: var(--accent-orange-dim);
+}
+
+.popoverEmpty {
+  padding: var(--space-4);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+}
+
+.fuzzyPickName {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fuzzyMatch {
+  color: var(--accent-orange);
+  font-weight: var(--weight-semibold);
+}
+
+.pastItem {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  animation: staggerItem 160ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation-delay: calc(var(--stagger, 0) * 40ms);
+}
+
+.pastItem:last-child {
+  border-bottom: none;
+}
+
+@keyframes staggerItem {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pastItem {
+    animation: none;
+  }
+}
+
+.updateMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-bottom: 4px;
+  font-family: var(--font-ui);
+}
+
+.updateBody {
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 4.5em;
+  overflow: hidden;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+.updateLink {
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-orange);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.sendWrap {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.sendBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: none;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 150ms ease,
+    opacity 150ms ease,
+    filter 150ms ease;
+}
+
+.sendBtn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sendBtn:not(:disabled):hover {
+    background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  }
+}
+
+.sendBtn:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+.sendBtnSending .sendIcon {
+  filter: blur(2px);
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sendBtn {
+    transition: none;
+  }
+
+  .sendBtn:not(:disabled):active {
+    transform: none;
+  }
+
+  .sendBtnSending .sendIcon {
+    filter: none;
+    opacity: 0.6;
+  }
+}
+
+.sendIcon {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+}
+
+.sendIcon svg {
+  width: 20px;
+  height: 20px;
+}

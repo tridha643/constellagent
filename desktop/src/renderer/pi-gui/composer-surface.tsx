@@ -56,8 +56,6 @@ interface ComposerSurfaceProps {
   readonly extensionDock?: ExtensionDockModel;
   readonly extensionDockExpanded?: boolean;
   readonly onToggleExtensionDock?: () => void;
-  /** Optional strip above the composer editor (e.g. thinking / tool activity). */
-  readonly thinkingSlot?: ReactNode;
   readonly footer: ReactNode;
 }
 
@@ -103,7 +101,6 @@ export function ComposerSurface({
   extensionDock,
   extensionDockExpanded = false,
   onToggleExtensionDock,
-  thinkingSlot,
   footer,
 }: ComposerSurfaceProps) {
   const [isDragActive, setIsDragActive] = useState(false);
@@ -221,7 +218,6 @@ export function ComposerSurface({
         onRemoveMessage={onRemoveQueuedMessage}
         onSteerMessage={onSteerQueuedMessage}
       />
-      {thinkingSlot}
       {attachments.length > 0 ? (
         <div className="composer__attachments">
           {attachments.map((attachment) => (

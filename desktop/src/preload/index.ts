@@ -9,7 +9,7 @@ import type {
 } from '../shared/automation-types'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
-import type { PlanAgent } from '../shared/agent-plan-path'
+import type { AgentPlanSearchRequest, AgentPlanSearchResult, PlanAgent } from '../shared/agent-plan-path'
 import type { PiModelOption } from '../shared/plan-build-command'
 import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
 import type { GraphiteCreateOptions, GraphiteStackAction, GraphiteStackActionResult, GraphiteStackInfo } from '../shared/graphite-types'
@@ -17,11 +17,27 @@ import type { ReviewComment } from '../shared/review-types'
 import type { HostUiResponse, PiContextUsageSnapshot } from '@pi-gui/session-driver'
 import type { ContextWindowData } from '../shared/context-window-types'
 import type { QuickOpenSearchRequest, QuickOpenSearchResult } from '../shared/quick-open-types'
+import type { LinearFffQuickOpenRequest, LinearFffQuickOpenResult } from '../shared/linear-fff-types'
 import type { CodeSearchRequest, CodeSearchResult } from '../shared/code-search-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 
+/** Linear GraphQL via main process (renderer fetch hits CORS). Exposed on `api` and `api.app`. */
+function linearGraphql(
+  apiKey: string,
+  query: string,
+  variables?: Record<string, unknown>,
+) {
+  return ipcRenderer.invoke(IPC.LINEAR_GRAPHQL_REQUEST, apiKey, query, variables) as Promise<{
+    data?: unknown
+    errors?: { message: string }[]
+  }>
+}
+
 const api = {
+  linearGraphql,
+  linearFffQuickOpen: (request: LinearFffQuickOpenRequest) =>
+    ipcRenderer.invoke(IPC.LINEAR_FFF_QUICK_OPEN, request) as Promise<LinearFffQuickOpenResult>,
   git: {
     listWorktrees: (repoPath: string) =>
       ipcRenderer.invoke(IPC.GIT_LIST_WORKTREES, repoPath),
@@ -172,6 +188,8 @@ const api = {
       ipcRenderer.invoke(IPC.FS_QUICK_OPEN_SEARCH, worktreePath, request) as Promise<QuickOpenSearchResult>,
     codeSearch: (worktreePath: string, request: CodeSearchRequest) =>
       ipcRenderer.invoke(IPC.FS_CODE_SEARCH, worktreePath, request) as Promise<CodeSearchResult>,
+    searchAgentPlans: (worktreePath: string | string[], request: AgentPlanSearchRequest) =>
+      ipcRenderer.invoke(IPC.FS_SEARCH_AGENT_PLANS, worktreePath, request) as Promise<AgentPlanSearchResult>,
     readFile: (filePath: string) =>
       ipcRenderer.invoke(IPC.FS_READ_FILE, filePath),
     writeFile: (filePath: string, content: string) =>
@@ -208,6 +226,24 @@ const api = {
     listPiModels: () => ipcRenderer.invoke(IPC.APP_LIST_PI_MODELS) as Promise<PiModelOption[]>,
     generateCommitMessage: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.APP_GENERATE_COMMIT_MESSAGE, worktreePath) as Promise<string>,
+    generateLinearIssueDraft: (payload: {
+      projectName: string
+      worktreePath: string | null
+      projectDescription?: string | null
+      projectContentMarkdown?: string | null
+    }) =>
+      ipcRenderer.invoke(IPC.APP_GENERATE_LINEAR_ISSUE_DRAFT, payload) as Promise<{
+        title: string
+        description: string
+      }>,
+    generateLinearUpdateDraft: (payload: {
+      projectName: string
+      pastUpdates: string[]
+      worktreePath: string | null
+      projectDescription?: string | null
+      projectContentMarkdown?: string | null
+    }) =>
+      ipcRenderer.invoke(IPC.APP_GENERATE_LINEAR_UPDATE_DRAFT, payload) as Promise<{ body: string }>,
     selectDirectory: () =>
       ipcRenderer.invoke(IPC.APP_SELECT_DIRECTORY),
     selectFile: (filters?: { name: string; extensions: string[] }[]) =>
@@ -217,6 +253,8 @@ const api = {
     openInEditor: (dirPath: string, cliCommand: string, extraArgs?: string[], openMode?: string) =>
       ipcRenderer.invoke(IPC.APP_OPEN_IN_EDITOR, dirPath, cliCommand, extraArgs, openMode) as Promise<{ success: boolean; error?: string }>,
     relaunch: () => ipcRenderer.invoke(IPC.APP_RELAUNCH) as Promise<void>,
+    openExternal: (url: string) => ipcRenderer.invoke(IPC.SHELL_OPEN_EXTERNAL, url) as Promise<void>,
+    linearGraphql,
   },
 
   skills: {

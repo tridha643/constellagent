@@ -156,3 +156,59 @@ test.describe('Terminal functionality', () => {
     }
   })
 })
+
+test.describe('Terminal clipboard (macOS)', () => {
+  test('paste image into terminal injects saved PNG path (bracketed paste)', async () => {
+    test.skip(process.platform !== 'darwin', 'macOS-only: native clipboard image + Cmd+V')
+
+    const repoPath = createTestRepo('term-clip')
+    const { app, window } = await launchApp()
+
+    try {
+      const { ptyId } = await setupWorkspaceWithTerminal(window, repoPath)
+      expect(ptyId).toMatch(/^pty-/)
+
+      await window.waitForTimeout(2500)
+
+      const outputPromise = window.evaluate((id: string) => {
+        return new Promise<string>((resolve, reject) => {
+          let acc = ''
+          const unsub = (window as any).api.pty.onData(id, (data: string) => {
+            acc += data
+            if (acc.includes('constellagent-paste-') && acc.includes('.png')) {
+              unsub()
+              resolve(acc)
+            }
+          })
+          setTimeout(() => {
+            unsub()
+            reject(
+              new Error(
+                `Timed out waiting for pasted image path in PTY output. Tail: ${acc.slice(-500)}`,
+              ),
+            )
+          }, 12000)
+        })
+      }, ptyId)
+
+      await app.evaluate(({ clipboard, nativeImage }) => {
+        const img = nativeImage.createFromDataURL(
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+        )
+        clipboard.writeImage(img)
+      })
+
+      const terminalInner = window.locator('[class*="terminalInner"]').first()
+      await expect(terminalInner).toBeVisible()
+      await terminalInner.click()
+
+      await window.keyboard.press('Meta+v')
+
+      const out = await outputPromise
+      expect(out).toContain('constellagent-paste-')
+      expect(out).toMatch(/\.png/)
+    } finally {
+      await app.close()
+    }
+  })
+})

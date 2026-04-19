@@ -1,0 +1,165 @@
+/* Tickets composer: single flat surface (no title/body divider), soft pills, airy title */
+
+.ticketsShell {
+  --linear-composer-radius: 16px;
+  --linear-composer-input-min-height: 120px;
+  --linear-composer-layer-min-height: 200px;
+}
+
+/* Rounded card: shared .composerSurface uses overflow:visible — clip children to the curve */
+.ticketsComposerSurface {
+  border-radius: var(--linear-composer-radius);
+  overflow: hidden;
+}
+
+.inputLayerTickets {
+  position: relative;
+  min-height: var(--linear-composer-layer-min-height);
+  border-radius: inherit;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Team only — top-left of the card (other pills stay on the bottom strip) */
+.ticketsTeamBar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: var(--space-6) var(--space-8) var(--space-2);
+}
+
+.ticketsPillTeam {
+  max-width: min(380px, 88vw);
+}
+
+/* Title: no border / inner “box”; team bar handles top spacing */
+.titleInput {
+  width: 100%;
+  margin: 0;
+  padding: var(--space-4) var(--space-8) var(--space-4);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  font-family: var(--font-ui);
+  line-height: 1.35;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.titleInput::placeholder {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+/* Body: same horizontal rhythm as title, seamless with surface */
+.ticketsBody {
+  flex: 1;
+  min-height: var(--linear-composer-input-min-height) !important;
+  padding: var(--space-2) var(--space-8) 52px !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-size: var(--text-md);
+  color: color-mix(in srgb, var(--text-primary) 92%, var(--text-tertiary));
+}
+
+/* Softer footer fade so content doesn’t read as a second panel */
+.ticketsPillStrip {
+  padding: 0 var(--space-6) var(--space-5);
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--surface-2) 96%, var(--surface-1)) 0%,
+    color-mix(in srgb, var(--surface-2) 55%, transparent) 45%,
+    transparent 100%
+  );
+}
+
+.ticketsPillRow {
+  gap: 10px;
+  row-gap: 10px;
+  align-items: center;
+}
+
+/* Linear project name only */
+.ticketsPillProject {
+  max-width: min(360px, 62vw);
+}
+
+/* Branch / Graphite stack — can be long */
+.ticketsPillWorkspace {
+  max-width: min(520px, 82vw);
+}
+
+.ticketsPillWorkspace.ticketsPill:active {
+  transform: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ticketsPillWorkspace.ticketsPill:hover {
+    background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  }
+}
+
+/* Capsule chips: soft, fully rounded, calm fill */
+.ticketsPill {
+  border-radius: 9999px;
+  padding: 7px 14px 7px 16px;
+  min-height: 32px;
+  max-width: min(360px, 70vw);
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  box-shadow: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ticketsPill:hover {
+    background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  }
+}
+
+.ticketsPill:active {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticketsPill:active {
+    transform: none;
+  }
+}
+
+.ticketsSendBtn {
+  width: 38px;
+  height: 38px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--text-primary) 9%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ticketsSendBtn:not(:disabled):hover {
+    background: color-mix(in srgb, var(--text-primary) 15%, transparent);
+  }
+}
+
+/* Portaled popovers: rounded panel, floats above composer (not clipped by overflow) */
+.ticketsPopover {
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+.ticketsPopoverSearch {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 55%, transparent);
+}
+
+/* Portaled popovers are outside `.shell` — kill global accent focus ring */
+.ticketsPopoverSearch:focus,
+.ticketsPopoverSearch:focus-visible,
+.ticketsPopover input:focus,
+.ticketsPopover input:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+}

@@ -1,9 +1,15 @@
 import type { SessionTranscriptMessage } from "@pi-gui/pi-sdk-driver";
 import type { TimelineActivity, TimelineToolCall, TimelineSummary, TranscriptMessage } from "@shared/pi/timeline-types";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
+import { THINKING_CYCLING_LABELS } from "@/components/ui/thinking-activity-copy";
+import { MoonwalkGlyph } from "@/components/ui/moonwalk-glyph";
+import { fontWeights } from "@/lib/font-weight";
+import { cn } from "@/lib/utils";
 import { MessageMarkdown } from "./message-markdown";
 import { countDiffFiles, InlineDiff, extractDiffFromOutput, syntheticUnifiedDiffFromWriteToolInput } from "./diff-inline";
+import { isWriteToolName } from "./write-tools-aggregate";
 import { ChevronRightIcon, CopyIcon, FileIcon } from "./icons";
 
 /** Matches `makeActivityItem("Working…")` in main-process timeline (`pi-timeline.ts`). */
@@ -11,6 +17,89 @@ const PI_GUI_WORKING_ACTIVITY_LABEL = "Working…";
 
 function isPiGuiWorkingActivity(item: TimelineActivity): boolean {
   return item.label === PI_GUI_WORKING_ACTIVITY_LABEL;
+}
+
+/** Moonwalk + tool copy; mood row animates only while the tool is still running (saves idle GPU). */
+function TimelineToolMoonwalkHeader({
+  compactLabel,
+  stepDescription,
+  failed,
+  animateMood,
+}: {
+  readonly compactLabel: string;
+  readonly stepDescription: string;
+  readonly failed: boolean;
+  readonly animateMood: boolean;
+}) {
+  const [moodIndex, setMoodIndex] = useState(0);
+  const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (!animateMood) {
+      return;
+    }
+    const interval = setInterval(() => {
+      setMoodIndex((i) => (i + 1) % THINKING_CYCLING_LABELS.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [animateMood]);
+
+  const longestMood = THINKING_CYCLING_LABELS.reduce((a, b) => (a.length >= b.length ? a : b));
+
+  return (
+    <div className="flex min-w-0 flex-1 items-start gap-2" role="status">
+      <MoonwalkGlyph className={cn(failed && "text-destructive")} />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span
+          className={cn("text-[13px] leading-tight shimmer-text", failed && "text-destructive")}
+          style={{ fontVariationSettings: fontWeights.medium }}
+        >
+          {compactLabel}
+        </span>
+        <span
+          className={cn("text-[12px] leading-snug text-muted-foreground", failed && "text-destructive/90")}
+        >
+          {stepDescription}
+        </span>
+        {animateMood ? (
+          <span
+            className="inline-grid h-[15px] overflow-hidden text-[11px] text-muted-foreground"
+            style={{ fontVariationSettings: fontWeights.medium }}
+            aria-hidden
+          >
+            <span className="col-start-1 row-start-1 invisible shimmer-text">{longestMood}</span>
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.span
+                key={THINKING_CYCLING_LABELS[moodIndex]}
+                className="col-start-1 row-start-1 shimmer-text"
+                initial={
+                  reduceMotion ? { opacity: 0 } : { transform: "translateY(75%)", opacity: 0 }
+                }
+                animate={
+                  reduceMotion ? { opacity: 1 } : { transform: "translateY(0)", opacity: 1 }
+                }
+                exit={
+                  reduceMotion
+                    ? { opacity: 0, transition: { duration: 0.1, ease: [0.23, 1, 0.32, 1] } }
+                    : {
+                        transform: "translateY(-75%)",
+                        opacity: 0,
+                        transition: { duration: 0.14, ease: [0.23, 1, 0.32, 1] },
+                      }
+                }
+                transition={{
+                  duration: reduceMotion ? 0.12 : 0.2,
+                  ease: [0.23, 1, 0.32, 1],
+                }}
+              >
+                {THINKING_CYCLING_LABELS[moodIndex]}
+              </motion.span>
+            </AnimatePresence>
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 /** Plain text to copy — assistant / summary messages only (not user prompts). */
@@ -198,23 +287,33 @@ function TimelineToolCallItem({
   readonly onToggle?: (callId: string) => void;
 }) {
   const hasContent = item.input !== undefined || item.output !== undefined;
-  const diffText = isWriteTool(item.toolName)
+  const diffText = isWriteToolName(item.toolName)
     ? extractDiffFromOutput(item.output) ?? syntheticUnifiedDiffFromWriteToolInput(item.input)
     : undefined;
   const diffStats = diffText ? countDiffStats(diffText) : undefined;
   const compactLabel = buildCompactLabel(item, diffStats);
+  const descriptionParts = [`${item.toolName} \u00b7 ${statusLabel(item.status)}`];
+  if (diffStats) {
+    descriptionParts.push(`+${diffStats.added} \u2212${diffStats.removed}`);
+  }
+  const stepDescription = descriptionParts.join(" \u00b7 ");
 
   const handleCopy = () => {
     const text = diffText ?? formatToolContent(item.input, item.output);
     void navigator.clipboard.writeText(text);
   };
 
+  const inlineChrome = item.status === "success" || item.status === "running" || item.status === "error";
+  const articleClass = inlineChrome
+    ? `timeline-tool timeline-tool--${item.status} timeline-tool--inline`
+    : `timeline-tool timeline-tool--${item.status}`;
+
   return (
-    <article className={`timeline-tool timeline-tool--${item.status}`}>
+    <article className={articleClass} data-testid={`timeline-tool-${item.callId}`}>
       <button
-        className="timeline-tool__header"
+        className="timeline-tool__header timeline-tool__header--with-step"
         type="button"
-        aria-expanded={expanded}
+        aria-expanded={hasContent ? expanded : undefined}
         disabled={!hasContent}
         onClick={() => onToggle?.(item.callId)}
       >
@@ -223,15 +322,12 @@ function TimelineToolCallItem({
             <ChevronRightIcon />
           </span>
         ) : null}
-        <span className="timeline-tool__label">{compactLabel}</span>
-        {diffStats ? (
-          <span className="timeline-tool__diff-stats">
-            <span className="timeline-tool__stat-add">+{diffStats.added}</span>
-            {" "}
-            <span className="timeline-tool__stat-del">-{diffStats.removed}</span>
-          </span>
-        ) : null}
-        <span className="timeline-tool__meta-inline">{`${item.toolName} \u00b7 ${statusLabel(item.status)}`}</span>
+        <TimelineToolMoonwalkHeader
+          compactLabel={compactLabel}
+          stepDescription={stepDescription}
+          failed={item.status === "error"}
+          animateMood={item.status === "running"}
+        />
       </button>
       {expanded && hasContent ? (
         <div className="timeline-tool__body">
@@ -280,12 +376,8 @@ function TimelineToolCallItem({
   );
 }
 
-function isWriteTool(toolName: string): boolean {
-  return /write|edit|patch|apply/i.test(toolName);
-}
-
 function buildCompactLabel(item: TimelineToolCall, diffStats: { added: number; removed: number } | undefined): string {
-  if (isWriteTool(item.toolName)) {
+  if (isWriteToolName(item.toolName)) {
     const filename = extractFilename(item.input);
     if (filename) {
       return `Edited ${shortenPath(filename)}`;

@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app, BrowserWindow, clipboard, webContents, type WebContents } from 'electron'
+import { ipcMain, dialog, app, BrowserWindow, clipboard, webContents, shell, type WebContents } from 'electron'
 import { join, relative } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
 import { existsSync, mkdirSync, writeFileSync, realpathSync } from 'fs'
@@ -17,6 +17,8 @@ import { GitService } from './git-service'
 import { WorktreeSyncService } from './worktree-sync-service'
 import { GithubService } from './github-service'
 import { FileService, type FileNode } from './file-service'
+import { LinearFffService } from './linear-fff-service'
+import type { LinearFffQuickOpenRequest } from '../shared/linear-fff-types'
 import { readPlanMeta } from './plan-meta'
 import { AutomationEngine } from './automation-engine'
 import type { AutomationConfigLike, AutomationWorkspaceEvent } from '../shared/automation-types'
@@ -36,6 +38,7 @@ import { lookupPersistedProjectRepo } from './persisted-state'
 import { GithubPollService } from './github-poll-service'
 import { listPiModels } from './pi-models'
 import { CommitMessageService } from './commit-message-service'
+import { LinearDraftService } from './linear-draft-service'
 import { requestAppRelaunch } from './app-relaunch'
 import {
   deleteProjectStartupCommands,
@@ -256,6 +259,23 @@ function sanitizeLoadedState(data: unknown): StateSanitizeResult {
   }
 
   return { data: next, changed, removedWorkspaceCount }
+}
+
+/** Allow opening Linear hosts in the system browser from the renderer. */
+function isAllowedShellOpenUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false
+    const host = u.hostname.toLowerCase()
+    return (
+      host === 'linear.app' ||
+      host === 'www.linear.app' ||
+      host === 'linear.new' ||
+      host === 'www.linear.new'
+    )
+  } catch {
+    return false
+  }
 }
 
 export function registerIpcHandlers(): void {
@@ -575,8 +595,16 @@ export function registerIpcHandlers(): void {
     return FileService.quickOpenSearch(worktreePath, request)
   })
 
+  ipcMain.handle(IPC.LINEAR_FFF_QUICK_OPEN, async (_e, request: LinearFffQuickOpenRequest) => {
+    return LinearFffService.quickOpenSearch(request)
+  })
+
   ipcMain.handle(IPC.FS_CODE_SEARCH, async (_e, worktreePath: string, request: import('../shared/code-search-types').CodeSearchRequest) => {
     return FileService.codeSearch(worktreePath, request)
+  })
+
+  ipcMain.handle(IPC.FS_SEARCH_AGENT_PLANS, async (_e, worktreePath: string | string[], request: import('../shared/agent-plan-path').AgentPlanSearchRequest) => {
+    return FileService.searchAgentPlanMarkdowns(worktreePath, request)
   })
 
   ipcMain.handle(IPC.FS_READ_FILE, async (_e, filePath: string) => {
@@ -722,6 +750,37 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.APP_GENERATE_COMMIT_MESSAGE, async (_e, worktreePath: string) => {
     return CommitMessageService.generateWithPi(worktreePath)
   })
+
+  ipcMain.handle(
+    IPC.APP_GENERATE_LINEAR_ISSUE_DRAFT,
+    async (
+      _e,
+      payload: {
+        projectName: string
+        worktreePath: string | null
+        projectDescription?: string | null
+        projectContentMarkdown?: string | null
+      },
+    ) => {
+      return LinearDraftService.generateIssueDraft(payload)
+    },
+  )
+
+  ipcMain.handle(
+    IPC.APP_GENERATE_LINEAR_UPDATE_DRAFT,
+    async (
+      _e,
+      payload: {
+        projectName: string
+        pastUpdates: string[]
+        worktreePath: string | null
+        projectDescription?: string | null
+        projectContentMarkdown?: string | null
+      },
+    ) => {
+      return LinearDraftService.generateProjectUpdateDraft(payload)
+    },
+  )
 
   ipcMain.handle(IPC.APP_RELAUNCH, () => {
     requestAppRelaunch({ relaunch: () => app.relaunch(), quit: () => app.quit() })
@@ -1138,6 +1197,57 @@ export function registerIpcHandlers(): void {
     return result.filePaths[0]
   })
 
+  ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, async (_e, url: string) => {
+    if (typeof url !== 'string' || !isAllowedShellOpenUrl(url)) {
+      throw new Error('URL not allowed for openExternal')
+    }
+    await shell.openExternal(url)
+  })
+
+  const LINEAR_GRAPHQL_URL = 'https://api.linear.app/graphql'
+  ipcMain.handle(
+    IPC.LINEAR_GRAPHQL_REQUEST,
+    async (_e, apiKey: string, query: string, variables?: Record<string, unknown>) => {
+      const key = typeof apiKey === 'string' ? apiKey.trim() : ''
+      if (!key) {
+        return { errors: [{ message: 'Missing Linear API key.' }] }
+      }
+      if (typeof query !== 'string' || !query.trim()) {
+        return { errors: [{ message: 'Missing GraphQL query.' }] }
+      }
+      try {
+        const res = await fetch(LINEAR_GRAPHQL_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: key,
+          },
+          body: JSON.stringify({ query, variables: variables ?? undefined }),
+        })
+        const text = await res.text()
+        let parsed: { data?: unknown; errors?: { message: string }[] }
+        try {
+          parsed = text ? (JSON.parse(text) as { data?: unknown; errors?: { message: string }[] }) : {}
+        } catch {
+          return {
+            errors: [{ message: res.ok ? 'Invalid JSON from Linear' : `Linear HTTP ${res.status}` }],
+          }
+        }
+        if (!res.ok) {
+          return {
+            errors: parsed.errors?.length
+              ? parsed.errors
+              : [{ message: `Linear HTTP ${res.status}` }],
+          }
+        }
+        return parsed
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Network error'
+        return { errors: [{ message: msg }] }
+      }
+    },
+  )
+
   // ── Skills & Subagents handlers ──
   ipcMain.handle(IPC.SKILLS_SCAN, async (_e, skillPath: string) => {
     return SkillsService.scanSkillDir(skillPath)
@@ -1383,6 +1493,7 @@ export function cleanupAll(): void {
   lspService.shutdown()
   AnnotationService.cleanupAll()
   FileService.disposeQuickOpenSearch()
+  LinearFffService.disposeAll()
   t3codeService.stopAll()
   guestTabSwitchListeners.clear()
   closeAllAgentFS().catch(() => {})

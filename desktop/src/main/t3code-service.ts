@@ -1,6 +1,9 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { createServer } from 'net'
 import { request } from 'http'
+import { cliEnvWithStandardPath } from './cli-env'
+
+const STARTUP_TIMEOUT_MS = 120_000
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -84,49 +87,94 @@ class T3CodeService {
     const proc = spawn(npx, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env },
+      env: cliEnvWithStandardPath(),
     })
 
     let buf = ''
+    const url = `http://127.0.0.1:${port}`
 
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        proc.stdout?.off('data', onReady)
-        proc.stderr?.off('data', onReady)
-        proc.removeListener('exit', onExitEarly)
-        proc.kill('SIGTERM')
-        reject(new Error('T3 Code server startup timed out (60s). Is `npx t3` available?'))
-      }, 60_000)
+      let settled = false
+      const startedAt = Date.now()
 
-      const onReady = (d: Buffer): void => {
+      const cleanup = (): void => {
+        clearTimeout(timer)
+        proc.stdout?.off('data', onData)
+        proc.stderr?.off('data', onData)
+        proc.removeListener('exit', onExitEarly)
+        proc.removeListener('error', onSpawnError)
+      }
+
+      const settleOk = (): void => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve()
+      }
+
+      const settleErr = (err: Error): void => {
+        if (settled) return
+        settled = true
+        cleanup()
+        try {
+          proc.kill('SIGTERM')
+        } catch {
+          /* ignore */
+        }
+        reject(err)
+      }
+
+      const timer = setTimeout(() => {
+        settleErr(
+          new Error(
+            `T3 Code server startup timed out (${STARTUP_TIMEOUT_MS / 1000}s). Is \`npx t3\` available? ${buf.slice(-1200)}`
+          )
+        )
+      }, STARTUP_TIMEOUT_MS)
+
+      const onData = (d: Buffer): void => {
         buf += d.toString()
         if (buf.length > 120_000) buf = buf.slice(-60_000)
-        if (buf.includes('T3 Code running')) {
-          clearTimeout(timer)
-          proc.stdout?.off('data', onReady)
-          proc.stderr?.off('data', onReady)
-          proc.removeListener('exit', onExitEarly)
-          resolve()
-        }
+        if (buf.includes('T3 Code running')) settleOk()
       }
 
       const onExitEarly = (code: number | null, signal: NodeJS.Signals | null): void => {
-        clearTimeout(timer)
-        proc.stdout?.off('data', onReady)
-        proc.stderr?.off('data', onReady)
-        reject(
+        settleErr(
           new Error(
             `T3 Code exited before ready (${signal || `code ${code}`}). ${buf.slice(-1200)}`
           )
         )
       }
 
-      proc.stdout?.on('data', onReady)
-      proc.stderr?.on('data', onReady)
+      const onSpawnError = (err: Error): void => {
+        settleErr(new Error(`T3 Code spawn failed: ${err.message}. ${buf.slice(-1200)}`))
+      }
+
+      const tryHttp = (): void => {
+        if (settled) return
+        if (Date.now() - startedAt > STARTUP_TIMEOUT_MS) return
+        const req = request(url, { method: 'GET', timeout: 5000 }, (res) => {
+          res.resume()
+          const code = res.statusCode ?? 0
+          if (code >= 200 && code < 500) {
+            settleOk()
+            return
+          }
+          setTimeout(tryHttp, 200)
+        })
+        req.on('error', () => {
+          if (!settled) setTimeout(tryHttp, 200)
+        })
+        req.end()
+      }
+
+      proc.stdout?.on('data', onData)
+      proc.stderr?.on('data', onData)
       proc.once('exit', onExitEarly)
+      proc.once('error', onSpawnError)
+      tryHttp()
     })
 
-    const url = `http://127.0.0.1:${port}`
     await waitForHttpOk(url, 20_000)
 
     proc.once('exit', () => {
