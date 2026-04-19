@@ -26,11 +26,11 @@ The **`constell-annotate`** CLI (from `@tridha643/review-annotations`) covers **
 
 **This requirement applies in every repository where constellagent is in use — not just the constellagent codebase itself.**
 
-**Claude Code MUST send a Sendblue CLI notification to `+18258883809` immediately when a plan is created, and again when the task is over.**
+**Claude Code MUST send a Sendblue CLI notification to your configured E.164 recipient (set locally; do not commit personal numbers) immediately when a plan is created, and again when the task is over.**
 
 ```bash
-sendblue send +18258883809 "claude-code <plan-topic-name> plan created"
-sendblue send +18258883809 "claude-code <plan-topic-name> is over"
+sendblue send +<YOUR_E164_RECIPIENT> "claude-code <plan-topic-name> plan created"
+sendblue send +<YOUR_E164_RECIPIENT> "claude-code <plan-topic-name> is over"
 ```
 
 - The **plan-created notification must be sent as soon as the plan is written** — before implementation begins.
