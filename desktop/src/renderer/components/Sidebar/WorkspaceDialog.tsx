@@ -225,8 +225,15 @@ export function WorkspaceDialog({
   }
 
   return (
-    <div className={`${styles.overlay} ${exiting ? styles.overlayExiting : ''}`} onClick={animateExit}>
-      <div className={`${styles.dialog} ${exiting ? styles.dialogExiting : ''}`} onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
+    <div
+      className={`${styles.overlay} constellagent-dialog-overlay ${exiting ? 'constellagent-dialog-overlay--exiting' : ''}`}
+      onClick={animateExit}
+    >
+      <div
+        className={`${styles.dialog} constellagent-dialog-body ${exiting ? 'constellagent-dialog-body--exiting' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
+      >
         <div className={styles.title}>New Workspace</div>
 
         <label className={styles.label}>Name</label>
@@ -276,7 +283,7 @@ export function WorkspaceDialog({
                 disabled={loading || isCreating || prResolving}
                 placeholder="Branch name, PR URL, or #123 (press Enter to resolve)"
               />
-              {prResolving && <span className={styles.prSpinner} />}
+              {prResolving && <span className={styles.prSpinner} data-allow-motion="" />}
               <button
                 className={styles.pickerBtn}
                 onClick={() => setBasePickerOpen((v) => !v)}
@@ -311,7 +318,7 @@ export function WorkspaceDialog({
                 disabled={loading || isCreating || prResolving}
                 placeholder="Branch name, PR URL, or #123 (press Enter to resolve)"
               />
-              {prResolving && <span className={styles.prSpinner} />}
+              {prResolving && <span className={styles.prSpinner} data-allow-motion="" />}
               <button
                 className={styles.pickerBtn}
                 onClick={() => setPickerOpen((v) => !v)}
@@ -340,7 +347,7 @@ export function WorkspaceDialog({
 
         {isCreating && (
           <div className={styles.createStatus} role="status" aria-live="polite">
-            <span className={styles.createSpinner} />
+            <span className={styles.createSpinner} data-allow-motion="" />
             <span>{createProgressMessage || 'Creating workspace...'}</span>
           </div>
         )}

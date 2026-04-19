@@ -26,10 +26,10 @@
   opacity: 0;
   transform: translateX(14px) scale(0.985);
   transition:
-    opacity 180ms var(--ease-out),
-    transform 180ms var(--ease-out),
-    border-color 180ms var(--ease-out),
-    background-color 180ms var(--ease-out);
+    opacity var(--duration-enter) var(--ease-out),
+    transform var(--duration-enter) var(--ease-out),
+    border-color var(--duration-enter) var(--ease-out),
+    background-color var(--duration-enter) var(--ease-out);
 }
 
 .toast[data-mounted='true'] {
@@ -41,6 +41,7 @@
   opacity: 0;
   transform: translateX(14px) scale(0.985);
   pointer-events: none;
+  transition-duration: var(--duration-exit);
 }
 
 .toast.error {
@@ -60,6 +61,7 @@
   font-family: var(--font-ui);
   color: var(--text-primary);
   line-height: 1.4;
+  text-wrap: pretty;
 }
 
 .actionBtn {

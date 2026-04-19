@@ -319,8 +319,12 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
   }, [])
 
   return (
-    <div className={styles.overlay} onClick={onCancel}>
-      <div className={styles.dialog} onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
+    <div className={`${styles.overlay} constellagent-dialog-overlay`} onClick={onCancel}>
+      <div
+        className={`${styles.dialog} constellagent-dialog-body`}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
+      >
         <div className={styles.title}>{project.name}</div>
 
         <button

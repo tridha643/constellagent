@@ -239,7 +239,6 @@
   justify-content: center;
   padding: var(--space-10);
   background: rgba(0, 0, 0, 0.5);
-  animation: prOverlayFadeIn 180ms var(--ease-out) both;
 }
 
 .projectPrModal {
@@ -253,17 +252,6 @@
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   transform-origin: center;
-  animation: prDialogEnter 180ms var(--ease-out) both;
-}
-
-@keyframes prOverlayFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes prDialogEnter {
-  from { opacity: 0; transform: scale(0.97); }
-  to { opacity: 1; transform: scale(1); }
 }
 
 .projectPrModalHeader {
@@ -960,7 +948,7 @@
   color: var(--text-tertiary);
   text-align: left;
   line-height: 16px;
-  will-change: background-color, transform;
+  will-change: transform;
   transition: background-color 100ms var(--ease-out),
               color 100ms var(--ease-out),
               opacity 100ms var(--ease-out),

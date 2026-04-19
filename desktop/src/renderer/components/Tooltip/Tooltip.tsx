@@ -21,6 +21,7 @@ interface Props {
 
 const SHOW_DELAY = 400
 const SHOW_DELAY_FAST = 0
+/** Adjacent tooltip opens instantly (no delay / transition) — Emil “tooltip chain” pattern */
 const SKIP_WINDOW = 500
 const EDGE_PAD = 8
 const GAP = 6

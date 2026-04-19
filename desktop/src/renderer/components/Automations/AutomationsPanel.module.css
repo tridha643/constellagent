@@ -38,6 +38,7 @@
   color: var(--text-primary);
   font-family: var(--font-ui);
   margin: 0;
+  text-wrap: balance;
 }
 
 .subtitle {
@@ -45,6 +46,7 @@
   color: var(--text-tertiary);
   font-family: var(--font-ui);
   line-height: 1.45;
+  text-wrap: pretty;
 }
 
 .backBtn {
@@ -135,6 +137,7 @@
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
+  text-wrap: balance;
 }
 
 .emptyCopy {
@@ -142,6 +145,7 @@
   font-size: var(--text-xs);
   line-height: 1.55;
   color: var(--text-secondary);
+  text-wrap: pretty;
 }
 
 .emptyBtn {

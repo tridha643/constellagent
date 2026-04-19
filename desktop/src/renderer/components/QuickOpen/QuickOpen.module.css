@@ -7,7 +7,7 @@
   padding-top: 15vh;
   z-index: 100;
   opacity: 1;
-  transition: opacity var(--motion-default) var(--ease-out);
+  transition: opacity var(--duration-micro) var(--ease-out);
 
   @starting-style {
     opacity: 0;
@@ -25,16 +25,12 @@
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   align-self: flex-start;
-  transform-origin: top center;
   opacity: 1;
-  transform: scale(1);
-  transition:
-    opacity var(--motion-default) var(--ease-out),
-    transform var(--motion-default) var(--ease-out);
+  /* High-frequency palette (Cmd+P): opacity only — no scale (Emil: 100+/day) */
+  transition: opacity var(--duration-micro) var(--ease-out);
 
   @starting-style {
     opacity: 0;
-    transform: scale(0.97);
   }
 }
 

@@ -1,43 +1,56 @@
 /**
- * Shared modal overlay / dialog enter+exit keyframes (single source; avoids duplicating
- * identical @keyframes across Sidebar + RightPanel dialog CSS modules).
+ * Shared modal overlay / dialog motion — CSS transitions + @starting-style
+ * (interruptible; reverses mid-open unlike keyframes). Consumers add:
+ * `constellagent-dialog-overlay` + `constellagent-dialog-body` on mount;
+ * `--exiting` modifier classes when closing (see useExitAnimation duration).
  */
-@keyframes constellagent-dialog-overlay-in {
-  from {
+
+.constellagent-dialog-overlay {
+  opacity: 1;
+  transition: opacity var(--duration-enter) var(--ease-out);
+}
+
+@starting-style {
+  .constellagent-dialog-overlay {
     opacity: 0;
-  }
-  to {
-    opacity: 1;
   }
 }
 
-@keyframes constellagent-dialog-body-in {
-  from {
+.constellagent-dialog-body {
+  opacity: 1;
+  transform: scale(1);
+  transform-origin: center;
+  transition:
+    opacity var(--duration-enter) var(--ease-out),
+    transform var(--duration-enter) var(--ease-out);
+}
+
+@starting-style {
+  .constellagent-dialog-body {
     opacity: 0;
     transform: scale(0.97);
   }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
 }
 
-@keyframes constellagent-dialog-overlay-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
+.constellagent-dialog-overlay--exiting {
+  opacity: 0;
+  transition-duration: var(--duration-exit);
 }
 
-@keyframes constellagent-dialog-body-out {
-  from {
-    opacity: 1;
-    transform: scale(1);
+.constellagent-dialog-body--exiting {
+  opacity: 0;
+  transform: scale(0.97);
+  transition-duration: var(--duration-exit);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .constellagent-dialog-overlay,
+  .constellagent-dialog-body {
+    transition-property: opacity;
   }
-  to {
-    opacity: 0;
-    transform: scale(0.97);
+
+  .constellagent-dialog-body,
+  .constellagent-dialog-body--exiting {
+    transform: none !important;
   }
 }

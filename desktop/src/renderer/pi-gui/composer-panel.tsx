@@ -9,6 +9,7 @@ import {
 import type { SessionRef } from "@pi-gui/session-driver";
 import type { RuntimeSnapshot } from "@pi-gui/session-driver/runtime-types";
 import type { ComposerAttachment, QueuedComposerMessage, SessionRecord } from "@shared/pi/pi-desktop-state";
+import { IconSwap } from "../components/ui/icon-swap";
 import { ImageGalleryIcon, SendArrowIcon, StopSquareIcon } from "./icons";
 import type {
   ComposerSlashCommand,
@@ -231,7 +232,12 @@ export function ComposerPanel({
                     }
                     onClick={onSubmit}
                   >
-                    {primaryActionIsStop ? <StopSquareIcon /> : <SendArrowIcon />}
+                    <IconSwap
+                      active={primaryActionIsStop}
+                      a={<StopSquareIcon />}
+                      b={<SendArrowIcon />}
+                      size={20}
+                    />
                   </button>
                 </div>
               </div>

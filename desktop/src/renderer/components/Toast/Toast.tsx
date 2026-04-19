@@ -4,7 +4,7 @@ import type { Toast } from '../../store/types'
 import { useExitAnimation } from '../../hooks/useExitAnimation'
 import styles from './Toast.module.css'
 
-const EXIT_MS = 180
+const EXIT_MS = 140
 const AUTO_DISMISS_MS = 5000
 
 function ToastItem({ toast }: { toast: Toast }) {

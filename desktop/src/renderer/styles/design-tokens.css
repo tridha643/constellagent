@@ -149,12 +149,20 @@
   --radius-full: 100px;
 
   /* ═══════════════════════════════════════════════════════
-     SHADOWS — subtle depth indicators
+     SHADOWS — layered ambient + key (reads softer than single hard drop)
      ═══════════════════════════════════════════════════════ */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 2px 10px rgba(0, 0, 0, 0.55);
-  --shadow-lg: 0 4px 20px rgba(0, 0, 0, 0.65);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.55);
+  --shadow-overlay: 0 2px 6px rgba(0, 0, 0, 0.35), 0 20px 48px rgba(0, 0, 0, 0.6);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  /* Image outlines — pure white/black at 10% opacity (dark UI default: white edge) */
+  --outline-image: rgba(255, 255, 255, 0.1);
+  --outline-image-light: rgba(0, 0, 0, 0.1);
+
+  /* Minimum interactive hit target (Apple HIG / material) */
+  --hit-area-min: 40px;
 
   /* ═══════════════════════════════════════════════════════
      MOTION — single namespace (use --motion-* in shorthand)
@@ -164,6 +172,9 @@
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   /* Hover / color crossfades (keyword-style asymmetric) */
   --ease: ease;
+  --ease-hover: ease;
+  /* Icon cross-fade / spring-like settle without bounce */
+  --ease-spring-soft: cubic-bezier(0.2, 0, 0, 1);
   /* Snappy :active / press release */
   --ease-press: cubic-bezier(0.33, 1, 0.68, 1);
   /* iOS-style drawers / side panels */
@@ -177,6 +188,8 @@
   --duration-default: 150ms;
   --duration-slow: 220ms;
   --duration-exit-fast: 120ms;
+  --duration-enter: 180ms;
+  --duration-exit: 140ms; /* ~20% faster than enter — exit softer than enter */
   --duration-modal: 300ms;
   --duration-spinner: 0.6s;
 

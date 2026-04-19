@@ -402,7 +402,7 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
           </div>
         </div>
 
-        <div className={qoStyles.results} ref={listRef}>
+        <div className={`${qoStyles.results} stagger-children`} ref={listRef}>
           {filtered.length === 0 ? (
             <div className={qoStyles.empty}>
               {query.trim() && !hasSearchLoaded ? (
