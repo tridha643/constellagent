@@ -1,7 +1,17 @@
 import { spawn, type ChildProcess } from 'child_process'
+import { randomBytes } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { createServer } from 'net'
 import { request } from 'http'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { cliEnvWithStandardPath } from './cli-env'
+
+/** Resolves once bundled into `out/main/index.js` (dev) or the packaged main bundle. */
+function resolveT3BinPath(): string {
+  const mainDir = dirname(fileURLToPath(import.meta.url))
+  return join(mainDir, '..', '..', 'node_modules', 't3', 'dist', 'bin.mjs')
+}
 
 const STARTUP_TIMEOUT_MS = 120_000
 
@@ -47,7 +57,37 @@ function waitForHttpOk(url: string, timeoutMs: number): Promise<void> {
   })
 }
 
-type Managed = { proc: ChildProcess; port: number }
+type Managed = { proc: ChildProcess; port: number; desktopBootstrapToken: string }
+
+function t3CodeWebUrl(port: number, desktopBootstrapToken: string): string {
+  // Load `/pair` directly. The default `/` → `/_chat` route redirects unauthenticated users to `/pair`
+  // without preserving `?token=`, so `http://127.0.0.1:port/?token=...` loses the bootstrap credential
+  // before PairingRouteSurface can read it (see pingdotgg/t3code routes/_chat.tsx).
+  const q = new URLSearchParams({ token: desktopBootstrapToken })
+  return `http://127.0.0.1:${port}/pair?${q.toString()}`
+}
+
+/** Same JSON envelope as the official T3 Code desktop app sends on fd 3 (see pingdotgg/t3code apps/desktop). */
+function writeDesktopBootstrapEnvelope(
+  proc: ChildProcess,
+  port: number,
+  desktopBootstrapToken: string,
+): void {
+  const stream = proc.stdio[3]
+  if (!stream || typeof stream !== 'object' || !('write' in stream)) {
+    throw new Error('T3 Code: bootstrap pipe (stdio fd 3) is missing')
+  }
+  const line =
+    `${JSON.stringify({
+      mode: 'desktop',
+      noBrowser: true,
+      port,
+      host: '127.0.0.1',
+      desktopBootstrapToken,
+    })}\n`
+  ;(stream as NodeJS.Writable).write(line)
+  ;(stream as NodeJS.Writable).end()
+}
 
 class T3CodeService {
   private byCwd = new Map<string, Managed>()
@@ -56,7 +96,7 @@ class T3CodeService {
   async start(cwd: string): Promise<string> {
     const existing = this.byCwd.get(cwd)
     if (existing) {
-      return `http://127.0.0.1:${existing.port}`
+      return t3CodeWebUrl(existing.port, existing.desktopBootstrapToken)
     }
 
     const pending = this.starting.get(cwd)
@@ -71,10 +111,18 @@ class T3CodeService {
 
   private async startImpl(cwd: string): Promise<string> {
     const port = await getFreePort()
-    const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx'
+    const desktopBootstrapToken = randomBytes(32).toString('hex')
+    const t3Bin = resolveT3BinPath()
+    if (!existsSync(t3Bin)) {
+      throw new Error(
+        `T3 Code CLI not found at ${t3Bin}. Run install in the desktop package so the \`t3\` dependency is present.`,
+      )
+    }
+
+    // `npx` spawns a nested Node process, so stdio fd 3 never reaches `t3` (BootstrapError / EBADF on macOS).
+    // Spawn the bundled CLI directly and run Electron as Node, matching pingdotgg/t3code's desktop backend.
     const args = [
-      '--yes',
-      't3',
+      t3Bin,
       '--no-browser',
       '--port',
       String(port),
@@ -82,13 +130,29 @@ class T3CodeService {
       '127.0.0.1',
       '--mode',
       'desktop',
+      '--bootstrap-fd',
+      '3',
     ]
 
-    const proc = spawn(npx, args, {
+    const proc = spawn(process.execPath, args, {
       cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: cliEnvWithStandardPath(),
+      stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
+      env: {
+        ...cliEnvWithStandardPath(),
+        ELECTRON_RUN_AS_NODE: '1',
+      },
     })
+
+    try {
+      writeDesktopBootstrapEnvelope(proc, port, desktopBootstrapToken)
+    } catch (err) {
+      try {
+        proc.kill('SIGTERM')
+      } catch {
+        /* ignore */
+      }
+      throw err instanceof Error ? err : new Error(String(err))
+    }
 
     let buf = ''
     const url = `http://127.0.0.1:${port}`
@@ -127,7 +191,7 @@ class T3CodeService {
       const timer = setTimeout(() => {
         settleErr(
           new Error(
-            `T3 Code server startup timed out (${STARTUP_TIMEOUT_MS / 1000}s). Is \`npx t3\` available? ${buf.slice(-1200)}`
+            `T3 Code server startup timed out (${STARTUP_TIMEOUT_MS / 1000}s). Is the \`t3\` dependency installed? ${buf.slice(-1200)}`
           )
         )
       }, STARTUP_TIMEOUT_MS)
@@ -181,8 +245,8 @@ class T3CodeService {
       this.byCwd.delete(cwd)
     })
 
-    this.byCwd.set(cwd, { proc, port })
-    return url
+    this.byCwd.set(cwd, { proc, port, desktopBootstrapToken })
+    return t3CodeWebUrl(port, desktopBootstrapToken)
   }
 
   stop(cwd: string): void {

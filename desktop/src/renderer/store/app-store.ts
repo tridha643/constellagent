@@ -1938,17 +1938,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     const s = get()
     const ws = s.workspaces.find((w) => w.id === workspaceId)
     if (!ws) return
-    // Reuse existing t3code tab for this workspace
     const existing = s.tabs.find(
       (t) => t.workspaceId === workspaceId && t.type === 't3code'
     )
-    if (existing) {
-      set({ activeTabId: existing.id })
-      return
-    }
 
     try {
+      // Always start (or reuse the live server) so `serverUrl` includes a fresh `?token=` pairing
+      // credential. Persisted tabs and the old "reuse" path skipped this and left stale loopback URLs.
       const serverUrl = await window.api.t3code.start(ws.worktreePath)
+      if (existing) {
+        set((state) => ({
+          activeTabId: existing.id,
+          tabs: state.tabs.map((t) =>
+            t.id === existing.id && t.type === 't3code' ? { ...t, serverUrl } : t
+          ),
+        }))
+        return
+      }
       get().addTab({
         id: crypto.randomUUID(),
         workspaceId,
@@ -2422,6 +2428,34 @@ export async function hydrateFromDisk(): Promise<void> {
     }
   } catch (err) {
     console.error('Failed to reconcile PTY tabs:', err)
+  }
+
+  // T3 Code tabs persist `serverUrl`, but the dev server and pairing token are ephemeral. Restart
+  // (or attach to an already-running instance) before first paint so the webview always gets `?token=`.
+  try {
+    const storeAfter = useAppStore.getState()
+    const updates: { id: string; serverUrl: string }[] = []
+    for (const tab of storeAfter.tabs) {
+      if (tab.type !== 't3code') continue
+      const ws = storeAfter.workspaces.find((w) => w.id === tab.workspaceId)
+      if (!ws) continue
+      try {
+        const serverUrl = await window.api.t3code.start(ws.worktreePath)
+        updates.push({ id: tab.id, serverUrl })
+      } catch (err) {
+        console.error('[constellagent] Failed to restore T3 Code tab', tab.id, err)
+      }
+    }
+    if (updates.length > 0) {
+      useAppStore.setState((s) => ({
+        tabs: s.tabs.map((t) => {
+          const u = updates.find((x) => x.id === t.id)
+          return u && t.type === 't3code' ? { ...t, serverUrl: u.serverUrl } : t
+        }),
+      }))
+    }
+  } catch (err) {
+    console.error('Failed to rehydrate T3 Code tabs:', err)
   }
 
   const state = useAppStore.getState()
