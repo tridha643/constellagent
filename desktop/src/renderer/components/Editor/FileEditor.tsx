@@ -12,6 +12,7 @@ import { PlanAgentToolbar } from '../PlanAgentToolbar/PlanAgentToolbar'
 import {
   setMonacoAddToChatHandler,
   clearMonacoAddToChatHandler,
+  registerMonacoFileEditorForShortcuts,
 } from '../../utils/add-to-chat-monaco-bridge'
 import { ensureAppearanceMonacoThemes, getAppearanceMonacoThemeName } from '../../theme/appearance'
 import styles from './Editor.module.css'
@@ -68,6 +69,7 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   const [unsaved, setUnsaved] = useState(false)
   const [editorInstance, setEditorInstance] = useState<editor.IStandaloneCodeEditor | null>(null)
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+  const findShortcutDisposeRef = useRef<(() => void) | null>(null)
   const currentContentRef = useRef<string>('')
   const [userHome, setUserHome] = useState<string | undefined>(undefined)
   const setTabUnsaved = useAppStore((s) => s.setTabUnsaved)
@@ -243,9 +245,16 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
     }
   }, [filePath, worktreePath]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => () => {
+    findShortcutDisposeRef.current?.()
+    findShortcutDisposeRef.current = null
+  }, [])
+
   // Cmd+S + Cmd+L fallback (2048 = CtrlCmd). Primary ⌘L path: useShortcuts capture + monaco bridge.
   const handleEditorMount = useCallback((ed: editor.IStandaloneCodeEditor) => {
     editorRef.current = ed
+    findShortcutDisposeRef.current?.()
+    findShortcutDisposeRef.current = registerMonacoFileEditorForShortcuts(ed)
     setEditorInstance(ed)
     ed.addCommand(2048 | 49, () => handleSave())
     ed.addCommand(2048 | 42, () => runAddToChatRef.current())

@@ -12,6 +12,7 @@ import {
 import type { TranscriptMessage } from "@shared/pi/pi-desktop-state";
 import { ThreadSearchBar } from "./thread-search";
 import { TimelineItem } from "./timeline-item";
+import { transcriptWithSingleToolSlotAfterLastUser } from "./timeline-transcript-display";
 import { getAssistantStreamMessageId } from "./transcript-stream";
 
 const OVERSCAN_PX = 720;
@@ -60,6 +61,10 @@ export function ConversationTimeline({
 }: ConversationTimelineProps) {
   const shouldVirtualize = !threadSearch.isOpen && transcript.length > VIRTUALIZATION_THRESHOLD;
   const [expandedToolCallIds, setExpandedToolCallIds] = useState<Set<string>>(() => new Set());
+  const displayTranscript = useMemo(
+    () => transcriptWithSingleToolSlotAfterLastUser(transcript),
+    [transcript],
+  );
   const assistantStreamMessageId = useMemo(
     () => getAssistantStreamMessageId(transcript, sessionRunning),
     [transcript, sessionRunning],
@@ -142,7 +147,7 @@ export function ConversationTimeline({
         </div>
       ) : shouldVirtualize ? (
         <VirtualizedTranscriptList
-          transcript={transcript}
+          transcript={displayTranscript}
           timelinePaneRef={timelinePaneRef}
           onContentHeightChange={onContentHeightChange}
           expandedToolCallIds={expandedToolCallIds}
@@ -152,7 +157,7 @@ export function ConversationTimeline({
         />
       ) : (
         <div className="timeline" data-testid="transcript">
-          {transcript.map((item) => (
+          {displayTranscript.map((item) => (
             <TimelineItem
               item={item}
               key={item.id}

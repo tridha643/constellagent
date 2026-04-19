@@ -30,8 +30,6 @@ import {
 } from '../../pi-gui/extension-session-ui'
 import { deriveModelOnboardingState } from '../../pi-gui/model-onboarding'
 import { PiLiveToolActivity } from '../../pi-gui/pi-live-tool-activity'
-import { PiThinkingStrip } from '../../pi-gui/pi-thinking-strip'
-import { getLiveAssistantStreamPreview } from '../../pi-gui/transcript-stream'
 import type { SessionRef } from '@pi-gui/session-driver'
 import type { DesktopAppState, SelectedTranscriptRecord } from '@shared/pi/pi-desktop-state'
 import { getSelectedSession, getSelectedWorkspace } from '@shared/pi/pi-desktop-state'
@@ -227,10 +225,6 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
   const selectedWorkspace = useMemo(() => (state ? getSelectedWorkspace(state) : undefined), [state])
   const selectedSession = useMemo(() => (state ? getSelectedSession(state) : undefined), [state])
   const sessionRunning = Boolean(selectedSession?.status === 'running')
-  const liveAssistantPreview = useMemo(
-    () => getLiveAssistantStreamPreview(transcript, sessionRunning),
-    [transcript, sessionRunning],
-  )
 
   const resolvedPiWorkspace = useMemo(() => {
     if (!state) return undefined
@@ -293,7 +287,11 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
       : [],
     onHostImmediate: (cmd) => {
       if (cmd.kind === 'settings') {
-        useAppStore.setState({ settingsOpen: true, automationsOpen: false })
+        useAppStore.setState({
+          settingsOpen: true,
+          automationsOpen: false,
+          linearPanelOpen: false,
+        })
       }
     },
     reasoningHotkey,
@@ -627,6 +625,7 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
               <PiLiveToolActivity
                 transcript={transcript}
                 sessionRunning={sessionRunning}
+                worktreePath={worktreePath}
                 onLayout={handleLiveToolLayout}
               />
             }
@@ -637,12 +636,6 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
           lastError={state?.lastError}
           runtime={runtime}
           piContextSessionRef={piContextSessionRef}
-          thinkingSlot={(
-            <PiThinkingStrip
-              sessionRunning={sessionRunning}
-              streamingPreviewText={liveAssistantPreview}
-            />
-          )}
           composerDraft={draft}
           setComposerDraft={setDraftPersist}
           composerRef={composerRef}

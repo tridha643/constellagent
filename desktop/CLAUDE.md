@@ -102,6 +102,8 @@ Single Zustand store (`app-store.ts`) with this shape:
 
 **Capture-phase keyboard shortcuts**: terminal input can consume keydown events before global handlers run. All global shortcuts in `useShortcuts.ts` must use capture phase (`addEventListener('keydown', handler, true)`) and call `stopPropagation()` on consumed shortcuts.
 
+**⌘F / Ctrl+F**: when the Monaco file editor has focus (`add-to-chat-monaco-bridge.ts`), the shortcut runs Monaco’s find widget; on an active **diff** tab or with focus in the right-panel **Changes** list, it opens fuzzy find over those changed paths (`changes-file-find-bridge.ts`); otherwise it toggles Quick Open.
+
 **Shift+Enter workaround**: the shortcuts hook intercepts Shift+Enter and writes `\x1b[13;2u` (kitty keyboard protocol) directly to PTY so CLIs like Claude Code can distinguish new-line from submit.
 
 **Monaco in Allotment**: Pane children need `height: 100%` (not flex) and `position: absolute; inset: 0` within a `position: relative` parent to size correctly.

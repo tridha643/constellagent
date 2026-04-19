@@ -50,12 +50,22 @@
     background var(--motion-fast),
     border-color var(--motion-fast),
     color var(--motion-fast),
-    transform var(--motion-micro) var(--ease-press);
+    transform var(--duration-micro) var(--ease-press);
   white-space: nowrap;
 }
 
 .chip:active {
   transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip {
+    transition: background var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
+  }
+
+  .chip:active {
+    transform: none;
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {

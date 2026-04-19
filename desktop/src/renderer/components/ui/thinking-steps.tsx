@@ -156,12 +156,14 @@ function ThinkingStep({
       {shouldShow ? (
         <motion.div
           key={`thinking-step-${index}-${label}`}
-          className={cn("relative z-10 overflow-hidden", className)}
-          initial={{ height: 0 }}
-          animate={{ height: "auto" }}
-          exit={{ height: 0, opacity: 0 }}
+          className={cn("relative z-10 grid min-h-0 overflow-hidden", className)}
+          initial={{ gridTemplateRows: "0fr" }}
+          animate={{ gridTemplateRows: "1fr" }}
+          exit={{ gridTemplateRows: "0fr", opacity: 0 }}
           transition={springs.layout}
         >
+          {/* Inner: min-h-0 lets 0fr/1fr rows collapse without animating height (compositor-friendlier). */}
+          <div className="min-h-0 overflow-hidden">
           {/* Inner: fades content in after space starts opening */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -241,6 +243,7 @@ function ThinkingStep({
               </div>
             </div>
           </motion.div>
+          </div>
         </motion.div>
       ) : null}
     </AnimatePresence>

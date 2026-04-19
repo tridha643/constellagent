@@ -1,6 +1,12 @@
 import { useEffect } from 'react'
 import { useAppStore } from '../store/app-store'
-import { resolveEditor } from '../store/types'
+import {
+  linearWorkspaceViewNext,
+  linearWorkspaceViewPrev,
+  normalizeLinearWorkspaceTabOrder,
+  normalizeLinearWorkspaceView,
+  resolveEditor,
+} from '../store/types'
 import { getFocusedPtyId, isFocusedPaneTerminal, resolveAgentPtyForContextInjection } from '../store/split-helpers'
 import {
   sendAddToChatText,
@@ -10,7 +16,15 @@ import {
   openPlanEditSidecar,
 } from '../utils/add-to-chat'
 import { wrapBracketedPaste } from '../utils/bracketed-paste'
-import { getFocusedMonacoEditor, runMonacoAddToChatIfFocused } from '../utils/add-to-chat-monaco-bridge'
+import {
+  getFocusedMonacoEditor,
+  runMonacoAddToChatIfFocused,
+  runMonacoFindIfFocused,
+} from '../utils/add-to-chat-monaco-bridge'
+import {
+  cancelChangesFileFindSelection,
+  tryOpenChangesFindFromSource,
+} from '../utils/changes-file-find-bridge'
 
 function isTypingContext(target: EventTarget | null): boolean {
   const element = target instanceof HTMLElement
@@ -112,6 +126,48 @@ export function useShortcuts() {
         e.stopPropagation()
       }
 
+      // ── Linear panel (full-screen): Issues / Tickets / Updates pill ──
+      // ⌥⌘←/→, ⌘[/], ⌘1–3 — only while Linear is open (overrides same chords used for workspaces / editor tabs).
+      if (store.linearPanelOpen) {
+        const order = normalizeLinearWorkspaceTabOrder(store.settings.linearWorkspaceTabOrder)
+        const cur = normalizeLinearWorkspaceView(store.settings.linearWorkspaceView)
+
+        if (!shift && alt && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          consume()
+          const next =
+            e.key === 'ArrowRight'
+              ? linearWorkspaceViewNext(cur, order)
+              : linearWorkspaceViewPrev(cur, order)
+          store.updateSettings({ linearWorkspaceView: next })
+          return
+        }
+
+        if (!shift && !alt && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
+          consume()
+          const next =
+            e.code === 'BracketRight'
+              ? linearWorkspaceViewNext(cur, order)
+              : linearWorkspaceViewPrev(cur, order)
+          store.updateSettings({ linearWorkspaceView: next })
+          return
+        }
+
+        if (!shift && !alt) {
+          let n: number | undefined
+          const fromCode = /^Digit([1-3])$/.exec(e.code) ?? /^Numpad([1-3])$/.exec(e.code)
+          if (fromCode) n = Number(fromCode[1])
+          else if (e.key === '1' || e.key === '2' || e.key === '3') n = Number(e.key)
+          if (n !== undefined && n >= 1 && n <= 3) {
+            const tab = order[n - 1]
+            if (tab) {
+              consume()
+              store.updateSettings({ linearWorkspaceView: tab })
+              return
+            }
+          }
+        }
+      }
+
       // ── Cmd+L: plan edit sidecar on plan surfaces; Add to Chat elsewhere ──
       if (!shift && !alt && e.code === 'KeyL') {
         const target = e.target as HTMLElement
@@ -174,8 +230,43 @@ export function useShortcuts() {
         }
       }
 
-      // ── Quick open: Cmd+F ──
+      // ── Find in editor vs changed-files find vs quick open: Cmd+F ──
       if (!shift && !alt && e.code === 'KeyF') {
+        if (store.changesFileFind) {
+          cancelChangesFileFindSelection()
+          consume()
+          return
+        }
+        if (
+          store.linearPanelOpen
+          && (store.settings.linearWorkspaceView === 'issues'
+            || store.settings.linearWorkspaceView === 'tickets')
+        ) {
+          consume()
+          store.openLinearQuickOpen()
+          return
+        }
+        const activeTab = store.tabs.find((t) => t.id === store.activeTabId)
+        // When the file tab has splits (e.g. file ⟷ terminal), require real Monaco focus so ⌘F from the terminal opens Quick Open.
+        const allowUnfocusedMonacoFind =
+          activeTab?.type === 'file' && !activeTab.splitRoot
+        if (runMonacoFindIfFocused(allowUnfocusedMonacoFind)) {
+          consume()
+          return
+        }
+        if (activeTab?.type === 'diff' && tryOpenChangesFindFromSource('diff-tab')) {
+          consume()
+          return
+        }
+        const focusEl = document.activeElement as HTMLElement | null
+        const inChangesPanel =
+          store.rightPanelOpen
+          && store.rightPanelMode === 'changes'
+          && Boolean(focusEl?.closest?.('[data-testid="right-panel"]'))
+        if (inChangesPanel && tryOpenChangesFindFromSource('changes-panel')) {
+          consume()
+          return
+        }
         consume()
         store.toggleQuickOpen()
         return

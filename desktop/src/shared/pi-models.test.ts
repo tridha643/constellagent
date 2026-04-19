@@ -4,6 +4,7 @@ import {
   PI_MODEL_CACHE_VERSION,
   parsePiListModels,
   parsePiListModelsOrThrow,
+  pickPiModelIdForCli,
   resolvePiModelSelectState,
   resolvePiModelList,
 } from './pi-models'
@@ -60,6 +61,37 @@ google        gemini-2-5-pro              200K
       { provider: 'anthropic', model: 'claude-sonnet-4-5', id: 'anthropic/claude-sonnet-4-5' },
       { provider: 'google', model: 'gemini-2-5-pro', id: 'google/gemini-2-5-pro' },
     ])
+  })
+})
+
+describe('pickPiModelIdForCli', () => {
+  it('resolves a short model name to the catalog provider-qualified id', () => {
+    const models: PiModelOption[] = [
+      { provider: 'cursor', model: 'composer-2-fast', id: 'cursor/composer-2-fast' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-5', id: 'anthropic/claude-sonnet-4-5' },
+    ]
+    expect(pickPiModelIdForCli(models, 'composer-2-fast')).toBe('cursor/composer-2-fast')
+  })
+
+  it('matches provider-qualified hints case-insensitively', () => {
+    const models: PiModelOption[] = [
+      { provider: 'anthropic', model: 'claude-sonnet-4-5', id: 'anthropic/claude-sonnet-4-5' },
+    ]
+    expect(pickPiModelIdForCli(models, 'Anthropic / CLAUDE-SONNET-4-5')).toBe(
+      'anthropic/claude-sonnet-4-5',
+    )
+  })
+
+  it('falls back to the first catalog model when the hint is unknown', () => {
+    const models: PiModelOption[] = [
+      { provider: 'google', model: 'gemini-2-5-pro', id: 'google/gemini-2-5-pro' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-5', id: 'anthropic/claude-sonnet-4-5' },
+    ]
+    expect(pickPiModelIdForCli(models, 'no-such-model')).toBe('google/gemini-2-5-pro')
+  })
+
+  it('returns the hint unchanged when the catalog is empty', () => {
+    expect(pickPiModelIdForCli([], 'composer-2-fast')).toBe('composer-2-fast')
   })
 })
 

@@ -14,7 +14,9 @@ import { PiThreadPanel } from './components/PiThread/PiThreadPanel'
 import { RightPanel } from './components/RightPanel/RightPanel'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
 import { AutomationsPanel } from './components/Automations/AutomationsPanel'
+import { LinearWorkspacePanel } from './components/LinearWorkspace/LinearWorkspacePanel'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
+import { ChangesFileFind } from './components/QuickOpen/ChangesFileFind'
 import { PlanPalette } from './components/PlanPalette/PlanPalette'
 import { HunkReview } from './components/HunkReview/HunkReview'
 import { ConfirmDialog } from './components/Sidebar/ConfirmDialog'
@@ -118,7 +120,9 @@ export function App() {
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const automationsOpen = useAppStore((s) => s.automationsOpen)
+  const linearPanelOpen = useAppStore((s) => s.linearPanelOpen)
   const quickOpenVisible = useAppStore((s) => s.quickOpenVisible)
+  const changesFileFind = useAppStore((s) => s.changesFileFind)
   const planPaletteVisible = useAppStore((s) => s.planPaletteVisible)
   const hunkReviewOpen = useAppStore((s) => s.hunkReviewOpen)
   const hunkReviewWorkspaceId = useAppStore((s) => s.hunkReviewWorkspaceId)
@@ -157,6 +161,8 @@ export function App() {
           <SettingsPanel />
         ) : automationsOpen ? (
           <AutomationsPanel />
+        ) : linearPanelOpen ? (
+          <LinearWorkspacePanel />
         ) : (
           <ErrorBoundary
             fallback={
@@ -280,6 +286,7 @@ export function App() {
       {quickOpenVisible && workspace && (
         <QuickOpen worktreePath={workspace.worktreePath} />
       )}
+      {changesFileFind && <ChangesFileFind />}
       {planPaletteVisible && workspace && (
         <PlanPalette worktreePath={workspace.worktreePath} projectWorktrees={planProjectWorktrees} />
       )}

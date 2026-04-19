@@ -175,7 +175,7 @@ export function formatPiModelOptionLabel(model: PiModelOption): string {
   return `${model.provider} / ${model.model}`
 }
 
-function canonicalPiModelId(stored: string | null): string {
+export function canonicalPiModelId(stored: string | null): string {
   if (!stored) return ''
 
   const trimmed = stored.trim()
@@ -185,6 +185,49 @@ function canonicalPiModelId(stored: string | null): string {
   if (!providerQualifiedMatch) return trimmed
 
   return `${providerQualifiedMatch[1].toLowerCase()}/${providerQualifiedMatch[2].toLowerCase()}`
+}
+
+/**
+ * Map a CLI model hint (short name or alias) to a full `provider/model` id present in
+ * `pi --list-models`, so `pi --print` does not fall back to a broken session default.
+ */
+export function pickPiModelIdForCli(models: readonly PiModelOption[], preferred: string): string {
+  const normalized = normalizePiModelOptions(models)
+  const want = preferred.trim()
+  if (normalized.length === 0) {
+    return want
+  }
+  if (!want) {
+    return normalized[0]!.id
+  }
+
+  const wantLower = want.toLowerCase()
+
+  const byId = normalized.find((m) => m.id.toLowerCase() === wantLower)
+  if (byId) return byId.id
+
+  const canonical = canonicalPiModelId(want)
+  if (canonical.includes('/')) {
+    const byCanonical = normalized.find((m) => m.id.toLowerCase() === canonical.toLowerCase())
+    if (byCanonical) return byCanonical.id
+  }
+
+  const byModel = normalized.find((m) => m.model.toLowerCase() === wantLower)
+  if (byModel) return byModel.id
+
+  const bySuffix = normalized.find(
+    (m) => m.id.endsWith(`/${want}`) || m.id.toLowerCase().endsWith(`/${wantLower}`),
+  )
+  if (bySuffix) return bySuffix.id
+
+  if (/composer.*2.*fast/i.test(want)) {
+    const composer = normalized.find(
+      (m) => /composer.*2.*fast/i.test(m.model) || /composer.*2.*fast/i.test(m.id),
+    )
+    if (composer) return composer.id
+  }
+
+  return normalized[0]!.id
 }
 
 export function resolvePiModelSelectState(

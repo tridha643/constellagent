@@ -11,7 +11,6 @@ import {
   isAgentPlanPath,
   relativePathInWorktree,
 } from '../shared/agent-plan-path'
-import type { AgentPlanEntry, PlanAgent, PlanMeta } from '../shared/agent-plan-path'
 import type { CodeSearchItem, CodeSearchRequest, CodeSearchResult } from '../shared/code-search-types'
 import {
   buildCodeSearchPreview,
@@ -19,6 +18,14 @@ import {
   prepareCodeSearchRequest,
   sortAndCapCodeSearchItems,
 } from '../shared/code-search-utils'
+import type {
+  AgentPlanEntry,
+  AgentPlanSearchItem,
+  AgentPlanSearchRequest,
+  AgentPlanSearchResult,
+  PlanAgent,
+  PlanMeta,
+} from '../shared/agent-plan-path'
 import type { QuickOpenSearchItem, QuickOpenSearchRequest, QuickOpenSearchResult } from '../shared/quick-open-types'
 import { readPlanMetaPrefix, readPlanMeta, writePlanMeta } from './plan-meta'
 
@@ -82,6 +89,24 @@ interface CodeSearchFallbackFile {
   name: string
   path: string
   relativePath: string
+}
+
+interface PlanSearchRoot {
+  searchRoot: string
+  sourceRoot: string
+  source: 'worktree' | 'home'
+  agent: string
+}
+
+function isMarkdownPlanPath(filePath: string): boolean {
+  const lower = filePath.toLowerCase()
+  return lower.endsWith('.md') || lower.endsWith('.mdx')
+}
+
+function relativePlanPath(sourceRoot: string, filePath: string): string {
+  if (!sourceRoot) return basename(filePath)
+  const rel = toPosixPath(relative(sourceRoot, filePath))
+  return rel && rel !== '.' ? rel : basename(filePath)
 }
 
 export class FileService {
@@ -1062,6 +1087,255 @@ export class FileService {
     const all = [...byPath.values()]
     all.sort((a, b) => b.mtimeMs - a.mtimeMs)
     return all.slice(0, 200)
+  }
+
+  private static async getExistingPlanSearchRoots(worktreePathOrPaths: string | string[]): Promise<PlanSearchRoot[]> {
+    const roots: PlanSearchRoot[] = []
+    const seen = new Set<string>()
+    const raw = Array.isArray(worktreePathOrPaths) ? worktreePathOrPaths : [worktreePathOrPaths]
+    const uniqueWts = this.dedupeWorktreePaths(raw.filter(Boolean))
+    if (uniqueWts.length === 0) return roots
+
+    const pushIfExists = async (sourceRoot: string, source: 'worktree' | 'home') => {
+      for (const relDir of AGENT_PLAN_RELATIVE_DIRS) {
+        const searchRoot = join(sourceRoot, relDir)
+        const normalizedSearchRoot = normalizeRootPath(searchRoot)
+        if (seen.has(normalizedSearchRoot)) continue
+        try {
+          const st = await stat(searchRoot)
+          if (!st.isDirectory()) continue
+          seen.add(normalizedSearchRoot)
+          roots.push({
+            searchRoot,
+            sourceRoot,
+            source,
+            agent: PLAN_DIR_TO_AGENT[relDir] ?? relDir,
+          })
+        } catch {
+          /* missing */
+        }
+      }
+    }
+
+    for (const wt of uniqueWts) {
+      await pushIfExists(wt, 'worktree')
+    }
+
+    try {
+      await pushIfExists(homedir(), 'home')
+    } catch {
+      /* ignore */
+    }
+
+    return roots
+  }
+
+  private static async buildPlanSearchItem(
+    path: string,
+    agent: string,
+    source: 'worktree' | 'home',
+    sourceRoot: string,
+    score: number,
+    matchType?: string,
+    exactMatch?: boolean,
+  ): Promise<AgentPlanSearchItem | null> {
+    if (!isMarkdownPlanPath(path)) return null
+    try {
+      const fst = await stat(path)
+      if (!fst.isFile()) return null
+      const meta = await readPlanMetaPrefix(path)
+      return {
+        path,
+        relativePath: relativePlanPath(sourceRoot, path),
+        fileName: basename(path),
+        mtimeMs: fst.mtimeMs,
+        agent,
+        built: meta.built || undefined,
+        codingAgent: meta.codingAgent,
+        source,
+        planSourceRoot: sourceRoot,
+        score,
+        matchType,
+        exactMatch,
+      }
+    } catch {
+      return null
+    }
+  }
+
+  private static fallbackPlanSearchScore(relativePath: string, indices: number[]): number {
+    const nameStart = relativePath.lastIndexOf('/') + 1
+    const nameMatchCount = indices.filter((i) => i >= nameStart).length
+    return nameMatchCount * 10 - indices.length - relativePath.length
+  }
+
+  private static async fallbackAgentPlanSearch(
+    worktreePathOrPaths: string | string[],
+    request: AgentPlanSearchRequest,
+    error?: string,
+  ): Promise<AgentPlanSearchResult> {
+    const query = request.query ?? ''
+    const normalizedQuery = query.trim().toLowerCase()
+    const limit = Math.max(1, Math.min(request.limit ?? 200, 200))
+    const plans = await this.listAgentPlanMarkdowns(worktreePathOrPaths)
+
+    if (!normalizedQuery) {
+      return {
+        state: error ? 'error' : 'ready',
+        items: plans.slice(0, limit).map((plan) => ({
+          ...plan,
+          relativePath: relativePlanPath(plan.planSourceRoot ?? '', plan.path),
+          fileName: basename(plan.path),
+          score: 0,
+          matchType: 'fallback',
+        })),
+        totalMatched: plans.length,
+        totalFiles: plans.length,
+        error,
+      }
+    }
+
+    const matches: AgentPlanSearchItem[] = []
+    for (const plan of plans) {
+      const relativePath = relativePlanPath(plan.planSourceRoot ?? '', plan.path)
+      const indices = this.fuzzyMatchQuickOpen(query, relativePath)
+      if (!indices) continue
+      const lowerRelativePath = relativePath.toLowerCase()
+      const lowerFileName = basename(plan.path).toLowerCase()
+      matches.push({
+        ...plan,
+        relativePath,
+        fileName: basename(plan.path),
+        score: this.fallbackPlanSearchScore(relativePath, indices),
+        matchType: 'fallback',
+        exactMatch: lowerRelativePath === normalizedQuery || lowerFileName === normalizedQuery,
+      })
+    }
+
+    matches.sort((a, b) => {
+      if (a.exactMatch !== b.exactMatch) return a.exactMatch ? -1 : 1
+      if (a.score !== b.score) return b.score - a.score
+      if (a.mtimeMs !== b.mtimeMs) return b.mtimeMs - a.mtimeMs
+      return a.relativePath.localeCompare(b.relativePath)
+    })
+
+    return {
+      state: error ? 'error' : 'ready',
+      items: matches.slice(0, limit),
+      totalMatched: matches.length,
+      totalFiles: plans.length,
+      error,
+    }
+  }
+
+  static async searchAgentPlanMarkdowns(
+    worktreePathOrPaths: string | string[],
+    request: AgentPlanSearchRequest,
+  ): Promise<AgentPlanSearchResult> {
+    const query = request.query ?? ''
+    const limit = Math.max(1, Math.min(request.limit ?? 200, 200))
+
+    if (!query.trim()) {
+      return this.fallbackAgentPlanSearch(worktreePathOrPaths, { ...request, limit })
+    }
+
+    const roots = await this.getExistingPlanSearchRoots(worktreePathOrPaths)
+    if (roots.length === 0) {
+      return {
+        state: 'ready',
+        items: [],
+        totalMatched: 0,
+        totalFiles: 0,
+      }
+    }
+
+    const pageSize = Math.max(limit * 4, 80)
+    const deduped = new Map<string, AgentPlanSearchItem>()
+    let anyIndexing = false
+    let totalFiles = 0
+    const errors: string[] = []
+
+    await Promise.all(roots.map(async (root) => {
+      try {
+        const { finder, ready } = await this.getQuickOpenFinder(root.searchRoot)
+        const progress = finder.getScanProgress()
+        if (progress.ok && progress.value.isScanning) {
+          anyIndexing = true
+          await Promise.race([
+            ready,
+            new Promise<void>((resolve) => setTimeout(resolve, 250)),
+          ])
+        }
+
+        const search = finder.fileSearch(query, { pageSize })
+        if (!search.ok) {
+          throw new Error(search.error)
+        }
+
+        const nextProgress = finder.getScanProgress()
+        if (nextProgress.ok && nextProgress.value.isScanning) anyIndexing = true
+        totalFiles += search.value.totalFiles
+
+        const builtItems = await Promise.all(search.value.items.map((item, index) => {
+          const score = search.value.scores[index]
+          return this.buildPlanSearchItem(
+            item.path,
+            root.agent,
+            root.source,
+            root.sourceRoot,
+            quickOpenScoreTotal(score),
+            score?.matchType,
+            score?.exactMatch,
+          )
+        }))
+
+        for (const item of builtItems) {
+          if (!item) continue
+          const existing = deduped.get(item.path)
+          if (!existing) {
+            deduped.set(item.path, item)
+            continue
+          }
+          if (item.exactMatch && !existing.exactMatch) {
+            deduped.set(item.path, item)
+            continue
+          }
+          if ((item.score ?? 0) > (existing.score ?? 0)) {
+            deduped.set(item.path, item)
+            continue
+          }
+          if (item.score === existing.score && item.mtimeMs > existing.mtimeMs) {
+            deduped.set(item.path, item)
+          }
+        }
+      } catch (searchError) {
+        errors.push(searchError instanceof Error ? searchError.message : 'Plan search failed')
+      }
+    }))
+
+    if (deduped.size === 0 && errors.length > 0) {
+      return this.fallbackAgentPlanSearch(worktreePathOrPaths, { ...request, limit }, errors[0])
+    }
+
+    const items = [...deduped.values()]
+    items.sort((a, b) => {
+      if (a.exactMatch !== b.exactMatch) return a.exactMatch ? -1 : 1
+      if (a.score !== b.score) return b.score - a.score
+      if (a.mtimeMs !== b.mtimeMs) return b.mtimeMs - a.mtimeMs
+      return a.relativePath.localeCompare(b.relativePath)
+    })
+
+    return {
+      state: errors.length > 0 && items.length === 0
+        ? 'error'
+        : anyIndexing
+          ? 'indexing'
+          : 'ready',
+      items: items.slice(0, limit),
+      totalMatched: items.length,
+      totalFiles,
+      error: errors[0],
+    }
   }
 
   /** Update constellagent-namespaced frontmatter on a plan file. */

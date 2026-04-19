@@ -142,6 +142,100 @@ export type AgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor' | 'opencod
 
 export type AgentMcpAssignments = Record<AgentType, string[]>
 
+/** Persisted row in the Linear workspace “project updates” bar. */
+export interface LinearProjectUpdateBarEntry {
+  linearProjectId: string
+  labelOverride?: string
+  pinned?: boolean
+  /** User-authored note shown in the updates bar. */
+  note?: string
+}
+
+/** Selected tool in the Linear panel header cluster (Search / Refresh / Settings). Persisted. */
+export type LinearWorkspaceToolbarTool = 'search' | 'refresh' | 'settings'
+
+export function normalizeLinearWorkspaceToolbarTool(
+  v: unknown,
+): LinearWorkspaceToolbarTool {
+  if (v === 'search' || v === 'refresh' || v === 'settings') return v
+  return 'search'
+}
+
+/** Linear panel main view: issues list, tickets composer, or project updates composer. */
+export type LinearWorkspaceView = 'issues' | 'tickets' | 'updates'
+
+export type LinearWorkspaceTab = LinearWorkspaceView
+
+const LINEAR_WORKSPACE_TAB_ORDER_DEFAULT: LinearWorkspaceTab[] = [
+  'issues',
+  'tickets',
+  'updates',
+]
+
+export function normalizeLinearWorkspaceView(v: unknown): LinearWorkspaceView {
+  if (v === 'issues' || v === 'tickets' || v === 'updates') return v
+  return 'issues'
+}
+
+/** Persisted order of the three-segment Linear workspace pill. Drops unknowns; appends any missing tab ids. */
+export function normalizeLinearWorkspaceTabOrder(v: unknown): LinearWorkspaceTab[] {
+  const all = LINEAR_WORKSPACE_TAB_ORDER_DEFAULT
+  if (!Array.isArray(v)) return [...all]
+  const seen = new Set<string>()
+  const out: LinearWorkspaceTab[] = []
+  for (const x of v) {
+    if (x === 'issues' || x === 'tickets' || x === 'updates') {
+      if (!seen.has(x)) {
+        seen.add(x)
+        out.push(x)
+      }
+    }
+  }
+  for (const t of all) {
+    if (!seen.has(t)) out.push(t)
+  }
+  return out
+}
+
+/** Next tab in the segmented pill order (wrap). */
+export function linearWorkspaceViewNext(
+  current: LinearWorkspaceView,
+  order: LinearWorkspaceTab[],
+): LinearWorkspaceView {
+  if (order.length === 0) return current
+  const i = order.indexOf(current)
+  const idx = i < 0 ? 0 : (i + 1) % order.length
+  return order[idx] ?? current
+}
+
+/** Previous tab in the segmented pill order (wrap). */
+export function linearWorkspaceViewPrev(
+  current: LinearWorkspaceView,
+  order: LinearWorkspaceTab[],
+): LinearWorkspaceView {
+  if (order.length === 0) return current
+  const i = order.indexOf(current)
+  const idx = i < 0 ? order.length - 1 : (i - 1 + order.length) % order.length
+  return order[idx] ?? current
+}
+
+export type LinearIssueScope = 'assigned' | 'created'
+
+export function normalizeLinearIssueScope(v: unknown): LinearIssueScope {
+  if (v === 'assigned' || v === 'created') return v
+  return 'assigned'
+}
+
+/** Client-side filter on fetched issues: Linear priority 1–4, or all. */
+export type LinearIssuesPriorityPreset = 'all' | '1' | '2' | '3' | '4'
+
+export function normalizeLinearIssuesPriorityPreset(
+  v: unknown,
+): LinearIssuesPriorityPreset {
+  if (v === 'all' || v === '1' || v === '2' || v === '3' || v === '4') return v
+  return 'all'
+}
+
 export interface Settings {
   appearanceThemeId: AppearanceThemeId
   confirmOnClose: boolean
@@ -163,6 +257,22 @@ export interface Settings {
   skills: SkillEntry[]
   subagents: SubagentEntry[]
   t3CodeCollapseSidePanels: boolean
+  /** Linear Personal API key (Settings only; persisted in app state JSON). */
+  linearApiKey: string
+  /** Ordered projects shown in the Linear panel updates bar. */
+  linearProjectUpdateBar: LinearProjectUpdateBarEntry[]
+  /** Project ids highlighted in the Linear panel Projects list. */
+  linearFavoriteProjectIds: string[]
+  /** Last-selected Linear header tool; used with Run in the grouped toolbar. */
+  linearWorkspaceToolbarTool: LinearWorkspaceToolbarTool
+  /** Linear panel: Issues / Tickets / Updates (segmented pill). */
+  linearWorkspaceView: LinearWorkspaceView
+  /** Order of segments in the Linear workspace pill (drag-and-drop). */
+  linearWorkspaceTabOrder: LinearWorkspaceTab[]
+  /** Default issue list: assigned to me vs created by me. */
+  linearIssueScope: LinearIssueScope
+  /** Default priority filter for the Issues list (client-side). */
+  linearIssuesPriorityPreset: LinearIssuesPriorityPreset
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -185,6 +295,14 @@ export const DEFAULT_SETTINGS: Settings = {
   skills: [],
   subagents: [],
   t3CodeCollapseSidePanels: false,
+  linearApiKey: '',
+  linearProjectUpdateBar: [],
+  linearFavoriteProjectIds: [],
+  linearWorkspaceToolbarTool: 'search',
+  linearWorkspaceView: 'issues',
+  linearWorkspaceTabOrder: ['issues', 'tickets', 'updates'],
+  linearIssueScope: 'assigned',
+  linearIssuesPriorityPreset: 'all',
 }
 
 export interface Toast {
@@ -234,9 +352,14 @@ export interface AppState {
   settings: Settings
   settingsOpen: boolean
   automationsOpen: boolean
+  linearPanelOpen: boolean
   confirmDialog: ConfirmDialogState | null
   toasts: Toast[]
   quickOpenVisible: boolean
+  /** Linear fuzzy jump-to-issue/project dialog (⌘F when Linear panel is open). */
+  linearQuickOpenVisible: boolean
+  /** Fuzzy find over changed files (diff tab or Changes right panel). */
+  changesFileFind: { worktreePath: string; paths: string[] } | null
   planPaletteVisible: boolean
   hunkReviewOpen: boolean
   hunkReviewWorkspaceId: string | null
@@ -339,6 +462,7 @@ export interface AppState {
   updateSettings: (partial: Partial<Settings>) => void
   toggleSettings: () => void
   toggleAutomations: () => void
+  toggleLinear: () => void
   showConfirmDialog: (dialog: ConfirmDialogState) => void
   updateConfirmDialog: (partial: Partial<ConfirmDialogState>) => void
   dismissConfirmDialog: () => void
@@ -346,6 +470,11 @@ export interface AppState {
   dismissToast: (id: string) => void
   toggleQuickOpen: () => void
   closeQuickOpen: () => void
+  /** Open Linear fuzzy search dialog; no-op if Linear panel is closed. */
+  openLinearQuickOpen: () => void
+  closeLinearQuickOpen: () => void
+  openChangesFileFind: (payload: { worktreePath: string; paths: string[] }) => void
+  closeChangesFileFind: () => void
   togglePlanPalette: () => void
   closePlanPalette: () => void
   toggleHunkReview: () => Promise<void>
@@ -405,11 +534,12 @@ export interface AppState {
   resolveProjectTargetWorkspace: (projectId: string) => Workspace | undefined
 }
 
-export type SidebarActionId = 'add-project' | 'automations' | 'plans' | 'settings' | 'review'
+export type SidebarActionId = 'add-project' | 'automations' | 'linear' | 'plans' | 'settings' | 'review'
 
 export const DEFAULT_SIDEBAR_ACTION_ORDER: SidebarActionId[] = [
   'add-project',
   'automations',
+  'linear',
   'plans',
   'review',
   'settings',

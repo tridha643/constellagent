@@ -2,6 +2,21 @@ import { describe, expect, it } from "bun:test";
 import { segmentMessageForInlineChips } from "./message-inline-segments";
 
 describe("segmentMessageForInlineChips", () => {
+  it("segments repo-relative .txt and .csv paths (demo / data files)", () => {
+    const s = segmentMessageForInlineChips(
+      "- demo/random-artifacts/banana-orbit.txt\n- demo/random-artifacts/wizard-invoice.csv\n- demo/random-artifacts/toast-thoughts.md",
+    );
+    const files = s.filter((x) => x.kind === "file");
+    expect(files.length).toBe(3);
+    expect(files.map((f) => (f.kind === "file" ? f.path : "")).sort()).toEqual(
+      [
+        "demo/random-artifacts/banana-orbit.txt",
+        "demo/random-artifacts/toast-thoughts.md",
+        "demo/random-artifacts/wizard-invoice.csv",
+      ].sort(),
+    );
+  });
+
   it("segments absolute file path and relative path with extension", () => {
     const s = segmentMessageForInlineChips(
       "Edit /Users/tri-boardy/constellagent/desktop/src/renderer/pi-gui/pi-gui-constellagent-bridge.css for theme.",

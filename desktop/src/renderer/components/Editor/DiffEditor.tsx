@@ -5,6 +5,7 @@ import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
 import { DiffFileSection, FileStrip, type DiffFileData } from './DiffFileSection'
+import { registerChangesFindSource } from '../../utils/changes-file-find-bridge'
 import styles from './Editor.module.css'
 
 interface FileStatus {
@@ -119,6 +120,20 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   useEffect(() => {
     void loadAnnotations()
   }, [loadAnnotations])
+
+  useEffect(() => {
+    if (!active) return
+    return registerChangesFindSource('diff-tab', () => {
+      if (files.length === 0) return null
+      return {
+        worktreePath,
+        paths: files.map((f) => f.filePath),
+        onPick: (path) => {
+          window.dispatchEvent(new CustomEvent('diff:scrollToFile', { detail: path }))
+        },
+      }
+    })
+  }, [active, worktreePath, files])
 
   // Reload when annotations are cleared (e.g. after PR merge)
   useEffect(() => {
