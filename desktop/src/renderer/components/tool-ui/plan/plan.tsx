@@ -31,7 +31,7 @@ const TodoIcon = memo(function TodoIcon({
   if (status === "pending") {
     return (
       <span
-        className="border-border bg-card flex size-6 shrink-0 items-center justify-center rounded-full border motion-safe:transition-all motion-safe:duration-200"
+        className="border-border bg-card flex size-6 shrink-0 items-center justify-center rounded-full border motion-safe:transition-[box-shadow,background-color,border-color] motion-safe:duration-200"
         aria-hidden="true"
       />
     );
@@ -40,7 +40,7 @@ const TodoIcon = memo(function TodoIcon({
   if (status === "in_progress") {
     return (
       <span
-        className="border-border bg-card flex size-6 shrink-0 items-center justify-center rounded-full border shadow-[0_0_0_4px_hsl(var(--primary)/0.1)] motion-safe:transition-all motion-safe:duration-300"
+        className="border-border bg-card flex size-6 shrink-0 items-center justify-center rounded-full border shadow-[0_0_0_4px_hsl(var(--primary)/0.1)] motion-safe:transition-[box-shadow,background-color] motion-safe:duration-300"
         aria-hidden="true"
       >
         <Loader2 className="text-primary size-5 motion-safe:animate-spin" />
@@ -174,7 +174,7 @@ const PlanTodoItem = memo(function PlanTodoItem({
       )}
       <Collapsible asChild open={isOpen} onOpenChange={setIsOpen}>
         <div
-          className="data-[state=open]:bg-primary/5 min-w-0 rounded-md motion-safe:transition-all motion-safe:duration-200"
+          className="data-[state=open]:bg-primary/5 min-w-0 rounded-md motion-safe:transition-[background-color,opacity,backdrop-filter] motion-safe:duration-200"
           style={{
             backdropFilter: isOpen ? "blur(2px)" : undefined,
           }}
@@ -257,7 +257,7 @@ const ProgressBar = memo(function ProgressBar({
     >
       <div
         className={cn(
-          "h-full rounded-full transition-all duration-500",
+          "h-full rounded-full transition-[width,background-image,opacity,box-shadow] duration-500 ease-out",
           progress === 100
             ? "bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-400 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500 motion-safe:ease-out"
             : "bg-primary",

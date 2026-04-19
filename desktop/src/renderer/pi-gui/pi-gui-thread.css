@@ -153,12 +153,14 @@
   gap: 8px;
   width: min(760px, 100%);
   margin: 0 auto;
+  text-wrap: pretty;
 }
 
 .empty-panel__meta {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  text-wrap: pretty;
 }
 
 .timeline {
@@ -2535,29 +2537,7 @@
   word-break: break-word;
 }
 
-/* Pi extension modals / headless TUI — paired overlay + panel, GPU-friendly (opacity + transform only) */
-
-@keyframes pi-ext-backdrop-in {
-  from {
-    opacity: 0;
-    backdrop-filter: blur(0);
-    -webkit-backdrop-filter: blur(0);
-  }
-  to {
-    opacity: 1;
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
-  }
-}
-
-@keyframes pi-ext-panel-in {
-  from {
-    transform: translateY(8px) scale(0.98);
-  }
-  to {
-    transform: translateY(0) scale(1);
-  }
-}
+/* Pi extension modals / headless TUI — transitions + @starting-style (interruptible) */
 
 .extension-dialog-backdrop {
   position: fixed;
@@ -2570,7 +2550,19 @@
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
-  animation: pi-ext-backdrop-in var(--pi-ext-overlay-duration) var(--ease-out) both;
+  opacity: 1;
+  transition:
+    opacity var(--duration-enter) var(--ease-out),
+    backdrop-filter var(--duration-enter) var(--ease-out),
+    -webkit-backdrop-filter var(--duration-enter) var(--ease-out);
+}
+
+@starting-style {
+  .extension-dialog-backdrop {
+    opacity: 0;
+    backdrop-filter: blur(0);
+    -webkit-backdrop-filter: blur(0);
+  }
 }
 
 .extension-dialog {
@@ -2582,7 +2574,18 @@
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
   padding: 16px 18px;
   transform-origin: center center;
-  animation: pi-ext-panel-in var(--pi-ext-overlay-duration) var(--ease-out) both;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity var(--duration-enter) var(--ease-out),
+    transform var(--duration-enter) var(--ease-out);
+}
+
+@starting-style {
+  .extension-dialog {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
 }
 
 .extension-dialog__title {
@@ -2666,7 +2669,19 @@
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
-  animation: pi-ext-backdrop-in var(--pi-ext-overlay-duration) var(--ease-out) both;
+  opacity: 1;
+  transition:
+    opacity var(--duration-enter) var(--ease-out),
+    backdrop-filter var(--duration-enter) var(--ease-out),
+    -webkit-backdrop-filter var(--duration-enter) var(--ease-out);
+}
+
+@starting-style {
+  .extension-tui-backdrop {
+    opacity: 0;
+    backdrop-filter: blur(0);
+    -webkit-backdrop-filter: blur(0);
+  }
 }
 
 .extension-tui-panel {
@@ -2681,7 +2696,18 @@
   padding: 14px 16px;
   outline: none;
   transform-origin: center center;
-  animation: pi-ext-panel-in var(--pi-ext-overlay-duration) var(--ease-out) both;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity var(--duration-enter) var(--ease-out),
+    transform var(--duration-enter) var(--ease-out);
+}
+
+@starting-style {
+  .extension-tui-panel {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
 }
 
 .extension-tui-panel:focus-visible {

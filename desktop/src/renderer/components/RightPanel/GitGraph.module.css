@@ -155,6 +155,7 @@
 .emptyText {
   font-size: var(--text-sm);
   line-height: var(--leading-relaxed);
+  text-wrap: pretty;
 }
 
 /* ── Loading ── */

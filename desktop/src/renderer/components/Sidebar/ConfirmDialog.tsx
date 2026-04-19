@@ -15,7 +15,7 @@ interface Props {
   onSecondaryConfirm?: () => void
 }
 
-/** Match `overlayExiting` / `dialogExiting` duration in ConfirmDialog.module.css */
+/** Match `constellagent-dialog-*--exiting` duration (`--duration-exit` in design-tokens). */
 const EXIT_MS = 140
 
 export function ConfirmDialog({ title, message, confirmLabel = 'Delete', onConfirm, onCancel, destructive = false, tip, loading = false, secondaryConfirmLabel, onSecondaryConfirm }: Props) {
@@ -74,8 +74,14 @@ export function ConfirmDialog({ title, message, confirmLabel = 'Delete', onConfi
   }
 
   return (
-    <div className={`${styles.overlay} ${exiting ? styles.overlayExiting : ''}`} onClick={loading ? undefined : handleCancel}>
-      <div className={`${styles.dialog} ${exiting ? styles.dialogExiting : ''}`} onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`${styles.overlay} constellagent-dialog-overlay ${exiting ? 'constellagent-dialog-overlay--exiting' : ''}`}
+      onClick={loading ? undefined : handleCancel}
+    >
+      <div
+        className={`${styles.dialog} constellagent-dialog-body ${exiting ? 'constellagent-dialog-body--exiting' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.title}>{title}</div>
         <div className={styles.message}>{message}</div>
         {tip && <div className={styles.tip}>{tip}</div>}

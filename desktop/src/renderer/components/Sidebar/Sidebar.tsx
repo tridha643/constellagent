@@ -1455,11 +1455,11 @@ export function Sidebar() {
 
       {projectPrModalProject && (
         <div
-          className={styles.projectPrModalOverlay}
+          className={`${styles.projectPrModalOverlay} constellagent-dialog-overlay`}
           onClick={closeProjectPrModal}
         >
           <div
-            className={styles.projectPrModal}
+            className={`${styles.projectPrModal} constellagent-dialog-body`}
             data-project-pr-modal
             onClick={(e) => e.stopPropagation()}
           >
@@ -1515,6 +1515,7 @@ export function Sidebar() {
                 <span
                   className={styles.projectPrLoadingSpinner}
                   aria-hidden="true"
+                  data-allow-motion=""
                 />
                 <span>Loading open pull requests...</span>
               </div>

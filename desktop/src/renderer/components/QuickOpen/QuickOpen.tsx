@@ -195,7 +195,7 @@ export function QuickOpen({ worktreePath }: Props) {
             autoFocus
           />
         </div>
-        <div className={styles.results} ref={listRef}>
+        <div className={`${styles.results} stagger-children`} ref={listRef}>
           {results.length === 0 ? (
             <div className={styles.empty}>
               {!hasLoaded ? (

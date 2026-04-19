@@ -159,4 +159,5 @@
   color: var(--text-tertiary);
   font-size: var(--text-sm);
   font-family: var(--font-ui);
+  text-wrap: pretty;
 }

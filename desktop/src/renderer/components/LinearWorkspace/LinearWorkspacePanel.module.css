@@ -446,6 +446,7 @@
   font-family: var(--font-ui);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  text-wrap: balance;
 }
 
 .sectionHint {
@@ -607,6 +608,7 @@
   color: var(--text-tertiary);
   font-size: 13px;
   font-family: var(--font-ui);
+  text-wrap: pretty;
 }
 
 .projectRow {

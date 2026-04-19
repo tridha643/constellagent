@@ -538,6 +538,7 @@
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
+  text-wrap: balance;
 }
 
 .emptyText {
@@ -545,6 +546,7 @@
   font-size: var(--text-sm);
   color: var(--text-secondary);
   line-height: var(--leading-relaxed);
+  text-wrap: pretty;
 }
 
 @media (hover: hover) and (pointer: fine) {

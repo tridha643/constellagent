@@ -133,6 +133,10 @@
   padding: 0;
 }
 
+html {
+  font-variant-numeric: tabular-nums;
+}
+
 html, body, #root {
   height: 100%;
   width: 100%;
@@ -145,6 +149,24 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   user-select: none;
+}
+
+h1, h2, h3, h4, .dialog-title, [data-slot='dialog-title'] {
+  text-wrap: balance;
+}
+
+p, .prose, .empty-state, .empty-copy, .toast-message {
+  text-wrap: pretty;
+}
+
+[data-proportional-nums] {
+  font-variant-numeric: proportional-nums;
+}
+
+img:not([data-no-outline]),
+.image-outline {
+  outline: 1px solid var(--outline-image);
+  outline-offset: -1px;
 }
 
 /* Electron: make the title bar area draggable */
@@ -185,10 +207,10 @@ body {
    ═══════════════════════════════════════════════════════ */
 
 :focus-visible {
-  outline: 1px solid var(--accent-blue);
-  outline-offset: -1px;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-blue);
   border-radius: var(--radius-sm);
-  transition: outline-color 90ms var(--ease-out);
+  transition: box-shadow 90ms var(--ease-out);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -214,6 +236,73 @@ body {
   white-space: nowrap;
 }
 
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.balance {
+  text-wrap: balance;
+}
+
+.pretty {
+  text-wrap: pretty;
+}
+
+.image-outline {
+  outline: 1px solid var(--outline-image);
+  outline-offset: -1px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   LIST STAGGER — first-mount lists (cap delay at 6th child)
+   ═══════════════════════════════════════════════════════ */
+
+.stagger-children > * {
+  animation: staggerItem 160ms var(--ease-out) both;
+}
+
+.stagger-children > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.stagger-children > *:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.stagger-children > *:nth-child(3) {
+  animation-delay: 80ms;
+}
+
+.stagger-children > *:nth-child(4) {
+  animation-delay: 120ms;
+}
+
+.stagger-children > *:nth-child(5) {
+  animation-delay: 160ms;
+}
+
+.stagger-children > *:nth-child(n + 6) {
+  animation-delay: 200ms;
+}
+
+@keyframes staggerItem {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stagger-children > * {
+    animation: none;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════
    ALLOTMENT OVERRIDES — style the split pane sashes
    ═══════════════════════════════════════════════════════ */
@@ -230,27 +319,42 @@ body {
 
 /* ═══════════════════════════════════════════════════════
    REDUCED MOTION — global accessibility reset
+   Opt out meaningful loops via [data-allow-motion]
    ═══════════════════════════════════════════════════════ */
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    /* Surgical: allow spinners & meaningful CSS animations; kill transform-heavy transitions */
+  *:not([data-allow-motion]),
+  *:not([data-allow-motion])::before,
+  *:not([data-allow-motion])::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
     transition-duration: 80ms !important;
-    transition-property: opacity, color, background-color, border-color, outline-color, fill, stroke !important;
+    transition-property: opacity, color, background-color, border-color, box-shadow, outline-color, fill, stroke !important;
     transition-delay: 0ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .shimmer-text,
+  .shimmer-block {
+    background: var(--surface-2);
+    animation: none !important;
+  }
+
+  .shimmer-text {
+    color: var(--text-tertiary);
+    background-clip: border-box;
+    -webkit-background-clip: border-box;
   }
 }
 
 .shimmer-text {
-    color: transparent;
-    background: linear-gradient(90deg, #a3a3a3 0%, #a3a3a3 35%, #525252 50%, #a3a3a3 65%, #a3a3a3 100%);
-    background-size: 300% 100%;
-    background-clip: text;
-    -webkit-background-clip: text;
-    animation: shimmer 1.5s ease-in-out infinite;
+  color: transparent;
+  background: linear-gradient(90deg, #a3a3a3 0%, #a3a3a3 35%, #525252 50%, #a3a3a3 65%, #a3a3a3 100%);
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: shimmer 1.5s ease-in-out infinite;
 }
 
 /* Block skeleton (loading placeholders) — same motion as .shimmer-text */

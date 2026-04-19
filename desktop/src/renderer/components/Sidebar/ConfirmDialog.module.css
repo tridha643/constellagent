@@ -6,7 +6,6 @@
   align-items: center;
   justify-content: center;
   z-index: 100;
-  animation: constellagent-dialog-overlay-in 180ms var(--ease-out) both;
 }
 
 .dialog {
@@ -20,7 +19,6 @@
   gap: var(--space-4);
   box-shadow: var(--shadow-lg);
   transform-origin: center;
-  animation: constellagent-dialog-body-in 180ms var(--ease-out) both;
 }
 
 .title {
@@ -28,6 +26,7 @@
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
   font-family: var(--font-ui);
+  text-wrap: balance;
 }
 
 .message {
@@ -127,15 +126,6 @@
   opacity: 0.5;
   cursor: default;
   pointer-events: none;
-}
-
-/* Exit animations */
-.overlayExiting {
-  animation: constellagent-dialog-overlay-out 140ms var(--ease-out) both;
-}
-
-.dialogExiting {
-  animation: constellagent-dialog-body-out 140ms var(--ease-out) both;
 }
 
 @media (hover: hover) and (pointer: fine) {

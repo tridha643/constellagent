@@ -43,10 +43,12 @@
 .sectionTitle {
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
+  text-wrap: balance;
 }
 
 .countBadge {
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-xs);
   background: var(--surface-0);
   color: var(--text-tertiary);
