@@ -9,8 +9,8 @@ Repo-wide agent instructions (context DB, Cachebro, **review annotations**, **au
 Claude Code work in this repo is not complete until these Sendblue CLI notifications have been attempted:
 
 ```bash
-sendblue send +18258883809 "claude-code <plan-topic-name> plan created"
-sendblue send +18258883809 "claude-code <plan-topic-name> is over"
+sendblue send +<YOUR_E164_RECIPIENT> "claude-code <plan-topic-name> plan created"
+sendblue send +<YOUR_E164_RECIPIENT> "claude-code <plan-topic-name> is over"
 ```
 
 - Retry each command up to 3 times if it fails.

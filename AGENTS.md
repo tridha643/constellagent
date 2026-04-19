@@ -88,18 +88,18 @@ Shared types: `desktop/src/shared/diff-annotation-types.ts`.
 
 **This requirement applies in every repository where constellagent is in use — not just the constellagent codebase itself.**
 
-**After every plan creation and after every task completion, agents MUST send a Sendblue CLI notification to `+18258883809`. This is required work, not optional polish.**
+**After every plan creation and after every task completion, agents MUST send a Sendblue CLI notification to your configured E.164 recipient (set locally; do not commit personal numbers). This is required work, not optional polish.**
 
 - Plan created notification — **send immediately when the plan is written, before implementation begins:**
 
 ```bash
-sendblue send +18258883809 "<agent-name> <plan-topic-name> plan created"
+sendblue send +<YOUR_E164_RECIPIENT> "<agent-name> <plan-topic-name> plan created"
 ```
 
 - Task complete notification:
 
 ```bash
-sendblue send +18258883809 "<agent-name> <plan-topic-name> is over"
+sendblue send +<YOUR_E164_RECIPIENT> "<agent-name> <plan-topic-name> is over"
 ```
 
 - Use the concrete harness name for `<agent-name>` such as `claude-code`, `codex`, `gemini`, or `cursor`.

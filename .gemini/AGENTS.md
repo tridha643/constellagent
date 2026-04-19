@@ -12,7 +12,6 @@ Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (
 ## Context Database
 Agent tool calls and activity are recorded in `.constellagent/constellagent.db` (libSQL/SQLite via AgentFS).
 The `entries` table stores: workspace_id, agent_type, session_id, tool_name, tool_input, file_path, tool_response, timestamp.
-<<<<<<< Updated upstream
 
 ## Review annotations (human ↔ agent)
 
@@ -33,11 +32,11 @@ Install: `npm i -g @tridha643/review-annotations`
 
 ## Mandatory Sendblue CLI notifications
 
-**Gemini must send Sendblue CLI notifications to `+18258883809` for both binary states: plan created and task over.**
+**Gemini must send Sendblue CLI notifications to your configured E.164 recipient (set locally; do not commit personal numbers) for both binary states: plan created and task over.**
 
 ```bash
-sendblue send +18258883809 "gemini <plan-topic-name> plan created"
-sendblue send +18258883809 "gemini <plan-topic-name> is over"
+sendblue send +<YOUR_E164_RECIPIENT> "gemini <plan-topic-name> plan created"
+sendblue send +<YOUR_E164_RECIPIENT> "gemini <plan-topic-name> is over"
 ```
 
 - Use the plan title for `<plan-topic-name>` when available; otherwise use a short task topic.
@@ -45,5 +44,3 @@ sendblue send +18258883809 "gemini <plan-topic-name> is over"
 - If all retries fail, Gemini must say so explicitly in the final response with the failure text.
 
 Shared types: `desktop/src/shared/diff-annotation-types.ts`.
-=======
->>>>>>> Stashed changes
