@@ -36,6 +36,7 @@ export function T3CodeView({ serverUrl }: Props) {
   return (
     <div className={styles.wrap}>
       <webview
+        key={serverUrl}
         ref={webviewRef as React.Ref<HTMLElement>}
         className={styles.webview}
         src={serverUrl}
