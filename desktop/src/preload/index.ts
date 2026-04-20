@@ -231,6 +231,8 @@ const api = {
       worktreePath: string | null
       projectDescription?: string | null
       projectContentMarkdown?: string | null
+      existingTitle?: string | null
+      existingDescription?: string | null
     }) =>
       ipcRenderer.invoke(IPC.APP_GENERATE_LINEAR_ISSUE_DRAFT, payload) as Promise<{
         title: string

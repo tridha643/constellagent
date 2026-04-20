@@ -760,6 +760,8 @@ export function registerIpcHandlers(): void {
         worktreePath: string | null
         projectDescription?: string | null
         projectContentMarkdown?: string | null
+        existingTitle?: string | null
+        existingDescription?: string | null
       },
     ) => {
       return LinearDraftService.generateIssueDraft(payload)

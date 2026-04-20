@@ -289,3 +289,20 @@ export function buildPlanAgentCommand(
 
   return { command: parts.join(' ') }
 }
+
+/** Build the CLI command for an ad-hoc prompt (e.g. Linear issue text) in the given harness. */
+export function buildAdHocAgentCommand(
+  agent: PlanAgent,
+  modelLabel: string | null,
+  prompt: string,
+): BuildCommandResult {
+  const cli = AGENT_CLI[agent]
+  const cliModel = modelLabel?.trim()
+    ? resolveCliModel(agent, modelLabel.trim())
+    : null
+  const body = prompt.trim() || ' '
+  const parts = [cli]
+  if (cliModel) parts.push('--model', cliModel)
+  parts.push(shellEscape(body))
+  return { command: parts.join(' ') }
+}

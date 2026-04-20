@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type {
   Settings,
@@ -9,9 +9,13 @@ import type {
   SubagentEntry,
 } from '../../store/types'
 import {
+  normalizeLinearIssueCodingAgent,
+  normalizeLinearIssueCodingModel,
   normalizeLinearIssueScope,
   normalizeLinearIssuesPriorityPreset,
 } from '../../store/types'
+import type { PlanAgent } from '../../../shared/agent-plan-path'
+import { BUILD_HARNESS_OPTIONS, PLAN_MODEL_PRESETS } from '../../../shared/plan-build-command'
 import {
   getDefaultWorktreeCredentialRules,
   normalizeWorktreeCredentialPattern,
@@ -704,6 +708,28 @@ function LinearSettingsSection({
   const updateSettings = useAppStore((s) => s.updateSettings)
   const [testing, setTesting] = useState(false)
 
+  const issueAgent = normalizeLinearIssueCodingAgent(settings.linearIssueCodingAgent)
+  const modelPresets = PLAN_MODEL_PRESETS[issueAgent as PlanAgent]
+  const modelSelectOptions = useMemo(() => {
+    const modelVal = normalizeLinearIssueCodingModel(settings.linearIssueCodingModel).trim()
+    const presetIds = new Set(modelPresets.map((p) => p.cliModel))
+    const opts: { value: string; label: string }[] = [
+      { value: '__default', label: 'CLI default (no --model)' },
+      ...modelPresets.map((p) => ({
+        value: p.cliModel,
+        label: `${p.label} (${p.cliModel})`,
+      })),
+    ]
+    if (modelVal && !presetIds.has(modelVal)) {
+      opts.push({ value: modelVal, label: `${modelVal} (custom)` })
+    }
+    return opts
+  }, [modelPresets, settings.linearIssueCodingModel])
+  const modelSelectValue =
+    normalizeLinearIssueCodingModel(settings.linearIssueCodingModel).trim() === ''
+      ? '__default'
+      : normalizeLinearIssueCodingModel(settings.linearIssueCodingModel).trim()
+
   const testConnection = async () => {
     setTesting(true)
     try {
@@ -800,6 +826,30 @@ function LinearSettingsSection({
           { value: '3', label: 'Medium' },
           { value: '4', label: 'Low' },
         ]}
+      />
+      <SelectRow
+        label="Issue → coding agent"
+        description="CLI used when you open a Linear issue in a new worktree (Issues table icon or “Open agent” on the ticket-created toast). Uses the currently open workspace’s project as the git repo."
+        value={issueAgent}
+        onChange={(v) =>
+          updateSettings({ linearIssueCodingAgent: normalizeLinearIssueCodingAgent(v) })
+        }
+        options={BUILD_HARNESS_OPTIONS.map((o) => ({
+          value: o.agent,
+          label: o.label,
+        }))}
+      />
+      <SelectRow
+        label="Issue → agent model"
+        description="Passed to the agent as --model when not “CLI default”. Same ids as plan builds."
+        value={modelSelectValue}
+        onChange={(v) =>
+          updateSettings({
+            linearIssueCodingModel:
+              v === '__default' ? '' : normalizeLinearIssueCodingModel(v),
+          })
+        }
+        options={modelSelectOptions}
       />
     </>
   )

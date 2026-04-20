@@ -1,11 +1,30 @@
-import { ListBullets, PaperPlaneTilt, Ticket } from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CheckCircle,
+  Circle,
+  CircleDashed,
+  ListBullets,
+  PaperPlaneTilt,
+  Pulse,
+  RocketLaunch,
+  Ticket,
+  Tray,
+  XCircle,
+} from "@phosphor-icons/react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useAppStore } from "../../store/app-store";
 import type {
   LinearIssuesPriorityPreset,
   LinearProjectUpdateBarEntry,
   LinearWorkspaceToolbarTool,
   LinearWorkspaceView,
+  Workspace,
 } from "../../store/types";
 import {
   normalizeLinearWorkspaceTabOrder,
@@ -26,6 +45,7 @@ import {
   linearFetchViewer,
   linearOpenExternal,
   linearUserPickerWithViewer,
+  workspaceBranchMatchesLinearIssue,
   type LinearIssueNode,
   type LinearProjectNode,
   type LinearProjectUpdateNode,
@@ -83,6 +103,62 @@ function filterIssuesByPriorityPreset(
   return list.filter((i) => i.priority === n);
 }
 
+/** Prefer a workspace opened from this Linear issue (agent session); else title prefix; else branch pattern. */
+function findWorkspaceForLinearIssue(
+  issue: LinearIssueNode,
+  list: Workspace[],
+): Workspace | undefined {
+  const linked = list.find((w) => w.linearIssueId === issue.id);
+  if (linked) return linked;
+  const idPrefix = `${issue.identifier}:`;
+  const byName = list.find((w) =>
+    w.name.toLowerCase().startsWith(idPrefix.toLowerCase()),
+  );
+  if (byName) return byName;
+  return list.find((w) => workspaceBranchMatchesLinearIssue(issue, w.branch));
+}
+
+function LinearIssueStateCell({ issue }: { issue: LinearIssueNode }) {
+  const st = issue.state;
+  const label = st?.name ?? "—";
+  const type = st?.type?.toLowerCase() ?? "";
+  const name = st?.name?.toLowerCase() ?? "";
+  const iconProps = {
+    size: 16,
+    weight: "duotone" as const,
+    "aria-hidden": true as const,
+    className: styles.issueStateIcon,
+  };
+  let node: ReactNode;
+  if (type === "completed" || name.includes("complete") || name.includes("done")) {
+    node = <CheckCircle {...iconProps} />;
+  } else if (
+    type === "canceled" ||
+    type === "cancelled" ||
+    name.includes("cancel")
+  ) {
+    node = <XCircle {...iconProps} />;
+  } else if (type === "started") {
+    node = <Pulse {...iconProps} />;
+  } else if (type === "unstarted") {
+    node = <CircleDashed {...iconProps} />;
+  } else if (type === "backlog") {
+    node = <Tray {...iconProps} />;
+  } else if (type === "triage" || name.includes("triage")) {
+    node = <CircleDashed {...iconProps} />;
+  } else if (st) {
+    node = <Circle {...iconProps} />;
+  } else {
+    node = null;
+  }
+  return (
+    <span className={styles.issueStateCell}>
+      {node}
+      <span className={styles.issueStateLabel}>{label}</span>
+    </span>
+  );
+}
+
 function usersFromLoadedIssues(
   assigned: LinearIssueNode[],
   created: LinearIssueNode[],
@@ -113,6 +189,10 @@ export function LinearWorkspacePanel() {
   const openLinearQuickOpen = useAppStore((s) => s.openLinearQuickOpen);
   const linearQuickOpenVisible = useAppStore((s) => s.linearQuickOpenVisible);
   const addToast = useAppStore((s) => s.addToast);
+  const startLinearIssueAgentSession = useAppStore(
+    (s) => s.startLinearIssueAgentSession,
+  );
+  const setActiveWorkspace = useAppStore((s) => s.setActiveWorkspace);
 
   const apiKey = settings.linearApiKey;
 
@@ -139,6 +219,10 @@ export function LinearWorkspacePanel() {
     string | undefined
   >(undefined);
   const [linearToolsMenuOpen, setLinearToolsMenuOpen] = useState(false);
+  /** Playwright: dispatch `constellagent-e2e-linear-issues` with LinearIssueNode[] detail */
+  const [e2eLinearIssues, setE2eLinearIssues] = useState<
+    LinearIssueNode[] | null
+  >(null);
   const linearToolsMenuRef = useRef<HTMLDivElement>(null);
   const [composerSubmitError, setComposerSubmitError] = useState<string | null>(
     null,
@@ -257,6 +341,16 @@ export function LinearWorkspacePanel() {
   }, [loadAll]);
 
   useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<LinearIssueNode[]>;
+      if (Array.isArray(ce.detail)) setE2eLinearIssues(ce.detail);
+    };
+    window.addEventListener("constellagent-e2e-linear-issues", handler);
+    return () =>
+      window.removeEventListener("constellagent-e2e-linear-issues", handler);
+  }, []);
+
+  useEffect(() => {
     if (!apiKey.trim()) {
       defaultUpdatesPersonForViewer.current = null;
     }
@@ -356,11 +450,15 @@ export function LinearWorkspacePanel() {
     };
   }, [linearToolsMenuOpen]);
 
-  const rawIssuesByScope = useMemo(
-    () =>
-      settings.linearIssueScope === "assigned" ? assigned : created,
-    [settings.linearIssueScope, assigned, created],
-  );
+  const rawIssuesByScope = useMemo(() => {
+    if (e2eLinearIssues?.length) return e2eLinearIssues;
+    return settings.linearIssueScope === "assigned" ? assigned : created;
+  }, [
+    e2eLinearIssues,
+    settings.linearIssueScope,
+    assigned,
+    created,
+  ]);
 
   const issues = useMemo(
     () =>
@@ -489,9 +587,18 @@ export function LinearWorkspacePanel() {
     [workspaceBranchLabel, activeGraphiteStack],
   );
 
-  const openIssue = (issue: LinearIssueNode) => {
-    if (issue.url) void linearOpenExternal(issue.url);
-  };
+  const activateIssueWorkspaceOrOpenUrl = useCallback(
+    (issue: LinearIssueNode) => {
+      const ws = findWorkspaceForLinearIssue(issue, workspaces);
+      if (ws) {
+        setActiveWorkspace(ws.id);
+        toggleLinear();
+        return;
+      }
+      if (issue.url) void linearOpenExternal(issue.url);
+    },
+    [workspaces, setActiveWorkspace, toggleLinear],
+  );
 
   const openProject = (p: LinearProjectNode) => {
     if (p.url) void linearOpenExternal(p.url);
@@ -500,13 +607,15 @@ export function LinearWorkspacePanel() {
 
   const onJumpActivate = (row: LinearJumpRow) => {
     if (row.kind === "issue") {
-      if (row.navigateUrl) {
-        void linearOpenExternal(row.navigateUrl);
-        return;
-      }
       const id = linearJumpPayloadId(row);
       const i = issueById.get(id);
-      if (i) openIssue(i);
+      if (i) {
+        activateIssueWorkspaceOrOpenUrl(i);
+        return;
+      }
+      if (row.navigateUrl) {
+        void linearOpenExternal(row.navigateUrl);
+      }
       return;
     }
     if (row.kind === "project") {
@@ -610,20 +719,17 @@ export function LinearWorkspacePanel() {
         setComposerSubmitError("Add your Personal API key in Settings.");
         return false;
       }
-      if (!scopeProjectId) {
-        setComposerSubmitError("Select a project.");
-        return false;
-      }
       if (!input.teamId) {
         setComposerSubmitError("Select a team.");
         return false;
       }
       setComposerSubmitError(null);
+      const projectId = scopeProjectId.trim();
       const res = await linearCreateIssue(key, {
         teamId: input.teamId,
         title: input.title,
         description: input.description || undefined,
-        projectId: scopeProjectId,
+        ...(projectId ? { projectId } : {}),
         priority: input.priority,
       });
       if (res.errors?.length) {
@@ -631,17 +737,24 @@ export function LinearWorkspacePanel() {
         return false;
       }
       if (res.issue) {
-        setTicketIssues((prev) => [res.issue!, ...prev]);
+        const created = res.issue;
+        setTicketIssues((prev) => [created, ...prev]);
         addToast({
           id: crypto.randomUUID(),
           type: "info",
-          message: `Created ${res.issue.identifier}`,
+          message: `Created ${created.identifier}`,
+          action: {
+            label: "Open agent",
+            onClick: () => {
+              void startLinearIssueAgentSession(created);
+            },
+          },
         });
         return true;
       }
       return false;
     },
-    [addToast, apiKey, scopeProjectId],
+    [addToast, apiKey, scopeProjectId, startLinearIssueAgentSession],
   );
 
   const linearTabOrder = normalizeLinearWorkspaceTabOrder(
@@ -901,30 +1014,79 @@ export function LinearWorkspacePanel() {
                         <th>State</th>
                         <th>Team</th>
                         <th>P</th>
+                        <th
+                          className={styles.tableThAgent}
+                          aria-label="Coding agent"
+                          title="New worktree + agent"
+                        >
+                          <RocketLaunch
+                            size={16}
+                            weight="duotone"
+                            aria-hidden
+                            className={styles.tableAgentHeaderIcon}
+                          />
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {issues.map((issue) => (
+                      {issues.map((issue) => {
+                        const linkedWorkspace = findWorkspaceForLinearIssue(
+                          issue,
+                          workspaces,
+                        );
+                        const issueIdClass = [
+                          styles.issueId,
+                          linkedWorkspace ? styles.issueIdLinked : "",
+                          linkedWorkspace?.id === activeWorkspaceId
+                            ? styles.issueIdLinkedActive
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ");
+                        return (
                         <tr key={issue.id}>
                           <td>
                             <button
                               type="button"
-                              className={styles.issueId}
-                              onClick={() => openIssue(issue)}
+                              className={issueIdClass}
+                              data-testid={`linear-issue-id-${issue.identifier.replace(/[^a-zA-Z0-9_-]/g, "_")}`}
+                              data-workspace-linked={linkedWorkspace ? "true" : "false"}
+                              onClick={() => activateIssueWorkspaceOrOpenUrl(issue)}
+                              title={
+                                linkedWorkspace
+                                  ? `Open linked workspace: ${linkedWorkspace.name}`
+                                  : `Open ${issue.identifier} in Linear`
+                              }
                             >
                               {issue.identifier}
                             </button>
                           </td>
                           <td>{issue.title}</td>
-                          <td>{issue.state?.name ?? "—"}</td>
+                          <td>
+                            <LinearIssueStateCell issue={issue} />
+                          </td>
                           <td>
                             {issue.team
                               ? `${issue.team.key} · ${issue.team.name}`
                               : "—"}
                           </td>
                           <td>{priorityLabel(issue.priority)}</td>
+                          <td className={styles.agentLaunchCell}>
+                            <Tooltip label="New worktree and coding agent for this issue">
+                              <button
+                                type="button"
+                                className={styles.agentLaunchBtn}
+                                onClick={() =>
+                                  void startLinearIssueAgentSession(issue)
+                                }
+                                aria-label={`Open ${issue.identifier} in coding agent`}
+                              >
+                                <RocketLaunch size={18} aria-hidden weight="duotone" />
+                              </button>
+                            </Tooltip>
+                          </td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
