@@ -70,6 +70,8 @@ export class LinearDraftService {
     worktreePath: string | null
     projectDescription?: string | null
     projectContentMarkdown?: string | null
+    existingTitle?: string | null
+    existingDescription?: string | null
   }): Promise<{ title: string; description: string }> {
     const projectName = input.projectName.trim() || 'Project'
     const linearCtx = formatLinearProjectContextForPrompt(input)
@@ -85,14 +87,36 @@ export class LinearDraftService {
       ? `The following Linear project fields are authoritative when present; do not invent requirements beyond them.\n\n${linearCtx}\n\n`
       : ''
 
+    const existingTitle = input.existingTitle?.trim() ?? ''
+    const existingDescription = input.existingDescription?.trim() ?? ''
+    const hasExisting = Boolean(existingTitle || existingDescription)
+
+    const enhanceBlock = hasExisting
+      ? `The user already started this ticket. Integrate and improve their draft — do not discard their intent.
+
+## Existing title (may be empty)
+${existingTitle || '(empty)'}
+
+## Existing description (may be empty)
+${existingDescription || '(empty)'}
+
+Add concrete next steps, tasks, and acceptance criteria where helpful. Keep their voice; merge into one coherent issue. If the title is empty, infer one from the description and git context.
+
+`
+      : ''
+
+    const bodyInstructions = hasExisting
+      ? `${enhanceBlock}Use the git snapshot below when present to ground the ticket.`
+      : `Use the git snapshot below when present to ground the ticket in what is actually changing locally. If the snapshot is empty or minimal, infer a sensible title from the project name and typical next steps.`
+
     const prompt = `You are drafting a Linear issue title and description for the project "${projectName}".
 
-${linearSection}Use the git snapshot below when present to ground the ticket in what is actually changing locally. If the snapshot is empty or minimal, infer a sensible title from the project name and typical next steps.
+${linearSection}${bodyInstructions}
 
 Do not inspect the repository. Do not request tools. Reply with exactly this shape:
 First line: TITLE: <short imperative title>
 Blank line
-Then the description in markdown (what, why, acceptance hints).
+Then the description in markdown (what, why, ${hasExisting ? 'tasks, ' : ''}acceptance hints).
 
 ${gitBlock}`
 

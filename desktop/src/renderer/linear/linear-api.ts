@@ -50,12 +50,13 @@ export const Q_ASSIGNED_ISSUES = `query LinearAssignedIssues {
         id
         identifier
         title
+        description
         url
         priority
         createdAt
         updatedAt
         state { name type }
-        team { key name }
+        team { id key name }
         project { id name }
         assignee { id name }
         creator { id name }
@@ -70,12 +71,13 @@ export const Q_CREATED_ISSUES = `query LinearCreatedIssues {
       id
       identifier
       title
+      description
       url
       priority
       createdAt
       updatedAt
       state { name type }
-      team { key name }
+      team { id key name }
       project { id name }
       assignee { id name }
       creator { id name }
@@ -114,12 +116,13 @@ export const Q_SEARCH_ISSUES = `query LinearSearchIssues($q: String!) {
       id
       identifier
       title
+      description
       url
       priority
       createdAt
       updatedAt
       state { name type }
-      team { key name }
+      team { id key name }
       project { id name }
       assignee { id name }
       creator { id name }
@@ -137,12 +140,13 @@ export const Q_SEARCH_ISSUES_ASSIGNED_ME = `query LinearSearchIssuesAssignedMe($
       id
       identifier
       title
+      description
       url
       priority
       createdAt
       updatedAt
       state { name type }
-      team { key name }
+      team { id key name }
       project { id name }
       assignee { id name }
       creator { id name }
@@ -160,12 +164,13 @@ export const Q_SEARCH_ISSUES_CREATED_ME = `query LinearSearchIssuesCreatedMe($q:
       id
       identifier
       title
+      description
       url
       priority
       createdAt
       updatedAt
       state { name type }
-      team { key name }
+      team { id key name }
       project { id name }
       assignee { id name }
       creator { id name }
@@ -198,12 +203,13 @@ export const Q_ISSUES_FOR_PROJECT_IDS = `query LinearIssuesForProjectIds($ids: [
       id
       identifier
       title
+      description
       url
       priority
       createdAt
       updatedAt
       state { name type }
-      team { key name }
+      team { id key name }
       project { id name }
       assignee { id name }
       creator { id name }
@@ -322,13 +328,36 @@ export const M_ISSUE_CREATE = `mutation LinearIssueCreate($input: IssueCreateInp
       id
       identifier
       title
+      description
       url
       priority
       state { name type }
-      team { key name }
+      team { id key name }
       project { id name }
       assignee { id name }
       creator { id name }
+    }
+  }
+}`
+
+/** Workflow states for a team (used to resolve “In Progress” stateId). */
+export const Q_TEAM_WORKFLOW_STATES = `query LinearTeamWorkflowStates($teamId: ID!) {
+  workflowStates(filter: { team: { id: { eq: $teamId } } }) {
+    nodes {
+      id
+      name
+      type
+    }
+  }
+}`
+
+export const M_ISSUE_UPDATE = `mutation LinearIssueUpdate($id: String!, $input: IssueUpdateInput!) {
+  issueUpdate(id: $id, input: $input) {
+    success
+    issue {
+      id
+      identifier
+      state { name type }
     }
   }
 }`
@@ -339,13 +368,15 @@ export type LinearIssueNode = {
   id: string
   identifier: string
   title: string
+  /** Markdown/plain body when returned by the API. */
+  description?: string | null
   url: string
   priority?: number
   /** ISO-8601; used for Cmd+F ordering (newest of created/updated wins). */
   createdAt?: string
   updatedAt?: string
   state: { name: string; type?: string } | null
-  team: { key: string; name: string } | null
+  team: { id?: string; key: string; name: string } | null
   project?: { id: string; name: string } | null
   assignee?: { id: string; name: string } | null
   creator?: { id: string; name: string } | null
@@ -749,6 +780,180 @@ export async function linearCreateIssue(
   return { issue: payload.issue }
 }
 
+/** Pick a workflow state UUID that represents active / in-progress work. */
+export function pickInProgressWorkflowStateId(
+  states: Array<{ id: string; name: string; type?: string | null }>,
+): string | null {
+  if (!states.length) return null
+  const normType = (t: string | null | undefined) => String(t ?? '').toLowerCase()
+  const normName = (n: string) => n.toLowerCase().trim()
+  const started = states.find((s) => normType(s.type) === 'started')
+  if (started) return started.id
+  const nameHints = ['in progress', 'in development', 'doing', 'active', 'working']
+  for (const hint of nameHints) {
+    const m = states.find((s) => normName(s.name).includes(hint))
+    if (m) return m.id
+  }
+  return null
+}
+
+export async function linearFetchTeamWorkflowStates(
+  apiKey: string,
+  teamId: string,
+): Promise<{
+  nodes: Array<{ id: string; name: string; type?: string | null }>
+  errors?: LinearGraphQLError[]
+}> {
+  const res = await linearGraphQL<{
+    workflowStates: {
+      nodes: Array<{ id: string; name: string; type?: string | null }>
+    } | null
+  }>(apiKey, Q_TEAM_WORKFLOW_STATES, { teamId })
+  if (res.errors?.length) {
+    return { nodes: [], errors: res.errors }
+  }
+  const nodes = res.data?.workflowStates?.nodes?.filter(Boolean) ?? []
+  return { nodes }
+}
+
+export type LinearIssueMoveToProgressResult =
+  | { ok: true; skipped: true }
+  | { ok: true; skipped: false }
+  | { ok: false; error: string }
+
+/**
+ * Sets the issue to the team’s in-progress workflow state when kicking off an agent.
+ * No-ops if the issue is already in a `started`-type state. Does not throw.
+ */
+export async function linearIssueMoveToInProgress(
+  apiKey: string,
+  issue: LinearIssueNode,
+): Promise<LinearIssueMoveToProgressResult> {
+  const key = apiKey.trim()
+  if (!key) return { ok: false, error: 'missing_api_key' }
+
+  const currentType = issue.state?.type?.toLowerCase()
+  if (currentType === 'started') {
+    return { ok: true, skipped: true }
+  }
+
+  const teamId = issue.team?.id?.trim()
+  if (!teamId) {
+    return { ok: false, error: 'missing_team_id' }
+  }
+
+  const { nodes, errors } = await linearFetchTeamWorkflowStates(key, teamId)
+  if (errors?.length) {
+    return { ok: false, error: errors.map((e) => e.message).join('; ') }
+  }
+
+  const stateId = pickInProgressWorkflowStateId(nodes)
+  if (!stateId) {
+    return { ok: false, error: 'no_in_progress_state' }
+  }
+
+  type UpdatePayload = {
+    issueUpdate: { success: boolean; issue: { id: string } | null } | null
+  }
+  const upd = await linearGraphQL<UpdatePayload>(apiKey, M_ISSUE_UPDATE, {
+    id: issue.id,
+    input: { stateId },
+  })
+  if (upd.errors?.length) {
+    return { ok: false, error: upd.errors.map((e) => e.message).join('; ') }
+  }
+  if (!upd.data?.issueUpdate?.success) {
+    return { ok: false, error: 'issue_update_failed' }
+  }
+  return { ok: true, skipped: false }
+}
+
 export async function linearOpenExternal(url: string): Promise<void> {
   await window.api.app.openExternal(url)
+}
+
+/** Structured execution brief for coding agents launched from a Linear issue. */
+export function formatLinearIssueAgentPrompt(issue: LinearIssueNode): string {
+  const description = issue.description?.trim() || '(No additional issue description provided.)'
+  const state = issue.state?.name?.trim() || 'Unknown'
+  const team = issue.team ? `${issue.team.key} - ${issue.team.name}` : 'Unknown team'
+  const project = issue.project?.name?.trim() || 'No project'
+
+  return [
+    'You are starting in a dedicated coding workspace for one Linear issue.',
+    '',
+    'PRIMARY OBJECTIVE:',
+    `Implement the work requested by this Linear ticket: ${issue.identifier}.`,
+    'Your main focus is shipping the ticket itself in code. Stay tightly scoped to what the issue asks for.',
+    '',
+    'HARD RULES:',
+    '- Treat the ticket title and description as the source of truth for what to build.',
+    '- Optimize for implementing the requested behavior, not for unrelated cleanup or exploration.',
+    '- Do not wander into broad refactors, opportunistic rewrites, or adjacent feature work unless the ticket clearly requires them.',
+    '- Do not stop at analysis if you can make forward implementation progress.',
+    '- If the ticket is underspecified, choose the narrowest reasonable implementation that satisfies it and keep moving.',
+    '- If you find a blocker, push the implementation as far as possible before reporting it.',
+    '- Verify the implementation with targeted tests, builds, or manual checks when practical.',
+    '',
+    'PREFERRED EXECUTION ORDER:',
+    '1. Read only the code needed to understand the ticket.',
+    '2. Identify the smallest complete implementation that satisfies the issue.',
+    '3. Make the code changes.',
+    '4. Verify the result.',
+    '5. Summarize what was implemented, what was verified, and any remaining risk.',
+    '',
+    'TICKET:',
+    `Issue: ${issue.identifier}`,
+    `Title: ${issue.title}`,
+    `URL: ${issue.url}`,
+    `State: ${state}`,
+    `Team: ${team}`,
+    `Project: ${project}`,
+    '',
+    'DESCRIPTION:',
+    description,
+    '',
+    'Success means the codebase meaningfully advances or completes this exact ticket.',
+  ].join('\n')
+}
+
+/**
+ * Branch name used when starting a Linear agent session (before git sanitization / -wt disambiguation).
+ * Kept in sync with `startLinearIssueAgentSession` in the app store.
+ */
+export function linearIssueAgentBranchName(issue: LinearIssueNode): string {
+  const idSlug =
+    issue.identifier
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 40) || 'issue'
+  const titleSlug = issue.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48)
+  const raw = titleSlug ? `linear/${idSlug}-${titleSlug}` : `linear/${idSlug}`
+  return raw.slice(0, 200)
+}
+
+/**
+ * True if this workspace’s checked-out branch belongs to the issue (handles `…-wt` suffixes and sanitization drift).
+ * Uses `linear/<issueIdSlug>-` prefix so AGI-10 does not match AGI-108.
+ */
+export function workspaceBranchMatchesLinearIssue(issue: LinearIssueNode, branch: string): boolean {
+  const idSlug =
+    issue.identifier
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 40) || 'issue'
+  const prefix = `linear/${idSlug}`.toLowerCase()
+  const b = branch.trim().toLowerCase().replace(/^refs\/heads\//, '')
+  if (!b.startsWith(prefix)) return false
+  if (b.length === prefix.length) return true
+  return b[prefix.length] === '-'
 }

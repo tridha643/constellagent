@@ -1,4 +1,5 @@
 import type { editor } from 'monaco-editor'
+import type { LinearIssueNode } from '../linear/linear-api'
 import type { PrInfo } from '@shared/github-types'
 import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
 import type { ContextWindowData } from '@shared/context-window-types'
@@ -68,6 +69,8 @@ export interface Workspace {
   branch: string
   worktreePath: string
   projectId: string
+  /** When opened from Linear “agent for issue”, links back for sidebar / issue click navigation. */
+  linearIssueId?: string
   automationId?: string
   /**
    * For linked worktrees only: branch this workspace was created on.
@@ -236,6 +239,26 @@ export function normalizeLinearIssuesPriorityPreset(
   return 'all'
 }
 
+const LINEAR_ISSUE_CODING_AGENTS: readonly AgentType[] = [
+  'claude-code',
+  'codex',
+  'gemini',
+  'cursor',
+  'opencode',
+  'pi-constell',
+]
+
+export function normalizeLinearIssueCodingAgent(v: unknown): AgentType {
+  if (typeof v === 'string' && (LINEAR_ISSUE_CODING_AGENTS as readonly string[]).includes(v)) {
+    return v as AgentType
+  }
+  return 'claude-code'
+}
+
+export function normalizeLinearIssueCodingModel(v: unknown): string {
+  return typeof v === 'string' ? v : ''
+}
+
 export interface Settings {
   appearanceThemeId: AppearanceThemeId
   confirmOnClose: boolean
@@ -273,6 +296,13 @@ export interface Settings {
   linearIssueScope: LinearIssueScope
   /** Default priority filter for the Issues list (client-side). */
   linearIssuesPriorityPreset: LinearIssuesPriorityPreset
+  /** Coding agent CLI when opening a Linear issue in a new worktree (Issues row / Tickets toast). */
+  linearIssueCodingAgent: AgentType
+  /**
+   * Model passed to the agent CLI (`--model`). Empty = omit flag (CLI default).
+   * Value can be a preset id or custom string (same as plan build).
+   */
+  linearIssueCodingModel: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -303,6 +333,8 @@ export const DEFAULT_SETTINGS: Settings = {
   linearWorkspaceTabOrder: ['issues', 'tickets', 'updates'],
   linearIssueScope: 'assigned',
   linearIssuesPriorityPreset: 'all',
+  linearIssueCodingAgent: 'claude-code',
+  linearIssueCodingModel: '',
 }
 
 export interface Toast {
@@ -414,6 +446,11 @@ export interface AppState {
     command: string
     agentType: AgentType
   }) => Promise<string>
+  /**
+   * New worktree from the active project + terminal with the configured coding agent,
+   * seeded with the Linear issue as the prompt.
+   */
+  startLinearIssueAgentSession: (issue: LinearIssueNode) => Promise<void>
   closeActiveTab: () => void
   setTabUnsaved: (tabId: string, unsaved: boolean) => void
   notifyTabSaved: (tabId: string) => void

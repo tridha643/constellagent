@@ -560,18 +560,153 @@
   border-bottom: none;
 }
 
-.table tr:hover td {
-  background: color-mix(in srgb, var(--accent-blue) 6%, transparent);
+/* Row hover on data columns only — avoids competing tint behind issue pills + agent controls */
+.table tr:hover td:not(:first-child):not(:last-child) {
+  background: color-mix(in srgb, var(--accent-blue) 5%, transparent);
 }
 
 .issueId {
   font-family: var(--font-mono, monospace);
   color: var(--accent-blue);
   cursor: pointer;
+  border-radius: 999px;
+  padding: 2px 8px;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .issueId:hover {
   text-decoration: underline;
+}
+
+.issueIdLinked {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 26%, transparent);
+}
+
+.issueIdLinkedActive {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent-blue) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 45%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .issueIdLinked:hover,
+  .issueIdLinkedActive:hover {
+    background: color-mix(in srgb, var(--accent-blue) 28%, transparent);
+    text-decoration: none;
+  }
+}
+
+.issueId:active {
+  transform: scale(0.98);
+}
+
+.issueId:focus-visible {
+  outline: none;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--accent-blue);
+}
+
+.issueId.issueIdLinked:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 26%, transparent),
+    0 0 0 2px var(--accent-blue);
+}
+
+.issueId.issueIdLinkedActive:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 45%, transparent),
+    0 0 0 2px var(--accent-blue);
+}
+
+.tableThAgent {
+  width: 52px;
+  padding: 8px 4px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.tableAgentHeaderIcon {
+  display: block;
+  margin: 0 auto;
+  opacity: 0.75;
+  color: var(--text-tertiary);
+}
+
+.agentLaunchCell {
+  width: 52px;
+  padding: 4px 4px;
+  vertical-align: middle;
+  text-align: center;
+}
+
+.agentLaunchBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .agentLaunchBtn:hover {
+    background: var(--surface-3);
+    color: var(--text-primary);
+  }
+}
+
+.agentLaunchBtn:active {
+  transform: scale(0.97);
+}
+
+.agentLaunchBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-blue);
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .issueId,
+  .agentLaunchBtn {
+    transition: none;
+  }
+
+  .issueId:active,
+  .agentLaunchBtn:active {
+    transform: none;
+  }
+}
+
+.issueStateCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 1.25em;
+}
+
+.issueStateIcon {
+  flex-shrink: 0;
+  opacity: 0.85;
+  color: var(--text-tertiary);
+}
+
+.issueStateLabel {
+  color: var(--text-primary);
 }
 
 .filterRow {

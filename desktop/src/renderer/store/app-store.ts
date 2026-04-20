@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type {
+  AgentType,
   AppState,
   Automation,
   ChatSnippet,
@@ -16,11 +17,20 @@ import type {
 import {
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_ACTION_ORDER,
+  normalizeLinearIssueCodingAgent,
+  normalizeLinearIssueCodingModel,
   normalizeLinearIssueScope,
   normalizeLinearIssuesPriorityPreset,
   normalizeLinearWorkspaceTabOrder,
   normalizeLinearWorkspaceView,
 } from './types'
+import {
+  formatLinearIssueAgentPrompt,
+  linearIssueAgentBranchName,
+  linearIssueMoveToInProgress,
+  type LinearIssueNode,
+} from '../linear/linear-api'
+import { buildAdHocAgentCommand, planAgentToPtyAgentType } from '../../shared/plan-build-command'
 import { AGENT_PLAN_DIRS_LABEL } from '../utils/agent-plan-dirs'
 import { GEMINI_TAB_LABEL, isGeminiIdleOscTitle } from '../../shared/gemini-tab-title'
 import {
@@ -42,6 +52,23 @@ import {
 } from './split-helpers'
 import { formatChatContext } from '../utils/chat-context-formatter'
 import { wrapBracketedPaste } from '../utils/bracketed-paste'
+
+/** Dedupe concurrent “open Linear issue in agent” runs per issue id. */
+const linearIssueAgentLaunchInFlight = new Set<string>()
+
+function linearIssueWorktreeDirectoryName(issue: LinearIssueNode): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const now = new Date()
+  const idSlug =
+    issue.identifier
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 48) || 'issue'
+  const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+  return `linear-${idSlug}-${ts}`
+}
 import {
   getRenderableProjectWorkspaces,
   getSwitchableVisibleProjects,
@@ -617,6 +644,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastActiveWorkspaceByProjectId[nextWorkspace.projectId] = nextWorkspace.id
       }
 
+      const collapsedProjectIds = new Set(s.collapsedProjectIds)
+      if (nextWorkspace) {
+        collapsedProjectIds.delete(nextWorkspace.projectId)
+      }
+
       const wsTabs = s.tabs.filter((t) => t.workspaceId === id)
       const newUnread = new Set(s.unreadWorkspaceIds)
       if (id) newUnread.delete(id)
@@ -633,6 +665,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastActiveTabByWorkspace: tabMap,
         lastActiveWorkspaceByProjectId,
         unreadWorkspaceIds: newUnread,
+        collapsedProjectIds,
       }
     }),
 
@@ -830,6 +863,114 @@ export const useAppStore = create<AppState>((set, get) => ({
     }, 500)
 
     return tabId
+  },
+
+  startLinearIssueAgentSession: async (issue) => {
+    const addToast = get().addToast
+    if (linearIssueAgentLaunchInFlight.has(issue.id)) return
+    linearIssueAgentLaunchInFlight.add(issue.id)
+
+    addToast({
+      id: crypto.randomUUID(),
+      type: 'info',
+      message: `Starting agent for ${issue.identifier}…`,
+    })
+
+    const activeWorkspaceId = get().activeWorkspaceId
+    const workspace = activeWorkspaceId
+      ? get().workspaces.find((w) => w.id === activeWorkspaceId)
+      : undefined
+    const project = workspace ? get().projects.find((p) => p.id === workspace.projectId) : undefined
+
+    if (!workspace || !project) {
+      linearIssueAgentLaunchInFlight.delete(issue.id)
+      addToast({
+        id: crypto.randomUUID(),
+        type: 'error',
+        message: 'Open a workspace for this repository first, then try again.',
+      })
+      return
+    }
+
+    const settings = get().settings
+    const agent = normalizeLinearIssueCodingAgent(settings.linearIssueCodingAgent)
+    const model =
+      normalizeLinearIssueCodingModel(settings.linearIssueCodingModel).trim() || null
+
+    const wtName = linearIssueWorktreeDirectoryName(issue)
+    const branch = linearIssueAgentBranchName(issue)
+    const repoPath = project.repoPath
+
+    const progressRes = await linearIssueMoveToInProgress(settings.linearApiKey, issue)
+    if (!progressRes.ok) {
+      const detail =
+        progressRes.error === 'missing_team_id'
+          ? 'issue has no team in the API response — refresh issues from Linear'
+          : progressRes.error === 'no_in_progress_state'
+            ? 'no matching In Progress workflow state for this team'
+            : progressRes.error
+      addToast({
+        id: crypto.randomUUID(),
+        type: 'info',
+        message: `Could not move ${issue.identifier} to In Progress (${detail}). Continuing…`,
+      })
+    }
+
+    let worktreePath: string
+    try {
+      worktreePath = await window.api.git.createWorktree(
+        repoPath,
+        wtName,
+        branch,
+        true,
+        undefined,
+        false,
+        undefined,
+        settings.worktreeCredentialRules,
+      )
+    } catch (err) {
+      linearIssueAgentLaunchInFlight.delete(issue.id)
+      const msg = err instanceof Error ? err.message : 'Failed to create worktree'
+      addToast({ id: crypto.randomUUID(), type: 'error', message: msg })
+      return
+    }
+
+    const createdBranch = await window.api.git.getCurrentBranch(worktreePath).catch(() => branch)
+    const wsId = crypto.randomUUID()
+    const wsTitle = `${issue.identifier}: ${issue.title}`.slice(0, 120)
+
+    get().addWorkspace({
+      id: wsId,
+      name: wsTitle,
+      branch: createdBranch,
+      worktreePath,
+      projectId: project.id,
+      linearIssueId: issue.id,
+    })
+
+    const prompt = formatLinearIssueAgentPrompt(issue)
+    const { command } = buildAdHocAgentCommand(agent, model, prompt)
+    const agentType = planAgentToPtyAgentType(agent)
+
+    try {
+      await get().launchAgentTerminalWithCommand({
+        workspaceId: wsId,
+        worktreePath,
+        title: `${issue.identifier} · agent`,
+        command,
+        agentType: agentType as AgentType,
+      })
+      addToast({
+        id: crypto.randomUUID(),
+        type: 'info',
+        message: `Agent running in new workspace for ${issue.identifier}`,
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to start agent'
+      addToast({ id: crypto.randomUUID(), type: 'error', message: msg })
+    } finally {
+      linearIssueAgentLaunchInFlight.delete(issue.id)
+    }
   },
 
   closeActiveTab: () => {
@@ -2028,6 +2169,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       linearIssuesPriorityPreset: normalizeLinearIssuesPriorityPreset(
         settingsMerged.linearIssuesPriorityPreset,
       ),
+      linearIssueCodingAgent: normalizeLinearIssueCodingAgent(
+        settingsMerged.linearIssueCodingAgent,
+      ),
+      linearIssueCodingModel: normalizeLinearIssueCodingModel(settingsMerged.linearIssueCodingModel),
       worktreeCredentialRules: normalizeWorktreeCredentialRules(settingsMerged.worktreeCredentialRules),
       skills: normalizeSkillEntries(settingsMerged.skills),
       subagents: normalizeSubagentEntries(settingsMerged.subagents),

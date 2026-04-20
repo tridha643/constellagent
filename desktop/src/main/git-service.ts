@@ -382,6 +382,21 @@ export class GitService {
       .replace(/[.\-/]+$/, '')    // no trailing dot, dash, or slash
   }
 
+  /**
+   * Picks a local branch name under `preferred` that does not yet exist in `repoPath`.
+   */
+  private static async allocateUniqueLocalBranchName(repoPath: string, preferred: string): Promise<string> {
+    const base = GitService.sanitizeBranchName(preferred).slice(0, 220)
+    if (!base) throw new Error('Branch name is empty after sanitization')
+    for (let i = 0; i < 100; i++) {
+      const candidate = i === 0 ? base : `${base}-${i}`
+      const exists = await git(['rev-parse', '--verify', `refs/heads/${candidate}`], repoPath)
+        .then(() => true, () => false)
+      if (!exists) return candidate
+    }
+    throw new Error('Could not allocate a unique branch name')
+  }
+
   static async getDefaultBranch(repoPath: string): Promise<string> {
     const hasOrigin = await this.hasRemote(repoPath, 'origin')
 
@@ -521,6 +536,12 @@ export class GitService {
     if (newBranch && !branchExists) {
       args.push('-b', branch, worktreePath)
       if (baseBranch) args.push(baseBranch)
+    } else if (newBranch && branchExists) {
+      // `git worktree add <path> <branch>` checks out the existing branch and fails with
+      // BRANCH_CHECKED_OUT when that branch is already active in another worktree. Create a
+      // new local branch at the same commit instead.
+      const wtBranch = await GitService.allocateUniqueLocalBranchName(repoPath, `${branch}-wt`)
+      args.push('-b', wtBranch, worktreePath, branch)
     } else {
       args.push(worktreePath, branch)
     }
@@ -533,7 +554,11 @@ export class GitService {
       await git(args, repoPath)
     } catch (err) {
       const msg = friendlyGitError(err, 'Failed to create worktree')
-      if (msg === 'BRANCH_CHECKED_OUT' && !force) throw new Error(msg)
+      if (msg === 'BRANCH_CHECKED_OUT' && !force) {
+        throw new Error(
+          'That branch is already checked out in another work folder. Close the other workspace or switch branches there, then try again.',
+        )
+      }
       throw new Error(msg)
     }
 
@@ -621,16 +646,42 @@ export class GitService {
       stage: 'create-worktree',
       message: 'Creating worktree...',
     })
-    const args = ['worktree', 'add']
-    if (force) args.push('--force')
-    args.push(worktreePath, branch)
+    let checkoutBranch = branch
+    const runWorktreeAdd = async (): Promise<void> => {
+      const args = ['worktree', 'add']
+      if (force) args.push('--force')
+      if (checkoutBranch === branch) {
+        args.push(worktreePath, branch)
+      } else {
+        args.push('-b', checkoutBranch, worktreePath, branch)
+      }
+      await git(args, repoPath)
+    }
 
     try {
-      await git(args, repoPath)
+      await runWorktreeAdd()
     } catch (err) {
       const msg = friendlyGitError(err, 'Failed to create worktree')
-      if (msg === 'BRANCH_CHECKED_OUT' && !force) throw new Error(msg)
-      throw new Error(msg)
+      if (msg === 'BRANCH_CHECKED_OUT' && !force && checkoutBranch === branch) {
+        checkoutBranch = await GitService.allocateUniqueLocalBranchName(repoPath, `${branch}-wt`)
+        try {
+          await runWorktreeAdd()
+        } catch (err2) {
+          const msg2 = friendlyGitError(err2, 'Failed to create worktree')
+          if (msg2 === 'BRANCH_CHECKED_OUT' && !force) {
+            throw new Error(
+              'That branch is already checked out in another work folder. Close the other workspace or switch branches there, then try again.',
+            )
+          }
+          throw new Error(msg2)
+        }
+      } else if (msg === 'BRANCH_CHECKED_OUT' && !force) {
+        throw new Error(
+          'That branch is already checked out in another work folder. Close the other workspace or switch branches there, then try again.',
+        )
+      } else {
+        throw new Error(msg)
+      }
     }
 
     reportCreateWorktreeProgress(onProgress, {
@@ -645,7 +696,7 @@ export class GitService {
     })
     await copyWorktreeCredentialArtifacts(repoPath, worktreePath, credentialRules)
 
-    return { worktreePath, branch }
+    return { worktreePath, branch: checkoutBranch }
   }
 
   static async removeWorktree(repoPath: string, worktreePath: string): Promise<void> {

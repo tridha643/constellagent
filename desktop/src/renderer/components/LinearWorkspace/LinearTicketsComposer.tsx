@@ -140,7 +140,7 @@ export function LinearTicketsComposer({
       (projects.find((p) => p.id === scopeProjectId)?.name ?? selectedProjectName)) ||
     ''
 
-  const projectPillLabel = projectBaseName ? projectBaseName : 'Choose project…'
+  const projectPillLabel = projectBaseName ? projectBaseName : 'No project'
 
   const pickedTeam = scopeTeamId ? sortedTeams.find((t) => t.id === scopeTeamId) : undefined
   const teamLabel = pickedTeam ? `${pickedTeam.key} · ${pickedTeam.name}` : 'Choose team…'
@@ -156,9 +156,7 @@ export function LinearTicketsComposer({
     return fuzzyMatchSubsequence(q, blob) != null
   })
 
-  const canSubmit = Boolean(
-    scopeProjectId && scopeTeamId && title.trim() && !sending,
-  )
+  const canSubmit = Boolean(scopeTeamId && title.trim() && !sending)
 
   useLayoutEffect(() => {
     const el = textareaRef.current
@@ -215,7 +213,7 @@ export function LinearTicketsComposer({
 
   const submit = useCallback(async () => {
     if (sending) return
-    if (!scopeProjectId || !scopeTeamId || !title.trim()) return
+    if (!scopeTeamId || !title.trim()) return
     setSending(true)
     try {
       const ok = await onSubmitTicket({
@@ -231,7 +229,7 @@ export function LinearTicketsComposer({
     } finally {
       setSending(false)
     }
-  }, [description, onSubmitTicket, priority, scopeProjectId, scopeTeamId, sending, title])
+  }, [description, onSubmitTicket, priority, scopeTeamId, sending, title])
 
   const handleDescChange = (v: string) => {
     setDescription(v)
@@ -264,18 +262,25 @@ export function LinearTicketsComposer({
           worktreePath: worktreePathForPi,
           projectDescription,
           projectContentMarkdown,
+          existingTitle: title,
+          existingDescription: description,
         })
-      setTitle((t) => (!t.trim() ? dt : t))
-      setDescription((d) => {
-        if (!d.trim()) return dd
-        return `${d}\n\n---\n${dt}\n\n${dd}`
-      })
+      setTitle(dt)
+      setDescription(dd)
     } catch (e) {
       console.error('[LinearTicketsComposer] draft with Pi failed:', e)
     } finally {
       setDraftPiBusy(false)
     }
-  }, [draftPiBusy, linearApiKey, projectNameForDraft, scopeProjectId, worktreePathForPi])
+  }, [
+    draftPiBusy,
+    linearApiKey,
+    projectNameForDraft,
+    scopeProjectId,
+    worktreePathForPi,
+    title,
+    description,
+  ])
 
   return (
     <div
@@ -418,7 +423,7 @@ export function LinearTicketsComposer({
                           } as React.CSSProperties
                         }
                         role="listbox"
-                        aria-label="Choose project"
+                        aria-label="Choose project (optional)"
                       >
                         <input
                           ref={projectSearchRef}
@@ -434,6 +439,18 @@ export function LinearTicketsComposer({
                           are per project in the list.
                         </p>
                         <div className={baseStyles.popoverList}>
+                          <button
+                            type="button"
+                            role="option"
+                            className={`${baseStyles.popoverItem} ${!scopeProjectId ? baseStyles.popoverItemOn : ''}`}
+                            onClick={() => {
+                              onScopeProjectIdChange('')
+                              setProjectPopoverOpen(false)
+                              setProjectQuery('')
+                            }}
+                          >
+                            No project
+                          </button>
                           {filteredProjects.length === 0 ? (
                             <div className={baseStyles.popoverEmpty}>No matching projects.</div>
                           ) : (
