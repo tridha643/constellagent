@@ -57,25 +57,25 @@ export function RightPanel() {
             </span>
           </div>
         ) : (
-          <>
-            <div style={{ display: rightPanelMode === 'files' ? 'contents' : 'none' }}>
+          <div key={rightPanelMode} className={styles.tabBody}>
+            {rightPanelMode === 'files' && (
               <FileTree worktreePath={workspace.worktreePath} isActive={rightPanelMode === 'files'} />
-            </div>
-            <div style={{ display: rightPanelMode === 'changes' ? 'contents' : 'none' }}>
+            )}
+            {rightPanelMode === 'changes' && (
               <ChangedFiles
                 worktreePath={workspace.worktreePath}
                 workspaceId={workspace.id}
                 isActive={rightPanelMode === 'changes'}
               />
-            </div>
-            <div style={{ display: rightPanelMode === 'graph' ? 'contents' : 'none' }}>
+            )}
+            {rightPanelMode === 'graph' && (
               <GitGraph
                 worktreePath={workspace.worktreePath}
                 workspaceId={workspace.id}
                 isActive={rightPanelMode === 'graph'}
               />
-            </div>
-          </>
+            )}
+          </div>
         )}
       </div>
     </div>

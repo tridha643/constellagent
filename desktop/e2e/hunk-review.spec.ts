@@ -28,6 +28,15 @@ function createTestRepo(name: string): string {
   return repoPath
 }
 
+function createRepoWithLargeContextFile(name: string): string {
+  const repoPath = createTestRepo(name)
+  const largeContent = Array.from({ length: 40 }, (_unused, i) => `line ${i + 1}`).join('\n') + '\n'
+  writeFileSync(join(repoPath, 'README.md'), largeContent)
+  execSync('git add README.md', { cwd: repoPath })
+  execSync('git commit -m "add large context file"', { cwd: repoPath })
+  return repoPath
+}
+
 function cleanupTestRepo(repoPath: string): void {
   try {
     if (existsSync(repoPath)) rmSync(repoPath, { recursive: true, force: true })
@@ -249,6 +258,40 @@ test.describe('Review annotations IPC integration', () => {
       const afterReopenBox = await panel.boundingBox()
       if (!afterReopenBox) throw new Error('Missing review panel bounds after reopen')
       expect(Math.abs(afterReopenBox.width - afterResizeBox.width)).toBeLessThanOrEqual(2)
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('review drawer honors full-context defaults and file toggles', async () => {
+    const repoPath = createRepoWithLargeContextFile('review-expand')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const { worktreePath } = await setupWorkspaceWithAgent(window, realRepo, 'expand')
+      await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        store.updateSettings({ diffShowFullContextByDefault: true })
+      })
+      const updatedContent = Array.from({ length: 40 }, (_unused, i) =>
+        i === 19 ? 'line 20 changed' : `line ${i + 1}`,
+      ).join('\n') + '\n'
+      writeFileSync(join(worktreePath, 'README.md'), updatedContent)
+
+      await window.waitForTimeout(1200)
+      await window.keyboard.press('Meta+Shift+R')
+
+      await expect(window.getByTestId('hunk-review-panel')).toBeVisible()
+      const reviewSection = window.locator('[id="diff-README.md"]')
+      const showFullFileToggle = window.locator('[data-testid="show-full-file-toggle"]').first()
+      await expect(showFullFileToggle).toBeVisible()
+      await expect(showFullFileToggle).toHaveText('Changed only')
+      await expect.poll(async () => reviewSection.locator('[data-unmodified-lines]').count()).toBe(0)
+      await showFullFileToggle.click({ force: true })
+      await expect(showFullFileToggle).toHaveText('Show full file')
+      expect(await reviewSection.locator('[data-unmodified-lines]').count()).toBeGreaterThan(0)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

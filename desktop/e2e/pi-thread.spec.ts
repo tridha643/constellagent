@@ -116,6 +116,59 @@ async function setupWorkspaceWithPiThread(window: Page, repoPath: string) {
   }, repoPath)
 }
 
+async function setupTwoWorkspacesWithPiThreads(window: Page, repoPath: string) {
+  return await window.evaluate(async (repo: string) => {
+    const getState = (window as unknown as { __store: { getState: () => any } }).__store.getState
+    const store = getState()
+    store.hydrateState({ projects: [], workspaces: [] })
+    const projectId = crypto.randomUUID()
+    store.addProject({ id: projectId, name: 'test-repo', repoPath: repo })
+
+    const worktreeA = await (window as unknown as { api: { git: { createWorktree: (...a: unknown[]) => Promise<string> } } }).api.git.createWorktree(
+      repo,
+      'pi-switch-a',
+      'pi-switch-a',
+      true,
+    )
+    const workspaceAId = crypto.randomUUID()
+    store.addWorkspace({
+      id: workspaceAId,
+      name: 'pi-switch-a',
+      branch: 'pi-switch-a',
+      worktreePath: worktreeA,
+      projectId,
+    })
+    await store.createPiThreadForActiveWorkspace()
+    const tabAId = getState().activeTabId
+
+    const worktreeB = await (window as unknown as { api: { git: { createWorktree: (...a: unknown[]) => Promise<string> } } }).api.git.createWorktree(
+      repo,
+      'pi-switch-b',
+      'pi-switch-b',
+      true,
+    )
+    const workspaceBId = crypto.randomUUID()
+    store.addWorkspace({
+      id: workspaceBId,
+      name: 'pi-switch-b',
+      branch: 'pi-switch-b',
+      worktreePath: worktreeB,
+      projectId,
+    })
+    await store.createPiThreadForActiveWorkspace()
+    const tabBId = getState().activeTabId
+
+    return {
+      workspaceAId,
+      workspaceBId,
+      worktreeA,
+      worktreeB,
+      tabAId,
+      tabBId,
+    }
+  }, repoPath)
+}
+
 test.describe('PI thread tab', () => {
   test('pi-thread tab mounts Pi SDK panel with timeline shell', async () => {
     const repoPath = createTestRepo('pi-thread')
@@ -219,6 +272,44 @@ test.describe('PI thread tab', () => {
       const badge = window.getByTestId('pi-thinking-badge')
       await expect(badge).toBeVisible({ timeout: 15000 })
       await expect(badge).toHaveText(/^(low|medium|high|xhigh)$/)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('rapid workspace switches keep Pi synced to the newly active worktree', async () => {
+    const repoPath = createTestRepo('pi-thread-switch')
+    const { app, window } = await launchApp()
+
+    try {
+      const setup = await setupTwoWorkspacesWithPiThreads(window, repoPath)
+      await window.waitForTimeout(2500)
+
+      await window.evaluate(({ workspaceAId, tabAId }) => {
+        const store = (window as unknown as { __store: { getState: () => any } }).__store.getState()
+        store.setActiveWorkspace(workspaceAId)
+        store.setActiveTab(tabAId)
+      }, { workspaceAId: setup.workspaceAId, tabAId: setup.tabAId })
+
+      await expect(window.getByTestId('composer')).toBeVisible({ timeout: 15000 })
+      const messageA = `workspace-a-${Date.now()}`
+      await window.getByTestId('composer').fill(messageA)
+      await window.getByTestId('send').click()
+      await expect(window.getByTestId('transcript')).toContainText(messageA, { timeout: 15000 })
+
+      await window.evaluate(({ workspaceBId, tabBId }) => {
+        const store = (window as unknown as { __store: { getState: () => any } }).__store.getState()
+        store.setActiveWorkspace(workspaceBId)
+        store.setActiveTab(tabBId)
+      }, { workspaceBId: setup.workspaceBId, tabBId: setup.tabBId })
+
+      await expect(window.getByTestId('composer')).toBeVisible({ timeout: 15000 })
+      await expect(window.getByTestId('transcript')).not.toContainText(messageA)
+      const messageB = `workspace-b-${Date.now()}`
+      await window.getByTestId('composer').fill(messageB)
+      await window.getByTestId('send').click()
+      await expect(window.getByTestId('transcript')).toContainText(messageB, { timeout: 15000 })
+      await expect(window.getByTestId('transcript')).not.toContainText(messageA)
     } finally {
       await app.close()
     }

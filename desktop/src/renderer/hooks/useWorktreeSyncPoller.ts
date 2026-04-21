@@ -15,8 +15,11 @@ export function useWorktreeSyncPoller(): void {
       runningRef.current = true
 
       try {
-        const { projects, workspaces, lastKnownRemoteHead, setLastKnownRemoteHead } =
+        const { projects, workspaces, activeWorkspaceId, lastKnownRemoteHead, setLastKnownRemoteHead } =
           useAppStore.getState()
+        const activeProjectId = activeWorkspaceId
+          ? workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.projectId ?? null
+          : null
 
         for (const project of projects) {
           if (disposed) break
@@ -29,7 +32,14 @@ export function useWorktreeSyncPoller(): void {
 
             const prev = lastKnownRemoteHead[project.id]
             if (hash !== prev) {
-              if (prev) await window.api.git.syncAllWorktrees(project.id)
+              if (!prev) {
+                setLastKnownRemoteHead(project.id, hash)
+                continue
+              }
+              if (project.id === activeProjectId) {
+                continue
+              }
+              await window.api.git.syncAllWorktrees(project.id)
               setLastKnownRemoteHead(project.id, hash)
             }
           } catch {

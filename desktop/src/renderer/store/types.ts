@@ -7,6 +7,8 @@ import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '.
 import type { WorktreeCredentialRule } from '../../shared/worktree-credentials'
 import type { GraphiteStackInfo } from '../../shared/graphite-types'
 import type { AppearanceThemeId } from '../theme/appearance'
+import type { EditorLanguageOverride } from '../utils/language-map'
+import type { GitStatusSnapshot, WorkingTreeDiffSnapshot } from '../types/working-tree-diff'
 import { getDefaultWorktreeCredentialRules } from '../../shared/worktree-credentials'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
@@ -266,11 +268,14 @@ export interface Settings {
   defaultShell: string
   restoreWorkspace: boolean
   diffInline: boolean
+  diffShowFullContextByDefault: boolean
   hunkReviewWidthPx?: number
   terminalFontSize: number
   editorFontSize: number
   /** When false, Monaco skips TS/JS semantic checks (no node_modules in-browser). Syntax errors still show. */
   editorMonacoSemanticDiagnostics: boolean
+  /** Persisted per-file Monaco language mode keyed by worktree/file path. */
+  editorLanguageOverrides: Record<string, EditorLanguageOverride>
   favoriteEditor: FavoriteEditor
   favoriteEditorCustom: string
   mcpServers: McpServer[]
@@ -296,6 +301,8 @@ export interface Settings {
   linearIssueScope: LinearIssueScope
   /** Default priority filter for the Issues list (client-side). */
   linearIssuesPriorityPreset: LinearIssuesPriorityPreset
+  /** Copy created Linear issue URLs to the clipboard from the Tickets composer success flow. */
+  linearCopyCreatedIssueToClipboard: boolean
   /** Coding agent CLI when opening a Linear issue in a new worktree (Issues row / Tickets toast). */
   linearIssueCodingAgent: AgentType
   /**
@@ -312,10 +319,12 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultShell: '',
   restoreWorkspace: true,
   diffInline: false,
+  diffShowFullContextByDefault: false,
   hunkReviewWidthPx: undefined,
   terminalFontSize: 14,
   editorFontSize: 13,
   editorMonacoSemanticDiagnostics: false,
+  editorLanguageOverrides: {},
   favoriteEditor: 'cursor',
   favoriteEditorCustom: '',
   mcpServers: [],
@@ -333,6 +342,7 @@ export const DEFAULT_SETTINGS: Settings = {
   linearWorkspaceTabOrder: ['issues', 'tickets', 'updates'],
   linearIssueScope: 'assigned',
   linearIssuesPriorityPreset: 'all',
+  linearCopyCreatedIssueToClipboard: true,
   linearIssueCodingAgent: 'claude-code',
   linearIssueCodingModel: '',
 }
@@ -400,6 +410,7 @@ export interface AppState {
   prStatusMap: Map<string, PrInfo | null>
   ghAvailability: Map<string, boolean>
   gitFileStatuses: Map<string, Map<string, string>>
+  workingTreeDiffSnapshots: Map<string, WorkingTreeDiffSnapshot>
   /** Per-workspace worktree sync status (key = workspace id) */
   worktreeSyncStatus: Map<string, WorkspaceSyncInfo>
   /** Graphite stack info per workspace (ephemeral; filled by poller). */
@@ -534,6 +545,8 @@ export interface AppState {
 
   // Git file status actions
   setGitFileStatuses: (worktreePath: string, statuses: Map<string, string>) => void
+  updateGitStatusSnapshot: (worktreePath: string, snapshot: GitStatusSnapshot) => void
+  setWorkingTreeDiffSnapshot: (worktreePath: string, snapshot: WorkingTreeDiffSnapshot | null) => void
   setTabDeleted: (tabId: string, deleted: boolean) => void
 
   // Sync actions

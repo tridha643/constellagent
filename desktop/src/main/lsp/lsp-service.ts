@@ -8,6 +8,7 @@ export class LspService {
   private wss: WebSocketServer | null = null
   private serverManager = new LspServerManager()
   private port = 0
+  private connectionCounts = new Map<string, number>()
 
   async start(): Promise<number> {
     if (this.httpServer) return this.port
@@ -46,6 +47,10 @@ export class LspService {
     return getAvailableLanguages()
   }
 
+  private key(language: string, workspace: string): string {
+    return `${language}:${workspace}`
+  }
+
   private handleConnection(ws: WebSocket, url: string): void {
     const params = new URL(url, 'http://localhost').searchParams
     const language = params.get('language')
@@ -64,6 +69,8 @@ export class LspService {
 
     // Bridge WebSocket ↔ stdio using LSP base protocol (Content-Length headers)
     const stdout = lspProcess.stdout
+    const connectionKey = this.key(language, workspace)
+    this.connectionCounts.set(connectionKey, (this.connectionCounts.get(connectionKey) ?? 0) + 1)
 
     // Buffer for parsing LSP messages from stdout
     let buffer = Buffer.alloc(0)
@@ -113,6 +120,13 @@ export class LspService {
 
     ws.on('close', () => {
       stdout.removeListener('data', onData)
+      const nextCount = (this.connectionCounts.get(connectionKey) ?? 1) - 1
+      if (nextCount <= 0) {
+        this.connectionCounts.delete(connectionKey)
+        this.serverManager.scheduleRelease(language, workspace)
+      } else {
+        this.connectionCounts.set(connectionKey, nextCount)
+      }
     })
 
     ws.on('error', () => {
@@ -122,6 +136,7 @@ export class LspService {
 
   shutdown(): void {
     this.serverManager.shutdown()
+    this.connectionCounts.clear()
     if (this.wss) {
       for (const client of this.wss.clients) {
         client.close()

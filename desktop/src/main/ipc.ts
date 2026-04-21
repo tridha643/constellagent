@@ -12,6 +12,7 @@ import type { PlanAgent } from '../shared/agent-plan-path'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GraphiteStackAction } from '../shared/graphite-types'
+import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import { PtyManager, type PtyWriteOpts } from './pty-manager'
 import { GitService } from './git-service'
 import { WorktreeSyncService } from './worktree-sync-service'
@@ -40,6 +41,7 @@ import { listPiModels } from './pi-models'
 import { CommitMessageService } from './commit-message-service'
 import { LinearDraftService } from './linear-draft-service'
 import { requestAppRelaunch } from './app-relaunch'
+import { measureMainAsync } from './perf'
 import {
   deleteProjectStartupCommands,
   getProjectStartupCommands,
@@ -336,15 +338,26 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.GIT_GET_STATUS, async (_e, worktreePath: string) => {
-    return GitService.getStatus(worktreePath)
+    return measureMainAsync('git:get-status', () => GitService.getStatus(worktreePath), {
+      worktreePath,
+    })
   })
 
   ipcMain.handle(IPC.GIT_GET_DIFF, async (_e, worktreePath: string, staged: boolean) => {
     return GitService.getDiff(worktreePath, staged)
   })
 
+  ipcMain.handle(IPC.GIT_GET_WORKTREE_DIFF, async (_e, worktreePath: string) => {
+    return measureMainAsync('git:get-worktree-diff', () => GitService.getWorkingTreeDiff(worktreePath), {
+      worktreePath,
+    })
+  })
+
   ipcMain.handle(IPC.GIT_GET_FILE_DIFF, async (_e, worktreePath: string, filePath: string) => {
-    return GitService.getFileDiff(worktreePath, filePath)
+    return measureMainAsync('git:get-file-diff', () => GitService.getFileDiff(worktreePath, filePath), {
+      worktreePath,
+      filePath,
+    })
   })
 
   ipcMain.handle(IPC.GIT_GET_BRANCHES, async (_e, repoPath: string) => {
@@ -363,6 +376,10 @@ export function registerIpcHandlers(): void {
     return GitService.discard(worktreePath, paths, untracked)
   })
 
+  ipcMain.handle(IPC.GIT_APPLY_HUNK_ACTION, async (_e, worktreePath: string, request: GitHunkActionRequest) => {
+    return GitService.applyHunkAction(worktreePath, request)
+  })
+
   ipcMain.handle(IPC.GIT_COMMIT, async (_e, worktreePath: string, message: string) => {
     return GitService.commit(worktreePath, message)
   })
@@ -372,7 +389,9 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.GIT_GET_CURRENT_BRANCH, async (_e, worktreePath: string) => {
-    return GitService.getCurrentBranch(worktreePath)
+    return measureMainAsync('git:get-current-branch', () => GitService.getCurrentBranch(worktreePath), {
+      worktreePath,
+    })
   })
 
   ipcMain.handle(IPC.GIT_GET_HEAD_HASH, async (_e, worktreePath: string) => {
@@ -384,7 +403,10 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.GIT_SHOW_FILE_AT_HEAD, async (_e, worktreePath: string, filePath: string) => {
-    return GitService.showFileAtHead(worktreePath, filePath)
+    return measureMainAsync('git:show-file-at-head', () => GitService.showFileAtHead(worktreePath, filePath), {
+      worktreePath,
+      filePath,
+    })
   })
 
   ipcMain.handle(IPC.GIT_GET_LOG, async (_e, worktreePath: string, maxCount?: number) => {
@@ -419,7 +441,10 @@ export function registerIpcHandlers(): void {
 
   // ── GitHub handlers ──
   ipcMain.handle(IPC.GITHUB_GET_PR_STATUSES, async (_e, repoPath: string, branches: string[]) => {
-    return GithubService.getPrStatuses(repoPath, branches)
+    return measureMainAsync('github:get-pr-statuses', () => GithubService.getPrStatuses(repoPath, branches), {
+      repoPath,
+      branchCount: branches.length,
+    })
   })
 
   ipcMain.handle(IPC.GITHUB_LIST_OPEN_PRS, async (_e, repoPath: string) => {
@@ -444,7 +469,10 @@ export function registerIpcHandlers(): void {
 
   // ── Graphite handlers ──
   ipcMain.handle(IPC.GRAPHITE_GET_STACK, async (_e, repoPath: string, worktreePath: string) => {
-    return GraphiteService.getStackInfo(repoPath, worktreePath)
+    return measureMainAsync('graphite:get-stack', () => GraphiteService.getStackInfo(repoPath, worktreePath), {
+      repoPath,
+      worktreePath,
+    })
   })
 
   ipcMain.handle(IPC.GRAPHITE_CHECKOUT_BRANCH, async (_e, worktreePath: string, branch: string) => {
@@ -535,60 +563,64 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.FS_GET_TREE_WITH_STATUS, async (_e, dirPath: string) => {
-    const [tree, statuses, topLevel] = await Promise.all([
-      FileService.getTree(dirPath),
-      GitService.getStatus(dirPath).catch(() => []),
-      GitService.getTopLevel(dirPath).catch(() => dirPath),
-    ])
+    return measureMainAsync('fs:get-tree-with-status', async () => {
+      const [tree, statuses, topLevel] = await Promise.all([
+        FileService.getTree(dirPath),
+        GitService.getStatus(dirPath).catch(() => []),
+        GitService.getTopLevel(dirPath).catch(() => dirPath),
+      ])
 
-    // git status --porcelain paths are relative to repo root, but
-    // git ls-files paths (used for the tree) are relative to cwd (dirPath).
-    // Compute prefix to convert between them.
-    const prefix = relative(topLevel, dirPath) // e.g. 'desktop' or ''
+      // git status --porcelain paths are relative to repo root, but
+      // git ls-files paths (used for the tree) are relative to cwd (dirPath).
+      // Compute prefix to convert between them.
+      const prefix = relative(topLevel, dirPath) // e.g. 'desktop' or ''
 
-    // Build map: dirPath-relative path → git status
-    const statusMap = new Map<string, string>()
-    for (const s of statuses) {
-      let p = s.path
-      // Handle renamed files: "old -> new" — use the new path
-      if (p.includes(' -> ')) {
-        p = p.split(' -> ')[1]
+      // Build map: dirPath-relative path → git status
+      const statusMap = new Map<string, string>()
+      for (const s of statuses) {
+        let p = s.path
+        // Handle renamed files: "old -> new" — use the new path
+        if (p.includes(' -> ')) {
+          p = p.split(' -> ')[1]
+        }
+        // Strip repo-root prefix to get dirPath-relative path
+        if (prefix && p.startsWith(prefix + '/')) {
+          p = p.slice(prefix.length + 1)
+        }
+        statusMap.set(p, s.status)
       }
-      // Strip repo-root prefix to get dirPath-relative path
-      if (prefix && p.startsWith(prefix + '/')) {
-        p = p.slice(prefix.length + 1)
-      }
-      statusMap.set(p, s.status)
-    }
 
-    // Attach gitStatus to nodes, propagate to parent dirs
-    function annotate(nodes: FileNode[]): boolean {
-      let hasStatus = false
-      for (const node of nodes) {
-        // Compute relative path from dirPath
-        const rel = node.path.startsWith(dirPath)
-          ? node.path.slice(dirPath.length + 1)
-          : node.path
+      // Attach gitStatus to nodes, propagate to parent dirs
+      function annotate(nodes: FileNode[]): boolean {
+        let hasStatus = false
+        for (const node of nodes) {
+          // Compute relative path from dirPath
+          const rel = node.path.startsWith(dirPath)
+            ? node.path.slice(dirPath.length + 1)
+            : node.path
 
-        if (node.type === 'file') {
-          const st = statusMap.get(rel)
-          if (st) {
-            node.gitStatus = st as FileNode['gitStatus']
-            hasStatus = true
-          }
-        } else if (node.children) {
-          const childHasStatus = annotate(node.children)
-          if (childHasStatus) {
-            node.gitStatus = 'modified'
-            hasStatus = true
+          if (node.type === 'file') {
+            const st = statusMap.get(rel)
+            if (st) {
+              node.gitStatus = st as FileNode['gitStatus']
+              hasStatus = true
+            }
+          } else if (node.children) {
+            const childHasStatus = annotate(node.children)
+            if (childHasStatus) {
+              node.gitStatus = 'modified'
+              hasStatus = true
+            }
           }
         }
+        return hasStatus
       }
-      return hasStatus
-    }
 
-    annotate(tree)
-    return tree
+      annotate(tree)
+      return tree
+    }, {
+      dirPath,
+    })
   })
 
   ipcMain.handle(IPC.FS_QUICK_OPEN_SEARCH, async (_e, worktreePath: string, request: import('../shared/quick-open-types').QuickOpenSearchRequest) => {

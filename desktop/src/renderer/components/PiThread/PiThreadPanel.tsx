@@ -1,4 +1,5 @@
 import {
+  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -103,6 +104,7 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
   const attachmentPickerRef = useRef<HTMLInputElement | null>(null)
   const pinnedToBottomRef = useRef(true)
   const scrollPinRafRef = useRef<number | null>(null)
+  const draftPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const threadSearch = useThreadSearch(timelinePaneRef)
 
@@ -128,6 +130,8 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
     [],
   )
   const blockTranscriptIpcRef = useRef(false)
+  const syncGenerationRef = useRef(0)
+  const lastSyncedWorktreePathRef = useRef<string | null>(null)
   const setPiThreadSessionBinding = useAppStore((s) => s.setPiThreadSessionBinding)
 
   useEffect(() => {
@@ -136,7 +140,10 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
     })
     const offTr = window.api.pi.onSelectedTranscriptChanged((p) => {
       if (blockTranscriptIpcRef.current) return
-      setTranscript([...((p as SelectedTranscriptRecord | null)?.transcript ?? [])])
+      const nextTranscript = [...((p as SelectedTranscriptRecord | null)?.transcript ?? [])]
+      startTransition(() => {
+        setTranscript(nextTranscript)
+      })
     })
     return () => {
       offState()
@@ -145,6 +152,7 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
   }, [])
 
   const syncAndSelect = useCallback(async () => {
+    const generation = ++syncGenerationRef.current
     setError(null)
     setSessionMissing(false)
     blockTranscriptIpcRef.current = false
@@ -160,13 +168,18 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
     try {
       const now = Date.now()
       const last = lastPiSyncAtByPath.get(worktreePath) ?? 0
+      const canReuseFreshState =
+        lastSyncedWorktreePathRef.current === worktreePath
+        && now - last < PI_SYNC_TTL_MS
       let s: DesktopAppState
-      if (now - last < PI_SYNC_TTL_MS) {
+      if (canReuseFreshState) {
         s = (await window.api.pi.getState()) as DesktopAppState
       } else {
         lastPiSyncAtByPath.set(worktreePath, now)
         s = (await window.api.pi.syncWorkspace(worktreePath, workspaceLabel)) as DesktopAppState
+        lastSyncedWorktreePathRef.current = worktreePath
       }
+      if (syncGenerationRef.current !== generation) return
       setState(s)
 
       const ws =
@@ -182,6 +195,7 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
       if (boundSessionId) {
         const exists = ws.sessions.some((x) => x.id === boundSessionId)
         if (!exists) {
+          if (syncGenerationRef.current !== generation) return
           blockTranscriptIpcRef.current = true
           setSessionMissing(true)
           setError('This chat is no longer available (session removed).')
@@ -200,11 +214,14 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
         const lastSess = ws.sessions[ws.sessions.length - 1]
         await window.api.pi.selectSession({ workspaceId: ws.id, sessionId: lastSess.id })
       }
+      if (syncGenerationRef.current !== generation) return
 
       const tr = (await window.api.pi.getSelectedTranscript()) as SelectedTranscriptRecord | null
+      if (syncGenerationRef.current !== generation) return
       const nextTr = tr?.transcript ? [...tr.transcript] : []
       setTranscript(nextTr)
       const fresh = (await window.api.pi.getState()) as DesktopAppState
+      if (syncGenerationRef.current !== generation) return
       setState(fresh)
       const selId = fresh.selectedSessionId
       if (selId) {
@@ -213,6 +230,7 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
       setDraft(fresh.composerDraft ?? '')
       pinnedToBottomRef.current = true
     } catch (e) {
+      if (syncGenerationRef.current !== generation) return
       setError(e instanceof Error ? e.message : String(e))
     }
   }, [worktreePath, workspaceLabel, boundSessionId])
@@ -253,10 +271,34 @@ function PiThreadPanelInner({ worktreePath, workspaceLabel, active, boundSession
   const setDraftPersist = useCallback((action: SetStateAction<string>) => {
     setDraft((prev) => {
       const next = typeof action === 'function' ? action(prev) : action
-      void window.api.pi.updateComposerDraft(next)
+      if (draftPersistTimeoutRef.current) {
+        clearTimeout(draftPersistTimeoutRef.current)
+      }
+      draftPersistTimeoutRef.current = setTimeout(() => {
+        draftPersistTimeoutRef.current = null
+        void window.api.pi.updateComposerDraft(next)
+      }, 120)
       return next
     })
   }, [])
+
+  useEffect(
+    () => () => {
+      if (draftPersistTimeoutRef.current) {
+        clearTimeout(draftPersistTimeoutRef.current)
+        draftPersistTimeoutRef.current = null
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!draftPersistTimeoutRef.current) {
+      return
+    }
+    clearTimeout(draftPersistTimeoutRef.current)
+    draftPersistTimeoutRef.current = null
+  }, [selectedSession?.id, worktreePath])
 
   const cycleComposerReasoningLevel = useCallback(() => {
     if (!selectedSession || selectedSession.status === 'running') return

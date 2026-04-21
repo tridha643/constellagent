@@ -79,20 +79,25 @@ export function MessageMarkdown({
 }) {
   const segments = useMemo(() => segmentMessageForInlineChips(text), [text]);
   const hasChips = segments.some((s) => s.kind !== "text");
+  const shouldUseStreamdown = preferStreamdown && !isStreaming;
+
+  const variant = hasChips ? "segmented" : shouldUseStreamdown ? "streamdown" : "plain";
 
   return (
     <div className="message__content">
-      {hasChips ? (
-        <div className="message__content--segmented">{segments.map((seg, i) => segmentToNode(seg, i))}</div>
-      ) : preferStreamdown ? (
-        <MarkdownRenderer isStreaming={isStreaming} className="message__streamdown">
-          {text}
-        </MarkdownRenderer>
-      ) : (
-        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
-          {text}
-        </ReactMarkdown>
-      )}
+      <div key={variant} className="message__content-variant" data-variant={variant}>
+        {hasChips ? (
+          <div className="message__content--segmented">{segments.map((seg, i) => segmentToNode(seg, i))}</div>
+        ) : shouldUseStreamdown ? (
+          <MarkdownRenderer isStreaming={isStreaming} className="message__streamdown">
+            {text}
+          </MarkdownRenderer>
+        ) : (
+          <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
+            {text}
+          </ReactMarkdown>
+        )}
+      </div>
     </div>
   );
 }

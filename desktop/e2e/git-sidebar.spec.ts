@@ -497,4 +497,85 @@ test.describe('Git & Sidebar functionality', () => {
       cleanupTestRepo(repoPath)
     }
   })
+
+  test('removing the active workspace restores a tab from the replacement workspace', async () => {
+    const repoPath = createTestRepo('remove-active-ws')
+    const { app, window } = await launchApp()
+
+    try {
+      const result = await window.evaluate(async (repo: string) => {
+        const getState = (window as any).__store.getState
+        const store = getState()
+        store.hydrateState({ projects: [], workspaces: [] })
+
+        const projectId = crypto.randomUUID()
+        store.addProject({ id: projectId, name: 'sidebar-project', repoPath: repo })
+
+        const worktreeA = await (window as any).api.git.createWorktree(repo, 'remove-a', 'branch-a', true)
+        const workspaceAId = crypto.randomUUID()
+        store.addWorkspace({
+          id: workspaceAId,
+          name: 'remove-a',
+          branch: 'branch-a',
+          worktreePath: worktreeA,
+          projectId,
+        })
+        store.addTab({
+          id: crypto.randomUUID(),
+          workspaceId: workspaceAId,
+          type: 'file',
+          filePath: `${worktreeA}/README.md`,
+        })
+        const tabAId = getState().activeTabId
+
+        const worktreeB = await (window as any).api.git.createWorktree(repo, 'remove-b', 'branch-b', true)
+        const workspaceBId = crypto.randomUUID()
+        store.addWorkspace({
+          id: workspaceBId,
+          name: 'remove-b',
+          branch: 'branch-b',
+          worktreePath: worktreeB,
+          projectId,
+        })
+        store.addTab({
+          id: crypto.randomUUID(),
+          workspaceId: workspaceBId,
+          type: 'file',
+          filePath: `${worktreeB}/README.md`,
+        })
+
+        store.setActiveWorkspace(workspaceAId)
+        store.setActiveWorkspace(workspaceBId)
+        const tabBId = getState().activeTabId
+
+        store.removeWorkspace(workspaceBId)
+
+        return {
+          activeWorkspaceId: getState().activeWorkspaceId,
+          activeTabId: getState().activeTabId,
+          workspaceAId,
+          tabAId,
+          tabBId,
+          activeTabWorkspaceId: getState().tabs.find((tab: { id: string; workspaceId: string }) => (
+            tab.id === getState().activeTabId
+          ))?.workspaceId ?? null,
+          tabs: getState().tabs.map((tab: { id: string; workspaceId: string }) => ({
+            id: tab.id,
+            workspaceId: tab.workspaceId,
+          })),
+        }
+      }, repoPath)
+
+      expect(result.activeWorkspaceId).not.toBeNull()
+      expect(result.activeTabWorkspaceId).toBe(result.activeWorkspaceId)
+      expect(result.activeTabId).not.toBe(result.tabBId)
+      if (result.activeWorkspaceId === result.workspaceAId) {
+        expect(result.activeTabId).toBe(result.tabAId)
+      }
+      expect(result.tabs.every((tab: { id: string }) => tab.id !== result.tabBId)).toBe(true)
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
 })

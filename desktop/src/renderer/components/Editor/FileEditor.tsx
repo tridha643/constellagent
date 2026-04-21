@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useImperativeHandle, forwardRef, useMemo } from 'react'
+import { useEffect, useState, useCallback, useRef, useImperativeHandle, forwardRef, useMemo, type ChangeEvent } from 'react'
 import Editor, { loader } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { useAppStore } from '../../store/app-store'
@@ -17,15 +17,25 @@ import {
 import { ensureAppearanceMonacoThemes, getAppearanceMonacoThemeName } from '../../theme/appearance'
 import styles from './Editor.module.css'
 
-import { getLanguage } from '../../utils/language-map'
+import {
+  EDITOR_LANGUAGE_OVERRIDE_OPTIONS,
+  getEditorLanguageOverrideKey,
+  getEffectiveLanguage,
+  getEffectiveModelPath,
+  normalizeEditorLanguageOverride,
+} from '../../utils/language-map'
 import { usePrefersReducedMotion } from '../../hooks/use-prefers-reduced-motion'
 import {
+  clearLspDiagnosticsForUri,
   getLspServerKeyForPath,
   getLspTextDocumentLanguageId,
   getOrCreateClient,
+  notifyDidChange,
   notifyDidClose,
   notifyDidOpen,
+  toFileUri,
 } from '../../services/lsp-client-manager'
+import { markPaint, measureAsync } from '../../utils/perf'
 import { DEFAULT_SETTINGS } from '../../store/types'
 import {
   applyMonacoTypeScriptCompilerDefaults,
@@ -35,6 +45,13 @@ import { ensureMonacoPrismaLanguage } from '../../utils/monaco-prisma-language'
 
 // Monaco themes + compiler defaults once; diagnostics follow Settings (see FileEditor effect).
 let monacoAppearanceAndCompilerReady = false
+const TS_JS_MONACO_LANGUAGES = new Set([
+  'typescript',
+  'typescriptreact',
+  'javascript',
+  'javascriptreact',
+])
+
 loader.init().then((monaco) => {
   if (!monacoAppearanceAndCompilerReady) {
     monacoAppearanceAndCompilerReady = true
@@ -76,8 +93,53 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   const setTabDeleted = useAppStore((s) => s.setTabDeleted)
   const notifyTabSaved = useAppStore((s) => s.notifyTabSaved)
   const addToast = useAppStore((s) => s.addToast)
-  const settings = useAppStore((s) => s.settings)
+  const setActiveMonacoEditor = useAppStore((s) => s.setActiveMonacoEditor)
+  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
+  const editorFontSize = useAppStore((s) => s.settings.editorFontSize)
+  const autoSaveOnBlur = useAppStore((s) => s.settings.autoSaveOnBlur)
+  const editorMonacoSemanticDiagnostics = useAppStore((s) => s.settings.editorMonacoSemanticDiagnostics)
+  const editorLanguageOverrides = useAppStore((s) => s.settings.editorLanguageOverrides)
+  const updateSettings = useAppStore((s) => s.updateSettings)
   const prefersReducedMotion = usePrefersReducedMotion()
+  const languageOverrideKey = useMemo(
+    () => getEditorLanguageOverrideKey(worktreePath, filePath),
+    [worktreePath, filePath],
+  )
+  const languageOverride = editorLanguageOverrides[languageOverrideKey] ?? null
+  const effectiveLanguage = useMemo(
+    () => getEffectiveLanguage(filePath, languageOverride),
+    [filePath, languageOverride],
+  )
+  const modelPath = useMemo(
+    () => getEffectiveModelPath(filePath, effectiveLanguage, languageOverride),
+    [effectiveLanguage, filePath, languageOverride],
+  )
+  const fileUri = useMemo(() => toFileUri(modelPath), [modelPath])
+  const effectiveLspServerKey = useMemo(
+    () => getLspServerKeyForPath(filePath, effectiveLanguage),
+    [filePath, effectiveLanguage],
+  )
+  const effectiveLspDocumentLanguage = useMemo(
+    () => getLspTextDocumentLanguageId(filePath, effectiveLanguage),
+    [filePath, effectiveLanguage],
+  )
+  const shouldEnableMonacoSemanticDiagnostics = useMemo(() => {
+    if (!editorMonacoSemanticDiagnostics) return false
+    // Monaco's in-browser TS worker has no project graph, so workspace imports
+    // produce false-positive "cannot find module" errors. Use syntax-only Monaco
+    // for repo files and let the LSP bridge provide project-aware diagnostics.
+    if (worktreePath && TS_JS_MONACO_LANGUAGES.has(effectiveLanguage)) return false
+    return true
+  }, [effectiveLanguage, editorMonacoSemanticDiagnostics, worktreePath])
+  const lspSessionRef = useRef<{
+    serverKey: string
+    workspace: string
+    uri: string
+    documentLanguage: string
+  } | null>(null)
+  const lspDidChangeTimerRef = useRef<number | null>(null)
+  const diskReadRequestRef = useRef(0)
+  const editorOpenStartedAtRef = useRef(0)
 
   useEffect(() => {
     void window.api.app.getHomeDir().then(setUserHome).catch(() => {})
@@ -93,17 +155,59 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   }, [isMarkdown, content, isPlan])
   const runAddToChatRef = useRef<() => void>(() => {})
 
+  const clearPendingLspChange = useCallback(() => {
+    if (lspDidChangeTimerRef.current !== null) {
+      window.clearTimeout(lspDidChangeTimerRef.current)
+      lspDidChangeTimerRef.current = null
+    }
+  }, [])
+
+  const readFileLatest = useCallback(async (reason: 'initial' | 'git-change' | 'dir-change') => {
+    const requestId = ++diskReadRequestRef.current
+    const text = await measureAsync('editor:read-file', () => window.api.fs.readFile(filePath), {
+      filePath,
+      reason,
+      worktreePath: worktreePath ?? null,
+    })
+    if (requestId !== diskReadRequestRef.current) return { stale: true, text: null as string | null }
+    return { stale: false, text }
+  }, [filePath, worktreePath])
+
+  const editorOptions = useMemo<editor.IStandaloneEditorConstructionOptions>(
+    () => ({
+      fontFamily: "'SF Mono', Menlo, 'Cascadia Code', monospace",
+      fontSize: editorFontSize,
+      minimap: { enabled: false },
+      scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
+      padding: { top: 8, bottom: 8 },
+      renderLineHighlight: 'line',
+      cursorBlinking: prefersReducedMotion ? 'solid' : 'smooth',
+      smoothScrolling: !prefersReducedMotion,
+      tabSize: 2,
+      wordWrap: 'off',
+      automaticLayout: true,
+    }),
+    [editorFontSize, prefersReducedMotion],
+  )
+
+  const closeLspSession = useCallback((session = lspSessionRef.current) => {
+    clearPendingLspChange()
+    if (!session) return
+    notifyDidClose(session.serverKey, session.workspace, session.uri)
+    lspSessionRef.current = null
+  }, [clearPendingLspChange])
+
   useEffect(() => {
     let cancelled = false
     void loader.init().then((monaco) => {
       if (!cancelled) {
-        applyMonacoTypeScriptDiagnostics(monaco, settings.editorMonacoSemanticDiagnostics)
+        applyMonacoTypeScriptDiagnostics(monaco, shouldEnableMonacoSemanticDiagnostics)
       }
     })
     return () => {
       cancelled = true
     }
-  }, [settings.editorMonacoSemanticDiagnostics])
+  }, [shouldEnableMonacoSemanticDiagnostics])
 
   // Git gutter decorations (no-op when worktreePath is undefined or editor not mounted)
   useGitGutter(editorInstance, filePath, worktreePath)
@@ -117,7 +221,13 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   // Load file content
   useEffect(() => {
     let cancelled = false
-    window.api.fs.readFile(filePath).then((text) => {
+    editorOpenStartedAtRef.current = performance.now()
+    void readFileLatest('initial').then(({ stale, text }) => {
+      if (stale || cancelled) return
+      markPaint('file-editor-ready', editorOpenStartedAtRef.current, {
+        filePath,
+        worktreePath: worktreePath ?? null,
+      })
       if (cancelled) return
       if (text === null) {
         // File doesn't exist (e.g. restored tab for a deleted file)
@@ -130,8 +240,11 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
       setUnsaved(false)
       setTabUnsaved(tabId, false)
     })
-    return () => { cancelled = true }
-  }, [filePath, tabId, setTabUnsaved, setTabDeleted])
+    return () => {
+      cancelled = true
+      diskReadRequestRef.current += 1
+    }
+  }, [filePath, tabId, setTabUnsaved, setTabDeleted, readFileLatest, worktreePath])
 
   // Reload file content when in-app git operations (discard, commit) affect this file
   useEffect(() => {
@@ -143,7 +256,8 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
         : null
       if (!relPath || !detail.paths?.includes(relPath)) return
 
-      window.api.fs.readFile(filePath).then((text) => {
+      void readFileLatest('git-change').then(({ stale, text }) => {
+        if (stale) return
         if (text === null) {
           // File deleted (untracked discard) — mark tab as deleted
           setTabDeleted(tabId, true)
@@ -158,7 +272,7 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
     }
     window.addEventListener('git:files-changed', handler)
     return () => window.removeEventListener('git:files-changed', handler)
-  }, [filePath, worktreePath, tabId, setTabUnsaved, setTabDeleted])
+  }, [filePath, worktreePath, tabId, setTabUnsaved, setTabDeleted, readFileLatest])
 
   // Watch for external file changes (terminal git operations, branch switches)
   useEffect(() => {
@@ -167,7 +281,8 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
     const cleanup = window.api.fs.onDirChanged((changedDir) => {
       if (changedDir !== worktreePath) return
 
-      window.api.fs.readFile(filePath).then((diskContent) => {
+      void readFileLatest('dir-change').then(({ stale, text: diskContent }) => {
+        if (stale) return
         if (diskContent === null) {
           if (!unsaved) {
             setTabDeleted(tabId, true)
@@ -190,17 +305,26 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
     })
 
     return cleanup
-  }, [filePath, worktreePath, tabId, unsaved, setTabUnsaved, setTabDeleted, addToast])
+  }, [filePath, worktreePath, tabId, unsaved, setTabUnsaved, setTabDeleted, addToast, readFileLatest])
 
   const handleChange = useCallback((value: string | undefined) => {
     if (value !== undefined) {
       currentContentRef.current = value
+      setContent(value)
+      const session = lspSessionRef.current
+      if (session) {
+        clearPendingLspChange()
+        lspDidChangeTimerRef.current = window.setTimeout(() => {
+          notifyDidChange(session.serverKey, session.workspace, session.uri, currentContentRef.current)
+          lspDidChangeTimerRef.current = null
+        }, 120)
+      }
       if (!unsaved) {
         setUnsaved(true)
         setTabUnsaved(tabId, true)
       }
     }
-  }, [unsaved, tabId, setTabUnsaved])
+  }, [clearPendingLspChange, unsaved, tabId, setTabUnsaved])
 
   const handleSave = useCallback(async () => {
     await window.api.fs.writeFile(filePath, currentContentRef.current)
@@ -212,43 +336,116 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   // Auto-save on blur when setting is enabled
   const prevActiveRef = useRef(active)
   useEffect(() => {
-    if (prevActiveRef.current && !active && unsaved && settings.autoSaveOnBlur) {
-      handleSave()
+    if (prevActiveRef.current && !active && unsaved && autoSaveOnBlur) {
+      void handleSave()
     }
     prevActiveRef.current = active
-  }, [active, unsaved, settings.autoSaveOnBlur, handleSave])
-
-  // LSP lifecycle: connect on mount, notify didClose on unmount
-  const lspLanguageRef = useRef<string | null>(null)
-  const lspWorkspaceRef = useRef<string | null>(null)
+  }, [active, unsaved, autoSaveOnBlur, handleSave])
 
   useEffect(() => {
-    const serverKey = getLspServerKeyForPath(filePath)
-    if (!serverKey || !worktreePath) return
+    const currentSession = lspSessionRef.current
+    const contentReady = content !== null
+    if (!contentReady || !worktreePath || !effectiveLspServerKey) {
+      if (currentSession) closeLspSession(currentSession)
+      else void clearLspDiagnosticsForUri(fileUri)
+      return
+    }
 
-    lspLanguageRef.current = serverKey
-    lspWorkspaceRef.current = worktreePath
-    const fileUri = `file://${filePath}`
-    const docLang = getLspTextDocumentLanguageId(filePath)
+    const needsReopen =
+      !currentSession ||
+      currentSession.serverKey !== effectiveLspServerKey ||
+      currentSession.workspace !== worktreePath ||
+      currentSession.uri !== fileUri ||
+      currentSession.documentLanguage !== effectiveLspDocumentLanguage
 
-    // Fire-and-forget: never blocks editor rendering
-    getOrCreateClient(serverKey, worktreePath).then((client) => {
-      if (client && content !== null) {
-        notifyDidOpen(serverKey, worktreePath!, fileUri, content, docLang)
+    if (!needsReopen) return
+
+    if (currentSession) closeLspSession(currentSession)
+
+    let cancelled = false
+    const lspStartedAt = performance.now()
+    measureAsync('editor:lsp-attach', () => getOrCreateClient(effectiveLspServerKey, worktreePath), {
+      filePath,
+      worktreePath,
+      language: effectiveLspServerKey,
+    }).then((client) => {
+      if (cancelled || !client) return
+      const nextSession = {
+        serverKey: effectiveLspServerKey,
+        workspace: worktreePath,
+        uri: fileUri,
+        documentLanguage: effectiveLspDocumentLanguage,
       }
+      lspSessionRef.current = nextSession
+      notifyDidOpen(
+        nextSession.serverKey,
+        nextSession.workspace,
+        nextSession.uri,
+        currentContentRef.current,
+        nextSession.documentLanguage,
+      )
+      markPaint('file-editor-lsp-ready', lspStartedAt, {
+        filePath,
+        worktreePath,
+        language: effectiveLspServerKey,
+      })
     }).catch(() => {})
 
     return () => {
-      if (lspLanguageRef.current && lspWorkspaceRef.current) {
-        notifyDidClose(lspLanguageRef.current, lspWorkspaceRef.current, fileUri)
+      cancelled = true
+      const liveSession = lspSessionRef.current
+      if (
+        liveSession &&
+        liveSession.serverKey === effectiveLspServerKey &&
+        liveSession.workspace === worktreePath &&
+        liveSession.uri === fileUri &&
+        liveSession.documentLanguage === effectiveLspDocumentLanguage
+      ) {
+        closeLspSession(liveSession)
       }
     }
-  }, [filePath, worktreePath]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    closeLspSession,
+    content,
+    effectiveLspDocumentLanguage,
+    effectiveLspServerKey,
+    fileUri,
+    worktreePath,
+  ])
+
+  useEffect(() => {
+    const session = lspSessionRef.current
+    if (!session || content === null || unsaved || currentContentRef.current !== content) return
+    notifyDidChange(session.serverKey, session.workspace, session.uri, content)
+  }, [content, fileUri, unsaved])
+
+  useEffect(() => {
+    const ed = editorInstance
+    if (!ed) return
+    const model = ed.getModel()
+    if (!model || model.getLanguageId() === effectiveLanguage) return
+    void loader.init().then((monaco) => {
+      const liveModel = ed.getModel()
+      if (liveModel && liveModel.getLanguageId() !== effectiveLanguage) {
+        monaco.editor.setModelLanguage(liveModel, effectiveLanguage)
+      }
+    })
+  }, [editorInstance, effectiveLanguage])
 
   useEffect(() => () => {
+    closeLspSession()
     findShortcutDisposeRef.current?.()
     findShortcutDisposeRef.current = null
-  }, [])
+  }, [closeLspSession])
+
+  const handleLanguageOverrideChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
+    const nextValue = event.target.value
+    const nextOverrides = { ...editorLanguageOverrides }
+    const normalized = normalizeEditorLanguageOverride(nextValue)
+    if (normalized) nextOverrides[languageOverrideKey] = normalized
+    else delete nextOverrides[languageOverrideKey]
+    updateSettings({ editorLanguageOverrides: nextOverrides })
+  }, [languageOverrideKey, editorLanguageOverrides, updateSettings])
 
   // Cmd+S + Cmd+L fallback (2048 = CtrlCmd). Primary ⌘L path: useShortcuts capture + monaco bridge.
   const handleEditorMount = useCallback((ed: editor.IStandaloneCodeEditor) => {
@@ -256,9 +453,10 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
     findShortcutDisposeRef.current?.()
     findShortcutDisposeRef.current = registerMonacoFileEditorForShortcuts(ed)
     setEditorInstance(ed)
+    setActiveMonacoEditor(ed)
     ed.addCommand(2048 | 49, () => handleSave())
     ed.addCommand(2048 | 42, () => runAddToChatRef.current())
-  }, [handleSave])
+  }, [handleSave, setActiveMonacoEditor])
 
   useEffect(() => {
     const ed = editorInstance
@@ -289,26 +487,30 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
         return
       }
       const text = model.getValueInRange(selection)
-      sendAddToChatText(filePath, getLanguage(filePath), text)
+      sendAddToChatText(filePath, effectiveLanguage, text)
     }
 
     const subFocus = ed.onDidFocusEditorWidget(() => {
+      setActiveMonacoEditor(ed)
       setMonacoAddToChatHandler(ed, () => runAddToChatRef.current())
     })
     const subBlur = ed.onDidBlurEditorWidget(() => {
+      setActiveMonacoEditor(null)
       clearMonacoAddToChatHandler(ed)
     })
 
     if (ed.hasTextFocus()) {
+      setActiveMonacoEditor(ed)
       setMonacoAddToChatHandler(ed, () => runAddToChatRef.current())
     }
 
     return () => {
       subFocus.dispose()
       subBlur.dispose()
+      setActiveMonacoEditor(null)
       clearMonacoAddToChatHandler(ed)
     }
-  }, [editorInstance, filePath, addToast])
+  }, [editorInstance, effectiveLanguage, filePath, addToast, setActiveMonacoEditor])
 
   if (content === null) {
     return (
@@ -337,17 +539,32 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
 
   return (
     <div className={styles.editorContainer}>
-      {isMarkdown && (
-        <div className={styles.diffToolbar}>
-          <span className={styles.diffLabel}>{filePath.split('/').pop()}</span>
-          <div className={styles.markdownToolbarEnd}>
-            {isPlan && worktreePath && (
-              <PlanAgentToolbar
-                filePath={filePath}
-                worktreePath={worktreePath}
-                hostTabId={hostTabId}
-              />
-            )}
+      <div className={styles.diffToolbar}>
+        <span className={styles.diffLabel}>{filePath.split('/').pop()}</span>
+        <div className={styles.markdownToolbarEnd}>
+          {isPlan && worktreePath && (
+            <PlanAgentToolbar
+              filePath={filePath}
+              worktreePath={worktreePath}
+              hostTabId={hostTabId}
+            />
+          )}
+          <label className={styles.languagePicker}>
+            <span className={styles.languagePickerLabel}>Language</span>
+            <select
+              data-testid="editor-language-select"
+              className={styles.languageSelect}
+              value={languageOverride ?? ''}
+              onChange={handleLanguageOverrideChange}
+            >
+              {EDITOR_LANGUAGE_OVERRIDE_OPTIONS.map((option) => (
+                <option key={option.value || 'auto'} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {isMarkdown && (
             <div className={styles.diffToggle}>
               <button
                 type="button"
@@ -364,9 +581,9 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
                 Preview
               </button>
             </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
       {previewMode && isMarkdown ? (
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
           <AddToChatMarkdownSurface filePath={filePath}>
@@ -378,24 +595,13 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
       ) : (
         <Editor
           height="100%"
-          language={getLanguage(filePath)}
+          language={effectiveLanguage}
+          path={modelPath}
           value={content}
-          theme={getAppearanceMonacoThemeName(settings.appearanceThemeId)}
+          theme={getAppearanceMonacoThemeName(appearanceThemeId)}
           onChange={handleChange}
           onMount={handleEditorMount}
-          options={{
-            fontFamily: "'SF Mono', Menlo, 'Cascadia Code', monospace",
-            fontSize: settings.editorFontSize,
-            minimap: { enabled: false },
-            scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
-            padding: { top: 8, bottom: 8 },
-            renderLineHighlight: 'line',
-            cursorBlinking: prefersReducedMotion ? 'solid' : 'smooth',
-            smoothScrolling: !prefersReducedMotion,
-            tabSize: 2,
-            wordWrap: 'off',
-            automaticLayout: true,
-          }}
+          options={editorOptions}
         />
       )}
     </div>

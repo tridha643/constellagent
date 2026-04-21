@@ -1,13 +1,15 @@
-import { useState, useCallback, memo, useMemo, useEffect } from 'react'
+import { useState, useCallback, memo, useMemo, useEffect, useRef } from 'react'
 import {
   PatchDiff,
   FileDiff,
   type DiffLineAnnotation,
   type FileDiffMetadata,
 } from '@pierre/diffs/react'
-import { getSingularPatch, diffAcceptRejectHunk } from '@pierre/diffs'
+import { diffAcceptRejectHunk, getSingularPatch } from '@pierre/diffs'
 import type { DiffAnnotation, DiffAnnotationSide } from '@shared/diff-annotation-types'
+import type { GitHunkActionRequest } from '@shared/git-hunk-action-types'
 import { STATUS_LABELS } from '../../../shared/status-labels'
+import type { DiffFileData } from '../../types/working-tree-diff'
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
 import { CommentBubble, CommentComposer, HunkActionAnnotation } from './AnnotationBubble'
 import annotationUi from './AnnotationBubble.module.css'
@@ -47,12 +49,6 @@ export interface PierreSelectedRange {
   endSide?: DiffAnnotationSide
 }
 
-export interface DiffFileData {
-  filePath: string
-  patch: string
-  status: string
-}
-
 export function normalizeDiffSelection(range: PierreSelectedRange): {
   side: DiffAnnotationSide
   lineNumber: number
@@ -78,14 +74,31 @@ export function isCombinedMergePatch(patch: string): boolean {
 // Sentinel key prefix for hunk-action annotations
 const HUNK_ACTION_KEY = '__hunk_action__'
 
+function getHunkActionLineKey(hunk: FileDiffMetadata['hunks'][number]): string {
+  return `${hunk.deletionStart}:${hunk.additionStart}`
+}
+
+function summarizePatchChanges(patch: string): { additions: number; deletions: number } {
+  let additions = 0
+  let deletions = 0
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) continue
+    if (line.startsWith('+')) additions += 1
+    else if (line.startsWith('-')) deletions += 1
+  }
+  return { additions, deletions }
+}
+
 // ── Per-file diff section ──
 
 export interface DiffFileSectionProps {
   data: DiffFileData
+  defaultCollapsed?: boolean
   inline: boolean
+  defaultShowFullContext: boolean
   worktreePath: string
   onOpenFile: (filePath: string) => void
-  worktreeAnnotations: DiffAnnotation[]
+  fileAnnotations: DiffAnnotation[]
   onAnnotationsChanged: () => void
   showPatchAnchorNote: boolean
   activeTourAnnotationId?: string
@@ -93,18 +106,19 @@ export interface DiffFileSectionProps {
   onToggleComment?: (id: string) => void
   tourMode?: boolean
   enableAcceptReject?: boolean
-  onHunkAccepted?: (filePath: string, hunkIndex: number) => void
-  onHunkRejected?: (filePath: string, hunkIndex: number) => void
-  onFileAccepted?: (filePath: string, status: string) => void
-  onFileRejected?: (filePath: string, status: string) => void
+  onHunkAccepted?: (request: GitHunkActionRequest) => Promise<void> | void
+  onHunkRejected?: (request: GitHunkActionRequest) => Promise<void> | void
+  onEnsureFileDiff?: (filePath: string) => void
 }
 
 export const DiffFileSection = memo(function DiffFileSection({
   data,
+  defaultCollapsed = false,
   inline,
+  defaultShowFullContext,
   worktreePath,
   onOpenFile,
-  worktreeAnnotations,
+  fileAnnotations,
   onAnnotationsChanged,
   showPatchAnchorNote,
   activeTourAnnotationId,
@@ -114,10 +128,11 @@ export const DiffFileSection = memo(function DiffFileSection({
   enableAcceptReject,
   onHunkAccepted,
   onHunkRejected,
-  onFileAccepted,
-  onFileRejected,
+  onEnsureFileDiff,
 }: DiffFileSectionProps) {
   const [selectedLines, setSelectedLines] = useState<PierreSelectedRange | null>(null)
+  const [showFullContextOverride, setShowFullContextOverride] = useState<boolean | null>(null)
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const [pendingRange, setPendingRange] = useState<{
     side: DiffAnnotationSide
     lineNumber: number
@@ -125,8 +140,46 @@ export const DiffFileSection = memo(function DiffFileSection({
   } | null>(null)
 
   const [fileDiffState, setFileDiffState] = useState<FileDiffMetadata | null>(null)
+  const [hiddenHunkState, setHiddenHunkState] = useState<{ sourceKey: string; keys: string[] }>({
+    sourceKey: '',
+    keys: [],
+  })
+  const [pendingHunkAction, setPendingHunkAction] = useState<string | null>(null)
+  const collapseTouchedRef = useRef(false)
+  const fileDiffSourceKeyRef = useRef<string | null>(null)
+  const fileDiffSourceKey = `${data.filePath}\u0000${data.patch}`
+  const hiddenHunkKeys =
+    hiddenHunkState.sourceKey === fileDiffSourceKey ? hiddenHunkState.keys : []
+  const canApplyAcceptReject =
+    !!enableAcceptReject
+    && data.status === 'modified'
+    && data.staged !== true
+    && data.hasMixedStageState !== true
+    && !isCombinedMergePatch(data.patch)
 
   useEffect(() => {
+    setShowFullContextOverride(null)
+  }, [data.filePath, data.patch, data.fileDiff])
+
+  useEffect(() => {
+    collapseTouchedRef.current = false
+    setCollapsed(defaultCollapsed)
+  }, [data.filePath, defaultCollapsed])
+
+  useEffect(() => {
+    if (collapseTouchedRef.current) return
+    setCollapsed(defaultCollapsed)
+  }, [defaultCollapsed])
+
+  useEffect(() => {
+    if (collapsed) return
+    if (pendingHunkAction) return
+    if (fileDiffState && fileDiffSourceKeyRef.current === fileDiffSourceKey) return
+    fileDiffSourceKeyRef.current = fileDiffSourceKey
+    if (data.fileDiff) {
+      setFileDiffState(data.fileDiff)
+      return
+    }
     if (!data.patch || isCombinedMergePatch(data.patch)) {
       setFileDiffState(null)
       return
@@ -136,7 +189,14 @@ export const DiffFileSection = memo(function DiffFileSection({
     } catch {
       setFileDiffState(null)
     }
-  }, [data.patch])
+  }, [collapsed, data.fileDiff, data.patch, fileDiffSourceKey, fileDiffState, pendingHunkAction])
+
+  useEffect(() => {
+    if (collapsed) return
+    if (data.fileDiff) return
+    if (!data.patch || isCombinedMergePatch(data.patch)) return
+    onEnsureFileDiff?.(data.filePath)
+  }, [collapsed, data.fileDiff, data.patch, data.filePath, onEnsureFileDiff])
 
   const parts = data.filePath.split('/')
   const fileName = parts.pop()
@@ -145,11 +205,9 @@ export const DiffFileSection = memo(function DiffFileSection({
   const fullPath = data.filePath.startsWith('/')
     ? data.filePath
     : `${worktreePath}/${data.filePath}`
-
-  const fileAnnotations = useMemo(
-    () => worktreeAnnotations.filter((a) => a.filePath === data.filePath),
-    [worktreeAnnotations, data.filePath],
-  )
+  const canShowFullContext = data.fileDiff != null
+  const showFullContext = canShowFullContext && (showFullContextOverride ?? defaultShowFullContext)
+  const patchSummary = useMemo(() => summarizePatchChanges(data.patch), [data.patch])
 
   const lineAnnotations = useMemo((): DiffLineAnnotation<DiffAnnotation[]>[] => {
     const map = new Map<string, DiffAnnotation[]>()
@@ -177,8 +235,11 @@ export const DiffFileSection = memo(function DiffFileSection({
 
   // Build hunk-start annotation entries for accept/reject buttons
   const hunkStartAnnotations = useMemo((): DiffLineAnnotation<DiffAnnotation[]>[] => {
-    if (!enableAcceptReject || !fileDiffState) return []
-    return fileDiffState.hunks.map((hunk, i) => ({
+    if (!canApplyAcceptReject || !fileDiffState) return []
+    return fileDiffState.hunks.flatMap((hunk, i) => (
+      hiddenHunkKeys.includes(getHunkActionLineKey(hunk))
+        ? []
+        : [{
       side: 'additions' as DiffAnnotationSide,
       lineNumber: hunk.additionStart,
       metadata: [{
@@ -190,8 +251,9 @@ export const DiffFileSection = memo(function DiffFileSection({
         createdAt: '',
         resolved: false,
       }],
-    }))
-  }, [enableAcceptReject, fileDiffState, data.filePath])
+    }]
+    ))
+  }, [canApplyAcceptReject, fileDiffState, data.filePath, hiddenHunkKeys])
 
   /** Pierre renders annotation slots per (side, lineNumber); anchor composer at the lowest selected line. */
   const displayLineAnnotations = useMemo((): DiffLineAnnotation<DiffAnnotation[]>[] => {
@@ -248,7 +310,7 @@ export const DiffFileSection = memo(function DiffFileSection({
       diffIndicators: 'bars' as const,
       lineDiffType: 'word-alt' as const,
       overflow: 'scroll' as const,
-      expandUnchanged: false,
+      expandUnchanged: showFullContext,
       disableFileHeader: false,
       enableLineSelection: true,
       enableHoverUtility: true,
@@ -256,7 +318,7 @@ export const DiffFileSection = memo(function DiffFileSection({
       onLineSelectionStart: handleLineSelectionStart,
       onLineSelectionEnd: handleLineSelectionEnd,
     }),
-    [inline, handleLineSelectionStart, handleLineSelectionEnd],
+    [inline, showFullContext, handleLineSelectionStart, handleLineSelectionEnd],
   )
 
   const clearSelectionAndComposer = useCallback(() => {
@@ -266,26 +328,80 @@ export const DiffFileSection = memo(function DiffFileSection({
 
   // ── Accept / reject hunks ──
 
+  const runHunkAction = useCallback(
+    (action: 'keep' | 'undo', hunkIndex: number) => {
+      if (!fileDiffState || !data.patch || pendingHunkAction) return
+      const callback = action === 'keep' ? onHunkAccepted : onHunkRejected
+      if (!callback) return
+      const hunk = fileDiffState.hunks[hunkIndex]
+      if (!hunk) return
+      let nextState: FileDiffMetadata
+      try {
+        nextState = diffAcceptRejectHunk(fileDiffState, hunkIndex, action === 'keep' ? 'accept' : 'reject')
+      } catch {
+        nextState = fileDiffState
+      }
+      const previousState = fileDiffState
+      const hiddenKey = getHunkActionLineKey(hunk)
+      const request: GitHunkActionRequest = {
+        filePath: data.filePath,
+        patch: data.patch,
+        hunkIndex,
+        action,
+        status: data.status,
+      }
+      const actionKey = `${action}:${hunkIndex}`
+      fileDiffSourceKeyRef.current = fileDiffSourceKey
+      setPendingHunkAction(actionKey)
+      setFileDiffState(nextState)
+      setHiddenHunkState((current) => {
+        const keys = current.sourceKey === fileDiffSourceKey ? current.keys : []
+        return {
+          sourceKey: fileDiffSourceKey,
+          keys: keys.includes(hiddenKey) ? keys : [...keys, hiddenKey],
+        }
+      })
+      void (async () => {
+        try {
+          await callback(request)
+        } catch {
+          setFileDiffState(previousState)
+          setHiddenHunkState((current) => {
+            const keys = current.sourceKey === fileDiffSourceKey ? current.keys : []
+            return {
+              sourceKey: fileDiffSourceKey,
+              keys: keys.filter((key) => key !== hiddenKey),
+            }
+          })
+        } finally {
+          setPendingHunkAction((current) => (current === actionKey ? null : current))
+        }
+      })()
+    },
+    [
+      data.filePath,
+      data.patch,
+      data.status,
+      fileDiffSourceKey,
+      fileDiffState,
+      onHunkAccepted,
+      onHunkRejected,
+      pendingHunkAction,
+    ],
+  )
+
   const handleAcceptHunk = useCallback(
     (hunkIndex: number) => {
-      if (!fileDiffState) return
-      const next = diffAcceptRejectHunk(fileDiffState, hunkIndex, 'accept')
-      setFileDiffState(next)
-      onHunkAccepted?.(data.filePath, hunkIndex)
-      onFileAccepted?.(data.filePath, data.status)
+      runHunkAction('keep', hunkIndex)
     },
-    [fileDiffState, data.filePath, data.status, onHunkAccepted, onFileAccepted],
+    [runHunkAction],
   )
 
   const handleRejectHunk = useCallback(
     (hunkIndex: number) => {
-      if (!fileDiffState) return
-      const next = diffAcceptRejectHunk(fileDiffState, hunkIndex, 'reject')
-      setFileDiffState(next)
-      onHunkRejected?.(data.filePath, hunkIndex)
-      onFileRejected?.(data.filePath, data.status)
+      runHunkAction('undo', hunkIndex)
     },
-    [fileDiffState, data.filePath, data.status, onHunkRejected, onFileRejected],
+    [runHunkAction],
   )
 
   const renderAnnotation = useCallback(
@@ -308,6 +424,7 @@ export const DiffFileSection = memo(function DiffFileSection({
                 hunkIndex={idx}
                 onAccept={handleAcceptHunk}
                 onReject={handleRejectHunk}
+                disabled={pendingHunkAction != null}
               />
             )
           })}
@@ -359,9 +476,34 @@ export const DiffFileSection = memo(function DiffFileSection({
   const renderHeaderMetadata = useCallback(
     (_props: unknown) => (
       <div className={styles.headerMeta}>
+        <button
+          className={styles.headerMetaContextBtn}
+          data-testid="diff-collapse-toggle"
+          aria-pressed={!collapsed}
+          onClick={(e) => {
+            e.stopPropagation()
+            collapseTouchedRef.current = true
+            setCollapsed((prev) => !prev)
+          }}
+        >
+          {collapsed ? 'Expand' : 'Collapse'}
+        </button>
         <span className={`${styles.headerMetaBadge} ${styles[data.status] || ''}`}>
           {STATUS_LABELS[data.status] || '?'}
         </span>
+        {canShowFullContext && (
+          <button
+            className={`${styles.headerMetaContextBtn} ${showFullContext ? styles.active : ''}`}
+            data-testid="show-full-file-toggle"
+            aria-pressed={showFullContext}
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowFullContextOverride((prev) => !(prev ?? defaultShowFullContext))
+            }}
+          >
+            {showFullContext ? 'Changed only' : 'Show full file'}
+          </button>
+        )}
         <button
           className={styles.headerMetaOpenBtn}
           onClick={(e) => {
@@ -373,7 +515,7 @@ export const DiffFileSection = memo(function DiffFileSection({
         </button>
       </div>
     ),
-    [data.status, fullPath, onOpenFile],
+    [canShowFullContext, collapsed, data.status, defaultShowFullContext, fullPath, onOpenFile, showFullContext],
   )
 
   // ── Hover utility: "+" button on hovered lines ──
@@ -401,17 +543,92 @@ export const DiffFileSection = memo(function DiffFileSection({
   )
 
   const hasAnnotationUi = displayLineAnnotations.length > 0
-  const combinedMergePatch = isCombinedMergePatch(data.patch)
+  const combinedMergePatch = !data.fileDiff && isCombinedMergePatch(data.patch)
+
+  const expandSection = useCallback(() => {
+    collapseTouchedRef.current = true
+    setCollapsed(false)
+  }, [])
+
+  const toggleCollapsed = useCallback(() => {
+    collapseTouchedRef.current = true
+    setCollapsed((prev) => !prev)
+  }, [])
+
+  if (collapsed) {
+    return (
+      <div className={styles.diffFileSection} id={`diff-${data.filePath}`}>
+        <div
+          className={styles.collapsedFileHeader}
+          role="button"
+          tabIndex={0}
+          onClick={expandSection}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              expandSection()
+            }
+          }}
+        >
+          <span className={`${styles.fileHeaderBadge} ${styles[data.status] || ''}`}>
+            {STATUS_LABELS[data.status] || '?'}
+          </span>
+          <span className={styles.fileHeaderPath}>
+            {dir && <span className={styles.fileHeaderDir}>{dir}</span>}
+            {fileName}
+          </span>
+          <div className={styles.headerMeta}>
+            {(patchSummary.additions > 0 || patchSummary.deletions > 0) && (
+              <span className={styles.collapsedDiffSummary}>
+                {patchSummary.additions > 0 ? `+${patchSummary.additions}` : ''}
+                {patchSummary.additions > 0 && patchSummary.deletions > 0 ? ' ' : ''}
+                {patchSummary.deletions > 0 ? `-${patchSummary.deletions}` : ''}
+              </span>
+            )}
+            <button
+              className={styles.headerMetaContextBtn}
+              data-testid="diff-collapse-toggle"
+              aria-pressed="false"
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleCollapsed()
+              }}
+            >
+              Expand
+            </button>
+            <button
+              className={styles.headerMetaOpenBtn}
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenFile(fullPath)
+              }}
+            >
+              Open
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={styles.diffFileSection} id={`diff-${data.filePath}`}>
-      {data.patch ? (
+      <div className={styles.expandedFileBody}>
+      {data.patch || fileDiffState ? (
         combinedMergePatch ? (
           <>
             {/* Custom header only for combined merge patch fallback */}
             <div
               className={styles.fileHeader}
+              role="button"
+              tabIndex={0}
               onClick={() => onOpenFile(fullPath)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onOpenFile(fullPath)
+                }
+              }}
             >
               <span className={`${styles.fileHeaderBadge} ${styles[data.status] || ''}`}>
                 {STATUS_LABELS[data.status] || '?'}
@@ -467,6 +684,7 @@ export const DiffFileSection = memo(function DiffFileSection({
       ) : (
         <div style={{ padding: 12, color: '#888', fontSize: 13 }}>No diff available</div>
       )}
+      </div>
     </div>
   )
 })
@@ -476,11 +694,17 @@ export const DiffFileSection = memo(function DiffFileSection({
 export function FileStrip({
   files,
   activeFile,
+  onSelectFile,
 }: {
   files: DiffFileData[]
   activeFile: string | null
+  onSelectFile?: (filePath: string) => void
 }) {
   const scrollTo = (filePath: string) => {
+    if (onSelectFile) {
+      onSelectFile(filePath)
+      return
+    }
     const el = document.getElementById(`diff-${filePath}`)
     el?.scrollIntoView({ behavior: getPreferredScrollBehavior(), block: 'start' })
   }

@@ -12,6 +12,7 @@ import {
 } from '../../linear/linear-api'
 import { SendArrowIcon } from '../../pi-gui/icons'
 import baseStyles from './LinearSearchComposer.module.css'
+import { LinearWorkspacePicker } from './LinearWorkspacePicker'
 import styles from './LinearTicketsComposer.module.css'
 import { useFixedPopoverStyle } from './useFixedPopoverStyle'
 
@@ -49,8 +50,6 @@ export interface LinearTicketsComposerProps {
   scopeProjectId: string
   onScopeProjectIdChange: (id: string) => void
   selectedProjectName?: string
-  /** Branch / Graphite stack line for the separate Workspace pill (this app’s open workspace). */
-  workContextLabel: string
   teams: LinearTeamNode[]
   scopeTeamId: string
   onScopeTeamIdChange: (id: string) => void
@@ -80,7 +79,6 @@ export function LinearTicketsComposer({
   scopeProjectId,
   onScopeProjectIdChange,
   selectedProjectName,
-  workContextLabel,
   teams,
   scopeTeamId,
   onScopeTeamIdChange,
@@ -342,6 +340,7 @@ export function LinearTicketsComposer({
                               key={t.id}
                               type="button"
                               role="option"
+                              aria-selected={scopeTeamId === t.id}
                               className={`${baseStyles.popoverItem} ${scopeTeamId === t.id ? baseStyles.popoverItemOn : ''}`}
                               onClick={() => {
                                 onScopeTeamIdChange(t.id)
@@ -442,6 +441,7 @@ export function LinearTicketsComposer({
                           <button
                             type="button"
                             role="option"
+                            aria-selected={!scopeProjectId}
                             className={`${baseStyles.popoverItem} ${!scopeProjectId ? baseStyles.popoverItemOn : ''}`}
                             onClick={() => {
                               onScopeProjectIdChange('')
@@ -461,6 +461,7 @@ export function LinearTicketsComposer({
                                   key={p.id}
                                   type="button"
                                   role="option"
+                                  aria-selected={scopeProjectId === p.id}
                                   className={baseStyles.popoverItem}
                                   onClick={() => {
                                     onScopeProjectIdChange(p.id)
@@ -485,16 +486,9 @@ export function LinearTicketsComposer({
                   : null}
               </div>
 
-              <div className={baseStyles.pillWrap}>
-                <span
-                  className={`${baseStyles.pillBtn} ${baseStyles.pillStatic} ${styles.ticketsPill} ${styles.ticketsPillWorkspace}`}
-                  role="status"
-                  aria-label="Workspace and stack context"
-                >
-                  <span className={baseStyles.pillPrefix}>Workspace</span>
-                  <span className={baseStyles.pillValue}>{workContextLabel}</span>
-                </span>
-              </div>
+              <LinearWorkspacePicker
+                pillClassName={`${styles.ticketsPill} ${styles.ticketsPillWorkspace}`}
+              />
 
               <div className={baseStyles.pillWrap}>
                 <button
@@ -536,6 +530,7 @@ export function LinearTicketsComposer({
                               key={o.value}
                               type="button"
                               role="option"
+                              aria-selected={priority === o.value}
                               className={`${baseStyles.popoverItem} ${priority === o.value ? baseStyles.popoverItemOn : ''}`}
                               onClick={() => {
                                 onPriorityChange(o.value)

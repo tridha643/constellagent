@@ -827,6 +827,14 @@ function LinearSettingsSection({
           { value: '4', label: 'Low' },
         ]}
       />
+      <ToggleRow
+        label="Copy created issue link"
+        description="After creating a ticket from the Tickets tab, copy the new Linear issue URL to your clipboard and mention it in the success toast."
+        value={settings.linearCopyCreatedIssueToClipboard}
+        onChange={(v) =>
+          updateSettings({ linearCopyCreatedIssueToClipboard: v })
+        }
+      />
       <SelectRow
         label="Issue → coding agent"
         description="CLI used when you open a Linear issue in a new worktree (Issues table icon or “Open agent” on the ticket-created toast). Uses the currently open workspace’s project as the git repo."
@@ -1035,7 +1043,7 @@ export function SettingsPanel() {
 
           <ToggleRow
             label="Editor: full TypeScript checking"
-            description="Runs Monaco semantic checks (module resolution, types). Off by default—the in-app editor has no workspace node_modules, so many imports look like errors until you enable this for local syntax-only editing."
+            description="Runs Monaco semantic checks for standalone TS/JS files. Workspace files stay syntax-only here and should rely on the TypeScript LSP bridge for project-aware imports and types."
             value={settings.editorMonacoSemanticDiagnostics}
             onChange={(v) => update('editorMonacoSemanticDiagnostics', v)}
           />
@@ -1070,6 +1078,13 @@ export function SettingsPanel() {
             description="Show diffs inline instead of side-by-side"
             value={settings.diffInline}
             onChange={(v) => update('diffInline', v)}
+          />
+
+          <ToggleRow
+            label="Open full diff context by default"
+            description="Start diff files with all unchanged lines visible. You can still override each file from its header."
+            value={settings.diffShowFullContextByDefault}
+            onChange={(v) => update('diffShowFullContextByDefault', v)}
           />
 
           <ToggleRow

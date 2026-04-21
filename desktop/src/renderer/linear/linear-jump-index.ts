@@ -12,7 +12,10 @@ import {
   syntheticRelativePathForProject,
 } from './linear-synthetic-path'
 
-export type LinearJumpKind = 'issue' | 'project' | 'bar'
+export type LinearJumpKind =
+  | 'issue'
+  | 'project'
+  | 'bar'
 
 export interface LinearJumpRow {
   id: string

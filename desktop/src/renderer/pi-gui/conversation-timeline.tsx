@@ -201,6 +201,7 @@ function VirtualizedTranscriptList({
   const [viewport, setViewport] = useState({ scrollTop: 0, height: 0 });
   const previousTotalHeightRef = useRef(0);
   const contentHeightRafRef = useRef<number | null>(null);
+  const measurementVersionRafRef = useRef<number | null>(null);
 
   const scheduleOnContentHeightChange = useCallback(() => {
     if (contentHeightRafRef.current != null) return;
@@ -209,6 +210,16 @@ function VirtualizedTranscriptList({
       onContentHeightChange();
     });
   }, [onContentHeightChange]);
+
+  const scheduleMeasurementVersionUpdate = useCallback(() => {
+    if (measurementVersionRafRef.current != null) {
+      return;
+    }
+    measurementVersionRafRef.current = requestAnimationFrame(() => {
+      measurementVersionRafRef.current = null;
+      setMeasurementVersion((current) => current + 1);
+    });
+  }, []);
 
   useLayoutEffect(() => {
     const knownIds = new Set(transcript.map((item) => item.id));
@@ -221,9 +232,9 @@ function VirtualizedTranscriptList({
       removedAny = true;
     }
     if (removedAny) {
-      setMeasurementVersion((current) => current + 1);
+      scheduleMeasurementVersionUpdate();
     }
-  }, [transcript]);
+  }, [scheduleMeasurementVersionUpdate, transcript]);
 
   useLayoutEffect(() => {
     const pane = timelinePaneRef.current;
@@ -260,6 +271,10 @@ function VirtualizedTranscriptList({
         cancelAnimationFrame(contentHeightRafRef.current);
         contentHeightRafRef.current = null;
       }
+      if (measurementVersionRafRef.current != null) {
+        cancelAnimationFrame(measurementVersionRafRef.current);
+        measurementVersionRafRef.current = null;
+      }
     },
     [],
   );
@@ -271,8 +286,8 @@ function VirtualizedTranscriptList({
       return;
     }
     measuredHeightsRef.current.set(id, nextHeight);
-    setMeasurementVersion((current) => current + 1);
-  }, []);
+    scheduleMeasurementVersionUpdate();
+  }, [scheduleMeasurementVersionUpdate]);
 
   const rowHeights = transcript.map((item) => measuredHeightsRef.current.get(item.id) ?? estimateTimelineItemHeight(item));
   const rowOffsets: number[] = [];
