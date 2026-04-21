@@ -20,6 +20,7 @@ import type { QuickOpenSearchRequest, QuickOpenSearchResult } from '../shared/qu
 import type { LinearFffQuickOpenRequest, LinearFffQuickOpenResult } from '../shared/linear-fff-types'
 import type { CodeSearchRequest, CodeSearchResult } from '../shared/code-search-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
+import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 
 /** Linear GraphQL via main process (renderer fetch hits CORS). Exposed on `api` and `api.app`. */
@@ -66,6 +67,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_GET_STATUS, worktreePath),
     getDiff: (worktreePath: string, staged: boolean) =>
       ipcRenderer.invoke(IPC.GIT_GET_DIFF, worktreePath, staged),
+    getWorkingTreeDiff: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.GIT_GET_WORKTREE_DIFF, worktreePath) as Promise<string>,
     getFileDiff: (worktreePath: string, filePath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_FILE_DIFF, worktreePath, filePath),
     getBranches: (repoPath: string) =>
@@ -76,6 +79,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_UNSTAGE, worktreePath, paths),
     discard: (worktreePath: string, paths: string[], untracked: string[]) =>
       ipcRenderer.invoke(IPC.GIT_DISCARD, worktreePath, paths, untracked),
+    applyHunkAction: (worktreePath: string, request: GitHunkActionRequest) =>
+      ipcRenderer.invoke(IPC.GIT_APPLY_HUNK_ACTION, worktreePath, request) as Promise<void>,
     commit: (worktreePath: string, message: string) =>
       ipcRenderer.invoke(IPC.GIT_COMMIT, worktreePath, message),
     pushCurrentBranch: (worktreePath: string) =>

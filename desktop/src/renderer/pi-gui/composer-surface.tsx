@@ -105,6 +105,16 @@ export function ComposerSurface({
 }: ComposerSurfaceProps) {
   const [isDragActive, setIsDragActive] = useState(false);
   const dragDepthRef = useRef(0);
+  const lastSelectionRef = useRef<number | null>(null);
+
+  const emitSelectionChange = (selectionStart: number | null | undefined) => {
+    const nextSelection = selectionStart ?? 0;
+    if (lastSelectionRef.current === nextSelection) {
+      return;
+    }
+    lastSelectionRef.current = nextSelection;
+    onComposerSelectionChange?.(nextSelection);
+  };
 
   const clearDragState = () => {
     dragDepthRef.current = 0;
@@ -155,16 +165,16 @@ export function ComposerSurface({
       value={composerDraft}
       onChange={(event) => {
         setComposerDraft(event.target.value);
-        onComposerSelectionChange?.(event.target.selectionStart ?? 0);
+        emitSelectionChange(event.target.selectionStart);
       }}
       onSelect={(event) => {
-        onComposerSelectionChange?.(event.currentTarget.selectionStart ?? 0);
+        emitSelectionChange(event.currentTarget.selectionStart);
       }}
       onClick={(event) => {
-        onComposerSelectionChange?.(event.currentTarget.selectionStart ?? 0);
+        emitSelectionChange(event.currentTarget.selectionStart);
       }}
       onKeyUp={(event) => {
-        onComposerSelectionChange?.(event.currentTarget.selectionStart ?? 0);
+        emitSelectionChange(event.currentTarget.selectionStart);
       }}
       onKeyDown={onComposerKeyDown}
       placeholder={textareaPlaceholder}
@@ -184,11 +194,13 @@ export function ComposerSurface({
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      {isDragActive ? (
-        <div className="composer__drop-indicator" data-testid="composer-drop-indicator">
-          Drop images or files to attach
-        </div>
-      ) : null}
+      <div
+        className={`composer__drop-indicator${isDragActive ? ' is-visible' : ''}`}
+        data-testid="composer-drop-indicator"
+        aria-hidden={!isDragActive}
+      >
+        Drop images or files to attach
+      </div>
       {activeSlashCommand ? (
         <div className="composer__slash-intent">
           <span className="composer__slash-intent-icon" aria-hidden="true">

@@ -14,6 +14,7 @@ const RESTART_WINDOW_MS = 5 * 60 * 1000
 
 export class LspServerManager {
   private servers = new Map<string, ManagedServer>()
+  private idleShutdownTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   private key(language: string, workspace: string): string {
     return `${language}:${workspace}`
@@ -21,10 +22,37 @@ export class LspServerManager {
 
   getOrSpawn(language: string, workspace: string): ChildProcess | null {
     const k = this.key(language, workspace)
+    this.clearIdleShutdown(k)
     const existing = this.servers.get(k)
     if (existing && !existing.process.killed) return existing.process
 
     return this.spawn(language, workspace)
+  }
+
+  scheduleRelease(language: string, workspace: string, idleMs = 60_000): void {
+    const k = this.key(language, workspace)
+    this.clearIdleShutdown(k)
+    const managed = this.servers.get(k)
+    if (!managed) return
+    this.idleShutdownTimers.set(k, setTimeout(() => {
+      const live = this.servers.get(k)
+      if (!live) return
+      live.restartCount = MAX_RESTARTS
+      this.servers.delete(k)
+      try {
+        live.process.kill()
+      } catch {
+        // best effort
+      }
+      this.idleShutdownTimers.delete(k)
+    }, idleMs))
+  }
+
+  private clearIdleShutdown(key: string): void {
+    const timer = this.idleShutdownTimers.get(key)
+    if (!timer) return
+    clearTimeout(timer)
+    this.idleShutdownTimers.delete(key)
   }
 
   private spawn(language: string, workspace: string): ChildProcess | null {
@@ -32,6 +60,7 @@ export class LspServerManager {
     if (!config || !isServerAvailable(config.command)) return null
 
     const k = this.key(language, workspace)
+    this.clearIdleShutdown(k)
     const proc = spawn(config.command, config.args, {
       cwd: workspace,
       stdio: 'pipe',
@@ -79,6 +108,10 @@ export class LspServerManager {
   }
 
   shutdown(): void {
+    for (const [, timer] of this.idleShutdownTimers) {
+      clearTimeout(timer)
+    }
+    this.idleShutdownTimers.clear()
     for (const [, managed] of this.servers) {
       managed.restartCount = MAX_RESTARTS // prevent restart on kill
       try { managed.process.kill() } catch {}

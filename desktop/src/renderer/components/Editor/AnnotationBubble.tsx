@@ -264,16 +264,20 @@ export function HunkActionAnnotation({
   hunkIndex,
   onAccept,
   onReject,
+  disabled = false,
 }: {
   hunkIndex: number
   onAccept: (hunkIndex: number) => void
   onReject: (hunkIndex: number) => void
+  disabled?: boolean
 }) {
   return (
     <div className={styles.hunkActionBar}>
       <div className={styles.hunkActionGroup}>
         <button
           type="button"
+          aria-label="Undo hunk"
+          disabled={disabled}
           onClick={() => onReject(hunkIndex)}
           className={styles.hunkActionUndo}
         >
@@ -281,6 +285,8 @@ export function HunkActionAnnotation({
         </button>
         <button
           type="button"
+          aria-label="Keep hunk"
+          disabled={disabled}
           onClick={() => onAccept(hunkIndex)}
           className={styles.hunkActionKeep}
         >

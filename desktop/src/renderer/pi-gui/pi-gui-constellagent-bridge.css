@@ -252,7 +252,7 @@
     background-color 180ms var(--ease-ui);
 }
 
-/* Default focus: Pi TUI colors.border (vars.blue). */
+/* Dark Pi shell: keep the outer composer shell focus treatment. */
 :root.dark .pi-gui-scope .composer__surface:focus-within:not([data-reasoning]) {
   border-color: color-mix(in srgb, var(--pi-tui-border-focus) 52%, var(--border-default));
   box-shadow:
@@ -260,7 +260,6 @@
     0 12px 32px rgba(0, 0, 0, 0.22);
 }
 
-/* Reasoning tier — Pi TUI medium…xhigh (low uses :not([data-reasoning]) default ring). */
 :root.dark .pi-gui-scope .composer__surface[data-reasoning="medium"]:focus-within {
   border-color: color-mix(in srgb, var(--pi-tui-thinking-medium) 54%, var(--border-default));
   box-shadow:

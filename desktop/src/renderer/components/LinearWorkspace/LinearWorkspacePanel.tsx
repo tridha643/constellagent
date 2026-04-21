@@ -59,7 +59,6 @@ import {
 } from "../../linear/linear-jump-index";
 import { LinearQuickOpen } from "./LinearQuickOpen";
 import { LinearSearchComposer } from "./LinearSearchComposer";
-import { formatLinearWorkContextLabel } from "./format-linear-work-context";
 import { LinearTicketsComposer } from "./LinearTicketsComposer";
 import styles from "./LinearWorkspacePanel.module.css";
 
@@ -179,11 +178,18 @@ function usersFromLoadedIssues(
   return [...m.values()];
 }
 
+type LinearE2eBootstrap = {
+  viewer?: { id: string; name: string; email?: string } | null;
+  projects?: LinearProjectNode[];
+  teams?: LinearTeamNode[];
+  ticketIssues?: LinearIssueNode[];
+  issueCreateResponse?: LinearIssueNode | null;
+};
+
 export function LinearWorkspacePanel() {
   const settings = useAppStore((s) => s.settings);
   const workspaces = useAppStore((s) => s.workspaces);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
-  const graphiteStacks = useAppStore((s) => s.graphiteStacks);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const toggleLinear = useAppStore((s) => s.toggleLinear);
   const openLinearQuickOpen = useAppStore((s) => s.openLinearQuickOpen);
@@ -223,6 +229,7 @@ export function LinearWorkspacePanel() {
   const [e2eLinearIssues, setE2eLinearIssues] = useState<
     LinearIssueNode[] | null
   >(null);
+  const e2eIssueCreateResponse = useRef<LinearIssueNode | null>(null);
   const linearToolsMenuRef = useRef<HTMLDivElement>(null);
   const [composerSubmitError, setComposerSubmitError] = useState<string | null>(
     null,
@@ -348,6 +355,25 @@ export function LinearWorkspacePanel() {
     window.addEventListener("constellagent-e2e-linear-issues", handler);
     return () =>
       window.removeEventListener("constellagent-e2e-linear-issues", handler);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<LinearE2eBootstrap>;
+      const detail = ce.detail;
+      if (!detail || typeof detail !== "object") return;
+      setLoadError(null);
+      if ("viewer" in detail) setViewer(detail.viewer ?? null);
+      if (Array.isArray(detail.projects)) setProjects(detail.projects);
+      if (Array.isArray(detail.teams)) setLinearTeams(detail.teams);
+      if (Array.isArray(detail.ticketIssues)) setTicketIssues(detail.ticketIssues);
+      if ("issueCreateResponse" in detail) {
+        e2eIssueCreateResponse.current = detail.issueCreateResponse ?? null;
+      }
+    };
+    window.addEventListener("constellagent-e2e-linear-bootstrap", handler);
+    return () =>
+      window.removeEventListener("constellagent-e2e-linear-bootstrap", handler);
   }, []);
 
   useEffect(() => {
@@ -555,7 +581,6 @@ export function LinearWorkspacePanel() {
       }),
     [barEntries, projectNameById, assigned, created, projects, supplementalIssues],
   );
-
   const pickerUsers = useMemo(() => {
     if (!orgUsersUnavailable && workspaceUsers.length > 0)
       return workspaceUsers;
@@ -576,16 +601,7 @@ export function LinearWorkspacePanel() {
     () => workspaces.find((w) => w.id === activeWorkspaceId) ?? null,
     [workspaces, activeWorkspaceId],
   );
-  const workspaceBranchLabel = activeWorkspace?.branch ?? null;
   const worktreePathForPi = activeWorkspace?.worktreePath ?? null;
-
-  const activeGraphiteStack = activeWorkspaceId
-    ? graphiteStacks.get(activeWorkspaceId) ?? null
-    : null;
-  const workContextLabel = useMemo(
-    () => formatLinearWorkContextLabel(workspaceBranchLabel, activeGraphiteStack),
-    [workspaceBranchLabel, activeGraphiteStack],
-  );
 
   const activateIssueWorkspaceOrOpenUrl = useCallback(
     (issue: LinearIssueNode) => {
@@ -715,7 +731,8 @@ export function LinearWorkspacePanel() {
       priority: number;
     }) => {
       const key = apiKey.trim();
-      if (!key) {
+      const e2eCreatedIssue = e2eIssueCreateResponse.current;
+      if (!key && !e2eCreatedIssue) {
         setComposerSubmitError("Add your Personal API key in Settings.");
         return false;
       }
@@ -725,24 +742,44 @@ export function LinearWorkspacePanel() {
       }
       setComposerSubmitError(null);
       const projectId = scopeProjectId.trim();
-      const res = await linearCreateIssue(key, {
-        teamId: input.teamId,
-        title: input.title,
-        description: input.description || undefined,
-        ...(projectId ? { projectId } : {}),
-        priority: input.priority,
-      });
+      const res = e2eCreatedIssue
+        ? { issue: e2eCreatedIssue }
+        : await linearCreateIssue(key, {
+            teamId: input.teamId,
+            title: input.title,
+            description: input.description || undefined,
+            ...(projectId ? { projectId } : {}),
+            priority: input.priority,
+          });
       if (res.errors?.length) {
         setComposerSubmitError(res.errors.map((e) => e.message).join("; "));
         return false;
       }
       if (res.issue) {
         const created = res.issue;
+        let copiedToClipboard = false;
+        let clipboardError: string | null = null;
+        if (
+          settings.linearCopyCreatedIssueToClipboard &&
+          created.url.trim()
+        ) {
+          try {
+            await navigator.clipboard.writeText(created.url);
+            copiedToClipboard = true;
+          } catch (err) {
+            clipboardError =
+              err instanceof Error && err.message.trim()
+                ? err.message.trim()
+                : "Clipboard write failed";
+          }
+        }
         setTicketIssues((prev) => [created, ...prev]);
         addToast({
           id: crypto.randomUUID(),
           type: "info",
-          message: `Created ${created.identifier}`,
+          message: copiedToClipboard
+            ? `Created ${created.identifier} and copied link`
+            : `Created ${created.identifier}`,
           action: {
             label: "Open agent",
             onClick: () => {
@@ -750,11 +787,24 @@ export function LinearWorkspacePanel() {
             },
           },
         });
+        if (clipboardError) {
+          addToast({
+            id: crypto.randomUUID(),
+            type: "warning",
+            message: `Created ${created.identifier}, but couldn’t copy link: ${clipboardError}`,
+          });
+        }
         return true;
       }
       return false;
     },
-    [addToast, apiKey, scopeProjectId, startLinearIssueAgentSession],
+    [
+      addToast,
+      apiKey,
+      scopeProjectId,
+      settings.linearCopyCreatedIssueToClipboard,
+      startLinearIssueAgentSession,
+    ],
   );
 
   const linearTabOrder = normalizeLinearWorkspaceTabOrder(
@@ -889,6 +939,7 @@ export function LinearWorkspacePanel() {
 
       <div className={styles.workspaceMain}>
         <LinearQuickOpen
+          key={`linear-quick-open:${linearQuickOpenVisible ? "open" : "closed"}`}
           apiKey={apiKey}
           viewer={
             viewer?.id
@@ -896,7 +947,6 @@ export function LinearWorkspacePanel() {
               : null
           }
           jumpRows={jumpRows}
-          projects={projects}
           pickerUsers={pickerUsersWithViewer}
           orgUsersUnavailable={orgUsersUnavailable}
           onActivateRow={onJumpActivate}
@@ -938,7 +988,6 @@ export function LinearWorkspacePanel() {
                 updatesLoading={updatesLoading}
                 updatesError={updatesError}
                 selectedProjectName={scopedProjectLabel}
-                workContextLabel={workContextLabel}
                 worktreePathForPi={worktreePathForPi}
                 submitError={composerSubmitError}
                 onClearSubmitError={() => setComposerSubmitError(null)}
@@ -954,7 +1003,6 @@ export function LinearWorkspacePanel() {
                 scopeProjectId={scopeProjectId}
                 onScopeProjectIdChange={setScopeProjectId}
                 selectedProjectName={scopedProjectLabel}
-                workContextLabel={workContextLabel}
                 teams={linearTeams}
                 scopeTeamId={ticketTeamId}
                 onScopeTeamIdChange={setTicketTeamId}

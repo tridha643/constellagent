@@ -6,6 +6,7 @@ import { Tooltip } from '../Tooltip/Tooltip'
 import { PiIcon } from '../Icons/PiIcon'
 import styles from './RightPanel.module.css'
 import { registerChangesFindSource } from '../../utils/changes-file-find-bridge'
+import { buildWorkingTreeStatusSignature } from '../../types/working-tree-diff'
 
 const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
 
@@ -45,6 +46,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const commitFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const openDiffTab = useAppStore((s) => s.openDiffTab)
   const setGitFileStatuses = useAppStore((s) => s.setGitFileStatuses)
+  const updateGitStatusSnapshot = useAppStore((s) => s.updateGitStatusSnapshot)
   const addToast = useAppStore((s) => s.addToast)
   const workspaces = useAppStore((s) => s.workspaces)
   const projects = useAppStore((s) => s.projects)
@@ -60,26 +62,44 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
   const refresh = useCallback(async () => {
     try {
-      const statuses = await window.api.git.getStatus(worktreePath)
+      const [statuses, headHash] = await Promise.all([
+        window.api.git.getStatus(worktreePath),
+        window.api.git.getHeadHash(worktreePath),
+      ])
       setFiles(statuses)
+      updateGitStatusSnapshot(worktreePath, {
+        statuses,
+        headHash,
+        signature: buildWorkingTreeStatusSignature(statuses, headHash),
+        updatedAt: Date.now(),
+      })
     } catch {
       // Best effort — empty state already communicates enough.
     }
-  }, [worktreePath])
+  }, [worktreePath, updateGitStatusSnapshot])
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    window.api.git.getStatus(worktreePath).then((statuses) => {
+    Promise.all([
+      window.api.git.getStatus(worktreePath),
+      window.api.git.getHeadHash(worktreePath),
+    ]).then(([statuses, headHash]) => {
       if (!cancelled) {
         setFiles(statuses)
+        updateGitStatusSnapshot(worktreePath, {
+          statuses,
+          headHash,
+          signature: buildWorkingTreeStatusSignature(statuses, headHash),
+          updatedAt: Date.now(),
+        })
         setLoading(false)
       }
     }).catch(() => {
       if (!cancelled) setLoading(false)
     })
     return () => { cancelled = true }
-  }, [worktreePath])
+  }, [worktreePath, updateGitStatusSnapshot])
 
   useEffect(() => {
     let cancelled = false
@@ -152,17 +172,18 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   }, [])
 
   // Watch filesystem for changes and auto-refresh
-  useFileWatcher(worktreePath, refresh)
+  useFileWatcher(worktreePath, refresh, Boolean(isActive))
 
   // Explicit refresh after checkpoint restore / git ops that bypass FS watcher timing
   useEffect(() => {
+    if (!isActive) return
     const onGitFilesChanged = (e: Event) => {
       const detail = (e as CustomEvent<{ worktreePath?: string }>).detail
       if (detail?.worktreePath === worktreePath) void refresh()
     }
     window.addEventListener('git:files-changed', onGitFilesChanged)
     return () => window.removeEventListener('git:files-changed', onGitFilesChanged)
-  }, [worktreePath, refresh])
+  }, [worktreePath, refresh, isActive])
 
   // Re-fetch when tab becomes visible (git ops only touch .git/ which the watcher ignores)
   useEffect(() => {

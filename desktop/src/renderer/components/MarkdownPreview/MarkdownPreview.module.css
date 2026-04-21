@@ -245,8 +245,8 @@
   transform: scale(1);
   transform-origin: top right;
   transition:
-    opacity var(--motion-default) var(--ease-out),
-    transform var(--motion-default) var(--ease-out);
+    opacity var(--duration-default) var(--ease-out),
+    transform var(--duration-default) var(--ease-out);
 
   @starting-style {
     opacity: 0;

@@ -1,12 +1,15 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { diffLines } from 'diff'
 import type { editor } from 'monaco-editor'
+import { measureAsync } from '../utils/perf'
 
 interface GutterChange {
   type: 'added' | 'modified' | 'deleted'
   startLine: number
   endLine: number
 }
+
+const MAX_GUTTER_DIFF_BYTES = 200_000
 
 /**
  * Computes git gutter decorations by diffing the HEAD version of a file
@@ -22,6 +25,7 @@ export function useGitGutter(
   const headContentRef = useRef<string | null>(null)
   const decorationsRef = useRef<editor.IEditorDecorationsCollection | null>(null)
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const headFetchRequestRef = useRef(0)
 
   const computeRelativePath = useCallback(() => {
     if (!worktreePath) return null
@@ -37,6 +41,10 @@ export function useGitGutter(
 
     const currentContent = editorInstance.getValue()
     const headContent = headContentRef.current
+    if (currentContent.length + headContent.length > MAX_GUTTER_DIFF_BYTES) {
+      decorationsRef.current?.clear()
+      return
+    }
 
     const changes = computeChanges(headContent, currentContent)
     const decorations = changesToDecorations(changes)
@@ -48,26 +56,36 @@ export function useGitGutter(
     }
   }, [editorInstance])
 
+  const refreshHeadContent = useCallback(async (reason: 'initial' | 'focus' | 'git-change' | 'dir-change') => {
+    if (!worktreePath) return
+    const relPath = computeRelativePath()
+    if (!relPath) return
+    const requestId = ++headFetchRequestRef.current
+    const content = await measureAsync('editor:git-gutter-head', () => window.api.git.showFileAtHead(worktreePath, relPath), {
+      filePath,
+      reason,
+      worktreePath,
+    })
+    if (requestId !== headFetchRequestRef.current) return
+    headContentRef.current = content ?? ''
+    computeAndApply()
+  }, [computeAndApply, computeRelativePath, filePath, worktreePath])
+
   // Fetch HEAD content when editor is ready and file path changes
   useEffect(() => {
     if (!editorInstance || !worktreePath) return
 
-    const relPath = computeRelativePath()
-    if (!relPath) return
-
     let cancelled = false
 
-    window.api.git.showFileAtHead(worktreePath, relPath).then((content) => {
+    void refreshHeadContent('initial').then(() => {
       if (cancelled) return
-      // null means new/untracked file — treat original as empty
-      headContentRef.current = content ?? ''
-      computeAndApply()
     })
 
     return () => {
       cancelled = true
+      headFetchRequestRef.current += 1
     }
-  }, [editorInstance, filePath, worktreePath, computeRelativePath, computeAndApply])
+  }, [editorInstance, filePath, worktreePath, refreshHeadContent])
 
   // Listen for editor content changes (debounced)
   useEffect(() => {
@@ -97,23 +115,14 @@ export function useGitGutter(
   useEffect(() => {
     if (!editorInstance || !worktreePath) return
 
-    const relPath = computeRelativePath()
-    if (!relPath) return
-
     const focusDisposable = editorInstance.onDidFocusEditorText(() => {
-      window.api.git.showFileAtHead(worktreePath, relPath).then((content) => {
-        const newHead = content ?? ''
-        if (newHead !== headContentRef.current) {
-          headContentRef.current = newHead
-          computeAndApply()
-        }
-      })
+      void refreshHeadContent('focus')
     })
 
     return () => {
       focusDisposable.dispose()
     }
-  }, [editorInstance, worktreePath, computeRelativePath, computeAndApply])
+  }, [editorInstance, worktreePath, refreshHeadContent])
 
   // Re-fetch HEAD when in-app git operations (discard, commit) affect this file
   useEffect(() => {
@@ -126,14 +135,11 @@ export function useGitGutter(
       if (detail?.worktreePath !== worktreePath) return
       if (!detail.paths?.includes(relPath)) return
 
-      window.api.git.showFileAtHead(worktreePath, relPath).then((content) => {
-        headContentRef.current = content ?? ''
-        setTimeout(() => computeAndApply(), 50)
-      })
+      void refreshHeadContent('git-change')
     }
     window.addEventListener('git:files-changed', handler)
     return () => window.removeEventListener('git:files-changed', handler)
-  }, [editorInstance, worktreePath, computeRelativePath, computeAndApply])
+  }, [editorInstance, worktreePath, computeRelativePath, refreshHeadContent])
 
   // Watch for external changes (terminal git operations, branch switches)
   useEffect(() => {
@@ -147,13 +153,7 @@ export function useGitGutter(
       if (changedDir !== worktreePath) return
       if (watcherTimer) clearTimeout(watcherTimer)
       watcherTimer = setTimeout(() => {
-        window.api.git.showFileAtHead(worktreePath, relPath).then((content) => {
-          const newHead = content ?? ''
-          if (newHead !== headContentRef.current) {
-            headContentRef.current = newHead
-            computeAndApply()
-          }
-        })
+        void refreshHeadContent('dir-change')
       }, 600)
     })
 
@@ -161,7 +161,7 @@ export function useGitGutter(
       cleanup()
       if (watcherTimer) clearTimeout(watcherTimer)
     }
-  }, [editorInstance, worktreePath, computeRelativePath, computeAndApply])
+  }, [editorInstance, worktreePath, computeRelativePath, refreshHeadContent])
 
   // Cleanup decorations on unmount
   useEffect(() => {

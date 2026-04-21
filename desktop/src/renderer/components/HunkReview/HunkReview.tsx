@@ -1,23 +1,25 @@
-import { useEffect, useState, useCallback, useRef, useMemo, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { DiffAnnotation } from '@shared/diff-annotation-types'
+import type { GitHunkActionRequest } from '@shared/git-hunk-action-types'
 import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
-import { DiffFileSection, FileStrip, type DiffFileData } from '../Editor/DiffFileSection'
+import type { DiffFileData } from '../../types/working-tree-diff'
+import { DiffFileSection, FileStrip } from '../Editor/DiffFileSection'
+import { loadWorkingTreeExpandableDiffMetadata } from '../Editor/buildWorkingTreeDiffFileData'
+import { loadWorkingTreeDiffFiles } from '../Editor/loadWorkingTreeDiffFiles'
 import { AnnotationsSummary } from './AnnotationsSummary'
 import { TourRail } from './TourRail'
 import { resolveAnnotationPathForDiff } from '../../utils/annotation-diff-path'
 import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
+import { measureAsync } from '../../utils/perf'
 import styles from './HunkReview.module.css'
 
 const MIN_PANEL_WIDTH = 480
 const FALLBACK_VIEWPORT_WIDTH = 1440
-
-interface FileStatus {
-  path: string
-  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
-  staged: boolean
-}
+const INITIAL_VISIBLE_FILES = 20
+const VISIBLE_FILE_CHUNK = 20
+const FILE_DIFF_LOAD_CONCURRENCY = 2
 
 interface Props {
   worktreePath: string
@@ -71,23 +73,38 @@ export function HunkReview({ worktreePath }: Props) {
   const [reviewMode, setReviewMode] = useState<ReviewMode>('annotations')
   const [activeTourStepId, setActiveTourStepId] = useState<string | null>(null)
   const [activeFile, setActiveFile] = useState<string | null>(null)
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_FILES)
   const [draftWidth, setDraftWidth] = useState<number | null>(null)
   const [isResizing, setIsResizing] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const draftWidthRef = useRef<number | null>(null)
+  const loadGenerationRef = useRef(0)
+  const filesRef = useRef<DiffFileData[]>([])
+  const fileDiffQueueRef = useRef<string[]>([])
+  const fileDiffLoadingRef = useRef(new Set<string>())
+  const fileDiffLoadedRef = useRef(new Set<string>())
+  const fileDiffInFlightRef = useRef(0)
+  const skippedWatcherRefreshesRef = useRef(0)
 
-  const settings = useAppStore((s) => s.settings)
+  const inline = useAppStore((s) => s.settings.diffInline)
+  const defaultShowFullContext = useAppStore((s) => s.settings.diffShowFullContextByDefault)
+  const persistedWidth = useAppStore((s) => s.settings.hunkReviewWidthPx ?? getDefaultPanelWidth())
   const updateSettings = useAppStore((s) => s.updateSettings)
   const openFileTab = useAppStore((s) => s.openFileTab)
   const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
   const closeHunkReview = useAppStore((s) => s.closeHunkReview)
   const submitHunkReview = useAppStore((s) => s.submitHunkReview)
   const addToast = useAppStore((s) => s.addToast)
-  const inline = settings.diffInline
-  const persistedWidth = settings.hunkReviewWidthPx ?? getDefaultPanelWidth()
   const panelWidth = clampPanelWidth(draftWidth ?? persistedWidth)
+
+  useEffect(() => {
+    filesRef.current = files
+    for (const file of files) {
+      if (file.fileDiff) fileDiffLoadedRef.current.add(file.filePath)
+    }
+  }, [files])
 
   // ── Comment selection state ──
 
@@ -115,6 +132,68 @@ export function HunkReview({ worktreePath }: Props) {
     [tourSteps, activeTourStepId],
   )
   const activeTourStep = activeTourIndex >= 0 ? tourSteps[activeTourIndex] : null
+
+  const annotationsByFile = useMemo(() => {
+    const grouped = new Map<string, DiffAnnotation[]>()
+    for (const annotation of annotations) {
+      const existing = grouped.get(annotation.filePath)
+      if (existing) existing.push(annotation)
+      else grouped.set(annotation.filePath, [annotation])
+    }
+    return grouped
+  }, [annotations])
+
+  const fileIndexByPath = useMemo(() => {
+    const next = new Map<string, number>()
+    files.forEach((file, index) => {
+      next.set(file.filePath, index)
+    })
+    return next
+  }, [files])
+
+  const renderedFiles = useMemo(
+    () => files.slice(0, visibleCount),
+    [files, visibleCount],
+  )
+
+  /**
+   * Track the set of file paths already mounted so the stagger animation only applies
+   * to files that newly appear when `visibleCount` grows (or the first batch).
+   */
+  const seenFilePathsRef = useRef<Set<string>>(new Set())
+  const newlyVisibleFiles = useMemo(() => {
+    const map = new Map<string, number>()
+    let ordinal = 0
+    for (const file of renderedFiles) {
+      if (!seenFilePathsRef.current.has(file.filePath)) {
+        map.set(file.filePath, ordinal)
+        ordinal += 1
+      }
+    }
+    return map
+  }, [renderedFiles])
+
+  useEffect(() => {
+    for (const file of renderedFiles) {
+      seenFilePathsRef.current.add(file.filePath)
+    }
+  }, [renderedFiles])
+
+  const ensureFileVisible = useCallback((filePath: string) => {
+    const index = fileIndexByPath.get(filePath)
+    if (index == null) return
+    setVisibleCount((prev) => Math.min(files.length, Math.max(prev, index + 1)))
+  }, [fileIndexByPath, files.length])
+
+  const scrollToFile = useCallback((filePath: string) => {
+    ensureFileVisible(filePath)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`diff-${filePath}`)
+        el?.scrollIntoView({ behavior: getPreferredScrollBehavior(), block: 'start' })
+      })
+    })
+  }, [ensureFileVisible])
 
   // Auto-select all human comments when annotations load/change
   useEffect(() => {
@@ -171,7 +250,7 @@ export function HunkReview({ worktreePath }: Props) {
   useEffect(() => {
     setDraftWidth(null)
     draftWidthRef.current = null
-  }, [settings.hunkReviewWidthPx, worktreePath])
+  }, [persistedWidth, worktreePath])
 
   useEffect(() => {
     if (!isResizing) return
@@ -192,7 +271,7 @@ export function HunkReview({ worktreePath }: Props) {
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       setDraftWidth(null)
-      if (nextWidth !== settings.hunkReviewWidthPx) {
+      if (nextWidth !== persistedWidth) {
         updateSettings({ hunkReviewWidthPx: nextWidth })
       }
     }
@@ -209,7 +288,7 @@ export function HunkReview({ worktreePath }: Props) {
       dragStateRef.current = null
       draftWidthRef.current = null
     }
-  }, [isResizing, persistedWidth, settings.hunkReviewWidthPx, updateSettings])
+  }, [isResizing, persistedWidth, updateSettings])
 
   useEffect(() => {
     const handleResize = () => {
@@ -219,16 +298,16 @@ export function HunkReview({ worktreePath }: Props) {
         setDraftWidth(clamped)
         return
       }
-      if (settings.hunkReviewWidthPx == null) return
-      const clamped = clampPanelWidth(settings.hunkReviewWidthPx)
-      if (clamped !== settings.hunkReviewWidthPx) {
+      if (persistedWidth == null) return
+      const clamped = clampPanelWidth(persistedWidth)
+      if (clamped !== persistedWidth) {
         updateSettings({ hunkReviewWidthPx: clamped })
       }
     }
 
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [draftWidth, settings.hunkReviewWidthPx, updateSettings])
+  }, [draftWidth, persistedWidth, updateSettings])
 
   const openFileFromDiff = useCallback(
     (fullPath: string) => {
@@ -298,85 +377,120 @@ export function HunkReview({ worktreePath }: Props) {
     return () => { cancelled = true }
   }, [worktreePath])
 
-  // ── Git operations for accept/reject ──
-  const handleFileAccepted = useCallback(
-    async (filePath: string, status: string) => {
-      try {
-        await window.api.git.stage(worktreePath, [filePath])
-      } catch (err) {
-        console.error('Failed to stage file:', err)
-        addToast({ id: `stage-err-${Date.now()}`, message: `Failed to stage ${filePath}`, type: 'error' })
-      }
-    },
-    [worktreePath, addToast],
-  )
-
-  const handleFileRejected = useCallback(
-    async (filePath: string, status: string) => {
-      try {
-        if (status === 'added' || status === 'untracked') {
-          await window.api.git.discard(worktreePath, [], [filePath])
-        } else {
-          await window.api.git.discard(worktreePath, [filePath], [])
-        }
-      } catch (err) {
-        console.error('Failed to discard file:', err)
-        addToast({ id: `discard-err-${Date.now()}`, message: `Failed to discard ${filePath}`, type: 'error' })
-      }
-    },
-    [worktreePath, addToast],
-  )
+  const notifyGitFilesChanged = useCallback((paths: string[]) => {
+    window.dispatchEvent(new CustomEvent('git:files-changed', {
+      detail: { worktreePath, paths },
+    }))
+  }, [worktreePath])
 
   // ── Load working-tree diff ──
 
   const loadFiles = useCallback(async () => {
+    const generation = ++loadGenerationRef.current
     try {
-      const statuses: FileStatus[] = await window.api.git.getStatus(worktreePath)
-      const results = await Promise.all(
-        statuses.map(async (file) => {
-          let patch = await window.api.git.getFileDiff(worktreePath, file.path)
-
-          if (!patch && (file.status === 'added' || file.status === 'untracked')) {
-            const fullPath = file.path.startsWith('/')
-              ? file.path
-              : `${worktreePath}/${file.path}`
-            let content: string | null = null
-            try {
-              content = await window.api.fs.readFile(fullPath)
-            } catch {
-              content = null
-            }
-            if (content === null) return { filePath: file.path, patch: '', status: file.status }
-            const lines = content.split('\n')
-            patch = [
-              `--- /dev/null`,
-              `+++ b/${file.path}`,
-              `@@ -0,0 +1,${lines.length} @@`,
-              ...lines.map((l: string) => `+${l}`),
-            ].join('\n')
-          }
-
-          if (!patch && file.status === 'deleted') {
-            patch = `--- a/${file.path}\n+++ /dev/null\n@@ -1,0 +0,0 @@\n`
-          }
-
-          return { filePath: file.path, patch: patch || '', status: file.status }
-        }),
-      )
+      const results = await loadWorkingTreeDiffFiles({
+        worktreePath,
+        source: 'hunk-review',
+        isCancelled: () => loadGenerationRef.current !== generation,
+        onProgress: (nextFiles) => {
+          if (loadGenerationRef.current !== generation) return
+          setFiles(nextFiles)
+        },
+      })
+      if (loadGenerationRef.current !== generation) return
       setFiles(results)
     } catch (err) {
       console.error('Failed to load diffs:', err)
     } finally {
-      setLoading(false)
+      if (loadGenerationRef.current === generation) {
+        setLoading(false)
+      }
     }
   }, [worktreePath])
 
-  useEffect(() => {
-    setLoading(true)
-    loadFiles()
+  // ── Git operations for accept/reject ──
+  const applyHunkAction = useCallback(
+    async (request: GitHunkActionRequest) => {
+      skippedWatcherRefreshesRef.current += 1
+      try {
+        await window.api.git.applyHunkAction(worktreePath, request)
+        notifyGitFilesChanged([request.filePath])
+      } catch (err) {
+        skippedWatcherRefreshesRef.current = Math.max(0, skippedWatcherRefreshesRef.current - 1)
+        const verb = request.action === 'keep' ? 'keep' : 'undo'
+        console.error(`Failed to ${verb} hunk:`, err)
+        addToast({
+          id: `review-hunk-${request.action}-err-${Date.now()}`,
+          message: `Failed to ${verb} selected hunk in ${request.filePath}`,
+          type: 'error',
+        })
+        throw err
+      }
+    },
+    [worktreePath, notifyGitFilesChanged, addToast],
+  )
+
+  const handleWatchedDirChange = useCallback(() => {
+    if (skippedWatcherRefreshesRef.current > 0) {
+      skippedWatcherRefreshesRef.current -= 1
+      return
+    }
+    void loadFiles()
   }, [loadFiles])
 
-  useFileWatcher(worktreePath, loadFiles, true)
+  useEffect(() => {
+    fileDiffQueueRef.current = []
+    fileDiffLoadingRef.current.clear()
+    fileDiffLoadedRef.current.clear()
+    fileDiffInFlightRef.current = 0
+    setVisibleCount(INITIAL_VISIBLE_FILES)
+    setLoading(true)
+    void loadFiles()
+  }, [loadFiles])
+
+  useFileWatcher(worktreePath, handleWatchedDirChange, true)
+
+  const pumpFileDiffQueue = useCallback(() => {
+    while (fileDiffInFlightRef.current < FILE_DIFF_LOAD_CONCURRENCY && fileDiffQueueRef.current.length > 0) {
+      const filePath = fileDiffQueueRef.current.shift()
+      if (!filePath) return
+      if (fileDiffLoadedRef.current.has(filePath) || fileDiffLoadingRef.current.has(filePath)) continue
+      const file = filesRef.current.find((entry) => entry.filePath === filePath)
+      if (!file || !file.patch) continue
+
+      const generation = loadGenerationRef.current
+      fileDiffLoadingRef.current.add(filePath)
+      fileDiffInFlightRef.current += 1
+      void measureAsync('hunk-review:load-expandable-file', () => loadWorkingTreeExpandableDiffMetadata(worktreePath, file), {
+        worktreePath,
+        filePath,
+      }).then((fileDiff) => {
+        if (!fileDiff) return
+        if (loadGenerationRef.current !== generation) return
+        fileDiffLoadedRef.current.add(filePath)
+        setFiles((prev) => prev.map((entry) => (
+          entry.filePath === filePath && !entry.fileDiff
+            ? { ...entry, fileDiff }
+            : entry
+        )))
+      }).catch((error) => {
+        console.warn('Failed to load expandable diff metadata for review:', error)
+      }).finally(() => {
+        fileDiffLoadingRef.current.delete(filePath)
+        fileDiffInFlightRef.current -= 1
+        pumpFileDiffQueue()
+      })
+    }
+  }, [worktreePath])
+
+  const ensureFileDiffLoaded = useCallback((filePath: string) => {
+    const file = filesRef.current.find((entry) => entry.filePath === filePath)
+    if (!file || file.fileDiff || !file.patch) return
+    if (fileDiffLoadedRef.current.has(filePath) || fileDiffLoadingRef.current.has(filePath)) return
+    if (fileDiffQueueRef.current.includes(filePath)) return
+    fileDiffQueueRef.current.push(filePath)
+    pumpFileDiffQueue()
+  }, [pumpFileDiffQueue])
 
   const scrollToAnnotationInDiff = useCallback(
     (annotation: DiffAnnotation) => {
@@ -392,38 +506,43 @@ export function HunkReview({ worktreePath }: Props) {
         })
         return
       }
-      const fileEl = document.getElementById(`diff-${resolved}`)
-      const bubble = document.querySelector(`[data-annotation-id="${annotation.id}"]`)
-      const target = (bubble ?? fileEl) as HTMLElement | null
-      if (!target) {
-        addToast({
-          id: `ann-jump-${Date.now()}`,
-          message: 'Could not find annotation in diff view',
-          type: 'warning',
-        })
-        return
-      }
-      const root = scrollAreaRef.current
-      if (root) {
-        const rootRect = root.getBoundingClientRect()
-        const elRect = target.getBoundingClientRect()
-        const top = elRect.top - rootRect.top + root.scrollTop
-        root.scrollTo({ top: Math.max(0, top - 12), behavior: getPreferredScrollBehavior() })
-      } else {
-        target.scrollIntoView({ behavior: getPreferredScrollBehavior(), block: 'nearest' })
-      }
+      ensureFileVisible(resolved)
       requestAnimationFrame(() => {
-        const b = document.querySelector(`[data-annotation-id="${annotation.id}"]`)
-        if (b) {
-          b.classList.add('highlightFlash')
-          setTimeout(() => b.classList.remove('highlightFlash'), 1200)
-        } else if (fileEl) {
-          fileEl.classList.add('highlightFlash')
-          setTimeout(() => fileEl.classList.remove('highlightFlash'), 1200)
-        }
+        requestAnimationFrame(() => {
+          const fileEl = document.getElementById(`diff-${resolved}`)
+          const bubble = document.querySelector(`[data-annotation-id="${annotation.id}"]`)
+          const target = (bubble ?? fileEl) as HTMLElement | null
+          if (!target) {
+            addToast({
+              id: `ann-jump-${Date.now()}`,
+              message: 'Could not find annotation in diff view',
+              type: 'warning',
+            })
+            return
+          }
+          const root = scrollAreaRef.current
+          if (root) {
+            const rootRect = root.getBoundingClientRect()
+            const elRect = target.getBoundingClientRect()
+            const top = elRect.top - rootRect.top + root.scrollTop
+            root.scrollTo({ top: Math.max(0, top - 12), behavior: getPreferredScrollBehavior() })
+          } else {
+            target.scrollIntoView({ behavior: getPreferredScrollBehavior(), block: 'nearest' })
+          }
+          requestAnimationFrame(() => {
+            const b = document.querySelector(`[data-annotation-id="${annotation.id}"]`)
+            if (b) {
+              b.classList.add('highlightFlash')
+              setTimeout(() => b.classList.remove('highlightFlash'), 1200)
+            } else if (fileEl) {
+              fileEl.classList.add('highlightFlash')
+              setTimeout(() => fileEl.classList.remove('highlightFlash'), 1200)
+            }
+          })
+        })
       })
     },
-    [files, addToast],
+    [files, addToast, ensureFileVisible],
   )
 
   useEffect(() => {
@@ -433,7 +552,7 @@ export function HunkReview({ worktreePath }: Props) {
 
   // IntersectionObserver to highlight active file in strip
   useEffect(() => {
-    if (!scrollAreaRef.current || files.length === 0) return
+    if (!scrollAreaRef.current || renderedFiles.length === 0) return
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -449,13 +568,27 @@ export function HunkReview({ worktreePath }: Props) {
       { root: scrollAreaRef.current, threshold: 0.3 },
     )
 
-    for (const f of files) {
+    for (const f of renderedFiles) {
       const el = document.getElementById(`diff-${f.filePath}`)
       if (el) observer.observe(el)
     }
 
     return () => observer.disconnect()
-  }, [files])
+  }, [renderedFiles])
+
+  useEffect(() => {
+    const root = scrollAreaRef.current
+    if (!root) return
+    const onScroll = () => {
+      const remaining = root.scrollHeight - root.scrollTop - root.clientHeight
+      if (remaining < 800) {
+        setVisibleCount((prev) => Math.min(files.length, prev + VISIBLE_FILE_CHUNK))
+      }
+    }
+    root.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => root.removeEventListener('scroll', onScroll)
+  }, [files.length, renderedFiles.length])
 
   const handleResizeStart = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
@@ -568,7 +701,7 @@ export function HunkReview({ worktreePath }: Props) {
         </p>
 
         {/* File strip */}
-        {files.length > 0 && <FileStrip files={files} activeFile={activeFile} />}
+        {files.length > 0 && <FileStrip files={files} activeFile={activeFile} onSelectFile={scrollToFile} />}
 
         {/* Annotations summary from constell-annotate SQLite DB */}
         {reviewMode === 'tour' ? (
@@ -591,7 +724,7 @@ export function HunkReview({ worktreePath }: Props) {
         )}
 
         {/* Content */}
-        {loading ? (
+        {loading && files.length === 0 ? (
           <div className={styles.emptyState} role="status" aria-busy="true" aria-label="Loading changes">
             <div className="shimmer-block" style={{ width: 'min(200px, 70%)', height: 14, marginBottom: 10 }} />
             <div className="shimmer-block" style={{ width: 'min(260px, 85%)', height: 14 }} />
@@ -603,25 +736,41 @@ export function HunkReview({ worktreePath }: Props) {
           </div>
         ) : (
           <div ref={scrollAreaRef} className={styles.scrollArea}>
-            {files.map((f) => (
-              <DiffFileSection
-                key={f.filePath}
-                data={f}
-                inline={inline}
-                worktreePath={worktreePath}
-                onOpenFile={openFileFromDiff}
-                worktreeAnnotations={annotations}
-                onAnnotationsChanged={loadAnnotations}
-                showPatchAnchorNote={false}
-                activeTourAnnotationId={reviewMode === 'tour' ? (activeTourStepId ?? undefined) : undefined}
-                tourMode={reviewMode === 'tour'}
-                selectedCommentIds={selectedIds}
-                onToggleComment={toggleComment}
-                enableAcceptReject
-                onFileAccepted={(fp, status) => void handleFileAccepted(fp, status)}
-                onFileRejected={(fp, status) => void handleFileRejected(fp, status)}
-              />
-            ))}
+            {loading && (
+              <div className={styles.emptyState} role="status" aria-busy="true" aria-label="Loading more changes">
+                <span className={styles.emptyText}>Loading remaining changes...</span>
+              </div>
+            )}
+            {renderedFiles.map((f) => {
+              const newIndex = newlyVisibleFiles.get(f.filePath)
+              const isNew = newIndex != null
+              return (
+                <div
+                  key={f.filePath}
+                  className={isNew ? styles.diffFileStaggerEntry : undefined}
+                  style={isNew ? ({ '--stagger-index': String(Math.min(newIndex, 8)) } as CSSProperties) : undefined}
+                >
+                  <DiffFileSection
+                    data={f}
+                    inline={inline}
+                    defaultShowFullContext={defaultShowFullContext}
+                    worktreePath={worktreePath}
+                    onOpenFile={openFileFromDiff}
+                    fileAnnotations={annotationsByFile.get(f.filePath) ?? []}
+                    onAnnotationsChanged={loadAnnotations}
+                    showPatchAnchorNote={false}
+                    activeTourAnnotationId={reviewMode === 'tour' ? (activeTourStepId ?? undefined) : undefined}
+                    tourMode={reviewMode === 'tour'}
+                    selectedCommentIds={selectedIds}
+                    onToggleComment={toggleComment}
+                    enableAcceptReject
+                    onHunkAccepted={applyHunkAction}
+                    onHunkRejected={applyHunkAction}
+                    onEnsureFileDiff={ensureFileDiffLoaded}
+                  />
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

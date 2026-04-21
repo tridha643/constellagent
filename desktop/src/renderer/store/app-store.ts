@@ -79,6 +79,7 @@ import {
 import { formatReviewForAgent } from '../utils/review-formatter'
 import { maybeShowStaleMainToast } from '../utils/ipc-stale-main'
 import { pathsEqualOrAlias } from '../../shared/agent-plan-path'
+import { normalizeEditorLanguageOverrideMap } from '../utils/language-map'
 import type { DesktopAppState } from '../../shared/pi/pi-desktop-state'
 import {
   DEFAULT_AUTOMATION_COOLDOWN_MS,
@@ -90,14 +91,15 @@ import { normalizeWorktreeCredentialRules } from '../../shared/worktree-credenti
 
 const DEFAULT_PR_LINK_PROVIDER = 'github' as const
 
-/** Removed Phone Control settings — strip from persisted JSON so old installs do not re-save them. */
-const LEGACY_PHONE_CONTROL_SETTING_KEYS = [
+/** Removed settings — strip from persisted JSON so old installs do not re-save them. */
+const LEGACY_REMOVED_SETTING_KEYS = [
   'phoneControlEnabled',
   'phoneControlContactId',
   'phoneControlNotifyOnStart',
   'phoneControlNotifyOnFinish',
   'phoneControlStreamOutput',
   'phoneControlStreamIntervalSec',
+  'linearResolverDefaultSource',
 ] as const
 
 /** Strip unknown persisted fields (e.g. legacy waitFor / waitCondition). */
@@ -403,6 +405,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   prStatusMap: new Map(),
   ghAvailability: new Map(),
   gitFileStatuses: new Map(),
+  workingTreeDiffSnapshots: new Map(),
   worktreeSyncStatus: new Map(),
   graphiteStacks: new Map(),
   graphiteStackExpanded: false,
@@ -545,6 +548,28 @@ export const useAppStore = create<AppState>((set, get) => ({
         s.projects,
         newWorkspaces,
       )
+      const replacementWorkspaceId = newWorkspaces.find((workspace) => (
+        newTabs.some((tab) => tab.workspaceId === workspace.id)
+      ))?.id ?? newWorkspaces[0]?.id ?? null
+      const nextActiveWorkspaceId =
+        s.activeWorkspaceId === id
+          ? replacementWorkspaceId
+          : s.activeWorkspaceId
+      const nextWorkspaceTabs = nextActiveWorkspaceId
+        ? newTabs.filter((tab) => tab.workspaceId === nextActiveWorkspaceId)
+        : []
+      const rememberedActiveTabId = nextActiveWorkspaceId
+        ? tabMap[nextActiveWorkspaceId] ?? null
+        : null
+      const nextActiveTabId = nextActiveWorkspaceId
+        ? (
+          s.activeWorkspaceId !== id && s.activeTabId && nextWorkspaceTabs.some((tab) => tab.id === s.activeTabId)
+            ? s.activeTabId
+            : rememberedActiveTabId && nextWorkspaceTabs.some((tab) => tab.id === rememberedActiveTabId)
+              ? rememberedActiveTabId
+              : nextWorkspaceTabs[0]?.id ?? null
+        )
+        : null
       return {
         workspaces: newWorkspaces,
         tabs: newTabs,
@@ -555,14 +580,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastActiveWorkspaceByProjectId,
         lastActiveTabByWorkspace: tabMap,
         planBuildTerminalByPlanPath,
-        activeWorkspaceId:
-          s.activeWorkspaceId === id
-            ? newWorkspaces[0]?.id ?? null
-            : s.activeWorkspaceId,
-        activeTabId:
-          newTabs.find((t) => t.id === s.activeTabId)
-            ? s.activeTabId
-            : newTabs[0]?.id ?? null,
+        activeWorkspaceId: nextActiveWorkspaceId,
+        activeTabId: nextActiveTabId,
       }
     })
   },
@@ -1977,6 +1996,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { gitFileStatuses: m }
     }),
 
+  updateGitStatusSnapshot: (worktreePath, snapshot) =>
+    set((s) => {
+      const nextSnapshots = new Map(s.workingTreeDiffSnapshots)
+      const existing = nextSnapshots.get(worktreePath)
+      nextSnapshots.set(
+        worktreePath,
+        existing && existing.signature === snapshot.signature
+          ? { ...existing, ...snapshot }
+          : { ...snapshot, files: [], complete: false },
+      )
+      return { workingTreeDiffSnapshots: nextSnapshots }
+    }),
+
+  setWorkingTreeDiffSnapshot: (worktreePath, snapshot) =>
+    set((s) => {
+      const nextSnapshots = new Map(s.workingTreeDiffSnapshots)
+      if (snapshot) nextSnapshots.set(worktreePath, snapshot)
+      else nextSnapshots.delete(worktreePath)
+      return { workingTreeDiffSnapshots: nextSnapshots }
+    }),
+
   setTabDeleted: (tabId, deleted) =>
     set((s) => ({
       tabs: s.tabs.map((t) =>
@@ -2156,7 +2196,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const workspaces = data.workspaces ?? []
     const saved = data.activeWorkspaceId
     const settingsMerged = data.settings ? { ...DEFAULT_SETTINGS, ...data.settings } : { ...DEFAULT_SETTINGS }
-    for (const k of LEGACY_PHONE_CONTROL_SETTING_KEYS) {
+    for (const k of LEGACY_REMOVED_SETTING_KEYS) {
       delete (settingsMerged as Record<string, unknown>)[k]
     }
     const settings = {
@@ -2176,6 +2216,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       worktreeCredentialRules: normalizeWorktreeCredentialRules(settingsMerged.worktreeCredentialRules),
       skills: normalizeSkillEntries(settingsMerged.skills),
       subagents: normalizeSubagentEntries(settingsMerged.subagents),
+      editorLanguageOverrides: normalizeEditorLanguageOverrideMap(
+        settingsMerged.editorLanguageOverrides,
+      ),
     }
     const activeWorkspaceId = settings.restoreWorkspace
       ? ((saved && workspaces.some((w) => w.id === saved) ? saved : workspaces[0]?.id) ?? null)
@@ -2320,7 +2363,7 @@ async function resolveListedWorktreeBranch(
  *
  * Also repairs persisted rows stuck with branch `HEAD` / empty when git now reports a real branch.
  */
-async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Promise<void> {
+async function runReconcileGitWorktreesForStore(projectIdFilter: string | null): Promise<void> {
   pruneDetachedHeadWorkspaces()
 
   const projects =
@@ -2428,6 +2471,40 @@ async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Pr
     )
     return { workspaces: nextWorkspaces, activeWorkspaceId, lastActiveWorkspaceByProjectId }
   })
+}
+
+let reconcileGitWorktreesInFlight: Promise<void> | null = null
+let queuedReconcileProjectIdFilter: string | null | undefined
+
+function mergeReconcileProjectFilter(
+  current: string | null | undefined,
+  incoming: string | null,
+): string | null {
+  if (current === undefined) return incoming
+  if (current === null || incoming === null) return null
+  return current === incoming ? current : null
+}
+
+async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Promise<void> {
+  queuedReconcileProjectIdFilter = mergeReconcileProjectFilter(
+    queuedReconcileProjectIdFilter,
+    projectIdFilter,
+  )
+  if (reconcileGitWorktreesInFlight) {
+    return reconcileGitWorktreesInFlight
+  }
+
+  reconcileGitWorktreesInFlight = (async () => {
+    while (queuedReconcileProjectIdFilter !== undefined) {
+      const nextFilter = queuedReconcileProjectIdFilter
+      queuedReconcileProjectIdFilter = undefined
+      await runReconcileGitWorktreesForStore(nextFilter)
+    }
+  })().finally(() => {
+    reconcileGitWorktreesInFlight = null
+  })
+
+  return reconcileGitWorktreesInFlight
 }
 
 // ── State persistence ──

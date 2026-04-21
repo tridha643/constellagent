@@ -12,6 +12,7 @@ import {
 } from '../../linear/linear-api'
 import { SendArrowIcon } from '../../pi-gui/icons'
 import baseStyles from './LinearSearchComposer.module.css'
+import { LinearWorkspacePicker } from './LinearWorkspacePicker'
 import ticketsStyles from './LinearTicketsComposer.module.css'
 import { useFixedPopoverStyle } from './useFixedPopoverStyle'
 
@@ -60,8 +61,6 @@ export interface LinearSearchComposerProps {
   updatesLoading: boolean
   updatesError: string | null
   selectedProjectName?: string
-  /** Branch / Graphite stack for the Workspace pill (this app’s open workspace). */
-  workContextLabel: string
   /** Active workspace path for Pi git snapshot, or null */
   worktreePathForPi?: string | null
   /** API error from last submit (user-dismissed on edit). */
@@ -84,7 +83,6 @@ export function LinearSearchComposer({
   updatesLoading,
   updatesError,
   selectedProjectName,
-  workContextLabel,
   worktreePathForPi = null,
   submitError,
   onClearSubmitError,
@@ -305,6 +303,7 @@ export function LinearSearchComposer({
                         <button
                           type="button"
                           role="option"
+                          aria-selected={!scopeUserId}
                           className={`${baseStyles.popoverItem} ${!scopeUserId ? baseStyles.popoverItemOn : ''}`}
                           onClick={() => {
                             onScopeUserIdChange('')
@@ -322,6 +321,7 @@ export function LinearSearchComposer({
                               key={u.id}
                               type="button"
                               role="option"
+                              aria-selected={scopeUserId === u.id}
                               className={`${baseStyles.popoverItem} ${scopeUserId === u.id ? baseStyles.popoverItemOn : ''}`}
                               onClick={() => {
                                 onScopeUserIdChange(u.id)
@@ -416,6 +416,7 @@ export function LinearSearchComposer({
                                   key={p.id}
                                   type="button"
                                   role="option"
+                                  aria-selected={scopeProjectId === p.id}
                                   className={baseStyles.popoverItem}
                                   onClick={() => {
                                     onScopeProjectIdChange(p.id)
@@ -440,16 +441,9 @@ export function LinearSearchComposer({
                   : null}
               </div>
 
-              <div className={baseStyles.pillWrap}>
-                <span
-                  className={`${baseStyles.pillBtn} ${baseStyles.pillStatic} ${ticketsStyles.ticketsPill} ${ticketsStyles.ticketsPillWorkspace}`}
-                  role="status"
-                  aria-label="Workspace and stack context"
-                >
-                  <span className={baseStyles.pillPrefix}>Workspace</span>
-                  <span className={baseStyles.pillValue}>{workContextLabel}</span>
-                </span>
-              </div>
+              <LinearWorkspacePicker
+                pillClassName={`${ticketsStyles.ticketsPill} ${ticketsStyles.ticketsPillWorkspace}`}
+              />
 
               {scopeProjectId ? (
                 <div className={baseStyles.pillWrap}>

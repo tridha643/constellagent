@@ -1,13 +1,15 @@
 import { execFile } from 'child_process'
 import { existsSync } from 'fs'
-import { readFile, readdir, realpath, rm, writeFile } from 'fs/promises'
-import { homedir } from 'os'
+import { lstat, readFile, readlink, readdir, realpath, rm, writeFile } from 'fs/promises'
+import { homedir, tmpdir } from 'os'
 import { promisify } from 'util'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import type { CreateWorktreeProgress } from '../shared/workspace-creation'
 import type { GitLogEntry, WorktreeInfo } from '../shared/git-types'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
+import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
+import { buildSingleHunkGitPatch } from '../shared/git-hunk-patch'
 import { copyWorktreeCredentialArtifacts } from './worktree-credential-copy'
 
 const execFileAsync = promisify(execFile)
@@ -36,6 +38,33 @@ async function git(args: string[], cwd: string): Promise<string> {
     maxBuffer: 10 * 1024 * 1024,
   })
   return stdout.trimEnd()
+}
+
+function buildSyntheticSymlinkPatch(filePath: string, target: string): string {
+  return [
+    `diff --git a/${filePath} b/${filePath}`,
+    'new file mode 120000',
+    'index 0000000..0000000',
+    '--- /dev/null',
+    `+++ b/${filePath}`,
+    '@@ -0,0 +1 @@',
+    `+${target}`,
+  ].join('\n')
+}
+
+async function applyGitPatch(worktreePath: string, patch: string, args: string[], fallbackError: string): Promise<void> {
+  const tempPath = join(
+    tmpdir(),
+    `constellagent-hunk-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.patch`,
+  )
+  await writeFile(tempPath, patch, 'utf-8')
+  try {
+    await git(['apply', ...args, tempPath], worktreePath)
+  } catch (err) {
+    throw new Error(friendlyGitError(err, fallbackError))
+  } finally {
+    await rm(tempPath, { force: true }).catch(() => {})
+  }
 }
 
 /** Extract a user-friendly message from a git exec error */
@@ -802,6 +831,14 @@ export class GitService {
     return files
   }
 
+  static async getWorkingTreeDiff(worktreePath: string): Promise<string> {
+    try {
+      return await git(['diff', '--find-renames', '--unified=3', 'HEAD', '--'], worktreePath)
+    } catch {
+      return ''
+    }
+  }
+
   static async getFileDiff(worktreePath: string, filePath: string): Promise<string> {
     try {
       // One coherent diff vs HEAD — matches what AnnotationService uses for validation.
@@ -812,7 +849,20 @@ export class GitService {
       // Untracked paths often have no `HEAD` blob; try index/worktree slices as a fallback.
       const unstaged = await git(['diff', '--', filePath], worktreePath)
       if (unstaged) return unstaged
-      return await git(['diff', '--staged', '--', filePath], worktreePath)
+      const staged = await git(['diff', '--staged', '--', filePath], worktreePath)
+      if (staged) return staged
+
+      const absolutePath = isAbsolute(filePath) ? filePath : join(worktreePath, filePath)
+      try {
+        const stats = await lstat(absolutePath)
+        if (stats.isSymbolicLink()) {
+          const target = await readlink(absolutePath)
+          return buildSyntheticSymlinkPatch(filePath, target)
+        }
+        return await git(['diff', '--no-index', '/dev/null', filePath], worktreePath)
+      } catch {
+        return ''
+      }
     } catch {
       return ''
     }
@@ -861,6 +911,28 @@ export class GitService {
     if (untracked.length > 0) {
       await git(['clean', '-f', '--', ...untracked], worktreePath)
     }
+  }
+
+  static async applyHunkAction(worktreePath: string, request: GitHunkActionRequest): Promise<void> {
+    if (request.status !== 'modified') {
+      throw new Error('Partial Keep/Undo currently only supports modified tracked files')
+    }
+    const singleHunkPatch = buildSingleHunkGitPatch(request.patch, request.hunkIndex)
+    if (request.action === 'keep') {
+      await applyGitPatch(
+        worktreePath,
+        singleHunkPatch,
+        ['--cached', '--recount', '--whitespace=nowarn'],
+        `Failed to stage selected hunk in ${request.filePath}`,
+      )
+      return
+    }
+    await applyGitPatch(
+      worktreePath,
+      singleHunkPatch,
+      ['-R', '--recount', '--whitespace=nowarn'],
+      `Failed to undo selected hunk in ${request.filePath}`,
+    )
   }
 
   static async commit(worktreePath: string, message: string): Promise<void> {

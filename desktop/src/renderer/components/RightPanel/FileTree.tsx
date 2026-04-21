@@ -298,20 +298,22 @@ export function FileTree({ worktreePath, isActive }: Props) {
 
   // Initial fetch
   useEffect(() => {
+    if (!isActive) return
     fetchTree()
-  }, [fetchTree])
+  }, [fetchTree, isActive])
 
   // Auto-refresh on filesystem changes
-  useFileWatcher(worktreePath, fetchTree)
+  useFileWatcher(worktreePath, fetchTree, Boolean(isActive))
 
   useEffect(() => {
+    if (!isActive) return
     const onGitFilesChanged = (e: Event) => {
       const detail = (e as CustomEvent<{ worktreePath?: string }>).detail
       if (detail?.worktreePath === worktreePath) fetchTree()
     }
     window.addEventListener('git:files-changed', onGitFilesChanged)
     return () => window.removeEventListener('git:files-changed', onGitFilesChanged)
-  }, [worktreePath, fetchTree])
+  }, [worktreePath, fetchTree, isActive])
 
   // Re-fetch when tab becomes visible (git ops only touch .git/ which the watcher ignores)
   useEffect(() => {

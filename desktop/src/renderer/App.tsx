@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { MotionConfig } from 'framer-motion'
 import { Allotment } from 'allotment'
 import 'allotment/dist/style.css'
@@ -29,6 +29,7 @@ import { useContextWindowPoller } from './hooks/useContextWindowPoller'
 import { useGraphiteStackPoller } from './hooks/useGraphiteStackPoller'
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary'
 import { applyAppearanceTheme } from './theme/appearance'
+import { markPaint } from './utils/perf'
 import styles from './App.module.css'
 
 export function App() {
@@ -129,6 +130,8 @@ export function App() {
   const confirmDialog = useAppStore((s) => s.confirmDialog)
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
   const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
+  const switchStartedAtRef = useRef<number | null>(null)
+  const prevWorkspaceIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     applyAppearanceTheme(appearanceThemeId)
@@ -149,6 +152,24 @@ export function App() {
   const tabWorkspace = activeTab
     ? workspaces.find((w) => w.id === activeTab.workspaceId)
     : undefined
+
+  useEffect(() => {
+    if (prevWorkspaceIdRef.current === activeWorkspaceId) return
+    prevWorkspaceIdRef.current = activeWorkspaceId
+    switchStartedAtRef.current = performance.now()
+  }, [activeWorkspaceId])
+
+  useEffect(() => {
+    const startedAt = switchStartedAtRef.current
+    if (startedAt == null) return
+    markPaint('workspace-switch', startedAt, {
+      activeWorkspaceId,
+      activeTabId,
+      activeTabType: activeTab?.type ?? 'none',
+      rightPanelOpen,
+    })
+    switchStartedAtRef.current = null
+  }, [activeWorkspaceId, activeTabId, activeTab?.type, rightPanelOpen])
 
   // All terminal tabs across every workspace — kept alive to preserve PTY state
   const allTerminals = allTabs.filter((t): t is Extract<typeof t, { type: 'terminal' }> => t.type === 'terminal')

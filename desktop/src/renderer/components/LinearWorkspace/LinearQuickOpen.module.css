@@ -36,6 +36,9 @@
   color: var(--text-muted);
   line-height: 1.4;
   font-family: var(--font-ui);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .inputWrap {

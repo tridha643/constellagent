@@ -20,7 +20,6 @@ import {
 import {
   linearSearchIssues,
   linearSearchProjects,
-  type LinearProjectNode,
   type LinearUserNode,
 } from '../../linear/linear-api'
 import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
@@ -65,7 +64,6 @@ export interface LinearQuickOpenProps {
   /** Authenticated Linear user (from API key); scopes default remote issue search to their issues. */
   viewer: { id: string; name: string } | null
   jumpRows: LinearJumpRow[]
-  projects: LinearProjectNode[]
   pickerUsers: LinearUserNode[]
   orgUsersUnavailable: boolean
   onActivateRow: (row: LinearJumpRow) => void
@@ -75,7 +73,6 @@ export function LinearQuickOpen({
   apiKey,
   viewer,
   jumpRows,
-  projects,
   pickerUsers,
   orgUsersUnavailable,
   onActivateRow,
@@ -217,10 +214,6 @@ export function LinearQuickOpen({
   }, [visible, query, jumpRows, apiKey, viewer, pickerUsers])
 
   useEffect(() => {
-    setSelectedIndex(0)
-  }, [query, jumpRows])
-
-  useEffect(() => {
     if (results.length === 0) {
       setSelectedIndex(0)
       return
@@ -292,7 +285,6 @@ export function LinearQuickOpen({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             data-testid="linear-quick-open-input"
-            autoFocus
             aria-busy={remoteSearchLoading}
           />
           {remoteSearchLoading ? (
