@@ -53,6 +53,7 @@ const TS_JS_MONACO_LANGUAGES = new Set([
 ])
 
 loader.init().then((monaco) => {
+  ;(window as unknown as { __monaco?: typeof monaco }).__monaco = monaco
   if (!monacoAppearanceAndCompilerReady) {
     monacoAppearanceAndCompilerReady = true
     ensureAppearanceMonacoThemes(monaco.editor)

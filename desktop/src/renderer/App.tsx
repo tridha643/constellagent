@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { MotionConfig } from 'framer-motion'
 import { Allotment } from 'allotment'
 import 'allotment/dist/style.css'
 import { useAppStore } from './store/app-store'
-import { Sidebar } from './components/Sidebar/Sidebar'
+import { SidePanelHost } from './components/SidePanelHost/SidePanelHost'
 import { TabBar } from './components/TabBar/TabBar'
 import { FileTabSplitContainer, TerminalSplitContainer } from './components/Terminal/TerminalSplitContainer'
 import { FileEditor } from './components/Editor/FileEditor'
@@ -11,7 +11,6 @@ import { DiffViewer } from './components/Editor/DiffEditor'
 import { MarkdownPreview } from './components/MarkdownPreview/MarkdownPreview'
 import { T3CodeView } from './components/T3CodeView/T3CodeView'
 import { PiThreadPanel } from './components/PiThread/PiThreadPanel'
-import { RightPanel } from './components/RightPanel/RightPanel'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
 import { AutomationsPanel } from './components/Automations/AutomationsPanel'
 import { LinearWorkspacePanel } from './components/LinearWorkspace/LinearWorkspacePanel'
@@ -30,7 +29,43 @@ import { useGraphiteStackPoller } from './hooks/useGraphiteStackPoller'
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary'
 import { applyAppearanceTheme } from './theme/appearance'
 import { markPaint } from './utils/perf'
+import { panelLabel } from './store/side-panels'
+import type { Side } from './store/types'
+import { readPanelDockDrag } from './utils/panel-dnd'
 import styles from './App.module.css'
+
+function DockEdgeTarget({
+  side,
+  active,
+  label,
+  onDragEnter,
+  onDragLeave,
+  onDragOver,
+  onDrop,
+}: {
+  side: Side
+  active: boolean
+  label: string
+  onDragEnter: (event: DragEvent<HTMLDivElement>) => void
+  onDragLeave: (event: DragEvent<HTMLDivElement>) => void
+  onDragOver: (event: DragEvent<HTMLDivElement>) => void
+  onDrop: (event: DragEvent<HTMLDivElement>) => void
+}) {
+  return (
+    <div
+      className={`${styles.dockEdgeTarget} ${side === 'left' ? styles.dockEdgeLeft : styles.dockEdgeRight} ${active ? styles.dockEdgeTargetActive : ''}`}
+      data-testid={`panel-dock-edge-${side}`}
+      data-panel-dock-edge-side={side}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
+      <div className={styles.dockEdgeRail} />
+      <div className={styles.dockEdgeLabel}>{label}</div>
+    </div>
+  )
+}
 
 export function App() {
   useShortcuts()
@@ -114,8 +149,10 @@ export function App() {
 
   const allTabs = useAppStore((s) => s.tabs)
   const activeTabId = useAppStore((s) => s.activeTabId)
-  const rightPanelOpen = useAppStore((s) => s.rightPanelOpen)
-  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed)
+  const sidePanels = useAppStore((s) => s.sidePanels)
+  const panelDockDrag = useAppStore((s) => s.panelDockDrag)
+  const movePanelToSide = useAppStore((s) => s.movePanelToSide)
+  const setPanelDockDrag = useAppStore((s) => s.setPanelDockDrag)
   const activeWorkspaceTabs = useAppStore((s) => s.activeWorkspaceTabs)
   const workspaces = useAppStore((s) => s.workspaces)
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
@@ -132,6 +169,7 @@ export function App() {
   const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
   const switchStartedAtRef = useRef<number | null>(null)
   const prevWorkspaceIdRef = useRef<string | null>(null)
+  const [dockEdgeHover, setDockEdgeHover] = useState<Side | null>(null)
 
   useEffect(() => {
     applyAppearanceTheme(appearanceThemeId)
@@ -166,10 +204,40 @@ export function App() {
       activeWorkspaceId,
       activeTabId,
       activeTabType: activeTab?.type ?? 'none',
-      rightPanelOpen,
+      sidePanels,
     })
     switchStartedAtRef.current = null
-  }, [activeWorkspaceId, activeTabId, activeTab?.type, rightPanelOpen])
+  }, [activeWorkspaceId, activeTabId, activeTab?.type, sidePanels])
+
+  useEffect(() => {
+    if (!panelDockDrag) setDockEdgeHover(null)
+  }, [panelDockDrag])
+
+  const resolvePanelDockPayload = useCallback((event: DragEvent<HTMLDivElement>) => {
+    return readPanelDockDrag(event.dataTransfer) ?? panelDockDrag
+  }, [panelDockDrag])
+
+  const handleDockEdgeDragOver = useCallback((side: Side, event: DragEvent<HTMLDivElement>) => {
+    const payload = resolvePanelDockPayload(event)
+    if (!payload || payload.side === side) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    if (dockEdgeHover !== side) setDockEdgeHover(side)
+  }, [dockEdgeHover, resolvePanelDockPayload])
+
+  const handleDockEdgeDragLeave = useCallback((side: Side, event: DragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node)) return
+    setDockEdgeHover((current) => (current === side ? null : current))
+  }, [])
+
+  const handleDockEdgeDrop = useCallback((side: Side, event: DragEvent<HTMLDivElement>) => {
+    const payload = resolvePanelDockPayload(event)
+    if (!payload || payload.side === side) return
+    event.preventDefault()
+    movePanelToSide(payload.panel, side)
+    setDockEdgeHover(null)
+    setPanelDockDrag(null)
+  }, [movePanelToSide, resolvePanelDockPayload, setPanelDockDrag])
 
   // All terminal tabs across every workspace — kept alive to preserve PTY state
   const allTerminals = allTabs.filter((t): t is Extract<typeof t, { type: 'terminal' }> => t.type === 'terminal')
@@ -193,10 +261,14 @@ export function App() {
             }
           >
           <Allotment>
-            {/* Sidebar */}
-            {!sidebarCollapsed && (
-              <Allotment.Pane minSize={160} maxSize={400} preferredSize={220}>
-                <Sidebar />
+            {/* Left side panel */}
+            {sidePanels.left.open && (
+              <Allotment.Pane
+                minSize={160}
+                maxSize={sidePanels.left.panelOrder.includes('project') && sidePanels.left.panelOrder.length === 1 ? 400 : 500}
+                preferredSize={sidePanels.left.panelOrder.includes('project') && sidePanels.left.panelOrder.length === 1 ? 220 : 280}
+              >
+                <SidePanelHost side="left" />
               </Allotment.Pane>
             )}
 
@@ -294,13 +366,35 @@ export function App() {
               </div>
             </Allotment.Pane>
 
-            {/* Right Panel */}
-            {rightPanelOpen && (
-              <Allotment.Pane minSize={240} maxSize={500} preferredSize={280}>
-                <RightPanel />
+            {/* Right side panel */}
+            {sidePanels.right.open && (
+              <Allotment.Pane
+                minSize={sidePanels.right.panelOrder.includes('project') && sidePanels.right.panelOrder.length === 1 ? 160 : 240}
+                maxSize={sidePanels.right.panelOrder.includes('project') && sidePanels.right.panelOrder.length === 1 ? 400 : 500}
+                preferredSize={sidePanels.right.panelOrder.includes('project') && sidePanels.right.panelOrder.length === 1 ? 220 : 280}
+              >
+                <SidePanelHost side="right" />
               </Allotment.Pane>
             )}
           </Allotment>
+          {panelDockDrag && (
+            <>
+              {(['left', 'right'] as Side[]).map((side) => (
+                panelDockDrag.side === side ? null : (
+                  <DockEdgeTarget
+                    key={side}
+                    side={side}
+                    active={dockEdgeHover === side}
+                    label={`Dock ${panelLabel(panelDockDrag.panel)} ${side}`}
+                    onDragEnter={(event) => handleDockEdgeDragOver(side, event)}
+                    onDragLeave={(event) => handleDockEdgeDragLeave(side, event)}
+                    onDragOver={(event) => handleDockEdgeDragOver(side, event)}
+                    onDrop={(event) => handleDockEdgeDrop(side, event)}
+                  />
+                )
+              ))}
+            </>
+          )}
           </ErrorBoundary>
         )}
       </div>

@@ -10,6 +10,7 @@ import { GeminiIcon } from '../Icons/GeminiIcon'
 import { CursorIcon } from '../Icons/CursorIcon'
 import { OpenCodeIcon } from '../Icons/OpenCodeIcon'
 import { PiIcon } from '../Icons/PiIcon'
+import { SharedFileIcon, SharedFileIconDefs, getFileGitBadge } from '../../utils/file-presentation'
 import claudeIcon from '../../assets/agent-icons/claude.svg'
 import openaiIcon from '../../assets/agent-icons/openai.svg'
 import styles from './TabBar.module.css'
@@ -83,21 +84,13 @@ function getTabTitle(tab: Tab): string {
   return name
 }
 
-const STATUS_LETTER_MAP: Record<string, string> = {
-  modified: 'M',
-  added: 'A',
-  deleted: 'D',
-  renamed: 'R',
-  untracked: 'U',
-}
-
 export function TabBar() {
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null)
   const [reorderDropIndex, setReorderDropIndex] = useState<number | null>(null)
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
   /** Same pattern as Sidebar `draggingWorkspaceIdRef` — Electron needs sync ref for dragOver. */
   const draggingTabIdRef = useRef<string | null>(null)
-  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed)
+  const leftSidePanelOpen = useAppStore((s) => s.sidePanels.left.open)
   const activeTabId = useAppStore((s) => s.activeTabId)
   const setActiveTab = useAppStore((s) => s.setActiveTab)
   const removeTab = useAppStore((s) => s.removeTab)
@@ -118,9 +111,9 @@ export function TabBar() {
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId)
   const endDropIndex = tabs.length
 
-  const getFileGitStatus = useCallback((tab: Tab): string | null => {
-    if (tab.type !== 'file') return null
-    if (tab.deleted) return 'D'
+  const getTabGitStatus = useCallback((tab: Tab): string | null => {
+    if (tab.type !== 'file' && tab.type !== 'markdownPreview') return null
+    if (tab.type === 'file' && tab.deleted) return getFileGitBadge('deleted')
     const ws = workspaces.find((w) => w.id === tab.workspaceId)
     if (!ws) return null
     const statusMap = gitFileStatuses.get(ws.worktreePath)
@@ -129,9 +122,7 @@ export function TabBar() {
       ? tab.filePath.slice(ws.worktreePath.length).replace(/^\//, '')
       : null
     if (!relPath) return null
-    const status = statusMap.get(relPath)
-    if (!status) return null
-    return STATUS_LETTER_MAP[status] ?? null
+    return getFileGitBadge(statusMap.get(relPath))
   }, [workspaces, gitFileStatuses])
 
   const editor = useMemo(() => resolveEditor(settings), [settings])
@@ -271,13 +262,15 @@ export function TabBar() {
   )
 
   return (
-    <div className={`${styles.tabBar} ${sidebarCollapsed ? styles.tabBarCollapsed : ''}`}>
+    <div className={`${styles.tabBar} ${!leftSidePanelOpen ? styles.tabBarCollapsed : ''}`}>
+      <SharedFileIconDefs />
       <div className={styles.tabList}>
         {tabs.map((tab) => {
           const { icon, className } = TAB_ICONS[tab.type]
           const isSaved = tab.id === lastSavedTabId
-          const gitStatus = getFileGitStatus(tab)
+          const gitStatus = getTabGitStatus(tab)
           const isDeleted = tab.type === 'file' && tab.deleted
+          const isFileLike = tab.type === 'file' || tab.type === 'markdownPreview'
           const agentType = tab.type === 'terminal' ? tab.agentType : undefined
           const agentIcon = agentType ? AGENT_ICON_MAP[agentType] : undefined
           const showGeminiIcon =
@@ -319,6 +312,8 @@ export function TabBar() {
                 <GeminiIcon className={styles.agentIcon} />
               ) : agentIcon ? (
                 <img src={agentIcon.src} alt={agentIcon.alt} className={styles.agentIcon} />
+              ) : isFileLike ? (
+                <SharedFileIcon path={tab.filePath} className={`${styles.tabIcon} ${styles.fileGlyph}`} />
               ) : (
                 <span className={`${styles.tabIcon} ${className}`}>{icon}</span>
               )}

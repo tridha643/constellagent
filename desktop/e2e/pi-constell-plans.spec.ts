@@ -199,7 +199,7 @@ test.describe('PI Constell plan discovery', () => {
       await window.keyboard.press('Meta+Shift+M')
       await window.waitForTimeout(700)
 
-      await expect(window.getByPlaceholder('Search plans by name...')).toBeVisible()
+      await expect(window.getByPlaceholder('Search plans with fff...')).toBeVisible()
       const planFilters = window.getByRole('group', { name: 'Plan filters' })
       await expect(planFilters.getByRole('button', { name: 'PI Constell', exact: true })).toBeVisible()
       await expect(window.getByText(piConstellPlan.split('/').pop()!, { exact: true })).toBeVisible()

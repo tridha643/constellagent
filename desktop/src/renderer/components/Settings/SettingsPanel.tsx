@@ -6,9 +6,11 @@ import type {
   McpServer,
   AgentType,
   SkillEntry,
+  Side,
   SubagentEntry,
 } from '../../store/types'
 import {
+  NAVIGATION_PANEL_TYPES,
   normalizeLinearIssueCodingAgent,
   normalizeLinearIssueCodingModel,
   normalizeLinearIssueScope,
@@ -48,10 +50,11 @@ const SHORTCUTS = [
   { action: 'Previous workspace', keys: '⇧⌘↑' },
   { action: 'Switch project by sidebar index', keys: '⌘1…9' },
   { action: 'New workspace', keys: '⌘N' },
-  { action: 'Toggle sidebar', keys: '⌘B' },
-  { action: 'Toggle right panel', keys: '⌥⌘B' },
+  { action: 'Toggle left sidebar', keys: '⌘B' },
+  { action: 'Toggle right sidebar', keys: '⌥⌘B' },
   { action: 'Files panel', keys: '⇧⌘E' },
   { action: 'Changes panel', keys: '⇧⌘G' },
+  { action: 'Git panel', keys: '⌥⌘G' },
   { action: 'Focus terminal', keys: '⌘J' },
   { action: 'Increase font size', keys: '⌘+' },
   { action: 'Decrease font size', keys: '⌘−' },
@@ -167,6 +170,77 @@ function SelectRow({ label, description, value, onChange, options }: {
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
+    </div>
+  )
+}
+
+function SidePanelSettingsSection() {
+  const sidePanels = useAppStore((s) => s.sidePanels)
+  const setProjectPanelSide = useAppStore((s) => s.setProjectPanelSide)
+  const setNavigationPanelSide = useAppStore((s) => s.setNavigationPanelSide)
+  const swapSidebarRoles = useAppStore((s) => s.swapSidebarRoles)
+  const resetSidePanelLayout = useAppStore((s) => s.resetSidePanelLayout)
+
+  const projectSide: Side = sidePanels.left.panelOrder.includes('project') ? 'left' : 'right'
+  const navigationSide: Side = sidePanels.left.panelOrder.includes('files') ? 'left' : 'right'
+  const splitNavigationPanels = NAVIGATION_PANEL_TYPES.some((panel) => sidePanels.left.panelOrder.includes(panel))
+    && NAVIGATION_PANEL_TYPES.some((panel) => sidePanels.right.panelOrder.includes(panel))
+  const sideOptions = [
+    { value: 'left', label: 'Left' },
+    { value: 'right', label: 'Right' },
+  ]
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Sidebar Layout</div>
+      <div className={styles.sectionHint}>
+        Choose which physical side hosts project navigation versus files, changes, and git history.
+      </div>
+      {splitNavigationPanels && (
+        <div className={styles.inlineHint}>
+          Panels are custom-docked across both sides right now. The selectors below will regroup them onto one side.
+        </div>
+      )}
+
+      <SelectRow
+        label="Project navigation side"
+        description="Where the Projects sidebar lives. The file-navigation sidebar automatically follows the opposite side."
+        value={projectSide}
+        onChange={(value) => setProjectPanelSide(value as Side)}
+        options={sideOptions}
+      />
+
+      <SelectRow
+        label="Files / Changes / Git side"
+        description="Where semantic panel shortcuts route after swapping sidebars."
+        value={navigationSide}
+        onChange={(value) => setNavigationPanelSide(value as Side)}
+        options={sideOptions}
+      />
+
+      <div className={styles.row}>
+        <div className={styles.rowText}>
+          <div className={styles.rowLabel}>Swap sidebar roles</div>
+          <div className={styles.rowDescription}>
+            Flip both hosts at once while preserving the active panel on each side.
+          </div>
+        </div>
+        <button type="button" className={styles.actionBtn} onClick={() => swapSidebarRoles()}>
+          Swap
+        </button>
+      </div>
+
+      <div className={styles.row}>
+        <div className={styles.rowText}>
+          <div className={styles.rowLabel}>Restore default docking</div>
+          <div className={styles.rowDescription}>
+            Put Projects back on the left and Files / Changes / Git back on the right.
+          </div>
+        </div>
+        <button type="button" className={styles.actionBtn} onClick={() => resetSidePanelLayout()}>
+          Reset
+        </button>
+      </div>
     </div>
   )
 }
@@ -1049,6 +1123,8 @@ export function SettingsPanel() {
           />
         </div>
 
+        <SidePanelSettingsSection />
+
         <div className={styles.section}>
           <div className={styles.sectionTitle}>General</div>
 
@@ -1089,7 +1165,7 @@ export function SettingsPanel() {
 
           <ToggleRow
             label="T3 Code: hide panels"
-            description="Collapse sidebar and right panel when opening T3 Code (⚡)"
+            description="Collapse both sidebars when opening T3 Code (⚡)"
             value={settings.t3CodeCollapseSidePanels}
             onChange={(v) => update('t3CodeCollapseSidePanels', v)}
           />

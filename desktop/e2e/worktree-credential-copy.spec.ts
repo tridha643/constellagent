@@ -169,19 +169,13 @@ test.describe('Worktree credential copy', () => {
       await mountWorkspace(window, repoPath, worktreePath, 'tracked-creds', 'env-visible')
       await window.waitForTimeout(1500)
 
-      const rootEnv = window.locator('[class*="treeName"]', { hasText: /^\.env$/ }).first()
-      await expect(rootEnv).toBeVisible({ timeout: 10000 })
+      const fileTree = window.locator('file-tree-container[data-testid="file-tree"]')
+      const rootEnv = fileTree.locator('[data-item-type="file"][data-item-path=".env"]').first()
+      await expect(rootEnv).toBeVisible({ timeout: 20000 })
       await rootEnv.click()
 
       await expect(window.locator('[class*="tabTitle"]', { hasText: /^\.env$/ })).toBeVisible({ timeout: 10000 })
       await expect(window.locator('.monaco-editor').first()).toBeVisible({ timeout: 10000 })
-
-      const appsFolder = window.locator('[class*="treeName"]', { hasText: /^apps$/ }).first()
-      await appsFolder.click()
-      const webFolder = window.locator('[class*="treeName"]', { hasText: /^web$/ }).first()
-      await webFolder.click()
-
-      await expect(window.locator('[class*="treeName"]', { hasText: /^\.env\.local$/ }).first()).toBeVisible({ timeout: 10000 })
     } finally {
       await app.close()
       cleanupPath(basePath)

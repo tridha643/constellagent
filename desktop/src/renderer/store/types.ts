@@ -101,7 +101,42 @@ export type Tab = {
   | { type: 'pi-thread'; title: string; piSessionId?: string; piSessionTitle?: string }
 )
 
-export type RightPanelMode = 'files' | 'changes' | 'graph'
+export type Side = 'left' | 'right'
+
+export type PanelType = 'project' | 'files' | 'changes' | 'graph'
+
+export interface SidePanelState {
+  open: boolean
+  activePanel: PanelType
+  panelOrder: PanelType[]
+}
+
+export interface SidePanelLayout {
+  left: SidePanelState
+  right: SidePanelState
+}
+
+export interface PanelDockDrag {
+  panel: PanelType
+  side: Side
+}
+
+export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'graph']
+
+export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes', 'graph']
+
+export const DEFAULT_SIDE_PANEL_LAYOUT: SidePanelLayout = {
+  left: {
+    open: true,
+    activePanel: 'project',
+    panelOrder: ['project'],
+  },
+  right: {
+    open: true,
+    activePanel: 'files',
+    panelOrder: ['files', 'changes', 'graph'],
+  },
+}
 
 export type PrLinkProvider = 'github' | 'graphite' | 'devinreview'
 
@@ -382,10 +417,10 @@ export interface AppState {
   activeWorkspaceId: string | null
   activeTabId: string | null
   lastActiveTabByWorkspace: Record<string, string>
-  rightPanelMode: RightPanelMode
-  rightPanelOpen: boolean
-  sidebarCollapsed: boolean
-  /** Ephemeral: manually collapsed project sections in the left sidebar. */
+  sidePanels: SidePanelLayout
+  /** Ephemeral: active drag payload while a side-panel tab is being docked. */
+  panelDockDrag: PanelDockDrag | null
+  /** Ephemeral: manually collapsed project sections in the project navigation panel. */
   collapsedProjectIds: Set<string>
   /** Ephemeral: most recently active workspace per project for project hotkeys. */
   lastActiveWorkspaceByProjectId: Record<string, string>
@@ -438,7 +473,15 @@ export interface AppState {
   setActiveTab: (id: string | null) => void
   /** Reorder tabs for a workspace; `orderedIds` must be a permutation of that workspace's tab ids. */
   reorderTabsInWorkspace: (workspaceId: string, orderedIds: string[]) => void
-  setRightPanelMode: (mode: RightPanelMode) => void
+  setSidePanelActive: (side: Side, panel: PanelType) => void
+  activatePanel: (panel: PanelType) => void
+  movePanelToSide: (panel: PanelType, side: Side) => void
+  resetSidePanelLayout: () => void
+  setProjectPanelSide: (side: Side) => void
+  setNavigationPanelSide: (side: Side) => void
+  swapSidebarRoles: () => void
+  setPanelDockDrag: (drag: PanelDockDrag | null) => void
+  toggleSidePanel: (side: Side) => void
   toggleRightPanel: () => void
   toggleSidebar: () => void
   toggleProjectCollapsed: (projectId: string) => void
@@ -604,5 +647,6 @@ export interface PersistedState {
   activeTabId?: string | null
   lastActiveTabByWorkspace?: Record<string, string>
   settings?: Settings
+  sidePanels?: SidePanelLayout
   sidebarActionOrder?: SidebarActionId[]
 }

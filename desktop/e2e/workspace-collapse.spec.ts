@@ -242,7 +242,7 @@ test.describe('Workspace project sections should not auto-collapse', () => {
       expect(storeState.targetBranch).toBe('branch-vis-a2')
 
       const expectedNextBranch = storeState.visibleBranches[0]
-      await window.keyboard.press('Meta+]')
+      await window.keyboard.press('Meta+Shift+ArrowDown')
       await window.waitForTimeout(300)
 
       let activeBranch = await window.evaluate(() => {
@@ -252,7 +252,7 @@ test.describe('Workspace project sections should not auto-collapse', () => {
       expect(activeBranch).toBe(expectedNextBranch)
 
       const expectedPrevBranch = storeState.visibleBranches[storeState.visibleBranches.length - 1]
-      await window.keyboard.press('Meta+[')
+      await window.keyboard.press('Meta+Shift+ArrowUp')
       await window.waitForTimeout(300)
 
       activeBranch = await window.evaluate(() => {

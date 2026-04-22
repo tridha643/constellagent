@@ -1,36 +1,91 @@
-import { test, expect, _electron as electron } from '@playwright/test'
-import { resolve } from 'path'
+import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { resolve, join } from 'path'
+import { tmpdir } from 'os'
+import { mkdtempSync, rmSync } from 'fs'
 
 const appPath = resolve(__dirname, '../out/main/index.js')
 
-test('Phase 1: app launches with 3-panel layout', async () => {
-  const app = await electron.launch({
-    args: [appPath],
-    env: { ...process.env, CI_TEST: '1' },
-  })
+function createUserDataPath(name: string): string {
+  return join(mkdtempSync(join(tmpdir(), `constellagent-${name}-`)), 'user-data')
+}
 
+async function launchApp(userDataPath?: string): Promise<{ app: ElectronApplication; window: Page }> {
+  const env = { ...process.env, CI_TEST: '1' } as Record<string, string>
+  if (userDataPath) env.CONSTELLAGENT_USER_DATA_PATH = userDataPath
+
+  const app = await electron.launch({ args: [appPath], env })
   const window = await app.firstWindow()
   await window.waitForLoadState('domcontentloaded')
-
-  // Wait for React to render
   await window.waitForSelector('#root', { timeout: 10000 })
-  await window.waitForTimeout(2000)
+  await window.waitForTimeout(1500)
+  return { app, window }
+}
 
-  // Take screenshot
-  await window.screenshot({
-    path: resolve(__dirname, 'screenshots/phase1-layout.png'),
+test.describe('app shell', () => {
+  test('launches with a valid symmetric 3-pane shell', async () => {
+    const userDataPath = createUserDataPath('app-shell-layout')
+    const { app, window } = await launchApp(userDataPath)
+
+    try {
+      await expect(window.getByTestId('side-panel-left')).toBeVisible()
+      await expect(window.getByTestId('right-panel')).toBeVisible()
+      await expect(window.locator('[class*="welcomeLogo"]')).toContainText('constellagent')
+
+      const sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
+      expect(sidePanels.left).toEqual({
+        open: true,
+        activePanel: 'project',
+        panelOrder: ['project'],
+      })
+      expect(sidePanels.right).toEqual({
+        open: true,
+        activePanel: 'files',
+        panelOrder: ['files', 'changes', 'graph'],
+      })
+
+      await expect(window.getByTestId('side-panel-tab-project')).toBeVisible()
+      await expect(window.getByTestId('right-panel-mode-files')).toBeVisible()
+      await expect(window.getByTestId('right-panel-mode-changes')).toBeVisible()
+      await expect(window.getByTestId('right-panel-mode-graph')).toBeVisible()
+    } finally {
+      await app.close()
+      rmSync(userDataPath, { recursive: true, force: true })
+    }
   })
 
-  // Check 3-panel layout exists
-  const sidebar = await window.locator('[class*="sidebar"]').count()
-  const rightPanel = await window.locator('[class*="rightPanel"]').count()
+  test('swapping sidebar roles from Settings persists after restart', async () => {
+    const userDataPath = createUserDataPath('app-shell-swap-persist')
+    let app: ElectronApplication | null = null
+    let window: Page | null = null
 
-  expect(sidebar).toBeGreaterThan(0)
-  expect(rightPanel).toBeGreaterThan(0)
+    try {
+      ;({ app, window } = await launchApp(userDataPath))
 
-  // Check welcome message renders
-  const welcomeText = await window.locator('[class*="welcomeLogo"]').textContent()
-  expect(welcomeText).toContain('constellagent')
+      await window.keyboard.press('Meta+,')
+      await expect(window.getByText('Sidebar Layout')).toBeVisible({ timeout: 5000 })
+      await window.getByRole('button', { name: 'Swap' }).click()
+      await window.keyboard.press('Meta+,')
+      await expect(window.getByTestId('side-panel-left')).toBeVisible({ timeout: 5000 })
 
-  await app.close()
+      let sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
+      expect(sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph'])
+      expect(sidePanels.right.panelOrder).toEqual(['project'])
+
+      await app.close()
+
+      ;({ app, window } = await launchApp(userDataPath))
+      sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
+      expect(sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph'])
+      expect(sidePanels.right.panelOrder).toEqual(['project'])
+
+      const persisted = await window.evaluate(async () => {
+        return await (window as any).api.state.load()
+      })
+      expect(persisted.sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph'])
+      expect(persisted.sidePanels.right.panelOrder).toEqual(['project'])
+    } finally {
+      if (app) await app.close()
+      rmSync(userDataPath, { recursive: true, force: true })
+    }
+  })
 })

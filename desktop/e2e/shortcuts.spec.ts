@@ -223,6 +223,7 @@ test.describe('Keyboard shortcuts', () => {
           .toggleLinear()
       })
       await expect(window.getByTestId('linear-workspace-panel')).toBeVisible({ timeout: 5000 })
+      await window.getByRole('tab', { name: 'Updates' }).click()
 
       const send = window.getByTestId('linear-composer-send')
       await expect(send).toBeDisabled()
@@ -509,6 +510,66 @@ test.describe('Keyboard shortcuts', () => {
       await window.keyboard.press('Meta+Alt+b')
       await window.waitForTimeout(500)
       await expect(rightPanel).toBeVisible()
+    } finally {
+      await app.close()
+    }
+  })
+
+  test('Files / Changes / Git shortcuts target the swapped sidebar host', async () => {
+    const repoPath = createTestRepo('shortcut-swapped-panels')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspace(window, repoPath)
+      await window.waitForTimeout(1000)
+
+      await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        store.setProjectPanelSide('right')
+      })
+      await window.waitForTimeout(400)
+
+      const swapped = await window.evaluate(() => {
+        const { sidePanels } = (window as any).__store.getState()
+        return sidePanels
+      })
+      expect(swapped.left.panelOrder).toEqual(['files', 'changes', 'graph'])
+      expect(swapped.right.panelOrder).toEqual(['project'])
+
+      await window.keyboard.press('Meta+Shift+g')
+      await window.waitForTimeout(250)
+
+      let state = await window.evaluate(() => {
+        const { sidePanels } = (window as any).__store.getState()
+        return sidePanels
+      })
+      expect(state.left.open).toBe(true)
+      expect(state.left.activePanel).toBe('changes')
+
+      await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        store.toggleSidebar()
+      })
+      await window.waitForTimeout(250)
+
+      await window.keyboard.press('Meta+Alt+g')
+      await window.waitForTimeout(250)
+
+      state = await window.evaluate(() => {
+        const { sidePanels } = (window as any).__store.getState()
+        return sidePanels
+      })
+      expect(state.left.open).toBe(true)
+      expect(state.left.activePanel).toBe('graph')
+
+      await window.keyboard.press('Meta+Shift+e')
+      await window.waitForTimeout(250)
+
+      state = await window.evaluate(() => {
+        const { sidePanels } = (window as any).__store.getState()
+        return sidePanels
+      })
+      expect(state.left.activePanel).toBe('files')
     } finally {
       await app.close()
     }

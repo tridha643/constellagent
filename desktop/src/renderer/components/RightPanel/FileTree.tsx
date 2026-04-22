@@ -1,112 +1,116 @@
-import { useEffect, useState, useCallback, useRef, type DragEvent } from 'react'
-import { Tree, NodeRendererProps, NodeApi } from 'react-arborist'
+import { preparePresortedFileTreeInput } from '@pierre/trees'
+import { FileTree as TreesFileTree, useFileTree } from '@pierre/trees/react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { CONSTELLAGENT_PATH_MIME } from '../../utils/add-to-chat'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
+import { SHARED_FILE_TREE_ICONS } from '../../utils/file-presentation'
+import { buildFileTreeSnapshot, readExpandedDirectoryPaths, type FileNode, type FileTreeSnapshot } from './file-tree-adapter'
 import styles from './RightPanel.module.css'
-
-interface FileNode {
-  name: string
-  path: string
-  type: 'file' | 'directory'
-  children?: FileNode[]
-  gitStatus?: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
-}
 
 interface Props {
   worktreePath: string
   isActive?: boolean
 }
 
-function basename(p: string) {
-  const i = p.lastIndexOf('/')
-  return i >= 0 ? p.slice(i + 1) : p
+const EMPTY_PATHS: string[] = []
+const EMPTY_PREPARED_INPUT = preparePresortedFileTreeInput(EMPTY_PATHS)
+const EMPTY_SNAPSHOT: FileTreeSnapshot = { paths: [], gitStatus: [] }
+
+function toAbsolutePath(worktreePath: string, relativePath: string): string {
+  const basePath = worktreePath.replace(/[\\/]+$/, '')
+  const normalizedPath = relativePath.replace(/[\\/]+$/, '').replace(/^\//, '')
+  return normalizedPath ? `${basePath}/${normalizedPath}` : basePath
 }
 
-/** Recursively open or close all descendants of a node */
-function toggleRecursive(node: NodeApi<FileNode>) {
-  if (node.isOpen) {
-    closeRecursive(node)
-  } else {
-    openRecursive(node)
+function toRelativePath(worktreePath: string, filePath: string): string | null {
+  const normalizedRoot = worktreePath.replace(/[\\/]+$/, '')
+  if (filePath === normalizedRoot) return ''
+  if (filePath.startsWith(`${normalizedRoot}/`)) return filePath.slice(normalizedRoot.length + 1)
+  return null
+}
+
+function getTreeItemElement(event: Event): HTMLElement | null {
+  for (const target of event.composedPath()) {
+    if (target instanceof HTMLElement && target.dataset.itemPath) return target
   }
+  return null
 }
 
-function openRecursive(node: NodeApi<FileNode>) {
-  node.open()
-  if (node.children) {
-    for (const child of node.children) {
-      if (child.isInternal) openRecursive(child)
-    }
-  }
+function clampMenuX(left: number) {
+  return Math.max(8, Math.min(left, window.innerWidth - 220))
 }
 
-function closeRecursive(node: NodeApi<FileNode>) {
-  if (node.children) {
-    for (const child of node.children) {
-      if (child.isInternal) closeRecursive(child)
-    }
-  }
-  node.close()
+function clampMenuY(top: number) {
+  return Math.max(8, Math.min(top, window.innerHeight - 220))
 }
 
-const GIT_STATUS_CLASS: Record<string, string> = {
-  modified: styles.gitModified,
-  added: styles.gitAdded,
-  deleted: styles.gitDeleted,
-  renamed: styles.gitRenamed,
-  untracked: styles.gitUntracked,
+function FileTreeContextMenu({
+  item,
+  left,
+  top,
+  onOpenEditor,
+  onOpenPreview,
+  onOpenSplit,
+  onDelete,
+}: {
+  item: { kind: 'file' | 'directory'; path: string }
+  left: number
+  top: number
+  onOpenEditor: () => void
+  onOpenPreview: () => void
+  onOpenSplit: () => void
+  onDelete: () => void
+}) {
+  const isMarkdown = item.kind === 'file' && isMarkdownDocumentPath(item.path)
+
+  return (
+    <div
+      className={styles.fileContextMenu}
+      data-file-tree-context-menu-root="true"
+      style={{ left, top }}
+    >
+      {item.kind === 'file' && isMarkdown && (
+        <>
+          <button type="button" className={styles.fileContextMenuItem} onClick={onOpenPreview}>
+            <span>Open preview</span>
+          </button>
+          <button type="button" className={styles.fileContextMenuItem} onClick={onOpenEditor}>
+            <span>Open in editor</span>
+          </button>
+        </>
+      )}
+
+      {item.kind === 'file' && (
+        <button type="button" className={styles.fileContextMenuItem} onClick={onOpenSplit}>
+          <span>Open in Split Pane</span>
+        </button>
+      )}
+
+      {item.kind === 'file' && !isMarkdown && (
+        <button type="button" className={styles.fileContextMenuItem} onClick={onOpenEditor}>
+          <span>Open in New Tab</span>
+        </button>
+      )}
+
+      {item.kind === 'file' && <div className={styles.fileContextMenuSeparator} />}
+
+      <button
+        type="button"
+        className={`${styles.fileContextMenuItem} ${styles.fileContextMenuItemDanger}`}
+        onClick={onDelete}
+      >
+        <span>Delete</span>
+        <span className={styles.fileContextMenuShortcut}>⌘⌫</span>
+      </button>
+    </div>
+  )
 }
 
-function createMenuItem(label: string, shortcut?: string): HTMLDivElement {
-  const item = document.createElement('div')
-  item.style.cssText = `
-    padding: 6px 12px;
-    color: var(--text-primary, #c0caf5);
-    cursor: pointer;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-  `
-  const labelSpan = document.createElement('span')
-  labelSpan.textContent = label
-  item.appendChild(labelSpan)
-
-  if (shortcut) {
-    const shortcutSpan = document.createElement('span')
-    shortcutSpan.textContent = shortcut
-    shortcutSpan.style.cssText = `
-      color: var(--text-tertiary, #565f89);
-      font-size: 11px;
-    `
-    item.appendChild(shortcutSpan)
-  }
-
-  item.onmouseenter = () => {
-    item.style.background = 'var(--surface-4, rgba(255,255,255,0.06))'
-  }
-  item.onmouseleave = () => {
-    item.style.background = 'none'
-  }
-  return item
-}
-
-function createMenuSeparator(): HTMLDivElement {
-  const sep = document.createElement('div')
-  sep.style.cssText = `
-    height: 1px;
-    background: var(--border-subtle, #3b3d57);
-    margin: 4px 8px;
-  `
-  return sep
-}
-
-function Node({ node, style }: NodeRendererProps<FileNode>) {
-  const activeTabId = useAppStore((s) => s.activeTabId)
+export function FileTree({ worktreePath, isActive }: Props) {
   const tabs = useAppStore((s) => s.tabs)
+  const activeTabId = useAppStore((s) => s.activeTabId)
   const openFileTab = useAppStore((s) => s.openFileTab)
   const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
   const openFileInSplit = useAppStore((s) => s.openFileInSplit)
@@ -114,249 +118,213 @@ function Node({ node, style }: NodeRendererProps<FileNode>) {
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
   const addToast = useAppStore((s) => s.addToast)
 
-  const activeTab = tabs.find((t) => t.id === activeTabId)
-  const isActiveFile =
-    node.isLeaf &&
-    ((activeTab?.type === 'file' && activeTab.filePath === node.data.path) ||
-      (activeTab?.type === 'markdownPreview' && activeTab.filePath === node.data.path))
+  const requestIdRef = useRef(0)
+  const expandedPathsRef = useRef<string[]>([])
+  const [snapshot, setSnapshot] = useState<FileTreeSnapshot>(EMPTY_SNAPSHOT)
+  const [isLoaded, setIsLoaded] = useState(false)
 
-  const gitClass = node.data.gitStatus
-    ? GIT_STATUS_CLASS[node.data.gitStatus] || ''
-    : ''
+  const { model } = useFileTree({
+    dragAndDrop: {
+      canDrag: (paths) => paths.length === 1 && !paths[0]?.endsWith('/'),
+      canDrop: () => false,
+    },
+    icons: SHARED_FILE_TREE_ICONS,
+    initialExpansion: 'closed',
+    itemHeight: 26,
+    paths: EMPTY_PATHS,
+    preparedInput: EMPTY_PREPARED_INPUT,
+    stickyFolders: false,
+  })
 
-  const handleDelete = useCallback(() => {
-    const name = node.data.name
-    const isDir = node.data.type === 'directory'
+  const preparedInput = useMemo(
+    () => preparePresortedFileTreeInput(snapshot.paths),
+    [snapshot.paths],
+  )
+
+  const activeTab = tabs.find((tab) => tab.id === activeTabId)
+  const activeRelativePath = useMemo(() => {
+    if (activeTab?.type !== 'file' && activeTab?.type !== 'markdownPreview') return null
+    return toRelativePath(worktreePath, activeTab.filePath)
+  }, [activeTab, worktreePath])
+
+  const syncExpandedPaths = useCallback(() => {
+    expandedPathsRef.current = readExpandedDirectoryPaths(model.getFileTreeContainer() ?? null)
+  }, [model])
+
+  const fetchTree = useCallback(async () => {
+    syncExpandedPaths()
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+
+    try {
+      const nodes = await window.api.fs.getTreeWithStatus(worktreePath) as FileNode[]
+      if (requestId !== requestIdRef.current) return
+      setSnapshot(buildFileTreeSnapshot(worktreePath, nodes))
+      setIsLoaded(true)
+    } catch {
+      if (requestId !== requestIdRef.current) return
+      setSnapshot(EMPTY_SNAPSHOT)
+      setIsLoaded(true)
+    }
+  }, [syncExpandedPaths, worktreePath])
+
+  const handleDelete = useCallback((absolutePath: string, kind: 'file' | 'directory') => {
+    const name = absolutePath.split('/').pop() || absolutePath
     showConfirmDialog({
-      title: `Delete ${isDir ? 'Folder' : 'File'}`,
-      message: `Permanently delete "${name}"${isDir ? ' and all its contents' : ''}? This cannot be undone.`,
+      title: `Delete ${kind === 'directory' ? 'Folder' : 'File'}`,
+      message: `Permanently delete "${name}"${kind === 'directory' ? ' and all its contents' : ''}? This cannot be undone.`,
       confirmLabel: 'Delete',
       destructive: true,
-      tip: 'Tip: Hold \u21e7 Shift while deleting to skip this dialog',
+      tip: 'Tip: Hold ⇧ Shift while deleting to skip this dialog',
       onConfirm: () => {
         dismissConfirmDialog()
-        window.api.fs.deleteFile(node.data.path).catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : 'Failed to delete'
-          addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
+        window.api.fs.deleteFile(absolutePath).then(() => {
+          void fetchTree()
+        }).catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : 'Failed to delete'
+          addToast({ id: crypto.randomUUID(), message, type: 'error' })
         })
       },
     })
-  }, [node.data, showConfirmDialog, dismissConfirmDialog, addToast])
+  }, [addToast, dismissConfirmDialog, fetchTree, showConfirmDialog])
 
-  const handleClick = (e: React.MouseEvent) => {
-    if (node.isInternal) {
-      if (e.altKey) {
-        toggleRecursive(node)
-      } else {
-        node.toggle()
-      }
-    } else if (e.metaKey || e.ctrlKey) {
-      // Cmd+click (macOS) / Ctrl+click (other) — open in split pane
-      openFileInSplit(node.data.path)
-    } else if (isMarkdownDocumentPath(node.data.path)) {
-      // Agent plans and docs: rendered preview first (live reload while agents edit)
-      openMarkdownPreview(node.data.path)
-    } else {
-      openFileTab(node.data.path)
-    }
-  }
+  const renderContextMenu = useCallback((item: { kind: 'file' | 'directory'; path: string }, context: { anchorRect: DOMRect | { left: number; bottom: number }; close: () => void }) => {
+    const absolutePath = toAbsolutePath(worktreePath, item.path)
+    const close = () => context.close()
 
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
+    return (
+      <FileTreeContextMenu
+        item={{ kind: item.kind, path: absolutePath }}
+        left={clampMenuX(context.anchorRect.left)}
+        top={clampMenuY(context.anchorRect.bottom + 6)}
+        onOpenEditor={() => {
+          openFileTab(absolutePath)
+          close()
+        }}
+        onOpenPreview={() => {
+          openMarkdownPreview(absolutePath)
+          close()
+        }}
+        onOpenSplit={() => {
+          openFileInSplit(absolutePath)
+          close()
+        }}
+        onDelete={() => {
+          close()
+          handleDelete(absolutePath, item.kind)
+        }}
+      />
+    )
+  }, [handleDelete, openFileInSplit, openFileTab, openMarkdownPreview, worktreePath])
 
-    // Show a minimal context menu positioned at the mouse
-    const existingMenu = document.querySelector('[data-file-context-menu]')
-    if (existingMenu) existingMenu.remove()
-
-    const menu = document.createElement('div')
-    menu.setAttribute('data-file-context-menu', '')
-    menu.style.cssText = `
-      position: fixed;
-      left: ${e.clientX}px;
-      top: ${e.clientY}px;
-      background: var(--surface-3, #2a2b3d);
-      border: 1px solid var(--border-subtle, #3b3d57);
-      border-radius: 6px;
-      padding: 4px;
-      z-index: 9999;
-      min-width: 180px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      font-family: var(--font-ui, -apple-system, sans-serif);
-      font-size: 12px;
-    `
-
-    // Close menu helper
-    const closeMenu = () => {
-      menu.remove()
-      document.removeEventListener('mousedown', onOutsideClick)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-    const onOutsideClick = (ev: MouseEvent) => {
-      if (!menu.contains(ev.target as Node)) closeMenu()
-    }
-    const onKeyDown = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') closeMenu()
-    }
-
-    if (node.isLeaf) {
-      if (isMarkdownDocumentPath(node.data.path)) {
-        const previewItem = createMenuItem('Open preview')
-        previewItem.onclick = () => {
-          openMarkdownPreview(node.data.path)
-          closeMenu()
-        }
-        menu.appendChild(previewItem)
-
-        const editorItem = createMenuItem('Open in editor')
-        editorItem.onclick = () => {
-          openFileTab(node.data.path)
-          closeMenu()
-        }
-        menu.appendChild(editorItem)
-      }
-
-      const openInSplitItem = createMenuItem('Open in Split Pane')
-      openInSplitItem.onclick = () => {
-        openFileInSplit(node.data.path)
-        closeMenu()
-      }
-      menu.appendChild(openInSplitItem)
-
-      if (!isMarkdownDocumentPath(node.data.path)) {
-        const openInTabItem = createMenuItem('Open in New Tab')
-        openInTabItem.onclick = () => {
-          openFileTab(node.data.path)
-          closeMenu()
-        }
-        menu.appendChild(openInTabItem)
-      }
-
-      menu.appendChild(createMenuSeparator())
-    }
-
-    const deleteItem = createMenuItem('Delete', '⌘⌫')
-    deleteItem.style.color = 'var(--accent-red, #f7768e)'
-    deleteItem.onclick = () => {
-      closeMenu()
-      handleDelete()
-    }
-    menu.appendChild(deleteItem)
-
-    document.body.appendChild(menu)
-
-    // Defer listeners so the current event doesn't trigger them
-    requestAnimationFrame(() => {
-      document.addEventListener('mousedown', onOutsideClick)
-      document.addEventListener('keydown', onKeyDown)
-    })
-  }
-
-  const handleDragStart = (e: DragEvent) => {
-    if (!node.isLeaf) return
-    e.dataTransfer.setData(CONSTELLAGENT_PATH_MIME, node.data.path)
-    e.dataTransfer.setData('text/plain', node.data.path)
-    e.dataTransfer.effectAllowed = 'copy'
-  }
-
-  return (
-    <div
-      style={style}
-      className={`${styles.treeNode} ${isActiveFile ? styles.treeNodeActive : ''}`}
-      draggable={node.isLeaf}
-      onDragStart={handleDragStart}
-      onClick={handleClick}
-      onContextMenu={handleContextMenu}
-    >
-      <span className={styles.treeChevron}>
-        {node.isInternal ? (node.isOpen ? '▾' : '▸') : ''}
-      </span>
-      <span className={`${styles.treeName} ${gitClass}`}>
-        {node.data.name}
-      </span>
-    </div>
-  )
-}
-
-export function FileTree({ worktreePath, isActive }: Props) {
-  const [tree, setTree] = useState<FileNode[] | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [height, setHeight] = useState(400)
-
-  const fetchTree = useCallback(() => {
-    window.api.fs.getTreeWithStatus(worktreePath).then((nodes: FileNode[]) => {
-      // Wrap in root node
-      const root: FileNode = {
-        name: basename(worktreePath),
-        path: worktreePath,
-        type: 'directory',
-        children: nodes,
-      }
-      setTree([root])
-    }).catch(() => {})
+  useEffect(() => {
+    setIsLoaded(false)
+    setSnapshot(EMPTY_SNAPSHOT)
+    expandedPathsRef.current = []
   }, [worktreePath])
 
-  // Initial fetch
   useEffect(() => {
     if (!isActive) return
-    fetchTree()
+    void fetchTree()
   }, [fetchTree, isActive])
 
-  // Auto-refresh on filesystem changes
   useFileWatcher(worktreePath, fetchTree, Boolean(isActive))
 
   useEffect(() => {
     if (!isActive) return
-    const onGitFilesChanged = (e: Event) => {
-      const detail = (e as CustomEvent<{ worktreePath?: string }>).detail
-      if (detail?.worktreePath === worktreePath) fetchTree()
+    const onGitFilesChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ worktreePath?: string }>).detail
+      if (detail?.worktreePath === worktreePath) void fetchTree()
     }
     window.addEventListener('git:files-changed', onGitFilesChanged)
     return () => window.removeEventListener('git:files-changed', onGitFilesChanged)
-  }, [worktreePath, fetchTree, isActive])
+  }, [fetchTree, isActive, worktreePath])
 
-  // Re-fetch when tab becomes visible (git ops only touch .git/ which the watcher ignores)
   useEffect(() => {
-    if (isActive) fetchTree()
-  }, [isActive, fetchTree])
-
-  // Measure container height for virtualization
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setHeight(entry.contentRect.height)
-      }
+    model.resetPaths(snapshot.paths, {
+      initialExpandedPaths: expandedPathsRef.current,
+      preparedInput,
     })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+    model.setGitStatus(snapshot.gitStatus)
+    model.setIcons(SHARED_FILE_TREE_ICONS)
+  }, [model, preparedInput, snapshot.gitStatus, snapshot.paths])
+
+  useEffect(() => {
+    if (!activeRelativePath) return
+    const item = model.getItem(activeRelativePath)
+    if (!item) return
+    model.focusPath(activeRelativePath)
+    item.select()
+  }, [activeRelativePath, model, snapshot.paths])
+
+  const handleTreeClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement | null)?.closest?.('[data-file-tree-context-menu-root="true"]')) return
+
+    const target = getTreeItemElement(event.nativeEvent)
+    if (!target) return
+
+    const relativePath = target.dataset.itemPath
+    const itemType = target.dataset.itemType
+    if (!relativePath || !itemType) return
+
+    if (itemType === 'folder') {
+      requestAnimationFrame(syncExpandedPaths)
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const absolutePath = toAbsolutePath(worktreePath, relativePath)
+    const item = model.getItem(relativePath)
+    item?.select()
+    model.focusPath(relativePath)
+
+    if (event.metaKey || event.ctrlKey) {
+      openFileInSplit(absolutePath)
+      return
+    }
+
+    if (isMarkdownDocumentPath(absolutePath)) {
+      openMarkdownPreview(absolutePath)
+      return
+    }
+
+    openFileTab(absolutePath)
+  }, [model, openFileInSplit, openFileTab, openMarkdownPreview, syncExpandedPaths, worktreePath])
+
+  const handleTreeDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const target = getTreeItemElement(event.nativeEvent)
+    if (!target || target.dataset.itemType !== 'file') return
+
+    const relativePath = target.dataset.itemPath
+    if (!relativePath || !event.dataTransfer) return
+
+    const absolutePath = toAbsolutePath(worktreePath, relativePath)
+    event.dataTransfer.setData(CONSTELLAGENT_PATH_MIME, absolutePath)
+    event.dataTransfer.setData('text/plain', absolutePath)
+    event.dataTransfer.effectAllowed = 'copy'
+  }, [worktreePath])
 
   return (
-    <div ref={containerRef} className={styles.treeContainer}>
-      {!tree ? (
+    <div
+      className={styles.treeContainer}
+      data-testid="file-tree-wrapper"
+      onClickCapture={handleTreeClickCapture}
+      onDragStart={handleTreeDragStart}
+    >
+      {!isLoaded ? (
         <div className={styles.emptyState}>
           <span className={styles.emptyText}>Loading files...</span>
         </div>
       ) : (
-        <Tree<FileNode>
-          key={worktreePath}
-          data={tree}
-          idAccessor="path"
-          openByDefault={false}
-          initialOpenState={{ [worktreePath]: true }}
-          disableDrag={true}
-          disableDrop={true}
-          disableEdit={true}
-          disableMultiSelection={true}
-          rowHeight={26}
-          indent={14}
-          width="100%"
-          height={height}
-        >
-          {Node}
-        </Tree>
+        <TreesFileTree
+          className={styles.treeHost}
+          data-testid="file-tree"
+          model={model}
+          renderContextMenu={renderContextMenu}
+          style={{ height: '100%' }}
+        />
       )}
     </div>
   )
