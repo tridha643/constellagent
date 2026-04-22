@@ -7,6 +7,7 @@ import {
   normalizeLinearWorkspaceView,
   resolveEditor,
 } from '../store/types'
+import { findSideForPanel } from '../store/side-panels'
 import { getFocusedPtyId, isFocusedPaneTerminal, resolveAgentPtyForContextInjection } from '../store/split-helpers'
 import {
   sendAddToChatText,
@@ -259,10 +260,11 @@ export function useShortcuts() {
           return
         }
         const focusEl = document.activeElement as HTMLElement | null
+        const changesSide = findSideForPanel(store.sidePanels, 'changes')
         const inChangesPanel =
-          store.rightPanelOpen
-          && store.rightPanelMode === 'changes'
-          && Boolean(focusEl?.closest?.('[data-testid="right-panel"]'))
+          store.sidePanels[changesSide].open
+          && store.sidePanels[changesSide].activePanel === 'changes'
+          && Boolean(focusEl?.closest?.(`[data-panel-side="${changesSide}"]`))
         if (inChangesPanel && tryOpenChangesFindFromSource('changes-panel')) {
           consume()
           return
@@ -401,37 +403,34 @@ export function useShortcuts() {
       }
 
       // ── Panels ──
-      // Cmd+B — toggle sidebar (left)
+      // Cmd+B — toggle the physical left sidebar host
       if (!shift && !alt && e.key === 'b') {
         consume()
         store.toggleSidebar()
         return
       }
-      // Cmd+Option+B — toggle right panel (use e.code since Option changes e.key on macOS)
+      // Cmd+Option+B — toggle the physical right sidebar host (use e.code since Option changes e.key on macOS)
       if (!shift && alt && e.code === 'KeyB') {
         consume()
         store.toggleRightPanel()
         return
       }
-      // Cmd+Shift+E — files panel (open if closed)
+      // Cmd+Shift+E — files panel (routes to the side that owns Files)
       if (shift && !alt && e.code === 'KeyE') {
         consume()
-        store.setRightPanelMode('files')
-        if (!store.rightPanelOpen) store.toggleRightPanel()
+        store.activatePanel('files')
         return
       }
-      // Cmd+Shift+G — changes panel (open if closed)
+      // Cmd+Shift+G — changes panel (routes to the side that owns Changes)
       if (shift && !alt && e.code === 'KeyG') {
         consume()
-        store.setRightPanelMode('changes')
-        if (!store.rightPanelOpen) store.toggleRightPanel()
+        store.activatePanel('changes')
         return
       }
-      // Cmd+Option+G — git panel (open if closed)
+      // Cmd+Option+G — git panel (routes to the side that owns Git)
       if (!shift && alt && e.code === 'KeyG') {
         consume()
-        store.setRightPanelMode('graph')
-        if (!store.rightPanelOpen) store.toggleRightPanel()
+        store.activatePanel('graph')
         return
       }
 

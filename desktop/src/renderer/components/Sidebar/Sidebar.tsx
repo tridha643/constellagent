@@ -357,7 +357,7 @@ function WorkspaceSyncIndicator({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?: boolean; showTitleArea?: boolean }) {
   const projects = useAppStore((s) => s.projects);
   const workspaces = useAppStore((s) => s.workspaces);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
@@ -1121,8 +1121,8 @@ export function Sidebar() {
   );
 
   return (
-    <div className={styles.sidebar}>
-      <div className={styles.titleArea} />
+    <div className={`${styles.sidebar} ${embedded ? styles.sidebarEmbedded : ''}`}>
+      {showTitleArea && <div className={styles.titleArea} />}
 
       <div className={styles.projectList}>
         {projects.length === 0 && (

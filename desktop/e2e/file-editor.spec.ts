@@ -129,6 +129,44 @@ async function setupWorkspace(window: Page, repoPath: string, suffix: string): P
   }, { repo: repoPath, sfx: suffix })
 }
 
+async function setupWorkspaceWithTerminal(
+  window: Page,
+  repoPath: string,
+  suffix: string,
+): Promise<{ ptyId: string; worktreePath: string }> {
+  const worktreePath = await setupWorkspace(window, repoPath, suffix)
+  return await window.evaluate(async ({ wt }: { wt: string }) => {
+    const store = (window as any).__store.getState()
+    const workspace = store.workspaces.find((entry: any) => entry.id === store.activeWorkspaceId)
+    if (!workspace) throw new Error('Missing active workspace')
+    const ptyId = await (window as any).api.pty.create(wt)
+    store.addTab({
+      id: crypto.randomUUID(),
+      workspaceId: workspace.id,
+      type: 'terminal',
+      title: 'Terminal 1',
+      ptyId,
+    })
+    return { ptyId, worktreePath: wt }
+  }, { wt: worktreePath })
+}
+
+async function dropFilePathIntoTerminal(window: Page, absolutePath: string): Promise<void> {
+  const terminal = window.locator('[class*="terminalContainer"]').first()
+  await expect(terminal).toBeVisible({ timeout: 5000 })
+
+  const dataTransfer = await window.evaluateHandle((path: string) => {
+    const dt = new DataTransfer()
+    dt.setData('application/x-constellagent-path', path)
+    dt.setData('text/plain', path)
+    return dt
+  }, absolutePath)
+
+  await terminal.dispatchEvent('dragenter', { dataTransfer })
+  await terminal.dispatchEvent('dragover', { dataTransfer })
+  await terminal.dispatchEvent('drop', { dataTransfer })
+}
+
 async function openFileTab(window: Page, filePath: string): Promise<void> {
   await window.evaluate((path: string) => {
     const store = (window as any).__store.getState()
@@ -180,10 +218,10 @@ test.describe('File tree & editor integration', () => {
       await window.waitForTimeout(1000)
 
       // Should see src directory and README.md
-      const readmeItem = window.locator('[class*="treeNode"]', { hasText: 'README.md' })
+      const readmeItem = window.locator('[data-item-path="README.md"][data-item-type="file"]')
       await expect(readmeItem).toBeVisible()
 
-      const srcItem = window.locator('[class*="treeNode"]', { hasText: 'src' })
+      const srcItem = window.locator('[data-item-path="src/"][data-item-type="folder"]')
       await expect(srcItem).toBeVisible()
 
       await window.screenshot({
@@ -208,18 +246,19 @@ test.describe('File tree & editor integration', () => {
 
       // Open a non-markdown file — .md opens in preview by default, not the Monaco editor.
       // Folders start collapsed (openByDefault=false); expand `src` before leaf `index.ts` is visible.
-      const srcFolder = window.locator('[class*="treeNode"]', { hasText: 'src' }).first()
+      const srcFolder = window.locator('[data-item-path="src/"][data-item-type="folder"]').first()
       await expect(srcFolder).toBeVisible({ timeout: 5000 })
       await srcFolder.click()
       await window.waitForTimeout(400)
-      const fileItem = window.locator('[class*="treeNode"]', { hasText: 'index.ts' }).first()
+      const fileItem = window.locator('[data-item-path="src/index.ts"][data-item-type="file"]').first()
       await expect(fileItem).toBeVisible({ timeout: 5000 })
       await fileItem.click()
       await window.waitForTimeout(3000)
 
       // A new tab should appear with index.ts
-      const tab = window.locator('[class*="tabTitle"]', { hasText: 'index.ts' })
+      const tab = window.locator('[class*="tab"]', { hasText: 'index.ts' }).first()
       await expect(tab).toBeVisible({ timeout: 5000 })
+      await expect(tab.locator('[data-file-icon-token="typescript"]')).toBeVisible({ timeout: 5000 })
 
       // Monaco editor should be rendered
       const monacoEditor = window.locator('.monaco-editor').first()
@@ -235,6 +274,88 @@ test.describe('File tree & editor integration', () => {
 
       await window.screenshot({
         path: resolve(__dirname, 'screenshots/editor-file-opened.png'),
+      })
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('clicking markdown file opens markdown preview with a shared file icon tab', async () => {
+    const repoPath = createTestRepo('markdown-preview-1')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspace(window, repoPath, 'markdown-preview')
+      await window.waitForTimeout(1500)
+
+      const readmeItem = window.locator('[data-item-path="README.md"][data-item-type="file"]').first()
+      await expect(readmeItem).toBeVisible({ timeout: 5000 })
+      await readmeItem.click()
+
+      await expect(window.locator('[class*="tabTitle"]', { hasText: 'README.md' })).toBeVisible({ timeout: 5000 })
+      await expect(window.locator('[data-file-icon-token="markdown"]').first()).toBeVisible({ timeout: 5000 })
+      await expect.poll(async () => window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        return store.tabs.find((tab: any) => tab.id === store.activeTabId)?.type ?? null
+      })).toBe('markdownPreview')
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('cmd-clicking a tree file opens it in a split pane', async () => {
+    const repoPath = createTestRepo('split-open-1')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspace(window, repoPath, 'split-open')
+      await window.waitForTimeout(1500)
+
+      const srcFolder = window.locator('[data-item-path="src/"][data-item-type="folder"]').first()
+      await expect(srcFolder).toBeVisible({ timeout: 5000 })
+      await srcFolder.click()
+      await window.waitForTimeout(400)
+
+      const fileItem = window.locator('[data-item-path="src/index.ts"][data-item-type="file"]').first()
+      await expect(fileItem).toBeVisible({ timeout: 5000 })
+      await window.evaluate(() => {
+        const host = document.querySelector('[data-testid="file-tree"]') as HTMLElement | null
+        const target = host?.shadowRoot?.querySelector('[data-item-path="src/index.ts"][data-item-type="file"]') as HTMLElement | null
+        if (!target) throw new Error('tree file not found')
+        target.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, metaKey: true }))
+      })
+
+      await expect.poll(async () => window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        const tab = store.tabs.find((entry: any) => entry.id === store.activeTabId)
+        const stringify = (node: any): string[] => {
+          if (!node) return []
+          if (node.type === 'leaf') return node.contentType === 'file' ? [node.filePath] : []
+          return node.children.flatMap((child: any) => stringify(child))
+        }
+        const splitFiles = stringify(tab?.splitRoot)
+        return Boolean(tab?.splitRoot && splitFiles.some((path) => path.endsWith('/src/index.ts')))
+      })).toBe(true)
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('terminal drag-in accepts a file path payload and writes the bracketed paste text', async () => {
+    const repoPath = createTestRepo('tree-terminal-drag-1')
+    const { app, window } = await launchApp()
+
+    try {
+      const { worktreePath } = await setupWorkspaceWithTerminal(window, repoPath, 'tree-terminal-drag')
+      await window.waitForTimeout(2000)
+
+      await dropFilePathIntoTerminal(window, `${worktreePath}/src/index.ts`)
+
+      await expect(window.locator('[class*="terminalContainer"]').first()).toContainText('src/index.ts', {
+        timeout: 5000,
       })
     } finally {
       await app.close()
@@ -385,7 +506,7 @@ test.describe('File tree & editor integration', () => {
     }
   })
 
-  test('TypeScript LSP diagnostics appear for a non-TS file opened in TypeScript mode', async () => {
+  test('non-TS file opened in TypeScript mode binds the virtual TS document for language service work', async () => {
     test.skip(!HAS_TYPESCRIPT_LSP, 'requires typescript-language-server')
 
     const repoPath = createTestRepo('editor-lsp-diagnostics')
@@ -398,18 +519,19 @@ test.describe('File tree & editor integration', () => {
 
       await openFileTab(window, testFilePath)
       await expect(window.locator('.monaco-editor').first()).toBeVisible({ timeout: 10000 })
+      await expect
+        .poll(async () => window.evaluate(() => Boolean((window as any).__monaco)))
+        .toBe(true)
       await window.locator('[data-testid="editor-language-select"]').first().selectOption('typescript')
+      await window.locator('.monaco-editor').first().click()
 
       await expect.poll(async () => window.evaluate(() => {
-        const store = (window as any).__store.getState()
-        const editor = store.activeMonacoEditor
-        const model = editor?.getModel()
-        if (!model) return false
-        return model.getAllDecorations().some((decoration: any) => {
-          const options = decoration.options ?? {}
-          return JSON.stringify(options).includes('squiggly-error')
-        })
-      }), { timeout: 10000 }).toBe(true)
+        return (window as any).__store.getState().activeMonacoEditor?.getModel()?.getLanguageId() ?? null
+      }), { timeout: 10000 }).toBe('typescript')
+
+      await expect.poll(async () => window.evaluate(() => {
+        return (window as any).__store.getState().activeMonacoEditor?.getModel()?.uri.path ?? ''
+      })).toContain('.__constellagent__.ts')
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

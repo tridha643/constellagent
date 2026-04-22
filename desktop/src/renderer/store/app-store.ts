@@ -8,6 +8,7 @@ import type {
   Project,
   SkillEntry,
   SidebarActionId,
+  PanelDockDrag,
   StartupCommand,
   SubagentEntry,
   Tab,
@@ -17,6 +18,7 @@ import type {
 import {
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_ACTION_ORDER,
+  DEFAULT_SIDE_PANEL_LAYOUT,
   normalizeLinearIssueCodingAgent,
   normalizeLinearIssueCodingModel,
   normalizeLinearIssueScope,
@@ -78,6 +80,17 @@ import {
 } from './sidebar-navigation'
 import { formatReviewForAgent } from '../utils/review-formatter'
 import { maybeShowStaleMainToast } from '../utils/ipc-stale-main'
+import {
+  activatePanel as activateSidePanelLayout,
+  movePanelToSide as movePanelToSideLayout,
+  normalizePersistedSidePanelLayout,
+  normalizeSidePanelLayout,
+  setNavigationPanelSide as setNavigationPanelSideLayout,
+  setProjectPanelSide as setProjectPanelSideLayout,
+  setSidePanelActive as setSidePanelActiveLayout,
+  swapSidebarRoles as swapSidebarRolesLayout,
+  toggleSidePanel as toggleSidePanelLayout,
+} from './side-panels'
 import { pathsEqualOrAlias } from '../../shared/agent-plan-path'
 import { normalizeEditorLanguageOverrideMap } from '../utils/language-map'
 import type { DesktopAppState } from '../../shared/pi/pi-desktop-state'
@@ -381,9 +394,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeWorkspaceId: null,
   activeTabId: null,
   lastActiveTabByWorkspace: {},
-  rightPanelMode: 'files',
-  rightPanelOpen: true,
-  sidebarCollapsed: false,
+  sidePanels: DEFAULT_SIDE_PANEL_LAYOUT,
+  panelDockDrag: null,
   collapsedProjectIds: new Set<string>(),
   lastActiveWorkspaceByProjectId: {},
   lastSavedTabId: null,
@@ -736,11 +748,47 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  setRightPanelMode: (mode) => set({ rightPanelMode: mode }),
+  setSidePanelActive: (side, panel) => set((s) => ({
+    sidePanels: setSidePanelActiveLayout(s.sidePanels, side, panel),
+  })),
 
-  toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
+  activatePanel: (panel) => set((s) => ({
+    sidePanels: activateSidePanelLayout(s.sidePanels, panel),
+  })),
 
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  movePanelToSide: (panel, side) => set((s) => ({
+    sidePanels: movePanelToSideLayout(s.sidePanels, panel, side),
+  })),
+
+  resetSidePanelLayout: () => set({
+    sidePanels: normalizeSidePanelLayout(DEFAULT_SIDE_PANEL_LAYOUT),
+  }),
+
+  setProjectPanelSide: (side) => set((s) => ({
+    sidePanels: setProjectPanelSideLayout(s.sidePanels, side),
+  })),
+
+  setNavigationPanelSide: (side) => set((s) => ({
+    sidePanels: setNavigationPanelSideLayout(s.sidePanels, side),
+  })),
+
+  swapSidebarRoles: () => set((s) => ({
+    sidePanels: swapSidebarRolesLayout(s.sidePanels),
+  })),
+
+  setPanelDockDrag: (panelDockDrag: PanelDockDrag | null) => set({ panelDockDrag }),
+
+  toggleSidePanel: (side) => set((s) => ({
+    sidePanels: toggleSidePanelLayout(s.sidePanels, side),
+  })),
+
+  toggleRightPanel: () => set((s) => ({
+    sidePanels: toggleSidePanelLayout(s.sidePanels, 'right'),
+  })),
+
+  toggleSidebar: () => set((s) => ({
+    sidePanels: toggleSidePanelLayout(s.sidePanels, 'left'),
+  })),
 
   toggleProjectCollapsed: (projectId) => set((s) => {
     const collapsedProjectIds = new Set(s.collapsedProjectIds)
@@ -2220,6 +2268,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         settingsMerged.editorLanguageOverrides,
       ),
     }
+    const sidePanels = normalizePersistedSidePanelLayout(data)
     const activeWorkspaceId = settings.restoreWorkspace
       ? ((saved && workspaces.some((w) => w.id === saved) ? saved : workspaces[0]?.id) ?? null)
       : null
@@ -2244,6 +2293,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeWorkspaceId,
       activeTabId,
       lastActiveTabByWorkspace: data.lastActiveTabByWorkspace ?? {},
+      sidePanels,
       collapsedProjectIds: new Set(),
       lastActiveWorkspaceByProjectId: activeWorkspaceId
         ? Object.fromEntries(
@@ -2519,6 +2569,7 @@ function getPersistedSlice(state: AppState): PersistedState {
     activeTabId: state.activeTabId,
     lastActiveTabByWorkspace: state.lastActiveTabByWorkspace,
     settings: state.settings,
+    sidePanels: state.sidePanels,
     sidebarActionOrder: state.sidebarActionOrder,
   }
 }
@@ -2542,20 +2593,26 @@ useAppStore.subscribe((state, prevState) => {
     state.automations !== prevState.automations ||
     state.activeWorkspaceId !== prevState.activeWorkspaceId ||
     state.settings !== prevState.settings ||
+    state.sidePanels !== prevState.sidePanels ||
     state.sidebarActionOrder !== prevState.sidebarActionOrder
   ) {
     debouncedSave(state)
   }
 })
 
-// T3 Code: auto-collapse sidebar + right panel when the active tab is t3code
+// T3 Code: auto-collapse both physical side hosts when the active tab is t3code
 useAppStore.subscribe((state, prevState) => {
   if (state.activeTabId === prevState.activeTabId && state.settings === prevState.settings) return
   if (!state.settings.t3CodeCollapseSidePanels) return
   const activeTab = state.tabs.find((t) => t.id === state.activeTabId)
   if (activeTab?.type !== 't3code') return
-  if (state.sidebarCollapsed && !state.rightPanelOpen) return
-  useAppStore.setState({ sidebarCollapsed: true, rightPanelOpen: false })
+  if (!state.sidePanels.left.open && !state.sidePanels.right.open) return
+  useAppStore.setState({
+    sidePanels: {
+      left: { ...state.sidePanels.left, open: false },
+      right: { ...state.sidePanels.right, open: false },
+    },
+  })
 })
 
 useAppStore.subscribe((state, prevState) => {

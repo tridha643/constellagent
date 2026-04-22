@@ -71,7 +71,7 @@ test.describe('OpenCode plan discovery', () => {
       await window.keyboard.press('Meta+Shift+M')
       await window.waitForTimeout(700)
 
-      await expect(window.getByPlaceholder('Search plans by name...')).toBeVisible()
+      await expect(window.getByPlaceholder('Search plans with fff...')).toBeVisible()
       const planFilters = window.getByRole('group', { name: 'Plan filters' })
       await expect(planFilters.getByRole('button', { name: 'OpenCode', exact: true })).toBeVisible()
       await expect(window.getByText('opencode-plan.md', { exact: true })).toBeVisible()

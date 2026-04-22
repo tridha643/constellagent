@@ -9,6 +9,11 @@
   overflow: hidden;
 }
 
+.sidebarEmbedded {
+  background: transparent;
+  border-right: none;
+}
+
 /* macOS traffic light spacing */
 .titleArea {
   height: var(--titlebar-height);

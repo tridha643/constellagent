@@ -1,17 +1,24 @@
 import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test'
 import { resolve, join, relative } from 'path'
-import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync } from 'fs'
+import { tmpdir } from 'os'
+import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync, mkdtempSync } from 'fs'
 import { execSync } from 'child_process'
 
 const appPath = resolve(__dirname, '../out/main/index.js')
 
-async function launchApp(): Promise<{ app: ElectronApplication; window: Page }> {
-  const app = await electron.launch({ args: [appPath], env: { ...process.env, CI_TEST: '1' } })
+async function launchApp(userDataPath?: string): Promise<{ app: ElectronApplication; window: Page }> {
+  const env = { ...process.env, CI_TEST: '1' } as Record<string, string>
+  if (userDataPath) env.CONSTELLAGENT_USER_DATA_PATH = userDataPath
+  const app = await electron.launch({ args: [appPath], env })
   const window = await app.firstWindow()
   await window.waitForLoadState('domcontentloaded')
   await window.waitForSelector('#root', { timeout: 10000 })
   await window.waitForTimeout(1500)
   return { app, window }
+}
+
+function createUserDataPath(name: string): string {
+  return join(mkdtempSync(join(tmpdir(), `constellagent-${name}-`)), 'user-data')
 }
 
 function createTestRepo(name: string): string {
@@ -86,6 +93,10 @@ test.describe('IPC handlers & state persistence', () => {
       const testState = {
         projects: [{ id: 'test-id', name: 'persist-project', repoPath }],
         workspaces: [],
+        sidePanels: {
+          left: { open: true, activePanel: 'files', panelOrder: ['files', 'changes', 'graph'] },
+          right: { open: false, activePanel: 'project', panelOrder: ['project'] },
+        },
       }
 
       // Save state via IPC
@@ -103,9 +114,107 @@ test.describe('IPC handlers & state persistence', () => {
       expect(loaded.projects[0].name).toBe('persist-project')
       expect(loaded.projects[0].repoPath).toBe(repoPath)
       expect(loaded.workspaces).toHaveLength(0)
+      expect(loaded.sidePanels).toEqual(testState.sidePanels)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('legacy saved state hydrates safe sidePanels when new panel settings are absent', async () => {
+    const repoPath = createTestRepo('persist-legacy-sidepanels')
+    const userDataPath = createUserDataPath('persist-legacy-sidepanels')
+    const stateFile = join(userDataPath, 'constellagent-state.json')
+    mkdirSync(userDataPath, { recursive: true })
+    writeFileSync(stateFile, JSON.stringify({
+      projects: [{ id: 'legacy-project', name: 'legacy-project', repoPath }],
+      workspaces: [],
+      tabs: [],
+      sidebarCollapsed: true,
+      rightPanelOpen: false,
+      rightPanelMode: 'changes',
+    }, null, 2))
+
+    const { app, window } = await launchApp(userDataPath)
+
+    try {
+      await window.waitForTimeout(1200)
+
+      const sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
+      expect(sidePanels.left).toEqual({
+        open: false,
+        activePanel: 'project',
+        panelOrder: ['project'],
+      })
+      expect(sidePanels.right).toEqual({
+        open: false,
+        activePanel: 'changes',
+        panelOrder: ['files', 'changes', 'graph'],
+      })
+
+      const loaded = await window.evaluate(async () => {
+        return await (window as any).api.state.load()
+      })
+      expect(loaded.sidePanels.left.open).toBe(false)
+      expect(loaded.sidePanels.right.open).toBe(false)
+      expect(loaded.sidePanels.right.activePanel).toBe('changes')
+      expect(loaded.sidebarCollapsed).toBeUndefined()
+      expect(loaded.rightPanelOpen).toBeUndefined()
+      expect(loaded.rightPanelMode).toBeUndefined()
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+      rmSync(userDataPath, { recursive: true, force: true })
+    }
+  })
+
+  test('partially persisted sidePanels hydrate safely and keep missing legacy defaults', async () => {
+    const repoPath = createTestRepo('persist-partial-sidepanels')
+    const userDataPath = createUserDataPath('persist-partial-sidepanels')
+    const stateFile = join(userDataPath, 'constellagent-state.json')
+    mkdirSync(userDataPath, { recursive: true })
+    writeFileSync(stateFile, JSON.stringify({
+      projects: [{ id: 'partial-project', name: 'partial-project', repoPath }],
+      workspaces: [],
+      tabs: [],
+      rightPanelOpen: false,
+      rightPanelMode: 'graph',
+      sidePanels: {
+        left: {
+          panelOrder: ['project', 'files'],
+        },
+      },
+    }, null, 2))
+
+    const { app, window } = await launchApp(userDataPath)
+
+    try {
+      await window.waitForTimeout(1200)
+
+      const sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
+      expect(sidePanels.left).toEqual({
+        open: true,
+        activePanel: 'project',
+        panelOrder: ['project', 'files'],
+      })
+      expect(sidePanels.right).toEqual({
+        open: false,
+        activePanel: 'graph',
+        panelOrder: ['changes', 'graph'],
+      })
+
+      const loaded = await window.evaluate(async () => {
+        return await (window as any).api.state.load()
+      })
+      expect(loaded.sidePanels.left.panelOrder).toEqual(['project', 'files'])
+      expect(loaded.sidePanels.right.panelOrder).toEqual(['changes', 'graph'])
+      expect(loaded.sidePanels.right.activePanel).toBe('graph')
+      expect(loaded.rightPanelOpen).toBeUndefined()
+      expect(loaded.rightPanelMode).toBeUndefined()
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+      rmSync(userDataPath, { recursive: true, force: true })
     }
   })
 
