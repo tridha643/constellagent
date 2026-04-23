@@ -2,7 +2,11 @@
 
 .editorContainer {
   position: absolute;
-  inset: var(--side-panel-float-inset);
+  /* Shorthand inset: top | right | bottom | left.
+     Top is 0 so the editor card tucks right under the tab strip — the tab
+     bar's own breathing room is enough separation. Sides/bottom keep the
+     floating-card inset. */
+  inset: 0 var(--side-panel-float-inset) var(--side-panel-float-inset);
   display: flex;
   flex-direction: column;
   background: var(--surface-1);
@@ -12,10 +16,11 @@
   overflow: hidden;
 }
 
-/* Monaco overrides — match our theme */
+/* Monaco overrides — gutter shares the editor background so line numbers
+   flow seamlessly into the code instead of reading as a separate column. */
 .editorContainer :global(.monaco-editor) {
   --vscode-editor-background: var(--surface-1);
-  --vscode-editorGutter-background: var(--surface-0);
+  --vscode-editorGutter-background: var(--surface-1);
 }
 
 /* Git gutter decorations */
@@ -62,6 +67,26 @@
   flex-wrap: wrap;
 }
 
+/*
+ * Seamless floating toolbar for FileEditor — the tab already labels the file,
+ * so we drop the heavy header row and float controls over the editor's
+ * top-right corner. No border, no reserved height.
+ */
+.fileEditorToolbar {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-3);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+
+.fileEditorToolbar > * {
+  pointer-events: auto;
+}
+
 .markdownToolbarEnd {
   display: flex;
   align-items: center;
@@ -86,17 +111,19 @@
 }
 
 .languageSelect {
-  border: 1px solid var(--panel-border);
-  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
-  color: var(--text-secondary);
-  border-radius: var(--radius-md);
-  padding: 4px 10px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--surface-1) 80%, transparent);
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
   font-size: var(--text-xs);
   font-family: var(--font-ui);
-  min-width: 128px;
+  min-width: 0;
   cursor: pointer;
   outline: none;
+  opacity: 0.55;
   transition:
+    opacity var(--duration-fast) var(--ease-out),
     border-color var(--duration-fast) var(--ease-out),
     background-color var(--duration-fast) var(--ease-out),
     color var(--duration-fast) var(--ease-out),
@@ -109,6 +136,11 @@
     border-color: color-mix(in srgb, var(--text-primary) 14%, transparent);
     color: var(--text-primary);
     background: color-mix(in srgb, var(--surface-1) 96%, transparent);
+    opacity: 1;
+  }
+
+  .fileEditorToolbar:hover .languageSelect {
+    opacity: 0.9;
   }
 }
 

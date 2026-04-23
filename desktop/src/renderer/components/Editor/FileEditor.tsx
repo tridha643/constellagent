@@ -187,6 +187,13 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
       tabSize: 2,
       wordWrap: 'off',
       automaticLayout: true,
+      // Tighten the gutter: no unused glyph column, size line-number width to
+      // the file (min 2 chars), shrink the right-side decoration padding, and
+      // only show fold chevrons on hover so the gutter reads clean at rest.
+      glyphMargin: false,
+      lineNumbersMinChars: 2,
+      lineDecorationsWidth: 4,
+      showFoldingControls: 'mouseover',
       // Render hover/suggest/context widgets outside the editor's clipping
       // boundary so the rounded floating-card chrome doesn't cut them off.
       fixedOverflowWidgets: true,
@@ -543,8 +550,7 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
 
   return (
     <div className={styles.editorContainer}>
-      <div className={styles.diffToolbar}>
-        <span className={styles.diffLabel}>{filePath.split('/').pop()}</span>
+      <div className={styles.fileEditorToolbar}>
         <div className={styles.markdownToolbarEnd}>
           {isPlan && worktreePath && (
             <PlanAgentToolbar
@@ -554,12 +560,13 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
             />
           )}
           <label className={styles.languagePicker}>
-            <span className={styles.languagePickerLabel}>Language</span>
             <select
               data-testid="editor-language-select"
               className={styles.languageSelect}
               value={languageOverride ?? ''}
               onChange={handleLanguageOverrideChange}
+              aria-label="Language"
+              title="Language"
             >
               {EDITOR_LANGUAGE_OVERRIDE_OPTIONS.map((option) => (
                 <option key={option.value || 'auto'} value={option.value}>
