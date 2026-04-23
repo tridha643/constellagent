@@ -58,26 +58,61 @@
   --vscode-editorGutter-background: var(--surface-1);
 }
 
+/* Diff wash via monaco’s --vscode-diffEditor-*; no .mtk override — keeps syntax colors. */
+.diffScrollArea :global(.monaco-editor),
+.diffScrollArea :global(.monaco-diff-editor) {
+  --vscode-diffEditor-removedTextBackground: color-mix(in srgb, var(--accent-red) 44%, transparent);
+  --vscode-diffEditor-removedLineBackground: color-mix(in srgb, var(--accent-red) 20%, transparent);
+  --vscode-diffEditorGutter-removedLineBackground: color-mix(in srgb, var(--accent-red) 32%, transparent);
+  --vscode-diffEditor-insertedTextBackground: color-mix(
+    in srgb,
+    var(--accent-green-muted, var(--accent-green)) 44%,
+    transparent
+  );
+  --vscode-diffEditor-insertedLineBackground: color-mix(
+    in srgb,
+    var(--accent-green-muted, var(--accent-green)) 20%,
+    transparent
+  );
+  --vscode-diffEditorGutter-insertedLineBackground: color-mix(
+    in srgb,
+    var(--accent-green-muted, var(--accent-green)) 32%,
+    transparent
+  );
+  --vscode-diffEditorOverview-removedForeground: color-mix(in srgb, var(--accent-red) 100%, transparent);
+  --vscode-diffEditorOverview-insertedForeground: color-mix(
+    in srgb,
+    var(--accent-green-muted, var(--accent-green)) 100%,
+    transparent
+  );
+}
+
 .diffScrollArea :global(.cga-full-file-added-line) {
-  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+  background: color-mix(in srgb, var(--accent-green) 38%, transparent);
 }
 
 .diffScrollArea :global(.cga-full-file-deleted-line) {
-  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+  background: color-mix(in srgb, var(--accent-red) 38%, transparent);
 }
 
 .diffScrollArea :global(.cga-full-file-added-gutter) {
   margin-left: 3px;
   width: 3px !important;
   background: var(--accent-green-muted, var(--accent-green));
-  opacity: 0.9;
+  opacity: 1;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-green-muted, var(--accent-green)) 82%, var(--surface-1)),
+    0 0 4px 0 color-mix(in srgb, var(--accent-green-muted, var(--accent-green)) 35%, transparent);
 }
 
 .diffScrollArea :global(.cga-full-file-deleted-gutter) {
   margin-left: 3px;
   width: 3px !important;
-  background: color-mix(in srgb, var(--accent-red) 82%, transparent);
-  opacity: 0.9;
+  background: var(--accent-red);
+  opacity: 1;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-red) 82%, var(--surface-1)),
+    0 0 4px 0 color-mix(in srgb, var(--accent-red) 35%, transparent);
 }
 
 /* Diff editor controls */
