@@ -9,6 +9,7 @@
     "build": "node scripts/electron-vite-build.mjs",
     "preview": "electron-vite preview",
     "test": "bunx playwright test --project=electron",
+    "verify:files-panel": "bunx playwright test e2e/file-editor.spec.ts --project=electron -g \"file tree\"",
     "test:automations": "bun run scripts/automations-smoke.ts",
     "test:automations:e2e": "bunx playwright test e2e/automations.spec.ts --project=electron",
     "test:review:e2e": "bunx playwright test e2e/hunk-review.spec.ts --project=electron",

@@ -1,23 +1,32 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim-overlay, rgba(0, 0, 0, 0.46));
+  backdrop-filter: blur(var(--scrim-blur, 6px));
+  -webkit-backdrop-filter: blur(var(--scrim-blur, 6px));
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 120;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .overlay {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 .dialog {
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-2) 96%, transparent);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-xl, 14px);
   padding: var(--space-8);
-  width: min(380px, calc(100vw - 32px));
+  width: min(400px, calc(100vw - 32px));
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-overlay, var(--shadow-lg));
   transform-origin: center;
 }
 
@@ -38,19 +47,28 @@
 
 .input {
   width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--surface-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
   color: var(--text-primary);
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   outline: none;
-  transition: border-color 140ms var(--ease-out);
+  transition:
+    border-color 140ms var(--ease-out),
+    box-shadow 140ms var(--ease-out);
 }
 
 .input:focus {
-  border-color: var(--accent-blue);
+  border-color: color-mix(in srgb, var(--accent-blue) 55%, var(--panel-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 25%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .input {
+    transition: none;
+  }
 }
 
 .actions {
@@ -62,14 +80,21 @@
 
 .cancelBtn {
   padding: var(--space-2) var(--space-6);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   background: none;
   color: var(--text-secondary);
   font-size: var(--text-sm);
   font-family: var(--font-ui);
   cursor: pointer;
-  transition: background-color var(--motion-fast), color var(--motion-fast);
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast),
+    transform 100ms var(--ease-out);
+}
+
+.cancelBtn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .cancelBtn:disabled {
@@ -87,7 +112,14 @@
   font-family: var(--font-ui);
   font-weight: var(--weight-medium);
   cursor: pointer;
-  transition: filter var(--motion-fast), opacity var(--motion-fast);
+  transition:
+    filter var(--motion-fast),
+    opacity var(--motion-fast),
+    transform 100ms var(--ease-out);
+}
+
+.confirmBtn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .confirmBtn:disabled {
@@ -99,7 +131,23 @@
   cursor: wait;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .cancelBtn:hover:not(:disabled) {
+    background: var(--surface-3);
+    color: var(--text-primary);
+  }
+
+  .confirmBtn:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .cancelBtn:active,
+  .confirmBtn:active {
+    transform: none;
+  }
+
   .dialog {
     opacity: 1;
     transform: none;

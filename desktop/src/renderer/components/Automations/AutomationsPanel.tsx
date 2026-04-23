@@ -7,8 +7,10 @@ import type {
   AutomationTrigger,
 } from '../../../shared/automation-types'
 import { DEFAULT_AUTOMATION_COOLDOWN_MS } from '../../../shared/automation-types'
+import { ChevronLeft } from 'lucide-react'
 import { useAppStore } from '../../store/app-store'
 import type { Automation } from '../../store/types'
+import { FloatingPanel } from '../FloatingPanel/FloatingPanel'
 import { Tooltip } from '../Tooltip/Tooltip'
 import styles from './AutomationsPanel.module.css'
 
@@ -647,33 +649,34 @@ export function AutomationsPanel() {
   }, [handleBack, toggleAutomations, view])
 
   return (
-    <div className={styles.panel}>
-      <div className={styles.header}>
-        <div className={styles.headerInner}>
-          <div className={styles.headerLeft}>
-            <Tooltip label="Back">
-              <button className={styles.backBtn} onClick={toggleAutomations}>‹</button>
-            </Tooltip>
-            <div className={styles.headerText}>
-              <h2 className={styles.title}>Automations</h2>
-              <p className={styles.subtitle}>Schedule prompts, event hooks, and repeatable workflows.</p>
-            </div>
-          </div>
-          {view === 'list' && (
-            <button className={styles.newBtn} onClick={handleNew}>+ New</button>
-          )}
-        </div>
-      </div>
-
-      <div className={styles.content}>
+    <FloatingPanel variant="fullscreen" testId="automations-panel">
+      <FloatingPanel.Titlebar trafficLightPad>
+        <Tooltip label="Back">
+          <button
+            type="button"
+            className={styles.backBtn}
+            onClick={toggleAutomations}
+            aria-label="Close automations"
+          >
+            <ChevronLeft size={16} strokeWidth={2} aria-hidden />
+          </button>
+        </Tooltip>
+        <h2 className={styles.title}>Automations</h2>
+        <div className={styles.titlebarSpacer} />
+        {view === 'list' && (
+          <button className={styles.newBtn} onClick={handleNew}>+ New</button>
+        )}
+      </FloatingPanel.Titlebar>
+      <FloatingPanel.Body className={styles.content}>
         <div className={styles.inner}>
+          <p className={styles.subtitle}>Schedule prompts, event hooks, and repeatable workflows.</p>
           {view === 'list' ? (
             <AutomationList onNew={handleNew} onEdit={handleEdit} />
           ) : (
             <AutomationForm editingAutomation={editingAutomation} onBack={handleBack} />
           )}
         </div>
-      </div>
-    </div>
+      </FloatingPanel.Body>
+    </FloatingPanel>
   )
 }

@@ -1,5 +1,6 @@
 .planPanel {
   max-height: min(520px, 72vh);
+  width: 560px;
 }
 
 .filterSection {
@@ -8,7 +9,7 @@
   gap: var(--space-2);
   padding: 0 var(--space-4) var(--space-3);
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--panel-border-inner);
 }
 
 .filterRow {
@@ -40,7 +41,7 @@
   gap: 5px;
   padding: 3px 10px;
   border-radius: var(--radius-full, 999px);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--panel-border);
   background: transparent;
   color: var(--text-tertiary);
   font-size: 11px;
@@ -83,7 +84,7 @@
 .filterSep {
   width: 1px;
   height: 18px;
-  background: var(--border-default);
+  background: var(--panel-border-inner);
   flex-shrink: 0;
 }
 
@@ -133,7 +134,7 @@
   font-family: var(--font-ui);
   padding: 1px 6px;
   border-radius: var(--radius-full, 999px);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--panel-border);
   color: var(--text-tertiary);
   background: transparent;
   flex-shrink: 0;

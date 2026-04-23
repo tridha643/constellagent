@@ -146,6 +146,7 @@
   --radius-md: 5px;
   --radius-lg: 8px;
   --radius-xl: 12px;
+  --radius-window: 12px;
   --radius-full: 100px;
 
   /* ═══════════════════════════════════════════════════════
@@ -205,7 +206,42 @@
      ═══════════════════════════════════════════════════════ */
   --sidebar-width: 220px;
   --right-panel-width: 280px;
-  --tab-height: 32px;
-  --titlebar-height: 38px;
+  /* Tab row + left panel header (traffic-light lane). Taller than 32px so the
+     macOS window controls have vertical breathing room while staying centered
+     on the same row as tabs. */
+  --tab-height: 42px;
+  --titlebar-height: 48px;
   --status-bar-height: 22px;
+
+  /* Side panels: float as cards over the center strip (inset + radius) */
+  --side-panel-float-inset: var(--space-5);
+  --side-panel-float-gap: var(--space-4);
+  --side-panel-float-radius: var(--radius-lg);
+
+  /* ═══════════════════════════════════════════════════════
+     PANEL CHROME — outer/inner border tints for floating cards
+     Kept in one place so SidePanelHost + FloatingPanel can't drift.
+     ═══════════════════════════════════════════════════════ */
+  --panel-border: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  --panel-border-inner: color-mix(in srgb, var(--text-primary) 5%, transparent);
+
+  /* Composite motion for floating panels / drawers (cohesive enter/exit) */
+  --motion-panel-enter: var(--duration-slow) var(--ease-out);         /* 220ms */
+  --motion-panel-exit: 160ms var(--ease-out);
+  --motion-drawer-enter: 260ms var(--ease-drawer);
+  --motion-drawer-exit: 200ms var(--ease-drawer);
+
+  /* Dialog + palette motion (pairs overlay + body so they feel like one unit).
+     Dialog exit matches --duration-exit so useExitAnimation (140ms) stays
+     aligned with the CSS `--exiting` transition duration. */
+  --motion-dialog-enter: 200ms var(--ease-out);
+  --motion-dialog-exit: var(--duration-exit) var(--ease-out);
+  --motion-palette-enter: var(--duration-enter) var(--ease-out);
+  --motion-palette-exit: var(--duration-exit-fast) var(--ease-out);
+
+  /* Scrim tint used by every modal overlay. Softer than raw rgba(0,0,0,...)
+     so themed surfaces underneath still read through. */
+  --scrim-overlay: color-mix(in srgb, #000 46%, transparent);
+  --scrim-overlay-soft: color-mix(in srgb, #000 32%, transparent);
+  --scrim-blur: 6px;
 }

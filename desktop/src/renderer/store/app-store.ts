@@ -88,6 +88,7 @@ import {
   setNavigationPanelSide as setNavigationPanelSideLayout,
   setProjectPanelSide as setProjectPanelSideLayout,
   setSidePanelActive as setSidePanelActiveLayout,
+  setSidePanelOpen as setSidePanelOpenLayout,
   swapSidebarRoles as swapSidebarRolesLayout,
   toggleSidePanel as toggleSidePanelLayout,
 } from './side-panels'
@@ -780,6 +781,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleSidePanel: (side) => set((s) => ({
     sidePanels: toggleSidePanelLayout(s.sidePanels, side),
+  })),
+
+  setSidePanelOpen: (side, open) => set((s) => ({
+    sidePanels: setSidePanelOpenLayout(s.sidePanels, side, open),
   })),
 
   toggleRightPanel: () => set((s) => ({

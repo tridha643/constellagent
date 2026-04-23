@@ -188,7 +188,16 @@ const api = {
     getTree: (dirPath: string) =>
       ipcRenderer.invoke(IPC.FS_GET_TREE, dirPath),
     getTreeWithStatus: (dirPath: string) =>
-      ipcRenderer.invoke(IPC.FS_GET_TREE_WITH_STATUS, dirPath),
+      ipcRenderer.invoke(IPC.FS_GET_TREE_WITH_STATUS, dirPath) as Promise<{
+        rootPath: string
+        tree: Array<{
+          name: string
+          path: string
+          type: 'file' | 'directory'
+          children?: unknown[]
+          gitStatus?: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
+        }>
+      }>,
     quickOpenSearch: (worktreePath: string, request: QuickOpenSearchRequest) =>
       ipcRenderer.invoke(IPC.FS_QUICK_OPEN_SEARCH, worktreePath, request) as Promise<QuickOpenSearchResult>,
     codeSearch: (worktreePath: string, request: CodeSearchRequest) =>

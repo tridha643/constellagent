@@ -740,6 +740,18 @@ export class GitService {
     return git(['rev-parse', '--show-toplevel'], cwd)
   }
 
+  /** Repo-root → cwd prefix (posix, no trailing slash), e.g. `apps/web` or `` at repo root. */
+  static async getPathPrefixFromRepoRoot(cwd: string): Promise<string> {
+    try {
+      const out = await git(['rev-parse', '--show-prefix'], cwd)
+      const raw = out.trim()
+      if (!raw) return ''
+      return raw.replace(/\/+$/, '').replace(/\\/g, '/')
+    } catch {
+      return ''
+    }
+  }
+
   static async getCurrentBranch(worktreePath: string): Promise<string> {
     if (!existsSync(worktreePath)) return ''
     try {

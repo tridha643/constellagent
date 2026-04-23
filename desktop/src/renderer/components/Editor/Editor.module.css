@@ -2,12 +2,14 @@
 
 .editorContainer {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: var(--side-panel-float-inset);
   display: flex;
   flex-direction: column;
+  background: var(--surface-1);
+  border-radius: var(--side-panel-float-radius);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
 }
 
 /* Monaco overrides — match our theme */
@@ -51,10 +53,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-2) var(--space-6);
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border-subtle);
-  min-height: 30px;
+  padding: var(--space-3) var(--space-5);
+  background: transparent;
+  border-bottom: 1px solid var(--panel-border-inner);
+  min-height: 34px;
   flex-shrink: 0;
   gap: var(--space-2);
   flex-wrap: wrap;
@@ -84,10 +86,10 @@
 }
 
 .languageSelect {
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-0);
+  border: 1px solid var(--panel-border);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
   color: var(--text-secondary);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   padding: 4px 10px;
   font-size: var(--text-xs);
   font-family: var(--font-ui);
@@ -104,15 +106,15 @@
 
 @media (hover: hover) and (pointer: fine) {
   .languageSelect:hover {
-    border-color: var(--border-default);
+    border-color: color-mix(in srgb, var(--text-primary) 14%, transparent);
     color: var(--text-primary);
-    background: var(--surface-1);
+    background: color-mix(in srgb, var(--surface-1) 96%, transparent);
   }
 }
 
 .languageSelect:focus-visible {
-  border-color: color-mix(in srgb, var(--accent-blue) 60%, var(--border-default));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent-blue) 55%, var(--panel-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 25%, transparent);
   color: var(--text-primary);
 }
 
@@ -132,9 +134,9 @@
 .diffCommentHint {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
-  padding: var(--space-2) var(--space-6);
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-5);
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  border-bottom: 1px solid var(--panel-border-inner);
   line-height: 1.4;
   flex-shrink: 0;
 }
@@ -158,9 +160,10 @@
 .diffToggle {
   display: flex;
   align-items: center;
-  background: var(--surface-0);
+  background: color-mix(in srgb, var(--surface-0) 92%, transparent);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-full);
-  padding: 1px;
+  padding: 2px;
   gap: 1px;
 }
 
@@ -190,11 +193,13 @@
 }
 
 .diffToggleOption.active {
-  background: var(--surface-3);
+  background: color-mix(in srgb, var(--surface-3) 92%, transparent);
   color: var(--text-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 55%, var(--panel-border));
   transition:
     color var(--duration-fast) var(--ease-out),
     background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
     transform var(--duration-micro) var(--ease-press);
 }
 
@@ -212,12 +217,14 @@
 
 .diffViewerContainer {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: var(--side-panel-float-inset);
   display: flex;
   flex-direction: column;
+  background: var(--surface-1);
+  border-radius: var(--side-panel-float-radius);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
 }
 
 .diffScrollArea {
@@ -232,9 +239,9 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: var(--space-2) var(--space-6);
-  background: var(--surface-1);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-5);
+  background: transparent;
+  border-bottom: 1px solid var(--panel-border-inner);
   overflow-x: auto;
   flex-shrink: 0;
 }
@@ -243,7 +250,7 @@
   padding: var(--space-1) var(--space-3);
   border: none;
   background: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: var(--text-tertiary);
   font-size: var(--text-xs);
   font-family: var(--font-mono);
@@ -262,32 +269,34 @@
 @media (hover: hover) and (pointer: fine) {
   .fileStripItem:hover {
     color: var(--text-secondary);
-    background: rgba(255, 255, 255, 0.03);
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
   }
 }
 
 .fileStripItem.active {
-  background: var(--surface-3);
+  background: color-mix(in srgb, var(--surface-3) 88%, transparent);
   color: var(--text-primary);
 }
 
 /* Per-file diff section */
 .diffFileSection {
-  border-bottom: 2px solid var(--border-subtle);
+  border-bottom: 1px solid var(--panel-border-inner);
 }
 
 .fileHeader {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-6);
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-5);
+  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+  border-bottom: 1px solid var(--panel-border-inner);
   position: sticky;
   top: 0;
   z-index: 2;
   cursor: pointer;
   transition: background var(--motion-fast);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -300,9 +309,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-6);
-  background: var(--surface-1);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-5);
+  background: transparent;
+  border-bottom: 1px solid var(--panel-border-inner);
   cursor: pointer;
   transition:
     background var(--motion-fast),

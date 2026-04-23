@@ -18,6 +18,7 @@ import { QuickOpen } from './components/QuickOpen/QuickOpen'
 import { ChangesFileFind } from './components/QuickOpen/ChangesFileFind'
 import { PlanPalette } from './components/PlanPalette/PlanPalette'
 import { HunkReview } from './components/HunkReview/HunkReview'
+import { FloatingPanel } from './components/FloatingPanel/FloatingPanel'
 import { ConfirmDialog } from './components/Sidebar/ConfirmDialog'
 import { ToastContainer } from './components/Toast/Toast'
 import { AddToChatButton } from './components/AddToChatButton/AddToChatButton'
@@ -152,6 +153,7 @@ export function App() {
   const sidePanels = useAppStore((s) => s.sidePanels)
   const panelDockDrag = useAppStore((s) => s.panelDockDrag)
   const movePanelToSide = useAppStore((s) => s.movePanelToSide)
+  const setSidePanelOpen = useAppStore((s) => s.setSidePanelOpen)
   const setPanelDockDrag = useAppStore((s) => s.setPanelDockDrag)
   const activeWorkspaceTabs = useAppStore((s) => s.activeWorkspaceTabs)
   const workspaces = useAppStore((s) => s.workspaces)
@@ -239,6 +241,33 @@ export function App() {
     setPanelDockDrag(null)
   }, [movePanelToSide, resolvePanelDockPayload, setPanelDockDrag])
 
+  const leftSplitPaneSizes = useMemo(() => {
+    const projectOnly = sidePanels.left.panelOrder.includes('project') && sidePanels.left.panelOrder.length === 1
+    return {
+      minSize: 160,
+      maxSize: projectOnly ? 400 : 500,
+      preferredSize: projectOnly ? 220 : 280,
+    }
+  }, [sidePanels.left.panelOrder])
+
+  const rightSplitPaneSizes = useMemo(() => {
+    const projectOnly = sidePanels.right.panelOrder.includes('project') && sidePanels.right.panelOrder.length === 1
+    return {
+      minSize: projectOnly ? 160 : 240,
+      maxSize: projectOnly ? 400 : 500,
+      preferredSize: projectOnly ? 220 : 280,
+    }
+  }, [sidePanels.right.panelOrder])
+
+  /** Allotment pane order is fixed: [left, center, right]. Snap-drag collapses side panes to match store `open`. */
+  const onAllotmentVisibleChange = useCallback(
+    (index: number, visible: boolean) => {
+      if (index === 0) setSidePanelOpen('left', visible)
+      else if (index === 2) setSidePanelOpen('right', visible)
+    },
+    [setSidePanelOpen],
+  )
+
   // All terminal tabs across every workspace — kept alive to preserve PTY state
   const allTerminals = allTabs.filter((t): t is Extract<typeof t, { type: 'terminal' }> => t.type === 'terminal')
 
@@ -260,20 +289,21 @@ export function App() {
               </div>
             }
           >
-          <Allotment>
-            {/* Left side panel */}
-            {sidePanels.left.open && (
-              <Allotment.Pane
-                minSize={160}
-                maxSize={sidePanels.left.panelOrder.includes('project') && sidePanels.left.panelOrder.length === 1 ? 400 : 500}
-                preferredSize={sidePanels.left.panelOrder.includes('project') && sidePanels.left.panelOrder.length === 1 ? 220 : 280}
-              >
+          <Allotment onVisibleChange={onAllotmentVisibleChange}>
+            <Allotment.Pane
+              visible={sidePanels.left.open}
+              snap
+              minSize={leftSplitPaneSizes.minSize}
+              maxSize={leftSplitPaneSizes.maxSize}
+              preferredSize={leftSplitPaneSizes.preferredSize}
+            >
+              <div className={`${styles.sidePanelShell} ${styles.sidePanelShellLeft}`}>
                 <SidePanelHost side="left" />
-              </Allotment.Pane>
-            )}
+              </div>
+            </Allotment.Pane>
 
-            {/* Center */}
-            <Allotment.Pane>
+            {/* Center — no snap so it cannot be collapsed by dragging */}
+            <Allotment.Pane minSize={240}>
               <div className={styles.centerPanel}>
                 <TabBar />
                 <div className={styles.contentArea}>
@@ -292,13 +322,15 @@ export function App() {
                   })}
 
                   {!activeTab ? (
-                    <div className={styles.welcome}>
-                      <div className={styles.welcomeLogo}>constellagent</div>
-                      <div className={styles.welcomeHint}>
-                        Add a project to get started, or press
-                        <span className={styles.welcomeShortcut}>⌘T</span>
-                        for a new terminal
-                      </div>
+                    <div className={styles.welcomeWrap}>
+                      <FloatingPanel.Surface className={styles.welcome}>
+                        <div className={styles.welcomeLogo}>constellagent</div>
+                        <div className={styles.welcomeHint}>
+                          Add a project to get started, or press
+                          <span className={styles.welcomeShortcut}>⌘T</span>
+                          for a new terminal
+                        </div>
+                      </FloatingPanel.Surface>
                     </div>
                   ) : (
                     <>
@@ -366,16 +398,17 @@ export function App() {
               </div>
             </Allotment.Pane>
 
-            {/* Right side panel */}
-            {sidePanels.right.open && (
-              <Allotment.Pane
-                minSize={sidePanels.right.panelOrder.includes('project') && sidePanels.right.panelOrder.length === 1 ? 160 : 240}
-                maxSize={sidePanels.right.panelOrder.includes('project') && sidePanels.right.panelOrder.length === 1 ? 400 : 500}
-                preferredSize={sidePanels.right.panelOrder.includes('project') && sidePanels.right.panelOrder.length === 1 ? 220 : 280}
-              >
+            <Allotment.Pane
+              visible={sidePanels.right.open}
+              snap
+              minSize={rightSplitPaneSizes.minSize}
+              maxSize={rightSplitPaneSizes.maxSize}
+              preferredSize={rightSplitPaneSizes.preferredSize}
+            >
+              <div className={`${styles.sidePanelShell} ${styles.sidePanelShellRight}`}>
                 <SidePanelHost side="right" />
-              </Allotment.Pane>
-            )}
+              </div>
+            </Allotment.Pane>
           </Allotment>
           {panelDockDrag && (
             <>

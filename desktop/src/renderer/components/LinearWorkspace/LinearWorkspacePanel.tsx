@@ -57,6 +57,8 @@ import {
   linearJumpPayloadId,
   type LinearJumpRow,
 } from "../../linear/linear-jump-index";
+import { ChevronLeft } from "lucide-react";
+import { FloatingPanel } from "../FloatingPanel/FloatingPanel";
 import { LinearQuickOpen } from "./LinearQuickOpen";
 import { LinearSearchComposer } from "./LinearSearchComposer";
 import { LinearTicketsComposer } from "./LinearTicketsComposer";
@@ -838,28 +840,31 @@ export function LinearWorkspacePanel() {
   );
 
   return (
-    <div className={styles.panel} data-testid="linear-workspace-panel">
-      <div className={styles.header}>
-        <div className={styles.headerInner}>
-          <div className={styles.headerBrand}>
-            <Tooltip label="Back">
-              <button
-                type="button"
-                className={styles.backBtn}
-                onClick={toggleLinear}
-              >
-                ‹
-              </button>
-            </Tooltip>
-            <img
-              src={linearIconSrc}
-              alt=""
-              className={styles.brandIcon}
-              width={22}
-              height={22}
-            />
-            <span className={styles.brandTitle}>Linear</span>
-          </div>
+    <FloatingPanel
+      variant="fullscreen"
+      testId="linear-workspace-panel"
+    >
+      <FloatingPanel.Titlebar trafficLightPad>
+        <div className={styles.headerBrand}>
+          <Tooltip label="Back">
+            <button
+              type="button"
+              className={styles.backBtn}
+              onClick={toggleLinear}
+              aria-label="Close Linear"
+            >
+              <ChevronLeft size={16} strokeWidth={2} aria-hidden />
+            </button>
+          </Tooltip>
+          <img
+            src={linearIconSrc}
+            alt=""
+            className={styles.brandIcon}
+            width={20}
+            height={20}
+          />
+          <span className={styles.brandTitle}>Linear</span>
+        </div>
           <div className={styles.headerUser}>
             {loadError ? (
               <span className={styles.headerUserChipError} title={loadError}>
@@ -934,8 +939,7 @@ export function LinearWorkspacePanel() {
               Open Linear
             </button>
           </div>
-        </div>
-      </div>
+      </FloatingPanel.Titlebar>
 
       <div className={styles.workspaceMain}>
         <LinearQuickOpen
@@ -1179,6 +1183,6 @@ export function LinearWorkspacePanel() {
           ) : null}
         </div>
       </div>
-    </div>
+    </FloatingPanel>
   );
 }

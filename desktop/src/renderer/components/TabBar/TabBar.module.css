@@ -4,16 +4,43 @@
   display: flex;
   align-items: stretch;
   height: var(--tab-height);
-  background: var(--surface-0);
-  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  border-bottom: none;
   overflow-x: auto;
   overflow-y: hidden;
   flex-shrink: 0;
 }
 
-/* macOS traffic-light clearance when sidebar is hidden */
+/*
+ * Collapsed-sidebar mode: same vertical row as the traffic lights — reserve a
+ * real flex item (not just padding) so the first tab never sits in the light
+ * hit zone. Width matches `.left .explorerRow { padding-left: 78px }` plus a
+ * wider gap after the 78px alignment so the first tab clears the lights.
+ * The strip is a drag region (like the sidebar header) for window moves.
+ */
 .tabBarCollapsed {
-  padding-left: 76px;
+  padding-left: 0;
+}
+
+.tabBarCollapsed::before {
+  content: '';
+  flex: 0 0 calc(78px + var(--space-8));
+  align-self: stretch;
+  min-width: calc(78px + var(--space-8));
+  -webkit-app-region: drag;
+}
+
+.tabBarPanelDocking.tabBarCollapsed::before {
+  -webkit-app-region: no-drag;
+}
+
+/*
+ * Electron: `-webkit-app-region: drag` (window dragging) captures the mouse and
+ * aborts HTML5 drag-and-drop. While docking a side panel, disable drag on the
+ * tab-bar spacer so the panel can cross the center strip.
+ */
+.tabBarPanelDocking .dragSpacer {
+  -webkit-app-region: no-drag;
 }
 
 /* Scrollbar hidden but functional */
@@ -23,7 +50,9 @@
 
 .tabList {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-2);
   min-width: 0;
   -webkit-app-region: no-drag;
 }
@@ -47,16 +76,23 @@
 .tab {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-4);
-  min-width: 80px;
-  max-width: 160px;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  min-width: 0;
+  max-width: 176px;
+  /* Shorter pills inside `--tab-height` so the traffic-light lane stays tall
+     but tabs read as compact (not full-row blocks). */
+  height: calc(var(--tab-height) - 12px);
   cursor: pointer;
   color: var(--text-tertiary);
-  font-size: var(--text-sm);
-  border-right: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+  background: transparent;
+  border-radius: var(--radius-sm);
   position: relative;
-  transition: color var(--duration-micro), background-color var(--duration-micro);
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-micro) var(--ease-press);
   -webkit-app-region: no-drag;
 }
 
@@ -64,36 +100,29 @@
   cursor: grab;
 }
 
+.tab:active {
+  transform: scale(0.96);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .tab:hover {
     color: var(--text-secondary);
-    background: rgba(255, 255, 255, 0.02);
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
   }
 }
 
 .tab.active {
   color: var(--text-primary);
-  background: var(--surface-1);
-}
-
-/* Active tab top highlight — thin accent line */
-.tab.active::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: var(--accent-blue);
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
 }
 
 /* ── Tab Icon ── */
 
 .tabIcon {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   flex-shrink: 0;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   text-align: center;
   opacity: 0.68;
 }
@@ -109,8 +138,8 @@
 
 /* Agent branded icon (SVG / img) */
 .agentIcon {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   flex-shrink: 0;
   object-fit: contain;
 }
@@ -136,7 +165,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
 }
 
 /* ── Unsaved Indicator ── */
@@ -160,8 +189,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: var(--radius-sm);
   border: none;
   background: none;
@@ -250,12 +279,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--tab-height);
-  height: var(--tab-height);
+  width: calc(var(--tab-height) - 12px);
+  height: calc(var(--tab-height) - 12px);
   border: none;
   background: none;
   color: var(--text-tertiary);
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
   cursor: pointer;
   transition: color var(--motion-fast), transform 100ms var(--ease-out);
   flex-shrink: 0;
@@ -296,8 +325,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--tab-height);
-  height: var(--tab-height);
+  width: calc(var(--tab-height) - 12px);
+  height: calc(var(--tab-height) - 12px);
   border: none;
   background: none;
   color: var(--text-tertiary);
@@ -321,7 +350,17 @@
 }
 
 .cursorIcon {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .closeButton,
+  .newTabButton,
+  .cursorButton {
+    transition: none;
+    transform: none;
+  }
 }

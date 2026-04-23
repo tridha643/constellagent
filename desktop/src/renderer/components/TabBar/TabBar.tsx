@@ -91,6 +91,7 @@ export function TabBar() {
   /** Same pattern as Sidebar `draggingWorkspaceIdRef` — Electron needs sync ref for dragOver. */
   const draggingTabIdRef = useRef<string | null>(null)
   const leftSidePanelOpen = useAppStore((s) => s.sidePanels.left.open)
+  const panelDockDrag = useAppStore((s) => s.panelDockDrag)
   const activeTabId = useAppStore((s) => s.activeTabId)
   const setActiveTab = useAppStore((s) => s.setActiveTab)
   const removeTab = useAppStore((s) => s.removeTab)
@@ -262,7 +263,9 @@ export function TabBar() {
   )
 
   return (
-    <div className={`${styles.tabBar} ${!leftSidePanelOpen ? styles.tabBarCollapsed : ''}`}>
+    <div
+      className={`${styles.tabBar} ${!leftSidePanelOpen ? styles.tabBarCollapsed : ''} ${panelDockDrag ? styles.tabBarPanelDocking : ''}`}
+    >
       <SharedFileIconDefs />
       <div className={styles.tabList}>
         {tabs.map((tab) => {
@@ -407,8 +410,6 @@ export function TabBar() {
         </button>
       </Tooltip>
 
-      <div className={styles.dragSpacer} />
-
       {workspace && (
         <Tooltip label={`Open in ${editor.name}`} shortcut="⇧⌘O">
           <button type="button" className={styles.cursorButton} onClick={handleOpenInEditor}>
@@ -416,6 +417,9 @@ export function TabBar() {
           </button>
         </Tooltip>
       )}
+
+      {/* Spacer last so “open in editor” sits with other actions, not flush against the right sidebar */}
+      <div className={styles.dragSpacer} />
     </div>
   )
 }

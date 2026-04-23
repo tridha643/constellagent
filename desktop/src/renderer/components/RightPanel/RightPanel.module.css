@@ -5,77 +5,9 @@
   flex-direction: column;
   height: 100%;
   min-width: 0;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 92%, transparent), var(--surface-1));
-  border-left: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  border-left: none;
   overflow: hidden;
-}
-
-/* ── Mode Toggle (pill buttons) ── */
-
-.header {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  padding: var(--space-4) var(--space-6);
-  flex-shrink: 0;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 82%, transparent), color-mix(in srgb, var(--surface-1) 96%, transparent));
-  border-bottom: 1px solid var(--border-subtle);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
-}
-
-.modeToggle {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: center;
-  background: var(--surface-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  padding: 2px;
-  gap: 2px;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
-}
-
-.modeButton {
-  width: 100%;
-  min-width: 0;
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-full);
-  border: none;
-  background: none;
-  color: var(--text-tertiary);
-  font-size: var(--text-sm);
-  font-family: var(--font-ui);
-  font-weight: var(--weight-medium);
-  cursor: pointer;
-  transition:
-    background-color var(--motion-fast),
-    color var(--motion-fast),
-    box-shadow var(--motion-fast),
-    transform var(--duration-micro) var(--ease-press);
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.modeButton:active {
-  transform: scale(0.97);
-}
-
-.modeButton.active {
-  background: var(--surface-4);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
-  transition:
-    background-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out),
-    transform var(--duration-micro) var(--ease-press);
 }
 
 /* ── Content Area ── */
@@ -86,43 +18,6 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-
-/*
- * Tab body wraps the mode panel and keys off `rightPanelMode` so remounts trigger
- * @starting-style (90ms blur-opacity fade-in). The previous panel has already
- * unmounted by the time this runs, so a true crossfade is out-of-scope; this is
- * a polish fade-in only.
- */
-.tabBody {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  opacity: 1;
-  filter: blur(0);
-  transition:
-    opacity var(--duration-fast) var(--ease-out),
-    filter var(--duration-fast) var(--ease-out);
-}
-
-@starting-style {
-  .tabBody {
-    opacity: 0;
-    filter: blur(3px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tabBody {
-    transition: none;
-  }
-  @starting-style {
-    .tabBody {
-      opacity: 1;
-      filter: none;
-    }
-  }
 }
 
 /* ── File Tree (Trees.software) ── */
@@ -137,31 +32,60 @@
 .treeHost {
   display: block;
   height: 100%;
+
+  /* ── surfaces / text ─────────────────────────────────────────────── */
   --trees-bg-override: transparent;
   --trees-bg-muted-override: color-mix(in srgb, var(--surface-2) 74%, transparent);
   --trees-border-color-override: transparent;
-  --trees-fg-override: var(--text-secondary);
+  --trees-fg-override: var(--text-primary);
   --trees-fg-muted-override: var(--text-tertiary);
-  --trees-font-family-override: var(--font-mono);
+  --trees-font-family-override: var(--font-ui);
   --trees-font-size-override: 12px;
+
+  /* ── git status palette (letter badges pick these up through
+         --trees-item-git-status-color) ─────────────────────────────── */
   --trees-git-added-color-override: var(--accent-green);
   --trees-git-deleted-color-override: var(--accent-red);
   --trees-git-modified-color-override: var(--accent-orange);
   --trees-git-renamed-color-override: var(--accent-cyan);
   --trees-git-untracked-color-override: var(--accent-green-muted);
-  --trees-icon-width-override: 14px;
+
+  /* ── layout / density ────────────────────────────────────────────── */
+  --trees-icon-width-override: 16px;
   --trees-indent-guide-bg-override: color-mix(in srgb, var(--border-subtle) 45%, transparent);
   --trees-input-bg-override: color-mix(in srgb, var(--surface-3) 88%, transparent);
   --trees-item-height: 26px;
-  --trees-item-margin-x-override: 4px;
+  --trees-item-margin-x-override: 6px;
   --trees-item-padding-x-override: 8px;
   --trees-item-row-gap-override: 8px;
   --trees-level-gap-override: 14px;
   --trees-padding-inline-override: 4px;
   --trees-scrollbar-thumb-override: color-mix(in srgb, var(--text-tertiary) 34%, transparent);
-  --trees-selected-bg-override: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+  /* Rounded pill selection (inset from tree edges via margin-x) */
+  --trees-selected-bg-override: color-mix(in srgb, var(--accent-blue) 18%, var(--surface-2) 82%);
   --trees-selected-fg-override: var(--text-primary);
-  --trees-selected-focused-border-color-override: color-mix(in srgb, var(--accent-blue) 68%, white 16%);
+  --trees-selected-focused-border-color-override: transparent;
+  --trees-hover-bg-override: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  --trees-row-selected-radius: var(--radius-md);
+
+  /* ── Per-file-type icon palette (theme-driven) ───────────────────
+     Pierre derives each file-type icon color from one of these
+     shared vars (e.g. typescript → blue, css → blue, js → yellow).
+     Re-pointing them at the active preset's --accent-* tokens is how
+     the colored VSCode-style glyphs re-theme automatically. ────── */
+  --trees-icon-blue: var(--accent-blue);
+  --trees-icon-cyan: var(--accent-cyan);
+  --trees-icon-green: var(--accent-green);
+  --trees-icon-orange: var(--accent-orange);
+  --trees-icon-red: var(--accent-red);
+  --trees-icon-yellow: var(--accent-yellow);
+  --trees-icon-purple: var(--accent-purple);
+  --trees-icon-indigo: var(--accent-purple);
+  --trees-icon-pink: var(--accent-red);
+  --trees-icon-teal: var(--accent-cyan);
+  --trees-icon-gray: var(--text-tertiary);
+  --trees-icon-mauve: var(--text-tertiary);
+  --trees-icon-vermilion: var(--accent-orange);
 }
 
 .fileContextMenu {
@@ -237,12 +161,12 @@
 .commitArea {
   --commit-action-slot-min: 104px;
 
-  padding: var(--space-4) var(--space-6);
+  padding: var(--space-4) var(--space-5) var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  border-bottom: 1px solid var(--border-subtle);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 76%, transparent), color-mix(in srgb, var(--surface-1) 96%, transparent));
+  border-bottom: 1px solid var(--panel-border-inner);
+  background: transparent;
   overflow-x: auto;
   min-width: 0;
 }
@@ -253,19 +177,23 @@
   align-items: stretch;
   min-width: 0;
   width: 100%;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
   overflow: hidden;
-  transition: border-color 180ms var(--ease-out);
+  transition:
+    border-color 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out);
 }
 
 .commitInputCompound:focus-within {
-  border-color: var(--accent-blue);
+  border-color: color-mix(in srgb, var(--accent-blue) 55%, var(--panel-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 25%, transparent);
 }
 
 .commitInputCompoundFlash {
   border-color: color-mix(in srgb, var(--accent-blue) 72%, white 28%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 35%, transparent);
 }
 
 .commitInput {
@@ -303,7 +231,7 @@
   margin: 0;
   background: color-mix(in srgb, var(--surface-3) 88%, var(--surface-2) 12%);
   border: none;
-  border-left: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
+  border-left: 1px solid var(--panel-border-inner);
   border-radius: 0;
   box-shadow: none;
   color: var(--text-secondary);
@@ -371,11 +299,11 @@
 .commitButton {
   width: 100%;
   min-width: 0;
-  min-height: 30px;
+  min-height: 32px;
   padding: var(--space-2) var(--space-4);
   background: var(--accent-blue);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: white;
   font-size: var(--text-sm);
   font-family: var(--font-ui);
@@ -392,8 +320,8 @@
 }
 
 .commitButtonSecondary {
-  background: var(--surface-3);
-  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-3) 92%, transparent);
+  border-color: var(--panel-border);
   color: var(--text-secondary);
 }
 
@@ -448,13 +376,14 @@
 }
 
 .sectionCount {
-  background: var(--surface-4);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
   border-radius: var(--radius-full);
   padding: 0 6px;
   font-size: 10px;
   line-height: 18px;
   min-width: 18px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .sectionActions {
@@ -496,10 +425,12 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-6);
+  margin: 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   color: var(--text-secondary);
+  border-radius: var(--radius-md);
   transition: background-color var(--motion-fast);
 }
 
@@ -583,9 +514,9 @@
   color: var(--text-tertiary);
   text-align: center;
   gap: var(--space-3);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-xl);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 82%, transparent), color-mix(in srgb, var(--surface-1) 96%, transparent));
+  background: color-mix(in srgb, var(--surface-2) 84%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
 }
 
@@ -596,7 +527,7 @@
   width: 40px;
   height: 40px;
   border-radius: var(--radius-full);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--panel-border-inner);
   background: color-mix(in srgb, var(--text-primary) 3%, transparent);
   font-size: 18px;
   opacity: 0.9;
@@ -617,22 +548,145 @@
   text-wrap: pretty;
 }
 
+/* New file / folder name dialog (replaces window.prompt, which Electron does not support) */
+.namePromptOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--scrim-overlay, rgba(0, 0, 0, 0.46));
+  backdrop-filter: blur(var(--scrim-blur, 6px));
+  -webkit-backdrop-filter: blur(var(--scrim-blur, 6px));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .namePromptOverlay {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+.namePromptDialog {
+  width: 360px;
+  max-width: calc(100vw - 2rem);
+  padding: var(--space-8);
+  border-radius: var(--radius-xl, 14px);
+  border: 1px solid var(--panel-border);
+  background: color-mix(in srgb, var(--surface-2) 96%, transparent);
+  box-shadow: var(--shadow-overlay, var(--shadow-lg));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.namePromptTitle {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  margin: 0;
+}
+
+.namePromptHint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  line-height: 1.45;
+}
+
+.namePromptInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono, var(--font-ui));
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-fast);
+}
+
+.namePromptInput:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent-blue) 55%, var(--panel-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 25%, transparent);
+}
+
+.namePromptActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.namePromptCancel {
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast),
+    transform 100ms var(--ease-out);
+}
+
+.namePromptCancel:hover {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  color: var(--text-primary);
+}
+
+.namePromptCancel:active {
+  transform: scale(0.97);
+}
+
+.namePromptConfirm {
+  padding: var(--space-2) var(--space-5);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--accent-blue);
+  color: #fff;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition:
+    filter var(--motion-fast),
+    transform 100ms var(--ease-out);
+}
+
+.namePromptConfirm:hover {
+  filter: brightness(1.1);
+}
+
+.namePromptConfirm:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .namePromptCancel:active,
+  .namePromptConfirm:active {
+    transform: none;
+  }
+}
+
 @media (hover: hover) and (pointer: fine) {
-  .modeButton:hover {
-    color: var(--text-secondary);
-  }
-
-  .treeNode:hover {
-    background: color-mix(in srgb, var(--text-primary) 3%, transparent);
-  }
-
   .sectionAction:hover {
     color: var(--text-primary);
-    background: var(--surface-4);
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
   }
 
   .changedFile:hover {
-    background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
   }
 
   .changedFile:hover .fileActions {
@@ -641,6 +695,6 @@
 
   .fileActionBtn:hover {
     color: var(--text-primary);
-    background: var(--surface-4);
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
   }
 }

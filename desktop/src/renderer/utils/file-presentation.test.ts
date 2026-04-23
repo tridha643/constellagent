@@ -7,12 +7,25 @@ import {
 } from './file-presentation'
 
 describe('resolveSharedFileIconToken', () => {
-  it('maps common source files and configs to shared icon tokens', () => {
+  it('resolves common source files via pierre/trees native resolver', () => {
     expect(resolveSharedFileIconToken('src/index.ts')).toBe('typescript')
     expect(resolveSharedFileIconToken('src/App.tsx')).toBe('react')
+    expect(resolveSharedFileIconToken('src/App.jsx')).toBe('react')
     expect(resolveSharedFileIconToken('README.md')).toBe('markdown')
-    expect(resolveSharedFileIconToken('package.json')).toBe('npm')
     expect(resolveSharedFileIconToken('.env.local')).toBe('text')
+  })
+
+  it('resolves project config filenames pierre ships natively', () => {
+    expect(resolveSharedFileIconToken('vite.config.ts')).toBe('vite')
+    expect(resolveSharedFileIconToken('biome.json')).toBe('biome')
+    expect(resolveSharedFileIconToken('.prettierrc')).toBe('prettier')
+    expect(resolveSharedFileIconToken('tailwind.config.ts')).toBe('tailwind')
+    expect(resolveSharedFileIconToken('.gitignore')).toBe('git')
+    expect(resolveSharedFileIconToken('docker-compose.yml')).toBe('docker')
+  })
+
+  it('falls back to default for unknown file types', () => {
+    expect(resolveSharedFileIconToken('weird.unknownext')).toBe('default')
   })
 })
 
@@ -35,11 +48,11 @@ describe('getFilePresentation', () => {
 })
 
 describe('SHARED_FILE_TREE_ICONS', () => {
-  it('remaps the important file names and extensions used by the tab bar', () => {
-    expect(SHARED_FILE_TREE_ICONS.set).toBe('standard')
-    expect(SHARED_FILE_TREE_ICONS.colored).toBe(false)
-    expect(SHARED_FILE_TREE_ICONS.byFileName?.['package.json']).toBe('file-tree-builtin-npm')
-    expect(SHARED_FILE_TREE_ICONS.byFileExtension?.tsx).toBe('file-tree-builtin-react')
-    expect(SHARED_FILE_TREE_ICONS.byFileNameContains?.['.env']).toBe('file-tree-builtin-text')
+  it('delegates resolution to pierre with the colored complete set', () => {
+    expect(SHARED_FILE_TREE_ICONS.set).toBe('complete')
+    expect(SHARED_FILE_TREE_ICONS.colored).toBe(true)
+    expect(SHARED_FILE_TREE_ICONS.byFileName).toBeUndefined()
+    expect(SHARED_FILE_TREE_ICONS.byFileExtension).toBeUndefined()
+    expect(SHARED_FILE_TREE_ICONS.byFileNameContains).toBeUndefined()
   })
 })

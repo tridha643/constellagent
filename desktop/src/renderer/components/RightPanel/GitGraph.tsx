@@ -460,7 +460,14 @@ export function GitGraph({ worktreePath, workspaceId, isActive }: GitGraphProps)
     [entries, handleClickCommit],
   )
 
-  const graph = useMemo(() => computeGraph(entries, headHash), [entries, headHash])
+  const graph = useMemo((): GraphData => {
+    try {
+      return computeGraph(entries, headHash)
+    } catch (err) {
+      console.error('[GitGraph] computeGraph failed:', err)
+      return { branches: [], dots: [], maxLanes: 1 }
+    }
+  }, [entries, headHash])
 
   if (loading) {
     return <div className={styles.loading}>Loading commits...</div>

@@ -1,0 +1,142 @@
+/*
+ * FloatingPanel — shared chrome for full-screen and drawer panels.
+ * Mirrors SidePanelHost.host so Settings/Linear/Automations/HunkReview stay
+ * visually in lockstep with the docked sidebars.
+ */
+
+.shell {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Fullscreen variant: fills whatever slot swaps it into the layout (App.tsx
+   conditional render). Four-sided float inset so traffic lights sit above the
+   card, and the card itself never hugs the window edges. */
+.fullscreen {
+  width: 100%;
+  height: 100%;
+  padding: var(--side-panel-float-inset);
+}
+
+/* Drawer variant: fixed right-edge inset; takes its left edge from the
+   component that owns positioning (HunkReview controls width via resize). */
+.drawer {
+  position: fixed;
+  top: var(--side-panel-float-inset);
+  right: var(--side-panel-float-inset);
+  bottom: var(--side-panel-float-inset);
+  padding: 0;
+}
+
+/* The actual floating card — identical chrome to SidePanelHost.host */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--surface-1);
+  border-radius: var(--side-panel-float-radius);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  /* Entry: opacity + subtle scale. @starting-style below drives the first frame. */
+  transform-origin: center;
+  transform: scale(1);
+  opacity: 1;
+  transition: opacity var(--motion-panel-enter), transform var(--motion-panel-enter);
+}
+
+.fullscreen .card {
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+/* Drawer slides in from the right. Used for HunkReview. */
+.drawer .card {
+  transform: translateX(0);
+  transition: transform var(--motion-drawer-enter), opacity var(--motion-drawer-enter);
+
+  @starting-style {
+    transform: translateX(calc(100% + var(--side-panel-float-inset)));
+    opacity: 0;
+  }
+}
+
+/* Surface variant: quiet floating card for the welcome state.
+   Softer shadow, no titlebar, transparent border so it reads as a "resting" lift. */
+.surface {
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--panel-border-inner);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-10) var(--space-12);
+  transform-origin: center;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity var(--motion-panel-enter), transform var(--motion-panel-enter);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+
+/* Titlebar — matches SidePanelHost .explorerRow. Draggable strip that clears
+   macOS traffic lights when trafficLightPad is applied. */
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--titlebar-height);
+  padding: 0 var(--space-3);
+  flex-shrink: 0;
+  background: transparent;
+  border-bottom: none;
+  box-shadow: none;
+  -webkit-app-region: drag;
+}
+
+.titlebarTrafficLightPad {
+  padding-left: 78px;
+}
+
+/* Anything interactive inside the titlebar should opt out of window-drag */
+.titlebar button,
+.titlebar a,
+.titlebar input,
+.titlebar [role='button'],
+.titlebar [data-no-drag='true'] {
+  -webkit-app-region: no-drag;
+}
+
+/* Body — the scrollable/flex content region under the titlebar */
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .drawer .card,
+  .surface {
+    transition: opacity 90ms var(--ease-out);
+
+    @starting-style {
+      transform: none;
+    }
+  }
+}

@@ -3,11 +3,15 @@
  * (interruptible; reverses mid-open unlike keyframes). Consumers add:
  * `constellagent-dialog-overlay` + `constellagent-dialog-body` on mount;
  * `--exiting` modifier classes when closing (see useExitAnimation duration).
+ *
+ * Animates opacity on the overlay and opacity + scale + 4px rise on the body.
+ * Durations pulled from --motion-dialog-enter / --motion-dialog-exit so the
+ * entire modal system moves in lockstep and respects theme motion tokens.
  */
 
 .constellagent-dialog-overlay {
   opacity: 1;
-  transition: opacity var(--duration-enter) var(--ease-out);
+  transition: opacity var(--motion-dialog-enter);
 }
 
 @starting-style {
@@ -18,29 +22,31 @@
 
 .constellagent-dialog-body {
   opacity: 1;
-  transform: scale(1);
+  transform: translateY(0) scale(1);
   transform-origin: center;
   transition:
-    opacity var(--duration-enter) var(--ease-out),
-    transform var(--duration-enter) var(--ease-out);
+    opacity var(--motion-dialog-enter),
+    transform var(--motion-dialog-enter);
 }
 
 @starting-style {
   .constellagent-dialog-body {
     opacity: 0;
-    transform: scale(0.97);
+    transform: translateY(4px) scale(0.98);
   }
 }
 
 .constellagent-dialog-overlay--exiting {
   opacity: 0;
-  transition-duration: var(--duration-exit);
+  transition: opacity var(--motion-dialog-exit);
 }
 
 .constellagent-dialog-body--exiting {
   opacity: 0;
-  transform: scale(0.97);
-  transition-duration: var(--duration-exit);
+  transform: translateY(4px) scale(0.98);
+  transition:
+    opacity var(--motion-dialog-exit),
+    transform var(--motion-dialog-exit);
 }
 
 @media (prefers-reduced-motion: reduce) {

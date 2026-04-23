@@ -31,9 +31,9 @@
   width: 100%;
   margin: 0.75em 0;
   padding: 0;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
   overflow: hidden;
 }
 
@@ -46,8 +46,8 @@
   padding: var(--space-2) var(--space-3);
   font-size: var(--text-xs);
   color: var(--muted-foreground, var(--text-secondary));
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-3) 40%, transparent);
+  border-bottom: 1px solid var(--panel-border-inner);
+  background: color-mix(in srgb, var(--surface-3) 36%, transparent);
 }
 
 .wrapper [data-streamdown='code-block'] > div:has([data-streamdown='code-block-actions']) {
@@ -61,8 +61,8 @@
   justify-content: flex-end;
   padding: var(--space-2) var(--space-3);
   pointer-events: auto;
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-3) 40%, transparent);
+  border-bottom: 1px solid var(--panel-border-inner);
+  background: color-mix(in srgb, var(--surface-3) 36%, transparent);
 }
 
 .wrapper [data-streamdown='code-block-actions'] {
@@ -102,9 +102,9 @@
   width: 100%;
   margin: 0.75em 0;
   padding: 0;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
   overflow: hidden;
 }
 
@@ -117,8 +117,8 @@
   padding: var(--space-2) var(--space-3);
   font-size: var(--text-xs);
   color: var(--muted-foreground, var(--text-secondary));
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-3) 40%, transparent);
+  border-bottom: 1px solid var(--panel-border-inner);
+  background: color-mix(in srgb, var(--surface-3) 36%, transparent);
 }
 
 .wrapper [data-streamdown='mermaid-block']:not(:has([data-streamdown='mermaid-block-actions']))
@@ -137,8 +137,8 @@
   justify-content: flex-end;
   padding: var(--space-2) var(--space-3);
   pointer-events: auto;
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-3) 40%, transparent);
+  border-bottom: 1px solid var(--panel-border-inner);
+  background: color-mix(in srgb, var(--surface-3) 36%, transparent);
 }
 
 .wrapper [data-streamdown='mermaid-block-actions'] {
@@ -176,9 +176,9 @@
   display: block;
   margin: 0.5em 0;
   padding: 0;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
   overflow: hidden;
 }
 
@@ -254,7 +254,7 @@
   padding: 0;
   margin: 0;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -271,7 +271,7 @@
     :is([data-streamdown='code-block-actions'], [data-streamdown='mermaid-block-actions'])
     > button:hover:not(:disabled) {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.06);
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
   }
 }
 
@@ -349,8 +349,10 @@
 .wrapper code[data-streamdown='inline-code'] {
   font-family: var(--font-mono);
   font-size: 0.9em;
-  background: var(--surface-3);
-  padding: 1px 4px;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  border: 1px solid var(--panel-border-inner);
+  color: color-mix(in srgb, var(--text-primary) 90%, var(--accent-blue) 10%);
+  padding: 1px 5px;
   border-radius: var(--radius-sm);
 }
 
@@ -380,12 +382,12 @@
 /* Full grid — Streamdown’s `divide-y` utilities fight explicit borders in the cascade */
 .wrapper [data-streamdown='table-wrapper'] [data-streamdown='table'] {
   border-collapse: collapse !important;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--panel-border-inner);
 }
 
 .wrapper [data-streamdown='table-wrapper'] [data-streamdown='table'] th,
 .wrapper [data-streamdown='table-wrapper'] [data-streamdown='table'] td {
-  border: 1px solid var(--border-strong) !important;
+  border: 1px solid var(--panel-border-inner) !important;
 }
 
 /* One continuous band: header matches floating toolbar row */
@@ -408,7 +410,7 @@
 
 .wrapper th,
 .wrapper td {
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--panel-border-inner);
   padding: var(--space-2) var(--space-3);
   text-align: left;
 }
@@ -425,7 +427,9 @@
 /* Blockquote */
 .wrapper blockquote {
   border-left: 3px solid var(--accent-blue);
-  padding-left: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: color-mix(in srgb, var(--accent-blue) 5%, transparent);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   color: var(--text-secondary);
   margin: 0.5em 0;
 }
@@ -456,6 +460,6 @@
 /* Horizontal rule */
 .wrapper hr {
   border: none;
-  border-top: 1px solid var(--border-default);
-  margin: 1em 0;
+  border-top: 1px solid var(--panel-border-inner);
+  margin: 1.2em 0;
 }

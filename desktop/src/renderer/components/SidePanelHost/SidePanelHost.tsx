@@ -1,4 +1,13 @@
-import { useCallback, useMemo, useState, type DragEvent } from 'react'
+import {
+  ChevronsDownUp,
+  FileDiff,
+  FilePlus,
+  FolderTree,
+  GitBranch,
+  LayoutList,
+  Search,
+} from 'lucide-react'
+import { useCallback, useMemo, useState, type ComponentType, type DragEvent } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type { PanelType, Side } from '../../store/types'
 import { panelLabel } from '../../store/side-panels'
@@ -6,7 +15,9 @@ import { Sidebar } from '../Sidebar/Sidebar'
 import { FileTree } from '../RightPanel/FileTree'
 import { ChangedFiles } from '../RightPanel/ChangedFiles'
 import { GitGraph } from '../RightPanel/GitGraph'
+import { fileTreeActions } from '../RightPanel/file-tree-actions'
 import { Tooltip } from '../Tooltip/Tooltip'
+import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
 import { readPanelDockDrag, writePanelDockDrag } from '../../utils/panel-dnd'
 import styles from './SidePanelHost.module.css'
 
@@ -14,6 +25,13 @@ const PANEL_SHORTCUTS: Partial<Record<PanelType, string>> = {
   files: '⇧⌘E',
   changes: '⇧⌘G',
   graph: '⌥⌘G',
+}
+
+const PANEL_ICONS: Record<PanelType, ComponentType<{ size?: number; strokeWidth?: number }>> = {
+  files: FolderTree,
+  changes: FileDiff,
+  graph: GitBranch,
+  project: LayoutList,
 }
 
 function SidePanelEmptyState({
@@ -76,9 +94,12 @@ export function SidePanelHost({ side }: { side: Side }) {
     ? panelState.activePanel
     : panelState.panelOrder[0]
 
-  const showsNavigationTabs = panelState.panelOrder.some((panel) => panel === 'files' || panel === 'changes' || panel === 'graph')
+  const solePanel = panelState.panelOrder.length === 1 ? panelState.panelOrder[0] : null
+  const showSwitchers = panelState.panelOrder.length > 1
   const canAcceptDock = Boolean(panelDockDrag && panelDockDrag.side !== side)
   const dockPanelName = panelDockDrag ? panelLabel(panelDockDrag.panel) : 'panel'
+
+  const showFilesTools = activePanel === 'files'
 
   const resolveDragPayload = useCallback((event: DragEvent) => {
     return readPanelDockDrag(event.dataTransfer) ?? panelDockDrag
@@ -115,6 +136,7 @@ export function SidePanelHost({ side }: { side: Side }) {
         canAcceptDock ? styles.hostDockReady : '',
         dockHovered ? styles.hostDockHovered : '',
       ].filter(Boolean).join(' ')}
+      data-panel-dock-drag-active={panelDockDrag ? 'true' : 'false'}
       data-panel-side={side}
       data-active-panel={activePanel ?? ''}
       data-panel-drop-target-side={side}
@@ -125,53 +147,130 @@ export function SidePanelHost({ side }: { side: Side }) {
       onDragLeave={handleDockDragLeave}
       onDrop={handleDockDrop}
     >
-      {side === 'left' && <div className={styles.titleArea} />}
-
-      <div className={styles.header}>
-        <div
-          className={styles.modeToggle}
-          data-testid={showsNavigationTabs ? 'right-panel-mode-toggle' : undefined}
-        >
-          {panelState.panelOrder.map((panel) => {
-            const button = (
-              <button
-                key={panel}
-                draggable
-                data-panel-type={panel}
-                data-testid={panel === 'project' ? 'side-panel-tab-project' : `right-panel-mode-${panel === 'graph' ? 'graph' : panel}`}
-                className={`${styles.modeButton} ${activePanel === panel ? styles.active : ''} ${draggingPanel === panel ? styles.modeButtonDragging : ''}`}
-                onClick={() => setSidePanelActive(side, panel)}
-                onDragStart={(event) => {
-                  setDraggingPanel(panel)
-                  const payload = { panel, side }
-                  setPanelDockDrag(payload)
-                  writePanelDockDrag(event.dataTransfer, payload)
-                }}
-                onDragEnd={() => {
-                  setDraggingPanel(null)
-                  setDockHovered(false)
-                  setPanelDockDrag(null)
-                }}
-              >
-                {panelLabel(panel)}
-              </button>
-            )
-
-            const shortcut = PANEL_SHORTCUTS[panel]
-            const tooltipLabel = `Drag to dock ${panelLabel(panel)} to the other sidebar`
-            if (!shortcut) {
-              return (
-                <Tooltip key={panel} label={tooltipLabel}>
-                  {button}
-                </Tooltip>
-              )
+      <div
+        className={[
+          styles.explorerRow,
+          solePanel && draggingPanel === solePanel ? styles.modeButtonDragging : '',
+        ].filter(Boolean).join(' ')}
+        {...(solePanel
+          ? {
+              draggable: true,
+              'data-panel-type': solePanel,
+              'data-testid':
+                solePanel === 'project'
+                  ? 'side-panel-tab-project'
+                  : `right-panel-mode-${solePanel === 'graph' ? 'graph' : solePanel}`,
+              'aria-label': `Drag to dock ${panelLabel(solePanel)}`,
+              title: `Drag to dock ${panelLabel(solePanel)} to the other sidebar`,
+              onDragStart: (event: DragEvent) => {
+                setDraggingPanel(solePanel)
+                const payload = { panel: solePanel, side }
+                setPanelDockDrag(payload)
+                writePanelDockDrag(event.dataTransfer, payload)
+              },
+              onDragEnd: () => {
+                setDraggingPanel(null)
+                setDockHovered(false)
+                setPanelDockDrag(null)
+              },
             }
-            return (
-              <Tooltip key={panel} label={tooltipLabel} shortcut={shortcut}>
-                {button}
+          : {})}
+      >
+        <div className={styles.explorerSpacer} aria-hidden="true" />
+        <div className={styles.explorerToolbar}>
+          {showFilesTools && (
+            <div className={styles.explorerTools}>
+              <Tooltip label="Search files" shortcut="⌘P">
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  data-testid="explorer-action-search"
+                  onClick={() => fileTreeActions.emit('focusSearch')}
+                >
+                  <Search size={14} strokeWidth={2} />
+                </button>
               </Tooltip>
-            )
-          })}
+              <Tooltip label="Collapse folders">
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  data-testid="explorer-action-collapse"
+                  onClick={() => fileTreeActions.emit('collapseAll')}
+                >
+                  <ChevronsDownUp size={14} strokeWidth={2} />
+                </button>
+              </Tooltip>
+              <Tooltip label="New file">
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  data-testid="explorer-action-new-file"
+                  onClick={() => fileTreeActions.emit('newFile')}
+                >
+                  <FilePlus size={14} strokeWidth={2} />
+                </button>
+              </Tooltip>
+            </div>
+          )}
+
+          {showSwitchers && (
+            <div
+              className={styles.explorerActions}
+              data-testid="right-panel-mode-toggle"
+            >
+              {panelState.panelOrder.map((panel) => {
+                const Icon = PANEL_ICONS[panel]
+                const isActive = activePanel === panel
+                const button = (
+                  <button
+                    key={panel}
+                    type="button"
+                    draggable
+                    aria-label={panelLabel(panel)}
+                    aria-pressed={isActive}
+                    data-panel-type={panel}
+                    data-testid={panel === 'project' ? 'side-panel-tab-project' : `right-panel-mode-${panel === 'graph' ? 'graph' : panel}`}
+                    className={[
+                      styles.iconButton,
+                      styles.panelIconButton,
+                      isActive ? styles.active : '',
+                      draggingPanel === panel ? styles.modeButtonDragging : '',
+                    ].filter(Boolean).join(' ')}
+                    onClick={() => setSidePanelActive(side, panel)}
+                    onDragStart={(event) => {
+                      setDraggingPanel(panel)
+                      const payload = { panel, side }
+                      setPanelDockDrag(payload)
+                      writePanelDockDrag(event.dataTransfer, payload)
+                    }}
+                    onDragEnd={() => {
+                      setDraggingPanel(null)
+                      setDockHovered(false)
+                      setPanelDockDrag(null)
+                    }}
+                  >
+                    <Icon size={14} strokeWidth={2} />
+                    <span className={styles.visuallyHidden}>{panelLabel(panel)}</span>
+                  </button>
+                )
+
+                const shortcut = PANEL_SHORTCUTS[panel]
+                const tooltipLabel = `Drag to dock ${panelLabel(panel)} to the other sidebar`
+                if (!shortcut) {
+                  return (
+                    <Tooltip key={panel} label={tooltipLabel}>
+                      {button}
+                    </Tooltip>
+                  )
+                }
+                return (
+                  <Tooltip key={panel} label={tooltipLabel} shortcut={shortcut}>
+                    {button}
+                  </Tooltip>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -183,9 +282,20 @@ export function SidePanelHost({ side }: { side: Side }) {
             text="Use Settings to choose which sidebar should host project navigation versus files, changes, and git history."
           />
         ) : (
-          <div key={`${side}:${activePanel}`} className={styles.tabBody}>
-            {renderPanel(activePanel, workspace ? { id: workspace.id, worktreePath: workspace.worktreePath } : undefined)}
-          </div>
+          <ErrorBoundary
+            key={`${side}:${activePanel}:${workspace?.id ?? 'no-workspace'}:${workspace?.worktreePath ?? ''}`}
+            fallback={
+              <div className={styles.panelError}>
+                <span className={styles.panelErrorText}>
+                  This sidebar panel hit a rendering error. Switch workspace or tab, or reload the window (⌘R).
+                </span>
+              </div>
+            }
+          >
+            <div className={styles.tabBody}>
+              {renderPanel(activePanel, workspace ? { id: workspace.id, worktreePath: workspace.worktreePath } : undefined)}
+            </div>
+          </ErrorBoundary>
         )}
       </div>
 

@@ -42,7 +42,10 @@ export function writePanelDockDrag(dataTransfer: DataTransfer, payload: PanelDoc
 
 export function readPanelDockDrag(dataTransfer: DataTransfer | null | undefined): PanelDockDrag | null {
   if (!dataTransfer) return null
-  return decodePanelDockDrag(dataTransfer.getData(CONSTELLAGENT_PANEL_MIME))
+  return (
+    decodePanelDockDrag(dataTransfer.getData(CONSTELLAGENT_PANEL_MIME))
+    ?? decodePanelDockDrag(dataTransfer.getData('text/plain'))
+  )
 }
 
 export function hasPanelDockDragType(dataTransfer: DataTransfer | null | undefined): boolean {

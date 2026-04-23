@@ -187,6 +187,9 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
       tabSize: 2,
       wordWrap: 'off',
       automaticLayout: true,
+      // Render hover/suggest/context widgets outside the editor's clipping
+      // boundary so the rounded floating-card chrome doesn't cut them off.
+      fixedOverflowWidgets: true,
     }),
     [editorFontSize, prefersReducedMotion],
   )

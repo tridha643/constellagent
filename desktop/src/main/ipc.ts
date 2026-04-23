@@ -564,18 +564,18 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.FS_GET_TREE_WITH_STATUS, async (_e, dirPath: string) => {
     return measureMainAsync('fs:get-tree-with-status', async () => {
-      const [tree, statuses, topLevel] = await Promise.all([
-        FileService.getTree(dirPath),
-        GitService.getStatus(dirPath).catch(() => []),
-        GitService.getTopLevel(dirPath).catch(() => dirPath),
+      const basePath = await FileService.normalizeFsRoot(dirPath)
+      const [tree, statuses, prefixFromGit] = await Promise.all([
+        FileService.getTree(basePath),
+        GitService.getStatus(basePath).catch(() => []),
+        GitService.getPathPrefixFromRepoRoot(basePath).catch(() => ''),
       ])
 
-      // git status --porcelain paths are relative to repo root, but
-      // git ls-files paths (used for the tree) are relative to cwd (dirPath).
-      // Compute prefix to convert between them.
-      const prefix = relative(topLevel, dirPath) // e.g. 'desktop' or ''
+      // git status --porcelain paths are repo-root-relative; strip git's cwd prefix to match tree paths.
+      let prefix = prefixFromGit
+      if (prefix === '.') prefix = ''
 
-      // Build map: dirPath-relative path → git status
+      // Build map: basePath-relative path (posix) → git status
       const statusMap = new Map<string, string>()
       for (const s of statuses) {
         let p = s.path
@@ -583,7 +583,7 @@ export function registerIpcHandlers(): void {
         if (p.includes(' -> ')) {
           p = p.split(' -> ')[1]
         }
-        // Strip repo-root prefix to get dirPath-relative path
+        // Strip repo-root prefix to get basePath-relative path
         if (prefix && p.startsWith(prefix + '/')) {
           p = p.slice(prefix.length + 1)
         }
@@ -594,10 +594,7 @@ export function registerIpcHandlers(): void {
       function annotate(nodes: FileNode[]): boolean {
         let hasStatus = false
         for (const node of nodes) {
-          // Compute relative path from dirPath
-          const rel = node.path.startsWith(dirPath)
-            ? node.path.slice(dirPath.length + 1)
-            : node.path
+          const rel = relative(basePath, node.path).replace(/\\/g, '/')
 
           if (node.type === 'file') {
             const st = statusMap.get(rel)
@@ -617,7 +614,7 @@ export function registerIpcHandlers(): void {
       }
 
       annotate(tree)
-      return tree
+      return { rootPath: basePath, tree }
     }, {
       dirPath,
     })

@@ -1,88 +1,96 @@
-.panel {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  background: var(--surface-1);
-  overflow: hidden;
-}
+/*
+ * SettingsPanel — hosted inside <FloatingPanel variant="fullscreen" />
+ *
+ * Chrome (background, border, radius, shadow) lives on FloatingPanel.
+ * This file only styles the titlebar controls + scrollable body.
+ */
 
-.header {
-  padding: 0 48px;
-  padding-top: var(--titlebar-height);
-  border-bottom: 1px solid var(--border-subtle);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 80%, transparent), color-mix(in srgb, var(--surface-1) 96%, transparent));
-  flex-shrink: 0;
-  -webkit-app-region: drag;
-}
-
-.headerInner {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  max-width: 620px;
-  margin: 0 auto;
-  padding: var(--space-4) 0;
-  -webkit-app-region: no-drag;
-}
-
-.headerText {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
+/* ══════════════════════════════════════════════════════════
+   Titlebar contents
+   ══════════════════════════════════════════════════════════ */
 
 .title {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
   font-family: var(--font-ui);
   margin: 0;
-}
-
-.subtitle {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  font-family: var(--font-ui);
-  line-height: 1.45;
-}
-
-.headerLeft {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
+  letter-spacing: -0.005em;
 }
 
 .backBtn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border: none;
   border-radius: var(--radius-md);
-  background: none;
+  background: transparent;
   color: var(--text-tertiary);
-  font-size: 20px;
   cursor: pointer;
-  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
   padding: 0;
-  line-height: 1;
+  line-height: 0;
+  transition: background-color var(--motion-fast), color var(--motion-fast),
+    transform 120ms var(--ease-press);
 }
 
 .backBtn:active {
   transform: scale(0.97);
 }
 
+.backBtn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-blue) 60%, transparent);
+  outline-offset: 1px;
+}
+
+/* ══════════════════════════════════════════════════════════
+   Content — scrollable body with gentle fade mask at the edges
+   ══════════════════════════════════════════════════════════ */
+
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: 28px 48px 40px;
+  padding: var(--space-8) var(--space-12) var(--space-12);
+  /* Scroll fade mask — soft hint that content continues past the edge */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 16px,
+    black calc(100% - 16px),
+    transparent 100%
+  );
 }
 
 .inner {
-  max-width: 620px;
+  max-width: 640px;
   margin: 0 auto;
+}
+
+.subtitle {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  line-height: 1.5;
+  margin: 0 0 var(--space-8);
+  text-wrap: pretty;
+}
+
+/* ══════════════════════════════════════════════════════════
+   Sections — softer single-level cards inside the floating panel.
+   No gradient, no inset highlight, concentric radius with outer card.
+   Stagger fade-in driven by `--stagger-index` (0..5).
+   ══════════════════════════════════════════════════════════ */
+
+@keyframes settingsSectionEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .section {
@@ -91,11 +99,19 @@
   gap: var(--space-2);
   margin-bottom: var(--space-6);
   padding: var(--space-5) 0 var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 78%, transparent), color-mix(in srgb, var(--surface-1) 97%, transparent));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
+  border: 1px solid var(--panel-border-inner);
+  border-radius: var(--radius-lg);
+  background: var(--surface-0);
+  animation: settingsSectionEnter var(--duration-slow) var(--ease-out) both;
 }
+
+/* Cascade the section enter animation (capped at 6 so large forms don't wait). */
+.inner > .section:nth-of-type(1) { animation-delay: 0ms; }
+.inner > .section:nth-of-type(2) { animation-delay: 40ms; }
+.inner > .section:nth-of-type(3) { animation-delay: 80ms; }
+.inner > .section:nth-of-type(4) { animation-delay: 120ms; }
+.inner > .section:nth-of-type(5) { animation-delay: 160ms; }
+.inner > .section:nth-of-type(n+6) { animation-delay: 200ms; }
 
 .settingBlock {
   display: flex;
@@ -139,7 +155,7 @@
 .inlineHint {
   margin: 0 var(--space-4);
   padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   border: 1px solid color-mix(in srgb, var(--accent-blue) 18%, transparent);
   background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
   color: var(--text-secondary);
@@ -177,7 +193,10 @@
   margin-top: 2px;
 }
 
-/* Toggle switch */
+/* ══════════════════════════════════════════════════════════
+   Toggle switch — knob slides with strong ease-out (180ms)
+   ══════════════════════════════════════════════════════════ */
+
 .toggle {
   position: relative;
   width: 36px;
@@ -187,7 +206,7 @@
   background: var(--surface-4);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color var(--motion-fast);
+  transition: background-color 180ms var(--ease-out);
   padding: 0;
 }
 
@@ -203,7 +222,8 @@
   height: 16px;
   border-radius: 50%;
   background: #fff;
-  transition: transform var(--motion-fast);
+  transition: transform 180ms var(--ease-out);
+  will-change: transform;
 }
 
 .toggle.toggleOn .toggleKnob {
@@ -372,15 +392,20 @@
   cursor: default;
 }
 
-/* MCP servers */
+/* ══════════════════════════════════════════════════════════
+   MCP servers — single-level list so it doesn't double-frame
+   against the outer .section card.
+   ══════════════════════════════════════════════════════════ */
+
 .mcpList {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  overflow: hidden;
+  /* Sits inside .section — no extra border, just row separators on children. */
+  border: none;
+  border-radius: 0;
+  overflow: visible;
 }
 
 .mcpCard {
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--panel-border-inner);
 }
 
 .mcpCard:last-child {
@@ -485,11 +510,29 @@
   transform: scale(0.97);
 }
 
+/*
+ * Expand animation — grid-template-rows 0fr → 1fr. No JS height measuring.
+ * Markup must render .mcpCardExpandWrap unconditionally with .mcpCardExpandWrapOpen
+ * toggled; the inner .mcpCardExpanded element provides content + padding.
+ */
+.mcpCardExpandWrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.mcpCardExpandWrapOpen {
+  grid-template-rows: 1fr;
+}
+
 .mcpCardExpanded {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   padding: 0 var(--space-5) var(--space-5) calc(36px + var(--space-5) + var(--space-4));
+  /* Let the grid row drive the actual height; keep internal content from overflowing. */
+  min-height: 0;
+  overflow: hidden;
 }
 
 .mcpCardDetail {
@@ -533,7 +576,7 @@
 
 .mcpAgentSelect {
   padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--panel-border-inner);
 }
 
 .sectionActions {
@@ -625,6 +668,7 @@
   justify-content: space-between;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
+  transition: background-color var(--motion-fast);
 }
 
 .shortcutAction {
@@ -643,6 +687,10 @@
   border: 1px solid var(--border-subtle);
 }
 
+/* ══════════════════════════════════════════════════════════
+   Theme preset cards — selected crossfade (160ms)
+   ══════════════════════════════════════════════════════════ */
+
 .themePresetGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -655,13 +703,16 @@
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--panel-border-inner);
+  border-radius: var(--radius-md);
   background: var(--surface-0);
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color var(--motion-fast), background-color var(--motion-fast), transform 100ms var(--ease-out);
+  transition: border-color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out),
+    transform 120ms var(--ease-press);
 }
 
 .themePresetCard:active {
@@ -704,6 +755,7 @@
   color: var(--text-secondary);
   font-size: var(--text-xs);
   font-family: var(--font-ui);
+  transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out);
 }
 
 .themePresetCardActive .themePresetBadge {
@@ -725,13 +777,14 @@
 
 @media (hover: hover) and (pointer: fine) {
   .backBtn:hover {
-    background: var(--surface-3);
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
     color: var(--text-primary);
   }
 
   .row:hover,
   .mcpCardMain:hover,
-  .entryRow:hover {
+  .entryRow:hover,
+  .shortcutRow:hover {
     background: color-mix(in srgb, var(--text-primary) 2%, transparent);
   }
 
@@ -770,5 +823,33 @@
   .themePresetCard:hover {
     background: var(--surface-2);
     border-color: var(--border-strong);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content {
+    mask-image: none;
+  }
+
+  .section {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .toggle,
+  .toggleKnob,
+  .themePresetCard,
+  .themePresetBadge {
+    transition-duration: 90ms;
+  }
+
+  .themePresetCard:active,
+  .backBtn:active {
+    transform: none;
+  }
+
+  .mcpCardExpandWrap {
+    transition: none;
   }
 }
