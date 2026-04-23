@@ -1,0 +1,69 @@
+.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 1.25em;
+}
+
+.iconOnly {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.85;
+  line-height: 0;
+}
+
+.iconOnly[data-tone='neutral'],
+.icon {
+  color: var(--text-tertiary);
+}
+
+/* Tinted tones pick up the active appearance palette — no hardcoded RGB */
+.iconOnly[data-tone='progress'],
+.inline[data-tone='progress'] .icon {
+  color: var(--accent-blue);
+  opacity: 1;
+}
+
+.iconOnly[data-tone='done'],
+.inline[data-tone='done'] .icon {
+  color: var(--accent-green, var(--accent-blue));
+  opacity: 0.9;
+}
+
+.iconOnly[data-tone='canceled'],
+.inline[data-tone='canceled'] .icon {
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+.iconOnly[data-tone='backlog'],
+.inline[data-tone='backlog'] .icon {
+  color: var(--text-tertiary);
+  opacity: 0.8;
+}
+
+.iconOnly[data-tone='triage'],
+.inline[data-tone='triage'] .icon {
+  color: var(--accent-purple, var(--text-secondary));
+  opacity: 0.9;
+}
+
+.label {
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

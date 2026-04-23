@@ -4,6 +4,7 @@ import type {
   AppState,
   Automation,
   ChatSnippet,
+  LinearIssuesPriorityPreset,
   PersistedState,
   Project,
   SkillEntry,
@@ -21,7 +22,10 @@ import {
   DEFAULT_SIDE_PANEL_LAYOUT,
   normalizeLinearIssueCodingAgent,
   normalizeLinearIssueCodingModel,
+  normalizeLinearIssueDensity,
+  normalizeLinearIssueFilters,
   normalizeLinearIssueScope,
+  normalizeLinearIssueStateGroupsCollapsed,
   normalizeLinearIssuesPriorityPreset,
   normalizeLinearWorkspaceTabOrder,
   normalizeLinearWorkspaceView,
@@ -2252,6 +2256,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const k of LEGACY_REMOVED_SETTING_KEYS) {
       delete (settingsMerged as Record<string, unknown>)[k]
     }
+    const normalizedPriorityPreset = normalizeLinearIssuesPriorityPreset(
+      settingsMerged.linearIssuesPriorityPreset,
+    )
+    const normalizedIssueFilters = normalizeLinearIssueFilters(
+      settingsMerged.linearIssueFilters,
+    )
+    // Forward-migrate the deprecated priority preset: if a legacy profile had a
+    // non-'all' preset and we have no priorities in the new filters object yet,
+    // seed the filters and reset the preset to 'all' so this only runs once.
+    let migratedPriorityPreset: LinearIssuesPriorityPreset = normalizedPriorityPreset
+    let migratedIssueFilters = normalizedIssueFilters
+    if (
+      normalizedPriorityPreset !== 'all' &&
+      normalizedIssueFilters.priorities.length === 0
+    ) {
+      migratedIssueFilters = {
+        ...normalizedIssueFilters,
+        priorities: [Number(normalizedPriorityPreset)],
+      }
+      migratedPriorityPreset = 'all'
+    }
     const settings = {
       ...settingsMerged,
       linearWorkspaceView: normalizeLinearWorkspaceView(settingsMerged.linearWorkspaceView),
@@ -2259,8 +2284,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         settingsMerged.linearWorkspaceTabOrder,
       ),
       linearIssueScope: normalizeLinearIssueScope(settingsMerged.linearIssueScope),
-      linearIssuesPriorityPreset: normalizeLinearIssuesPriorityPreset(
-        settingsMerged.linearIssuesPriorityPreset,
+      linearIssuesPriorityPreset: migratedPriorityPreset,
+      linearIssueFilters: migratedIssueFilters,
+      linearIssueDensity: normalizeLinearIssueDensity(settingsMerged.linearIssueDensity),
+      linearIssueStateGroupsCollapsed: normalizeLinearIssueStateGroupsCollapsed(
+        settingsMerged.linearIssueStateGroupsCollapsed,
       ),
       linearIssueCodingAgent: normalizeLinearIssueCodingAgent(
         settingsMerged.linearIssueCodingAgent,

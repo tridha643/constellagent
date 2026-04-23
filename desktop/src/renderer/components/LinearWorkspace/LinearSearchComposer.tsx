@@ -5,7 +5,6 @@ import { fuzzyMatchSubsequence } from '../../linear/linear-jump-index'
 import {
   formatLinearProjectRowSubtitle,
   linearFetchProjectDraftContext,
-  linearOpenExternal,
   type LinearProjectNode,
   type LinearProjectUpdateNode,
   type LinearUserNode,
@@ -15,14 +14,6 @@ import baseStyles from './LinearSearchComposer.module.css'
 import { LinearWorkspacePicker } from './LinearWorkspacePicker'
 import ticketsStyles from './LinearTicketsComposer.module.css'
 import { useFixedPopoverStyle } from './useFixedPopoverStyle'
-
-function formatHealth(h?: string | null): string {
-  if (!h) return ''
-  if (h === 'onTrack') return 'On track'
-  if (h === 'atRisk') return 'At risk'
-  if (h === 'offTrack') return 'Off track'
-  return h
-}
 
 function userLabel(u: LinearUserNode): string {
   return (u.displayName?.trim() || u.name || 'Unknown').trim()
@@ -57,9 +48,8 @@ export interface LinearSearchComposerProps {
   orgUsersUnavailable: boolean
   scopeUserId: string
   onScopeUserIdChange: (id: string) => void
+  /** Past updates — used by "Draft with Pi" for context, not rendered here. */
   projectUpdates: LinearProjectUpdateNode[]
-  updatesLoading: boolean
-  updatesError: string | null
   selectedProjectName?: string
   /** Active workspace path for Pi git snapshot, or null */
   worktreePathForPi?: string | null
@@ -80,8 +70,6 @@ export function LinearSearchComposer({
   scopeUserId,
   onScopeUserIdChange,
   projectUpdates,
-  updatesLoading,
-  updatesError,
   selectedProjectName,
   worktreePathForPi = null,
   submitError,
@@ -95,17 +83,14 @@ export function LinearSearchComposer({
 
   const [projectPopoverOpen, setProjectPopoverOpen] = useState(false)
   const [personPopoverOpen, setPersonPopoverOpen] = useState(false)
-  const [pastPopoverOpen, setPastPopoverOpen] = useState(false)
   const [projectQuery, setProjectQuery] = useState('')
   const [personQuery, setPersonQuery] = useState('')
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const projectTriggerRef = useRef<HTMLButtonElement>(null)
   const personTriggerRef = useRef<HTMLButtonElement>(null)
-  const pastTriggerRef = useRef<HTMLButtonElement>(null)
   const projectPopoverRef = useRef<HTMLDivElement>(null)
   const personPopoverRef = useRef<HTMLDivElement>(null)
-  const pastPopoverRef = useRef<HTMLDivElement>(null)
   const projectSearchRef = useRef<HTMLInputElement>(null)
   const personSearchRef = useRef<HTMLInputElement>(null)
 
@@ -113,10 +98,6 @@ export function LinearSearchComposer({
 
   const projectPopoverStyle = useFixedPopoverStyle(projectPopoverOpen, projectTriggerRef)
   const personPopoverStyle = useFixedPopoverStyle(personPopoverOpen, personTriggerRef)
-  const pastPopoverStyle = useFixedPopoverStyle(
-    pastPopoverOpen && Boolean(scopeProjectId),
-    pastTriggerRef,
-  )
 
   const sortedUsers = useMemo(
     () =>
@@ -184,15 +165,10 @@ export function LinearSearchComposer({
           setPersonPopoverOpen(false)
         }
       }
-      if (pastPopoverOpen) {
-        if (!pastTriggerRef.current?.contains(t) && !pastPopoverRef.current?.contains(t)) {
-          setPastPopoverOpen(false)
-        }
-      }
     }
     document.addEventListener('mousedown', onDocDown)
     return () => document.removeEventListener('mousedown', onDocDown)
-  }, [projectPopoverOpen, personPopoverOpen, pastPopoverOpen])
+  }, [projectPopoverOpen, personPopoverOpen])
 
   const submit = useCallback(async () => {
     if (sending) return
@@ -267,7 +243,6 @@ export function LinearSearchComposer({
                 onClick={() => {
                   setPersonPopoverOpen((o) => !o)
                   setProjectPopoverOpen(false)
-                  setPastPopoverOpen(false)
                   if (!personPopoverOpen) setPersonQuery('')
                 }}
               >
@@ -369,7 +344,6 @@ export function LinearSearchComposer({
                   onClick={() => {
                     setProjectPopoverOpen((o) => !o)
                     setPersonPopoverOpen(false)
-                    setPastPopoverOpen(false)
                     if (!projectPopoverOpen) setProjectQuery('')
                   }}
                 >
@@ -444,88 +418,6 @@ export function LinearSearchComposer({
               <LinearWorkspacePicker
                 pillClassName={`${ticketsStyles.ticketsPill} ${ticketsStyles.ticketsPillWorkspace}`}
               />
-
-              {scopeProjectId ? (
-                <div className={baseStyles.pillWrap}>
-                  <button
-                    type="button"
-                    ref={pastTriggerRef}
-                    className={`${baseStyles.pillBtn} ${ticketsStyles.ticketsPill}`}
-                    aria-expanded={pastPopoverOpen}
-                    aria-haspopup="dialog"
-                    onClick={() => {
-                      setPastPopoverOpen((o) => !o)
-                      setProjectPopoverOpen(false)
-                      setPersonPopoverOpen(false)
-                    }}
-                  >
-                    {projectUpdates.length} past update{projectUpdates.length === 1 ? '' : 's'}
-                  </button>
-                  {pastPopoverOpen && pastPopoverStyle && portalTarget
-                    ? createPortal(
-                        <div
-                          ref={pastPopoverRef}
-                          className={`${baseStyles.popover} ${baseStyles.pastPopover} ${ticketsStyles.ticketsPopover}`}
-                          style={
-                            {
-                              ...pastPopoverStyle,
-                              '--transform-origin': 'top left',
-                            } as React.CSSProperties
-                          }
-                        >
-                          {updatesLoading ? (
-                            <div className={baseStyles.popoverEmpty}>Loading updates…</div>
-                          ) : updatesError ? (
-                            <div className={baseStyles.popoverEmpty} title={updatesError}>
-                              {updatesError}
-                            </div>
-                          ) : projectUpdates.length === 0 ? (
-                            <div className={baseStyles.popoverEmpty}>No project updates from Linear.</div>
-                          ) : (
-                            <div
-                              className={baseStyles.pastPopoverScroll}
-                              role="list"
-                              aria-label="Past project updates"
-                            >
-                              {projectUpdates.slice(0, 40).map((u, i) => {
-                                const who = u.user?.displayName || u.user?.name || 'Unknown'
-                                const when = new Date(u.createdAt).toLocaleString()
-                                const h = formatHealth(u.health)
-                                const preview = (u.body ?? '').trim().slice(0, 280)
-                                const stagger = Math.min(i, 5)
-                                return (
-                                  <div
-                                    key={u.id}
-                                    role="listitem"
-                                    className={baseStyles.pastItem}
-                                    style={{ '--stagger': stagger } as React.CSSProperties}
-                                  >
-                                    <div className={baseStyles.updateMeta}>
-                                      <span>{when}</span>
-                                      <span>{who}</span>
-                                      {h ? <span>{h}</span> : null}
-                                    </div>
-                                    {preview ? <div className={baseStyles.updateBody}>{preview}</div> : null}
-                                    {u.url ? (
-                                      <button
-                                        type="button"
-                                        className={baseStyles.updateLink}
-                                        onClick={() => void linearOpenExternal(u.url)}
-                                      >
-                                        Open in Linear
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>,
-                        portalTarget,
-                      )
-                    : null}
-                </div>
-              ) : null}
 
               <div className={baseStyles.pillWrap}>
                 <button

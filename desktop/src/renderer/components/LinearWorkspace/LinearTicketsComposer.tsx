@@ -5,8 +5,6 @@ import { fuzzyMatchSubsequence } from '../../linear/linear-jump-index'
 import {
   formatLinearProjectRowSubtitle,
   linearFetchProjectDraftContext,
-  linearOpenExternal,
-  type LinearIssueNode,
   type LinearProjectNode,
   type LinearTeamNode,
 } from '../../linear/linear-api'
@@ -55,9 +53,6 @@ export interface LinearTicketsComposerProps {
   onScopeTeamIdChange: (id: string) => void
   priority: number
   onPriorityChange: (p: number) => void
-  ticketIssues: LinearIssueNode[]
-  issuesLoading: boolean
-  issuesError: string | null
   submitError: string | null
   onClearSubmitError?: () => void
   onSubmitTicket: (input: {
@@ -84,9 +79,6 @@ export function LinearTicketsComposer({
   onScopeTeamIdChange,
   priority,
   onPriorityChange,
-  ticketIssues,
-  issuesLoading,
-  issuesError,
   submitError,
   onClearSubmitError,
   onSubmitTicket,
@@ -102,7 +94,6 @@ export function LinearTicketsComposer({
   const [projectPopoverOpen, setProjectPopoverOpen] = useState(false)
   const [teamPopoverOpen, setTeamPopoverOpen] = useState(false)
   const [priorityPopoverOpen, setPriorityPopoverOpen] = useState(false)
-  const [pastPopoverOpen, setPastPopoverOpen] = useState(false)
   const [projectQuery, setProjectQuery] = useState('')
   const [teamQuery, setTeamQuery] = useState('')
 
@@ -110,11 +101,9 @@ export function LinearTicketsComposer({
   const projectTriggerRef = useRef<HTMLButtonElement>(null)
   const teamTriggerRef = useRef<HTMLButtonElement>(null)
   const priorityTriggerRef = useRef<HTMLButtonElement>(null)
-  const pastTriggerRef = useRef<HTMLButtonElement>(null)
   const projectPopoverRef = useRef<HTMLDivElement>(null)
   const teamPopoverRef = useRef<HTMLDivElement>(null)
   const priorityPopoverRef = useRef<HTMLDivElement>(null)
-  const pastPopoverRef = useRef<HTMLDivElement>(null)
   const projectSearchRef = useRef<HTMLInputElement>(null)
   const teamSearchRef = useRef<HTMLInputElement>(null)
 
@@ -123,10 +112,6 @@ export function LinearTicketsComposer({
   const projectPopoverStyle = useFixedPopoverStyle(projectPopoverOpen, projectTriggerRef)
   const teamPopoverStyle = useFixedPopoverStyle(teamPopoverOpen, teamTriggerRef)
   const priorityPopoverStyle = useFixedPopoverStyle(priorityPopoverOpen, priorityTriggerRef)
-  const pastPopoverStyle = useFixedPopoverStyle(
-    pastPopoverOpen && Boolean(scopeProjectId),
-    pastTriggerRef,
-  )
 
   const sortedTeams = useMemo(
     () => [...teams].sort((a, b) => a.name.localeCompare(b.name)),
@@ -199,15 +184,10 @@ export function LinearTicketsComposer({
           setPriorityPopoverOpen(false)
         }
       }
-      if (pastPopoverOpen) {
-        if (!pastTriggerRef.current?.contains(t) && !pastPopoverRef.current?.contains(t)) {
-          setPastPopoverOpen(false)
-        }
-      }
     }
     document.addEventListener('mousedown', onDocDown)
     return () => document.removeEventListener('mousedown', onDocDown)
-  }, [projectPopoverOpen, teamPopoverOpen, priorityPopoverOpen, pastPopoverOpen])
+  }, [projectPopoverOpen, teamPopoverOpen, priorityPopoverOpen])
 
   const submit = useCallback(async () => {
     if (sending) return
@@ -299,7 +279,6 @@ export function LinearTicketsComposer({
                   setTeamPopoverOpen((o) => !o)
                   setProjectPopoverOpen(false)
                   setPriorityPopoverOpen(false)
-                  setPastPopoverOpen(false)
                   if (!teamPopoverOpen) setTeamQuery('')
                 }}
               >
@@ -401,7 +380,6 @@ export function LinearTicketsComposer({
                     setProjectPopoverOpen((o) => !o)
                     setTeamPopoverOpen(false)
                     setPriorityPopoverOpen(false)
-                    setPastPopoverOpen(false)
                     if (!projectPopoverOpen) setProjectQuery('')
                   }}
                 >
@@ -501,7 +479,6 @@ export function LinearTicketsComposer({
                     setPriorityPopoverOpen((o) => !o)
                     setProjectPopoverOpen(false)
                     setTeamPopoverOpen(false)
-                    setPastPopoverOpen(false)
                   }}
                 >
                   <span className={baseStyles.pillPrefix}>Priority</span>
@@ -546,84 +523,6 @@ export function LinearTicketsComposer({
                     )
                   : null}
               </div>
-
-              {scopeProjectId ? (
-                <div className={baseStyles.pillWrap}>
-                  <button
-                    type="button"
-                    ref={pastTriggerRef}
-                    className={`${baseStyles.pillBtn} ${styles.ticketsPill}`}
-                    aria-expanded={pastPopoverOpen}
-                    aria-haspopup="dialog"
-                    onClick={() => {
-                      setPastPopoverOpen((o) => !o)
-                      setProjectPopoverOpen(false)
-                      setTeamPopoverOpen(false)
-                      setPriorityPopoverOpen(false)
-                    }}
-                  >
-                    {ticketIssues.length} past ticket{ticketIssues.length === 1 ? '' : 's'}
-                  </button>
-                  {pastPopoverOpen && pastPopoverStyle && portalTarget
-                    ? createPortal(
-                        <div
-                          ref={pastPopoverRef}
-                          className={`${baseStyles.popover} ${baseStyles.pastPopover} ${styles.ticketsPopover}`}
-                          style={
-                            {
-                              ...pastPopoverStyle,
-                              '--transform-origin': 'top left',
-                            } as React.CSSProperties
-                          }
-                        >
-                          {issuesLoading ? (
-                            <div className={baseStyles.popoverEmpty}>Loading issues…</div>
-                          ) : issuesError ? (
-                            <div className={baseStyles.popoverEmpty} title={issuesError}>
-                              {issuesError}
-                            </div>
-                          ) : ticketIssues.length === 0 ? (
-                            <div className={baseStyles.popoverEmpty}>No issues for this project.</div>
-                          ) : (
-                            <div
-                              className={baseStyles.pastPopoverScroll}
-                              role="list"
-                              aria-label="Past tickets"
-                            >
-                              {ticketIssues.slice(0, 40).map((issue, i) => {
-                                const stagger = Math.min(i, 5)
-                                return (
-                                  <div
-                                    key={issue.id}
-                                    role="listitem"
-                                    className={baseStyles.pastItem}
-                                    style={{ '--stagger': stagger } as React.CSSProperties}
-                                  >
-                                    <div className={baseStyles.updateMeta}>
-                                      <span>{issue.identifier}</span>
-                                      <span>{issue.state?.name ?? '—'}</span>
-                                    </div>
-                                    <div className={baseStyles.updateBody}>{issue.title}</div>
-                                    {issue.url ? (
-                                      <button
-                                        type="button"
-                                        className={baseStyles.updateLink}
-                                        onClick={() => void linearOpenExternal(issue.url)}
-                                      >
-                                        Open in Linear
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>,
-                        portalTarget,
-                      )
-                    : null}
-                </div>
-              ) : null}
 
               <div className={baseStyles.pillWrap}>
                 <button

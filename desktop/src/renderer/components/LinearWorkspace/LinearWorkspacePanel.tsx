@@ -1,14 +1,8 @@
 import {
-  CheckCircle,
-  Circle,
-  CircleDashed,
+  Kanban,
   ListBullets,
   PaperPlaneTilt,
-  Pulse,
-  RocketLaunch,
   Ticket,
-  Tray,
-  XCircle,
 } from "@phosphor-icons/react";
 import {
   useCallback,
@@ -16,15 +10,12 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import { useAppStore } from "../../store/app-store";
 import type {
-  LinearIssuesPriorityPreset,
   LinearProjectUpdateBarEntry,
   LinearWorkspaceToolbarTool,
   LinearWorkspaceView,
-  Workspace,
 } from "../../store/types";
 import {
   normalizeLinearWorkspaceTabOrder,
@@ -45,7 +36,6 @@ import {
   linearFetchViewer,
   linearOpenExternal,
   linearUserPickerWithViewer,
-  workspaceBranchMatchesLinearIssue,
   type LinearIssueNode,
   type LinearProjectNode,
   type LinearProjectUpdateNode,
@@ -59,9 +49,12 @@ import {
 } from "../../linear/linear-jump-index";
 import { ChevronLeft } from "lucide-react";
 import { FloatingPanel } from "../FloatingPanel/FloatingPanel";
+import { IssuesView } from "./IssuesView";
 import { LinearQuickOpen } from "./LinearQuickOpen";
-import { LinearSearchComposer } from "./LinearSearchComposer";
-import { LinearTicketsComposer } from "./LinearTicketsComposer";
+import { ProjectsView } from "./ProjectsView";
+import { TicketsView } from "./TicketsView";
+import { UpdatesView } from "./UpdatesView";
+import { findWorkspaceForLinearIssue } from "./workspace-for-linear-issue";
 import styles from "./LinearWorkspacePanel.module.css";
 
 const linearIconSrc = new URL(
@@ -82,83 +75,6 @@ const LINEAR_HEADER_TOOLS: {
   { id: "refresh", label: "Refresh", title: "Reload from Linear" },
   { id: "settings", label: "Settings", title: "Open Settings" },
 ];
-
-function priorityLabel(p?: number): string {
-  if (p == null) return "—";
-  const map: Record<number, string> = {
-    0: "None",
-    1: "Urgent",
-    2: "High",
-    3: "Medium",
-    4: "Low",
-  };
-  return map[p] ?? String(p);
-}
-
-function filterIssuesByPriorityPreset(
-  list: LinearIssueNode[],
-  preset: LinearIssuesPriorityPreset,
-): LinearIssueNode[] {
-  if (preset === "all") return list;
-  const n = Number(preset);
-  return list.filter((i) => i.priority === n);
-}
-
-/** Prefer a workspace opened from this Linear issue (agent session); else title prefix; else branch pattern. */
-function findWorkspaceForLinearIssue(
-  issue: LinearIssueNode,
-  list: Workspace[],
-): Workspace | undefined {
-  const linked = list.find((w) => w.linearIssueId === issue.id);
-  if (linked) return linked;
-  const idPrefix = `${issue.identifier}:`;
-  const byName = list.find((w) =>
-    w.name.toLowerCase().startsWith(idPrefix.toLowerCase()),
-  );
-  if (byName) return byName;
-  return list.find((w) => workspaceBranchMatchesLinearIssue(issue, w.branch));
-}
-
-function LinearIssueStateCell({ issue }: { issue: LinearIssueNode }) {
-  const st = issue.state;
-  const label = st?.name ?? "—";
-  const type = st?.type?.toLowerCase() ?? "";
-  const name = st?.name?.toLowerCase() ?? "";
-  const iconProps = {
-    size: 16,
-    weight: "duotone" as const,
-    "aria-hidden": true as const,
-    className: styles.issueStateIcon,
-  };
-  let node: ReactNode;
-  if (type === "completed" || name.includes("complete") || name.includes("done")) {
-    node = <CheckCircle {...iconProps} />;
-  } else if (
-    type === "canceled" ||
-    type === "cancelled" ||
-    name.includes("cancel")
-  ) {
-    node = <XCircle {...iconProps} />;
-  } else if (type === "started") {
-    node = <Pulse {...iconProps} />;
-  } else if (type === "unstarted") {
-    node = <CircleDashed {...iconProps} />;
-  } else if (type === "backlog") {
-    node = <Tray {...iconProps} />;
-  } else if (type === "triage" || name.includes("triage")) {
-    node = <CircleDashed {...iconProps} />;
-  } else if (st) {
-    node = <Circle {...iconProps} />;
-  } else {
-    node = null;
-  }
-  return (
-    <span className={styles.issueStateCell}>
-      {node}
-      <span className={styles.issueStateLabel}>{label}</span>
-    </span>
-  );
-}
 
 function usersFromLoadedIssues(
   assigned: LinearIssueNode[],
@@ -478,24 +394,10 @@ export function LinearWorkspacePanel() {
     };
   }, [linearToolsMenuOpen]);
 
-  const rawIssuesByScope = useMemo(() => {
+  const issues = useMemo(() => {
     if (e2eLinearIssues?.length) return e2eLinearIssues;
     return settings.linearIssueScope === "assigned" ? assigned : created;
-  }, [
-    e2eLinearIssues,
-    settings.linearIssueScope,
-    assigned,
-    created,
-  ]);
-
-  const issues = useMemo(
-    () =>
-      filterIssuesByPriorityPreset(
-        rawIssuesByScope,
-        settings.linearIssuesPriorityPreset,
-      ),
-    [rawIssuesByScope, settings.linearIssuesPriorityPreset],
-  );
+  }, [e2eLinearIssues, settings.linearIssueScope, assigned, created]);
 
   const workspaceView = settings.linearWorkspaceView;
 
@@ -823,6 +725,13 @@ export function LinearWorkspacePanel() {
             icon: <ListBullets weight="duotone" aria-hidden />,
           };
         }
+        if (id === "projects") {
+          return {
+            id,
+            label: "Projects",
+            icon: <Kanban weight="duotone" aria-hidden />,
+          };
+        }
         if (id === "tickets") {
           return {
             id,
@@ -958,7 +867,7 @@ export function LinearWorkspacePanel() {
         <div className={styles.content}>
           <div
             className={styles.viewPillRow}
-            title="Switch tab: ⌥⌘←/→, ⌘[/], or ⌘1–3 (order matches the pill)"
+            title="Switch tab: ⌥⌘←/→, ⌘[/], or ⌘1–4 (order matches the pill)"
           >
             <SegmentedPill
               ariaLabel="Linear workspace view"
@@ -979,207 +888,90 @@ export function LinearWorkspacePanel() {
             />
           </div>
           {workspaceView === "updates" ? (
-            <div className={styles.composerBand}>
-              <LinearSearchComposer
-                projects={projects}
-                scopeProjectId={scopeProjectId}
-                onScopeProjectIdChange={setScopeProjectId}
-                pickerUsers={pickerUsersWithViewer}
-                orgUsersUnavailable={orgUsersUnavailable}
-                scopeUserId={scopeUserId}
-                onScopeUserIdChange={setScopeUserId}
-                projectUpdates={projectUpdates}
-                updatesLoading={updatesLoading}
-                updatesError={updatesError}
-                selectedProjectName={scopedProjectLabel}
-                worktreePathForPi={worktreePathForPi}
-                submitError={composerSubmitError}
-                onClearSubmitError={() => setComposerSubmitError(null)}
-                onSubmitUpdate={handleSubmitProjectUpdate}
-                linearApiKey={apiKey}
-              />
-            </div>
+            <UpdatesView
+              composerProps={{
+                projects,
+                scopeProjectId,
+                onScopeProjectIdChange: setScopeProjectId,
+                pickerUsers: pickerUsersWithViewer,
+                orgUsersUnavailable,
+                scopeUserId,
+                onScopeUserIdChange: setScopeUserId,
+                projectUpdates,
+                selectedProjectName: scopedProjectLabel,
+                worktreePathForPi,
+                submitError: composerSubmitError,
+                onClearSubmitError: () => setComposerSubmitError(null),
+                onSubmitUpdate: handleSubmitProjectUpdate,
+                linearApiKey: apiKey,
+              }}
+              projectUpdates={projectUpdates}
+              updatesLoading={updatesLoading}
+              updatesError={updatesError}
+              scopeProjectId={scopeProjectId}
+              selectedProjectName={scopedProjectLabel}
+            />
           ) : null}
           {workspaceView === "tickets" ? (
-            <div className={styles.composerBand}>
-              <LinearTicketsComposer
-                projects={projects}
-                scopeProjectId={scopeProjectId}
-                onScopeProjectIdChange={setScopeProjectId}
-                selectedProjectName={scopedProjectLabel}
-                teams={linearTeams}
-                scopeTeamId={ticketTeamId}
-                onScopeTeamIdChange={setTicketTeamId}
-                priority={ticketPriority}
-                onPriorityChange={setTicketPriority}
-                ticketIssues={ticketIssues}
-                issuesLoading={ticketIssuesLoading}
-                issuesError={ticketIssuesError}
-                submitError={composerSubmitError}
-                onClearSubmitError={() => setComposerSubmitError(null)}
-                onSubmitTicket={handleSubmitTicket}
-                projectNameForDraft={scopedProjectLabel?.trim() || "Project"}
-                worktreePathForPi={worktreePathForPi}
-                linearApiKey={apiKey}
-              />
-            </div>
+            <TicketsView
+              composerProps={{
+                projects,
+                scopeProjectId,
+                onScopeProjectIdChange: setScopeProjectId,
+                selectedProjectName: scopedProjectLabel,
+                teams: linearTeams,
+                scopeTeamId: ticketTeamId,
+                onScopeTeamIdChange: setTicketTeamId,
+                priority: ticketPriority,
+                onPriorityChange: setTicketPriority,
+                submitError: composerSubmitError,
+                onClearSubmitError: () => setComposerSubmitError(null),
+                onSubmitTicket: handleSubmitTicket,
+                projectNameForDraft: scopedProjectLabel?.trim() || "Project",
+                worktreePathForPi,
+                linearApiKey: apiKey,
+              }}
+              ticketIssues={ticketIssues}
+              ticketIssuesLoading={ticketIssuesLoading}
+              ticketIssuesError={ticketIssuesError}
+              scopeProjectId={scopeProjectId}
+              selectedProjectName={scopedProjectLabel}
+              onActivateIssue={activateIssueWorkspaceOrOpenUrl}
+              onLaunchAgent={(issue) => void startLinearIssueAgentSession(issue)}
+            />
           ) : null}
           {workspaceView === "issues" ? (
-          <div className={styles.inner}>
-            <div className={styles.section}>
-              <div className={styles.sectionTitle}>My issues</div>
-              <div className={styles.filterRow}>
-                <div className={styles.segment}>
-                  <button
-                    type="button"
-                    className={`${styles.segBtn} ${settings.linearIssueScope === "assigned" ? styles.segBtnOn : ""}`}
-                    onClick={() =>
-                      updateSettings({ linearIssueScope: "assigned" })
-                    }
-                  >
-                    Assigned to me
-                  </button>
-                  <button
-                    type="button"
-                    className={`${styles.segBtn} ${settings.linearIssueScope === "created" ? styles.segBtnOn : ""}`}
-                    onClick={() =>
-                      updateSettings({ linearIssueScope: "created" })
-                    }
-                  >
-                    Created by me
-                  </button>
-                </div>
-              </div>
-              {issues.length === 0 ? (
-                <div className={styles.empty}>
-                  {apiKey.trim()
-                    ? "No issues in this view."
-                    : "Connect Linear in Settings."}
-                </div>
-              ) : (
-                <div className={styles.tableWrap}>
-                  <table className={styles.table}>
-                    <thead>
-                      <tr>
-                        <th>ID</th>
-                        <th>Title</th>
-                        <th>State</th>
-                        <th>Team</th>
-                        <th>P</th>
-                        <th
-                          className={styles.tableThAgent}
-                          aria-label="Coding agent"
-                          title="New worktree + agent"
-                        >
-                          <RocketLaunch
-                            size={16}
-                            weight="duotone"
-                            aria-hidden
-                            className={styles.tableAgentHeaderIcon}
-                          />
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {issues.map((issue) => {
-                        const linkedWorkspace = findWorkspaceForLinearIssue(
-                          issue,
-                          workspaces,
-                        );
-                        const issueIdClass = [
-                          styles.issueId,
-                          linkedWorkspace ? styles.issueIdLinked : "",
-                          linkedWorkspace?.id === activeWorkspaceId
-                            ? styles.issueIdLinkedActive
-                            : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ");
-                        return (
-                        <tr key={issue.id}>
-                          <td>
-                            <button
-                              type="button"
-                              className={issueIdClass}
-                              data-testid={`linear-issue-id-${issue.identifier.replace(/[^a-zA-Z0-9_-]/g, "_")}`}
-                              data-workspace-linked={linkedWorkspace ? "true" : "false"}
-                              onClick={() => activateIssueWorkspaceOrOpenUrl(issue)}
-                              title={
-                                linkedWorkspace
-                                  ? `Open linked workspace: ${linkedWorkspace.name}`
-                                  : `Open ${issue.identifier} in Linear`
-                              }
-                            >
-                              {issue.identifier}
-                            </button>
-                          </td>
-                          <td>{issue.title}</td>
-                          <td>
-                            <LinearIssueStateCell issue={issue} />
-                          </td>
-                          <td>
-                            {issue.team
-                              ? `${issue.team.key} · ${issue.team.name}`
-                              : "—"}
-                          </td>
-                          <td>{priorityLabel(issue.priority)}</td>
-                          <td className={styles.agentLaunchCell}>
-                            <Tooltip label="New worktree and coding agent for this issue">
-                              <button
-                                type="button"
-                                className={styles.agentLaunchBtn}
-                                onClick={() =>
-                                  void startLinearIssueAgentSession(issue)
-                                }
-                                aria-label={`Open ${issue.identifier} in coding agent`}
-                              >
-                                <RocketLaunch size={18} aria-hidden weight="duotone" />
-                              </button>
-                            </Tooltip>
-                          </td>
-                        </tr>
-                      )})}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            <div className={styles.section}>
-              <div className={styles.sectionTitle}>Projects</div>
-              <div className={styles.sectionHint}>
-                Projects visible to your Linear API key in this workspace.
-              </div>
-              {projects.length === 0 ? (
-                <div className={styles.empty}>No projects loaded.</div>
-              ) : (
-                <div className={styles.tableWrap}>
-                  {projects.map((p) => (
-                    <div key={p.id} className={styles.projectRow}>
-                      <button
-                        type="button"
-                        className={styles.linkBtn}
-                        style={{ textAlign: "left", flex: 1 }}
-                        onClick={() => openProject(p)}
-                      >
-                        {p.name}
-                      </button>
-                      <button
-                        type="button"
-                        className={`${styles.star} ${favoriteIds.has(p.id) ? styles.on : ""}`}
-                        title={
-                          favoriteIds.has(p.id) ? "Remove favorite" : "Favorite"
-                        }
-                        onClick={() => toggleFavorite(p.id)}
-                      >
-                        {favoriteIds.has(p.id) ? "★" : "☆"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+            <IssuesView
+              issues={issues}
+              workspaces={workspaces}
+              activeWorkspaceId={activeWorkspaceId}
+              apiKey={apiKey}
+              onActivateIssue={activateIssueWorkspaceOrOpenUrl}
+              onLaunchAgent={(issue) =>
+                void startLinearIssueAgentSession(issue)
+              }
+            />
+          ) : null}
+          {workspaceView === "projects" ? (
+            <ProjectsView
+              projects={projects}
+              favoriteIds={favoriteIds}
+              onToggleFavorite={toggleFavorite}
+              updatesByProjectId={
+                scopeProjectId
+                  ? { [scopeProjectId]: projectUpdates }
+                  : undefined
+              }
+              onScopeIssues={(projectId) => {
+                setScopeProjectId(projectId);
+                updateSettings({ linearWorkspaceView: "issues" });
+              }}
+              emptyState={
+                apiKey.trim()
+                  ? "No projects loaded."
+                  : "Connect Linear in Settings."
+              }
+            />
           ) : null}
         </div>
       </div>

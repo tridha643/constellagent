@@ -201,30 +201,37 @@ export function normalizeLinearWorkspaceToolbarTool(
   return 'search'
 }
 
-/** Linear panel main view: issues list, tickets composer, or project updates composer. */
-export type LinearWorkspaceView = 'issues' | 'tickets' | 'updates'
+/** Linear panel main view: issues list, projects grid, tickets composer, or project updates composer. */
+export type LinearWorkspaceView = 'issues' | 'projects' | 'tickets' | 'updates'
 
 export type LinearWorkspaceTab = LinearWorkspaceView
 
 const LINEAR_WORKSPACE_TAB_ORDER_DEFAULT: LinearWorkspaceTab[] = [
   'issues',
+  'projects',
   'tickets',
   'updates',
 ]
 
+function isLinearWorkspaceTab(v: unknown): v is LinearWorkspaceTab {
+  return (
+    v === 'issues' || v === 'projects' || v === 'tickets' || v === 'updates'
+  )
+}
+
 export function normalizeLinearWorkspaceView(v: unknown): LinearWorkspaceView {
-  if (v === 'issues' || v === 'tickets' || v === 'updates') return v
+  if (isLinearWorkspaceTab(v)) return v
   return 'issues'
 }
 
-/** Persisted order of the three-segment Linear workspace pill. Drops unknowns; appends any missing tab ids. */
+/** Persisted order of the Linear workspace pill. Drops unknowns; appends any missing tab ids so forward-migrations (new tabs) never disappear. */
 export function normalizeLinearWorkspaceTabOrder(v: unknown): LinearWorkspaceTab[] {
   const all = LINEAR_WORKSPACE_TAB_ORDER_DEFAULT
   if (!Array.isArray(v)) return [...all]
   const seen = new Set<string>()
   const out: LinearWorkspaceTab[] = []
   for (const x of v) {
-    if (x === 'issues' || x === 'tickets' || x === 'updates') {
+    if (isLinearWorkspaceTab(x)) {
       if (!seen.has(x)) {
         seen.add(x)
         out.push(x)
@@ -266,14 +273,105 @@ export function normalizeLinearIssueScope(v: unknown): LinearIssueScope {
   return 'assigned'
 }
 
-/** Client-side filter on fetched issues: Linear priority 1–4, or all. */
+/**
+ * Client-side filter on fetched issues: Linear priority 1–4, or all.
+ * @deprecated Use `linearIssueFilters.priorities` instead. Kept for one release for forward migration; new code should read/write the filters object.
+ */
 export type LinearIssuesPriorityPreset = 'all' | '1' | '2' | '3' | '4'
 
+/** @deprecated See {@link LinearIssuesPriorityPreset}. */
 export function normalizeLinearIssuesPriorityPreset(
   v: unknown,
 ): LinearIssuesPriorityPreset {
   if (v === 'all' || v === '1' || v === '2' || v === '3' || v === '4') return v
   return 'all'
+}
+
+/**
+ * Linear issue state-type buckets we render as groups.
+ * Values match Linear API `state.type` strings so incoming issues slot in without mapping tables.
+ */
+export const LINEAR_ISSUE_STATE_TYPES = [
+  'started',
+  'unstarted',
+  'backlog',
+  'triage',
+  'completed',
+  'canceled',
+] as const
+
+export type LinearIssueStateType = (typeof LINEAR_ISSUE_STATE_TYPES)[number]
+
+export function isLinearIssueStateType(v: unknown): v is LinearIssueStateType {
+  return (
+    typeof v === 'string' &&
+    (LINEAR_ISSUE_STATE_TYPES as readonly string[]).includes(v)
+  )
+}
+
+/** Density options for the grouped Issues list. */
+export type LinearIssueDensity = 'compact' | 'comfortable'
+
+export function normalizeLinearIssueDensity(v: unknown): LinearIssueDensity {
+  if (v === 'compact' || v === 'comfortable') return v
+  return 'comfortable'
+}
+
+/** Multi-select client-side filter state for the Issues list. */
+export interface LinearIssueFilters {
+  /** Linear priority numerics: 0 (none), 1 (urgent), 2, 3, 4 (low). Empty = all priorities. */
+  priorities: number[]
+  /** Subset of {@link LINEAR_ISSUE_STATE_TYPES}. Empty = all states. */
+  stateTypes: LinearIssueStateType[]
+  /** Team keys (`team.key`). Empty = all teams. */
+  teamKeys: string[]
+  /** Free-text search (title + identifier). */
+  text: string
+}
+
+export const EMPTY_LINEAR_ISSUE_FILTERS: LinearIssueFilters = Object.freeze({
+  priorities: [],
+  stateTypes: [],
+  teamKeys: [],
+  text: '',
+}) as LinearIssueFilters
+
+export function normalizeLinearIssueFilters(v: unknown): LinearIssueFilters {
+  const src = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>
+  const priorities = Array.isArray(src.priorities)
+    ? Array.from(
+        new Set(
+          (src.priorities as unknown[])
+            .map((p) => Number(p))
+            .filter((n) => n === 0 || n === 1 || n === 2 || n === 3 || n === 4),
+        ),
+      )
+    : []
+  const stateTypes = Array.isArray(src.stateTypes)
+    ? Array.from(
+        new Set(
+          (src.stateTypes as unknown[]).filter(isLinearIssueStateType),
+        ),
+      )
+    : []
+  const teamKeys = Array.isArray(src.teamKeys)
+    ? Array.from(
+        new Set(
+          (src.teamKeys as unknown[]).filter(
+            (t): t is string => typeof t === 'string' && t.length > 0,
+          ),
+        ),
+      )
+    : []
+  const text = typeof src.text === 'string' ? src.text : ''
+  return { priorities, stateTypes, teamKeys, text }
+}
+
+export function normalizeLinearIssueStateGroupsCollapsed(
+  v: unknown,
+): LinearIssueStateType[] {
+  if (!Array.isArray(v)) return []
+  return Array.from(new Set(v.filter(isLinearIssueStateType)))
 }
 
 const LINEAR_ISSUE_CODING_AGENTS: readonly AgentType[] = [
@@ -334,8 +432,17 @@ export interface Settings {
   linearWorkspaceTabOrder: LinearWorkspaceTab[]
   /** Default issue list: assigned to me vs created by me. */
   linearIssueScope: LinearIssueScope
-  /** Default priority filter for the Issues list (client-side). */
+  /**
+   * Default priority filter for the Issues list (client-side).
+   * @deprecated Use {@link Settings.linearIssueFilters}. Kept for persisted-state migration; read as a seed for `linearIssueFilters.priorities` once, then frozen at `'all'`.
+   */
   linearIssuesPriorityPreset: LinearIssuesPriorityPreset
+  /** Multi-select client-side filters for the Issues list (priority, state, team, search). */
+  linearIssueFilters: LinearIssueFilters
+  /** Density of Issue rows. */
+  linearIssueDensity: LinearIssueDensity
+  /** State-type buckets whose group is collapsed in the Issues list. */
+  linearIssueStateGroupsCollapsed: LinearIssueStateType[]
   /** Copy created Linear issue URLs to the clipboard from the Tickets composer success flow. */
   linearCopyCreatedIssueToClipboard: boolean
   /** Coding agent CLI when opening a Linear issue in a new worktree (Issues row / Tickets toast). */
@@ -374,9 +481,12 @@ export const DEFAULT_SETTINGS: Settings = {
   linearFavoriteProjectIds: [],
   linearWorkspaceToolbarTool: 'search',
   linearWorkspaceView: 'issues',
-  linearWorkspaceTabOrder: ['issues', 'tickets', 'updates'],
+  linearWorkspaceTabOrder: ['issues', 'projects', 'tickets', 'updates'],
   linearIssueScope: 'assigned',
   linearIssuesPriorityPreset: 'all',
+  linearIssueFilters: { priorities: [], stateTypes: [], teamKeys: [], text: '' },
+  linearIssueDensity: 'comfortable',
+  linearIssueStateGroupsCollapsed: ['completed', 'canceled'],
   linearCopyCreatedIssueToClipboard: true,
   linearIssueCodingAgent: 'claude-code',
   linearIssueCodingModel: '',

@@ -235,6 +235,60 @@ test.describe('Keyboard shortcuts', () => {
     }
   })
 
+  test('Cmd+1/2/3/4 cycles Linear pill tabs (issues, projects, tickets, updates)', async () => {
+    const repoPath = createTestRepo('shortcut-linear-pill')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspaceWithTerminal(window, repoPath)
+      await window.waitForTimeout(1500)
+
+      await window.evaluate(() => {
+        const store = (
+          window as unknown as {
+            __store: {
+              getState: () => {
+                toggleLinear: () => void
+                updateSettings: (p: unknown) => void
+              }
+            }
+          }
+        ).__store.getState()
+        store.updateSettings({
+          linearWorkspaceTabOrder: ['issues', 'projects', 'tickets', 'updates'],
+        })
+        store.toggleLinear()
+      })
+      await expect(window.getByTestId('linear-workspace-panel')).toBeVisible({ timeout: 5000 })
+
+      const readView = () =>
+        window.evaluate(
+          () =>
+            (
+              window as unknown as {
+                __store: {
+                  getState: () => { settings: { linearWorkspaceView: string } }
+                }
+              }
+            ).__store.getState().settings.linearWorkspaceView,
+        )
+
+      await window.keyboard.press('Meta+2')
+      expect(await readView()).toBe('projects')
+
+      await window.keyboard.press('Meta+3')
+      expect(await readView()).toBe('tickets')
+
+      await window.keyboard.press('Meta+4')
+      expect(await readView()).toBe('updates')
+
+      await window.keyboard.press('Meta+1')
+      expect(await readView()).toBe('issues')
+    } finally {
+      await app.close()
+    }
+  })
+
   test('Cmd+F opens Monaco find widget when code editor is focused', async () => {
     const repoPath = createTestRepo('shortcut-find')
     const { app, window } = await launchApp()

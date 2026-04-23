@@ -127,8 +127,8 @@ export function useShortcuts() {
         e.stopPropagation()
       }
 
-      // ── Linear panel (full-screen): Issues / Tickets / Updates pill ──
-      // ⌥⌘←/→, ⌘[/], ⌘1–3 — only while Linear is open (overrides same chords used for workspaces / editor tabs).
+      // ── Linear panel (full-screen): Issues / Projects / Tickets / Updates pill ──
+      // ⌥⌘←/→, ⌘[/], ⌘1–4 — only while Linear is open (overrides same chords used for workspaces / editor tabs).
       if (store.linearPanelOpen) {
         const order = normalizeLinearWorkspaceTabOrder(store.settings.linearWorkspaceTabOrder)
         const cur = normalizeLinearWorkspaceView(store.settings.linearWorkspaceView)
@@ -155,10 +155,11 @@ export function useShortcuts() {
 
         if (!shift && !alt) {
           let n: number | undefined
-          const fromCode = /^Digit([1-3])$/.exec(e.code) ?? /^Numpad([1-3])$/.exec(e.code)
+          const fromCode = /^Digit([1-4])$/.exec(e.code) ?? /^Numpad([1-4])$/.exec(e.code)
           if (fromCode) n = Number(fromCode[1])
-          else if (e.key === '1' || e.key === '2' || e.key === '3') n = Number(e.key)
-          if (n !== undefined && n >= 1 && n <= 3) {
+          else if (e.key === '1' || e.key === '2' || e.key === '3' || e.key === '4')
+            n = Number(e.key)
+          if (n !== undefined && n >= 1 && n <= 4) {
             const tab = order[n - 1]
             if (tab) {
               consume()
@@ -241,6 +242,7 @@ export function useShortcuts() {
         if (
           store.linearPanelOpen
           && (store.settings.linearWorkspaceView === 'issues'
+            || store.settings.linearWorkspaceView === 'projects'
             || store.settings.linearWorkspaceView === 'tickets')
         ) {
           consume()
