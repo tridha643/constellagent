@@ -22,7 +22,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@ff-labs/fff-node": "^0.5.2",
+    "@ff-labs/fff-node": "^0.6.4",
     "@hugeicons/core-free-icons": "^4.1.1",
     "@hugeicons/react": "^1.1.6",
     "@libsql/client": "^0.17.2",
