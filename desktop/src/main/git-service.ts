@@ -1,4 +1,4 @@
-import { execFile } from 'child_process'
+import { execFile, spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { lstat, readFile, readlink, readdir, realpath, rm, writeFile } from 'fs/promises'
 import { homedir, tmpdir } from 'os'
@@ -33,11 +33,63 @@ export interface PrWorktreeResult {
 }
 
 async function git(args: string[], cwd: string): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, {
-    cwd,
-    maxBuffer: 10 * 1024 * 1024,
+  return spawnAndCapture('git', args, cwd, 10 * 1024 * 1024)
+}
+
+function spawnAndCapture(command: string, args: string[], cwd: string, maxBuffer: number): Promise<string> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    // Keep stdin closed explicitly. Electron dev can surface EBADF from execFile's
+    // implicit stdio setup before git starts, which breaks status/worktree IPC.
+    const child = spawn(command, args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+
+    let stdout = ''
+    let stderr = ''
+    let bufferedBytes = 0
+    let settled = false
+
+    const reject = (
+      err: Error & { stdout?: string; stderr?: string; code?: string | number | null; signal?: NodeJS.Signals | null },
+    ) => {
+      if (settled) return
+      settled = true
+      err.stdout = stdout
+      err.stderr = stderr
+      rejectPromise(err)
+    }
+
+    const collect = (stream: 'stdout' | 'stderr', chunk: Buffer) => {
+      bufferedBytes += chunk.byteLength
+      if (bufferedBytes > maxBuffer) {
+        child.kill()
+        reject(
+          Object.assign(new Error(`${command} output exceeded ${maxBuffer} bytes`), {
+            code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+          }),
+        )
+        return
+      }
+      if (stream === 'stdout') stdout += chunk.toString('utf8')
+      else stderr += chunk.toString('utf8')
+    }
+
+    child.stdout?.on('data', (chunk: Buffer) => collect('stdout', chunk))
+    child.stderr?.on('data', (chunk: Buffer) => collect('stderr', chunk))
+    child.on('error', (err) => reject(err))
+    child.on('close', (code, signal) => {
+      if (settled) return
+      if (code === 0) {
+        settled = true
+        resolvePromise(stdout.trimEnd())
+        return
+      }
+
+      reject(Object.assign(new Error(`${command} exited with code ${code ?? signal}`), { code, signal }))
+    })
   })
-  return stdout.trimEnd()
 }
 
 function buildSyntheticSymlinkPatch(filePath: string, target: string): string {
@@ -1109,11 +1161,13 @@ export class GitService {
     const hasOrigin = await this.hasRemote(repoPath, 'origin')
     if (!hasOrigin) return null
     try {
-      const { stdout } = await execFileAsync('git', ['ls-remote', 'origin', 'HEAD'], {
-        cwd: repoPath,
-        maxBuffer: 1024 * 1024,
-      })
-      const line = stdout.trim().split('\n')[0]
+      const output = await spawnAndCapture(
+        'git',
+        ['ls-remote', 'origin', 'HEAD'],
+        repoPath,
+        1024 * 1024,
+      )
+      const line = output.trim().split('\n')[0]
       if (!line) return null
       const hash = line.split('\t')[0]?.trim()
       return hash || null
