@@ -64,6 +64,11 @@ function quickOpenScoreTotal(score: { total?: number } | undefined): number {
   return score?.total ?? 0
 }
 
+function resolveFffAbsolutePath(basePath: string, relativePath: string): string {
+  const normalizedRelativePath = toPosixPath(relativePath)
+  return normalizedRelativePath ? join(basePath, normalizedRelativePath) : basePath
+}
+
 type FffNodeModule = typeof import('@ff-labs/fff-node')
 let fffNodeModulePromise: Promise<FffNodeModule> | null = null
 
@@ -551,7 +556,6 @@ export class FileService {
   }
 
   private static toCodeSearchItem(match: {
-    path: string
     relativePath: string
     fileName: string
     gitStatus?: string
@@ -559,10 +563,10 @@ export class FileService {
     col: number
     lineContent: string
     matchRanges: [number, number][]
-  }): CodeSearchItem {
+  }, basePath: string): CodeSearchItem {
     const preview = buildCodeSearchPreview(match.lineContent, match.matchRanges)
     return {
-      path: match.path,
+      path: resolveFffAbsolutePath(basePath, match.relativePath),
       relativePath: toPosixPath(match.relativePath),
       fileName: match.fileName,
       gitStatus: match.gitStatus,
@@ -576,6 +580,7 @@ export class FileService {
 
   private static async runWorkspaceCodeSearchWithFff(
     finder: FileFinderType,
+    basePath: string,
     request: ReturnType<typeof prepareCodeSearchRequest>,
     scopeFiles: CodeSearchFallbackFile[],
   ): Promise<Omit<CodeSearchResult, 'state' | 'error' | 'candidateFileCount'>> {
@@ -610,7 +615,7 @@ export class FileService {
 
       for (const match of search.value.items) {
         if (!scopeRelativePaths.has(toPosixPath(match.relativePath))) continue
-        rawItems.push(this.toCodeSearchItem(match))
+        rawItems.push(this.toCodeSearchItem(match, basePath))
       }
 
       if (rawItems.length > request.limit) {
@@ -639,6 +644,7 @@ export class FileService {
 
   private static async runExplicitCodeSearchWithFff(
     finder: FileFinderType,
+    basePath: string,
     request: ReturnType<typeof prepareCodeSearchRequest>,
     scopeFiles: CodeSearchFallbackFile[],
     preferredPathOrder: string[],
@@ -670,7 +676,7 @@ export class FileService {
 
       searchedFileCount += search.value.totalFilesSearched
       regexFallbackError ??= search.value.regexFallbackError
-      rawItems.push(...search.value.items.map((match) => this.toCodeSearchItem(match)))
+      rawItems.push(...search.value.items.map((match) => this.toCodeSearchItem(match, basePath)))
     }
 
     const capped = sortAndCapCodeSearchItems(rawItems, {
@@ -861,8 +867,14 @@ export class FileService {
       }
 
       const result = scope.preferredPathOrder
-        ? await this.runExplicitCodeSearchWithFff(finder, preparedRequest, scope.files, scope.preferredPathOrder)
-        : await this.runWorkspaceCodeSearchWithFff(finder, preparedRequest, scope.files)
+        ? await this.runExplicitCodeSearchWithFff(
+            finder,
+            normalizedPath,
+            preparedRequest,
+            scope.files,
+            scope.preferredPathOrder,
+          )
+        : await this.runWorkspaceCodeSearchWithFff(finder, normalizedPath, preparedRequest, scope.files)
 
       const nextProgress = finder.getScanProgress()
       return {
@@ -1022,7 +1034,7 @@ export class FileService {
 
       const nextProgress = finder.getScanProgress()
       const items: QuickOpenSearchItem[] = search.value.items.slice(0, limit).map((item, index) => ({
-        path: item.path,
+        path: resolveFffAbsolutePath(normalizedPath, item.relativePath),
         relativePath: item.relativePath,
         fileName: item.fileName,
         gitStatus: item.gitStatus,
@@ -1339,7 +1351,7 @@ export class FileService {
         const builtItems = await Promise.all(search.value.items.map((item, index) => {
           const score = search.value.scores[index]
           return this.buildPlanSearchItem(
-            item.path,
+            resolveFffAbsolutePath(root.searchRoot, item.relativePath),
             root.agent,
             root.source,
             root.sourceRoot,

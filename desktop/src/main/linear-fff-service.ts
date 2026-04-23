@@ -48,6 +48,9 @@ export class LinearFffService {
       const result = FileFinder.create({
         basePath: indexRoot,
         aiMode: true,
+        disableWatch: true,
+        disableMmapCache: true,
+        disableContentIndexing: true,
       })
       if (!result.ok) {
         throw new Error(`Failed to initialize Linear fff index: ${result.error}`)
