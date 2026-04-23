@@ -53,6 +53,33 @@
   border-top: 5px solid var(--accent-red);
 }
 
+.diffScrollArea :global(.monaco-editor) {
+  --vscode-editor-background: var(--surface-1);
+  --vscode-editorGutter-background: var(--surface-1);
+}
+
+.diffScrollArea :global(.cga-full-file-added-line) {
+  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+}
+
+.diffScrollArea :global(.cga-full-file-deleted-line) {
+  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+}
+
+.diffScrollArea :global(.cga-full-file-added-gutter) {
+  margin-left: 3px;
+  width: 3px !important;
+  background: var(--accent-green-muted, var(--accent-green));
+  opacity: 0.9;
+}
+
+.diffScrollArea :global(.cga-full-file-deleted-gutter) {
+  margin-left: 3px;
+  width: 3px !important;
+  background: color-mix(in srgb, var(--accent-red) 82%, transparent);
+  opacity: 0.9;
+}
+
 /* Diff editor controls */
 .diffToolbar {
   display: flex;
@@ -208,14 +235,21 @@
   font-size: var(--text-xs);
   font-family: var(--font-ui);
   cursor: pointer;
+  box-shadow: 0 0 0 1px transparent;
   transition:
     color var(--motion-fast),
     background-color var(--motion-fast),
+    box-shadow var(--motion-fast),
     transform var(--duration-micro) var(--ease-press);
 }
 
 .diffToggleOption:active {
   transform: scale(0.97);
+}
+
+.diffToggleOption:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 45%, transparent);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -228,11 +262,15 @@
   background: color-mix(in srgb, var(--surface-3) 92%, transparent);
   color: var(--text-primary);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 55%, var(--panel-border));
-  transition:
-    color var(--duration-fast) var(--ease-out),
-    background-color var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out),
-    transform var(--duration-micro) var(--ease-press);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diffToggleOption {
+    transition: color var(--duration-fast) linear, background-color var(--duration-fast) linear, box-shadow var(--duration-fast) linear;
+  }
+  .diffToggleOption:active {
+    transform: none;
+  }
 }
 
 /* Unsaved indicator */
@@ -264,6 +302,98 @@
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+}
+
+.fullFileSplit {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.fullFileEditorHost {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.fullFileSplitPane {
+  flex: 0 0 50%;
+  min-width: 0;
+}
+
+/* Invisible-until-hover resize handle — matches the sidebar/HunkReview pattern.
+ * A wide (8px) transparent hit strip with a thin 2px grip that materializes on
+ * hover and switches to the accent color while dragging. The negative margins
+ * overlap the adjacent panes so the cursor snaps to `col-resize` over a
+ * generous area without reserving visible space between the editors. */
+.fullFileSplitHandle {
+  position: relative;
+  flex: 0 0 8px;
+  width: 8px;
+  margin: 0 -3px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  z-index: 2;
+  transition: transform var(--duration-fast) var(--ease-press);
+}
+
+.fullFileSplitHandle:focus-visible {
+  outline: none;
+}
+
+.fullFileSplitGrip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 56px;
+  max-height: 55%;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--text-primary) 18%, transparent);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition:
+    background-color var(--duration-default) var(--ease-out),
+    opacity var(--duration-default) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .fullFileSplit:hover .fullFileSplitGrip {
+    opacity: 0.45;
+  }
+  .fullFileSplitHandle:hover .fullFileSplitGrip {
+    background: var(--accent-blue);
+    opacity: 0.9;
+  }
+}
+
+.fullFileSplitHandle:focus-visible .fullFileSplitGrip {
+  background: var(--accent-blue);
+  opacity: 0.9;
+}
+
+.fullFileSplitHandleActive .fullFileSplitGrip,
+.fullFileSplitHandle:active .fullFileSplitGrip {
+  background: var(--accent-blue);
+  opacity: 1;
+}
+
+.fullFileSplitResizing {
+  cursor: col-resize;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fullFileSplitHandle { transition: none; }
+  .fullFileSplitGrip { transition: background-color var(--duration-fast) linear, opacity var(--duration-fast) linear; }
 }
 
 /* File strip — horizontal file nav */
@@ -596,4 +726,149 @@
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: var(--font-mono);
+}
+
+/* ──────────────────────────────────────────────────────────────
+ * Full-file diff tab (VS Code-style) — scoped enhancements.
+ * Wraps `.diffViewerContainer` with `.fullFileDiffSurface` so the
+ * shared commit diff viewer is untouched.
+ * ────────────────────────────────────────────────────────────── */
+
+.fullFileDiffSurface {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity var(--duration-slow) var(--ease-out),
+    transform var(--duration-slow) var(--ease-out);
+}
+
+@starting-style {
+  .fullFileDiffSurface {
+    opacity: 0;
+    transform: translateY(4px) scale(0.995);
+  }
+}
+
+.fullFileDiffHeaderPath {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.fullFileDiffPathDir {
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.fullFileDiffPathName {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.fullFileDiffRef {
+  color: var(--text-ghost);
+  flex-shrink: 0;
+}
+
+.fullFileDiffRef::before {
+  content: '·';
+  margin: 0 var(--space-2);
+  color: var(--text-ghost);
+}
+
+/* Status pill — matches the color language used in the Changes panel:
+ * modified → orange, added/untracked → green, deleted → red, renamed → cyan. */
+.fullFileStatusPill {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  font-family: var(--font-ui);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  line-height: 1;
+  border: 1px solid transparent;
+}
+
+.fullFileStatusPill.modified {
+  color: var(--accent-orange);
+  background: color-mix(in srgb, var(--accent-orange) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-orange) 22%, transparent);
+}
+
+.fullFileStatusPill.added,
+.fullFileStatusPill.untracked {
+  color: var(--accent-green);
+  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-green) 22%, transparent);
+}
+
+.fullFileStatusPill.deleted {
+  color: var(--accent-red);
+  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-red) 22%, transparent);
+}
+
+.fullFileStatusPill.renamed {
+  color: var(--accent-cyan, var(--accent-blue));
+  background: color-mix(in srgb, var(--accent-cyan, var(--accent-blue)) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-cyan, var(--accent-blue)) 22%, transparent);
+}
+
+/* Empty / loading / unsupported state inside the full-file diff tab.
+ * Soft fade-in bridges the gap between content swaps (loading → diff,
+ * modified → pure-add, etc). */
+.fullFileDiffSurface .diffEmpty {
+  opacity: 1;
+  transition: opacity var(--duration-default) var(--ease-out);
+}
+
+@starting-style {
+  .fullFileDiffSurface .diffEmpty {
+    opacity: 0;
+  }
+}
+
+/* Loading indicator: subtle pulsing dot — no heavy spinner. */
+.fullFileDiffLoading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-tertiary);
+}
+
+.fullFileDiffLoadingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  animation: fullFileDiffPulse 1.2s var(--ease-in-out) infinite;
+}
+
+@keyframes fullFileDiffPulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fullFileDiffSurface {
+    transition: opacity var(--duration-fast) linear;
+    transform: none;
+  }
+  .fullFileDiffLoadingDot {
+    animation: none;
+    opacity: 0.7;
+  }
+  .fullFileDiffSurface .diffEmpty {
+    transition: opacity var(--duration-fast) linear;
+  }
 }

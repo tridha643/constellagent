@@ -8,6 +8,7 @@ import { TabBar } from './components/TabBar/TabBar'
 import { FileTabSplitContainer, TerminalSplitContainer } from './components/Terminal/TerminalSplitContainer'
 import { FileEditor } from './components/Editor/FileEditor'
 import { DiffViewer } from './components/Editor/DiffEditor'
+import { FullFileDiffEditor } from './components/Editor/FullFileDiffEditor'
 import { MarkdownPreview } from './components/MarkdownPreview/MarkdownPreview'
 import { T3CodeView } from './components/T3CodeView/T3CodeView'
 import { PiThreadPanel } from './components/PiThread/PiThreadPanel'
@@ -361,6 +362,17 @@ export function App() {
                           active={true}
                           commitHash={activeTab.commitHash}
                           commitMessage={activeTab.commitMessage}
+                        />
+                      )}
+
+                      {/* Render full-file (VS Code-style) diff viewer */}
+                      {activeTab?.type === 'fileDiff' && workspace && (
+                        <FullFileDiffEditor
+                          key={activeTab.id}
+                          filePath={activeTab.filePath}
+                          worktreePath={workspace.worktreePath}
+                          status={activeTab.status}
+                          originalRef={activeTab.originalRef}
                         />
                       )}
 

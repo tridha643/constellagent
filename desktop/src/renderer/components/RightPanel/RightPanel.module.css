@@ -493,12 +493,29 @@
   font-size: 14px;
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: color var(--motion-fast), background-color var(--motion-fast), transform 100ms var(--ease-out);
+  transition:
+    color var(--motion-fast),
+    background-color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
 .fileActionBtn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.fileActionBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 45%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fileActionBtn {
+    transition: color var(--duration-fast) linear, background-color var(--duration-fast) linear;
+  }
+  .fileActionBtn:active {
+    transform: none;
+  }
 }
 
 /* ── Empty States ── */

@@ -412,6 +412,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   confirmDialog: null,
   toasts: [],
   quickOpenVisible: false,
+  editorFindContext: null,
+  quickOpenInitialQuery: null,
   linearQuickOpenVisible: false,
   changesFileFind: null,
   planPaletteVisible: false,
@@ -1083,14 +1085,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     }, 1200)
   },
 
-  openFileTab: (filePath) => {
+  openFileTab: (filePath, opts) => {
     const s = get()
     if (!s.activeWorkspaceId) return
+    const initialPosition = opts?.initialPosition
     const existing = s.tabs.find(
       (t) => t.workspaceId === s.activeWorkspaceId && t.type === 'file' && t.filePath === filePath
     )
     if (existing) {
-      set({ activeTabId: existing.id })
+      if (initialPosition) {
+        set({
+          activeTabId: existing.id,
+          tabs: s.tabs.map((t) =>
+            t.id === existing.id && t.type === 'file' ? { ...t, initialPosition } : t
+          ),
+        })
+      } else {
+        set({ activeTabId: existing.id })
+      }
       return
     }
     get().addTab({
@@ -1098,7 +1110,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       workspaceId: s.activeWorkspaceId,
       type: 'file',
       filePath,
+      ...(initialPosition ? { initialPosition } : {}),
     })
+  },
+
+  clearFileTabInitialPosition: (tabId) => {
+    set((state) => ({
+      tabs: state.tabs.map((t) => {
+        if (t.id !== tabId || t.type !== 'file' || !t.initialPosition) return t
+        const { initialPosition: _drop, ...rest } = t
+        return rest
+      }),
+    }))
   },
 
   openMarkdownPreview: (filePath) => {
@@ -1118,6 +1141,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       type: 'markdownPreview',
       filePath,
       title,
+    })
+  },
+
+  openFullFileDiffTab: (filePath, opts) => {
+    const s = get()
+    if (!s.activeWorkspaceId) return
+    const originalRef = opts?.originalRef ?? 'HEAD'
+    const existing = s.tabs.find(
+      (t) =>
+        t.workspaceId === s.activeWorkspaceId &&
+        t.type === 'fileDiff' &&
+        t.filePath === filePath &&
+        (t.originalRef ?? 'HEAD') === originalRef
+    )
+    if (existing) {
+      set({ activeTabId: existing.id })
+      return
+    }
+    get().addTab({
+      id: crypto.randomUUID(),
+      workspaceId: s.activeWorkspaceId,
+      type: 'fileDiff',
+      filePath,
+      ...(opts?.status ? { status: opts.status } : {}),
+      ...(opts?.originalRef ? { originalRef: opts.originalRef } : {}),
     })
   },
 
@@ -1831,15 +1879,33 @@ export const useAppStore = create<AppState>((set, get) => ({
       quickOpenVisible: nextVisible,
       planPaletteVisible: false,
       changesFileFind: nextVisible ? null : s.changesFileFind,
+      // Plain toggle never enters editor-find mode; clear on both sides so a
+      // palette that was opened from the editor can be re-toggled into normal
+      // worktree mode, and so a re-open doesn't re-seed stale editor state.
+      editorFindContext: null,
+      quickOpenInitialQuery: null,
     }
   }),
-  closeQuickOpen: () => set({ quickOpenVisible: false }),
+  closeQuickOpen: () => set({
+    quickOpenVisible: false,
+    editorFindContext: null,
+    quickOpenInitialQuery: null,
+  }),
+  openQuickOpenFromEditor: ({ filePath, initialQuery }) => set({
+    quickOpenVisible: true,
+    editorFindContext: { filePath },
+    quickOpenInitialQuery: initialQuery && initialQuery.length > 0 ? initialQuery : null,
+    planPaletteVisible: false,
+    changesFileFind: null,
+  }),
   openLinearQuickOpen: () =>
     set((s) => {
       if (!s.linearPanelOpen) return s
       return {
         linearQuickOpenVisible: true,
         quickOpenVisible: false,
+        editorFindContext: null,
+        quickOpenInitialQuery: null,
         changesFileFind: null,
         planPaletteVisible: false,
         settings: { ...s.settings, linearWorkspaceToolbarTool: 'search' as const },
@@ -1849,12 +1915,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   openChangesFileFind: (payload) => set({
     changesFileFind: payload,
     quickOpenVisible: false,
+    editorFindContext: null,
+    quickOpenInitialQuery: null,
     planPaletteVisible: false,
   }),
   closeChangesFileFind: () => set({ changesFileFind: null }),
   togglePlanPalette: () => set((s) => ({
     planPaletteVisible: !s.planPaletteVisible,
     quickOpenVisible: false,
+    editorFindContext: null,
+    quickOpenInitialQuery: null,
     changesFileFind: null,
   })),
   closePlanPalette: () => set({ planPaletteVisible: false }),
@@ -1879,6 +1949,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       hunkReviewOpen: true,
       hunkReviewWorkspaceId: ws.id,
       quickOpenVisible: false,
+      editorFindContext: null,
+      quickOpenInitialQuery: null,
       planPaletteVisible: false,
       changesFileFind: null,
     })

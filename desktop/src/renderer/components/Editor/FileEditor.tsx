@@ -93,6 +93,11 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   const setTabUnsaved = useAppStore((s) => s.setTabUnsaved)
   const setTabDeleted = useAppStore((s) => s.setTabDeleted)
   const notifyTabSaved = useAppStore((s) => s.notifyTabSaved)
+  const clearFileTabInitialPosition = useAppStore((s) => s.clearFileTabInitialPosition)
+  const initialPosition = useAppStore((s) => {
+    const tab = s.tabs.find((t) => t.id === tabId)
+    return tab?.type === 'file' ? tab.initialPosition : undefined
+  })
   const addToast = useAppStore((s) => s.addToast)
   const setActiveMonacoEditor = useAppStore((s) => s.setActiveMonacoEditor)
   const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
@@ -443,6 +448,25 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
     })
   }, [editorInstance, effectiveLanguage])
 
+  // Reveal requested line/column once Monaco is mounted and the file content is loaded
+  // (e.g. when Quick Open's code search opens a match). Clear the ephemeral hint after
+  // consuming it so subsequent re-renders don't re-jump.
+  useEffect(() => {
+    if (!initialPosition) return
+    const ed = editorInstance
+    if (!ed || content === null) return
+    const { lineNumber, column } = initialPosition
+    try {
+      ed.revealLineInCenter(lineNumber)
+      ed.setPosition({ lineNumber, column })
+      ed.focus()
+    } catch {
+      /* model may not be ready yet; next render will retry */
+      return
+    }
+    clearFileTabInitialPosition(tabId)
+  }, [editorInstance, content, initialPosition, tabId, clearFileTabInitialPosition])
+
   useEffect(() => () => {
     closeLspSession()
     findShortcutDisposeRef.current?.()
@@ -459,15 +483,16 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   }, [languageOverrideKey, editorLanguageOverrides, updateSettings])
 
   // Cmd+S + Cmd+L fallback (2048 = CtrlCmd). Primary ⌘L path: useShortcuts capture + monaco bridge.
+  // Cmd+F is routed to QuickOpen (editor-find mode) inside registerMonacoFileEditorForShortcuts.
   const handleEditorMount = useCallback((ed: editor.IStandaloneCodeEditor) => {
     editorRef.current = ed
     findShortcutDisposeRef.current?.()
-    findShortcutDisposeRef.current = registerMonacoFileEditorForShortcuts(ed)
+    findShortcutDisposeRef.current = registerMonacoFileEditorForShortcuts(ed, filePath)
     setEditorInstance(ed)
     setActiveMonacoEditor(ed)
     ed.addCommand(2048 | 49, () => handleSave())
     ed.addCommand(2048 | 42, () => runAddToChatRef.current())
-  }, [handleSave, setActiveMonacoEditor])
+  }, [handleSave, setActiveMonacoEditor, filePath])
 
   useEffect(() => {
     const ed = editorInstance

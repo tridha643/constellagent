@@ -8,7 +8,7 @@ import type { WorktreeCredentialRule } from '../../shared/worktree-credentials'
 import type { GraphiteStackInfo } from '../../shared/graphite-types'
 import type { AppearanceThemeId } from '../theme/appearance'
 import type { EditorLanguageOverride } from '../utils/language-map'
-import type { GitStatusSnapshot, WorkingTreeDiffSnapshot } from '../types/working-tree-diff'
+import type { GitStatusSnapshot, WorkingTreeDiffSnapshot, WorkingTreeFileStatus } from '../types/working-tree-diff'
 import { getDefaultWorktreeCredentialRules } from '../../shared/worktree-credentials'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
@@ -94,8 +94,9 @@ export type Tab = {
   workspaceId: string
 } & (
   | { type: 'terminal'; title: string; ptyId: string; agentType?: AgentType; splitRoot?: SplitNode; focusedPaneId?: string }
-  | { type: 'file'; filePath: string; unsaved?: boolean; deleted?: boolean; splitRoot?: SplitNode; focusedPaneId?: string }
+  | { type: 'file'; filePath: string; unsaved?: boolean; deleted?: boolean; splitRoot?: SplitNode; focusedPaneId?: string; initialPosition?: { lineNumber: number; column: number } }
   | { type: 'diff'; commitHash?: string; commitMessage?: string }
+  | { type: 'fileDiff'; filePath: string; status?: WorkingTreeFileStatus['status']; originalRef?: string }
   | { type: 'markdownPreview'; filePath: string; title: string }
   | { type: 't3code'; title: string; serverUrl: string }
   | { type: 'pi-thread'; title: string; piSessionId?: string; piSessionTitle?: string }
@@ -418,6 +419,8 @@ export interface Settings {
   skills: SkillEntry[]
   subagents: SubagentEntry[]
   t3CodeCollapseSidePanels: boolean
+  /** When true, the Cmd+F Quick Open palette also greps file contents via fff and shows code matches alongside file-name matches. */
+  quickOpenCodeSearchEnabled: boolean
   /** Linear Personal API key (Settings only; persisted in app state JSON). */
   linearApiKey: string
   /** Ordered projects shown in the Linear panel updates bar. */
@@ -476,6 +479,7 @@ export const DEFAULT_SETTINGS: Settings = {
   skills: [],
   subagents: [],
   t3CodeCollapseSidePanels: false,
+  quickOpenCodeSearchEnabled: false,
   linearApiKey: '',
   linearProjectUpdateBar: [],
   linearFavoriteProjectIds: [],
@@ -543,6 +547,19 @@ export interface AppState {
   confirmDialog: ConfirmDialogState | null
   toasts: Toast[]
   quickOpenVisible: boolean
+  /**
+   * Set when Cmd+F was pressed from inside a focused Monaco file editor. When
+   * present, QuickOpen pins its code search scope to this file (fff activeFile
+   * scope) regardless of the settings.quickOpenCodeSearchEnabled toggle. Null
+   * for the default worktree-wide entry.
+   */
+  editorFindContext: { filePath: string } | null
+  /**
+   * One-shot initial query consumed by QuickOpen on mount. Set by
+   * openQuickOpenFromEditor so the editor's current selection seeds the input.
+   * Cleared on palette close.
+   */
+  quickOpenInitialQuery: string | null
   /** Linear fuzzy jump-to-issue/project dialog (⌘F when Linear panel is open). */
   linearQuickOpenVisible: boolean
   /** Fuzzy find over changed files (diff tab or Changes right panel). */
@@ -620,7 +637,9 @@ export interface AppState {
   closeActiveTab: () => void
   setTabUnsaved: (tabId: string, unsaved: boolean) => void
   notifyTabSaved: (tabId: string) => void
-  openFileTab: (filePath: string) => void
+  openFileTab: (filePath: string, opts?: { initialPosition?: { lineNumber: number; column: number } }) => void
+  /** Clear the ephemeral initialPosition on a file tab once Monaco has consumed it. */
+  clearFileTabInitialPosition: (tabId: string) => void
   openMarkdownPreview: (filePath: string) => void
   /**
    * Update every open surface that references an agent plan file (markdown preview tab, file tab,
@@ -634,6 +653,8 @@ export interface AppState {
   openT3CodeTab: (workspaceId: string) => Promise<void>
   openDiffTab: (workspaceId: string) => void
   openCommitDiffTab: (workspaceId: string, hash: string, message: string) => void
+  /** Open a VS Code-style full-file diff tab for a single file (HEAD vs working tree). */
+  openFullFileDiffTab: (filePath: string, opts?: { status?: WorkingTreeFileStatus['status']; originalRef?: string }) => void
   nextWorkspace: () => void
   prevWorkspace: () => void
   /** Next workspace in sidebar order within the active project only. */
@@ -673,6 +694,11 @@ export interface AppState {
   dismissToast: (id: string) => void
   toggleQuickOpen: () => void
   closeQuickOpen: () => void
+  /**
+   * Open QuickOpen in editor-find mode. Pins codeSearch scope to `filePath`
+   * (active file only, fff disk-based) and seeds the query with `initialQuery`.
+   */
+  openQuickOpenFromEditor: (payload: { filePath: string; initialQuery?: string }) => void
   /** Open Linear fuzzy search dialog; no-op if Linear panel is closed. */
   openLinearQuickOpen: () => void
   closeLinearQuickOpen: () => void
