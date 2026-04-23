@@ -66,6 +66,7 @@ const TAB_ICONS: Record<Tab['type'], { icon: string; className: string }> = {
   terminal: { icon: '⌘', className: styles.terminal },
   file: { icon: '◇', className: styles.file },
   diff: { icon: '±', className: styles.diff },
+  fileDiff: { icon: '⇄', className: styles.diff },
   markdownPreview: { icon: '◈', className: styles.file },
   t3code: { icon: '⚡', className: styles.terminal },
   'pi-thread': { icon: 'π', className: styles.terminal },
@@ -76,6 +77,10 @@ function getTabTitle(tab: Tab): string {
   if (tab.type === 'diff') {
     if (tab.commitHash) return `${tab.commitHash.slice(0, 7)} ${tab.commitMessage || ''}`
     return 'Changes'
+  }
+  if (tab.type === 'fileDiff') {
+    const name = tab.filePath.split('/').pop() || tab.filePath
+    return name
   }
   if (tab.type === 'markdownPreview') return tab.title
   if (tab.type === 't3code') return tab.title

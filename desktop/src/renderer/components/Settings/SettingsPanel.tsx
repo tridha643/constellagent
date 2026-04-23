@@ -1178,6 +1178,13 @@ export function SettingsPanel() {
             onChange={(v) => update('t3CodeCollapseSidePanels', v)}
           />
 
+          <ToggleRow
+            label="Search code in Quick Open (Cmd+F)"
+            description="Uses fff to grep file contents alongside file-name matches. Results are labeled file or code."
+            value={settings.quickOpenCodeSearchEnabled}
+            onChange={(v) => update('quickOpenCodeSearchEnabled', v)}
+          />
+
           <TextRow
             label="Default shell"
             description="Path to shell executable (leave empty for system default)"

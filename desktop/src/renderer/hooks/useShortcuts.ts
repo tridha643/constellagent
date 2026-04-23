@@ -20,7 +20,7 @@ import { wrapBracketedPaste } from '../utils/bracketed-paste'
 import {
   getFocusedMonacoEditor,
   runMonacoAddToChatIfFocused,
-  runMonacoFindIfFocused,
+  openQuickOpenFromFocusedEditor,
 } from '../utils/add-to-chat-monaco-bridge'
 import {
   cancelChangesFileFindSelection,
@@ -253,7 +253,11 @@ export function useShortcuts() {
         // When the file tab has splits (e.g. file ⟷ terminal), require real Monaco focus so ⌘F from the terminal opens Quick Open.
         const allowUnfocusedMonacoFind =
           activeTab?.type === 'file' && !activeTab.splitRoot
-        if (runMonacoFindIfFocused(allowUnfocusedMonacoFind)) {
+        // Fallback when Monaco's per-editor addCommand didn't intercept
+        // (widget focus or unfocused-allowance case). The fallback also routes
+        // to QuickOpen with the active file pinned — we never open Monaco's
+        // native inline find widget from this path.
+        if (openQuickOpenFromFocusedEditor(allowUnfocusedMonacoFind)) {
           consume()
           return
         }

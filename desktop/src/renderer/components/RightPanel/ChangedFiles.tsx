@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { Columns2 } from 'lucide-react'
 import { useAppStore } from '../../store/app-store'
 import { STATUS_LABELS } from '../../../shared/status-labels'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
@@ -45,6 +46,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const commitInputRef = useRef<HTMLTextAreaElement | null>(null)
   const commitFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const openDiffTab = useAppStore((s) => s.openDiffTab)
+  const openFullFileDiffTab = useAppStore((s) => s.openFullFileDiffTab)
   const setGitFileStatuses = useAppStore((s) => s.setGitFileStatuses)
   const updateGitStatusSnapshot = useAppStore((s) => s.updateGitStatusSnapshot)
   const addToast = useAppStore((s) => s.addToast)
@@ -478,6 +480,10 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     })
   }, [openDiffTab, workspaceId])
 
+  const openFullDiff = useCallback((file: FileStatus) => {
+    openFullFileDiffTab(file.path, { status: file.status })
+  }, [openFullFileDiffTab])
+
   useEffect(() => {
     if (!isActive) return
     return registerChangesFindSource('changes-panel', () => {
@@ -619,6 +625,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
               actionLabel="−"
               actionTitle="Unstage"
               onOpenDiff={openDiff}
+              onOpenFullDiff={openFullDiff}
             />
           ))}
         </div>
@@ -670,6 +677,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
               actionTitle="Stage"
               onDiscard={() => discardFiles(file)}
               onOpenDiff={openDiff}
+              onOpenFullDiff={openFullDiff}
             />
           ))}
         </div>
@@ -693,6 +701,7 @@ function FileRow({
   actionTitle,
   onDiscard,
   onOpenDiff,
+  onOpenFullDiff,
 }: {
   file: FileStatus
   busy: boolean
@@ -701,6 +710,7 @@ function FileRow({
   actionTitle: string
   onDiscard?: () => void
   onOpenDiff: (path: string) => void
+  onOpenFullDiff: (file: FileStatus) => void
 }) {
   const parts = file.path.split('/')
   const fileName = parts.pop()
@@ -719,6 +729,16 @@ function FileRow({
         {fileName}
       </span>
       <span className={styles.fileActions}>
+        <Tooltip label="Open side-by-side diff">
+          <button
+            className={styles.fileActionBtn}
+            disabled={busy}
+            onClick={(e) => { e.stopPropagation(); onOpenFullDiff(file) }}
+            aria-label="Open side-by-side diff"
+          >
+            <Columns2 size={12} />
+          </button>
+        </Tooltip>
         {onDiscard && (
           <Tooltip label="Discard Changes">
             <button

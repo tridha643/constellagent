@@ -105,6 +105,20 @@
   .input {
     transition: none;
   }
+
+  .resultItem,
+  .resultKind,
+  .resultLine,
+  .resultPreview,
+  .footer {
+    transition: none;
+  }
+
+  .footer {
+    @starting-style {
+      opacity: 1;
+    }
+  }
 }
 
 .results {
@@ -128,6 +142,12 @@
     color var(--motion-fast);
 }
 
+/* Code rows render two lines (path + preview); align kind pill to the top so
+   it hugs the headline rather than floating mid-row. */
+.resultItemCode {
+  align-items: flex-start;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .resultItem:hover {
     background: color-mix(in srgb, var(--text-primary) 4%, transparent);
@@ -147,6 +167,85 @@
   opacity: 0.5;
 }
 
+/* Kind pill — matches the hairline-pill preset established by PlanPalette's
+   `.builtPill` / `.chip`: font-ui, sentence-case, 10px, transparent fill,
+   1px border, fully rounded. Accent variants tint border + text only (see
+   `.builtYes`) rather than using a filled background, so the pill reads as
+   UI metadata instead of a loud tag. */
+.resultKind {
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full, 999px);
+  border: 1px solid var(--panel-border);
+  color: var(--text-tertiary);
+  background: transparent;
+  white-space: nowrap;
+  line-height: 1.5;
+  /* Match the row's own 90ms color/bg transition so the pill reads as part
+     of the selection rather than a floating badge. */
+  transition:
+    border-color var(--motion-fast),
+    color var(--motion-fast);
+}
+
+.resultKindFile {
+  /* Neutral pill for file-name hits — inherits base .resultKind. */
+}
+
+.resultKindCode {
+  border-color: color-mix(in srgb, var(--accent-blue) 45%, var(--panel-border));
+  color: color-mix(in srgb, var(--accent-blue) 85%, var(--text-primary));
+}
+
+/* On the selected row the whole row bg goes to accent-blue-glow; tint the
+   pill border/text a notch warmer so it stays readable without becoming a
+   separate focal point. */
+.resultItem.selected .resultKindFile {
+  border-color: color-mix(in srgb, var(--text-primary) 18%, var(--panel-border));
+  color: var(--text-secondary);
+}
+
+.resultItem.selected .resultKindCode {
+  border-color: color-mix(in srgb, var(--accent-blue) 65%, var(--panel-border));
+  color: color-mix(in srgb, var(--accent-blue) 95%, var(--text-primary));
+}
+
+.resultMeta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.resultHeadline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Line-number meta: matches PlanPalette's `.meta` convention — pushed to the
+   right edge of the headline via `margin-left: auto`, font-ui at 11px, ghost
+   color. Stays in sync with the row's selected transition. */
+.resultLine {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: var(--space-3);
+  color: var(--text-ghost);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  transition: color var(--motion-fast);
+}
+
+.resultItem.selected .resultLine {
+  color: var(--text-tertiary);
+}
+
 .resultPath {
   flex: 1;
   overflow: hidden;
@@ -162,6 +261,21 @@
   color: var(--text-primary);
 }
 
+.resultPreview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs, 12px);
+  color: var(--text-tertiary);
+  /* Without this, the child rule below snaps on selection while the parent row
+     transitions in 90ms — breaks the "all in sync" feel. */
+  transition: color var(--motion-fast);
+}
+
+.resultItem.selected .resultPreview {
+  color: var(--text-secondary);
+}
+
 .matchChar {
   color: var(--accent-blue);
   font-weight: var(--weight-semibold);
@@ -173,4 +287,22 @@
   color: var(--text-tertiary);
   font-size: var(--text-sm);
   font-family: var(--font-ui);
+}
+
+.footer {
+  flex-shrink: 0;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--panel-border-inner);
+  font-size: var(--text-xs, 11px);
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  opacity: 1;
+  /* Footer only surfaces for rare indexing/error states. No movement, just a
+     60ms opacity fade so the border-top doesn't hard-pop. Per Emil:
+     @starting-style > data-mounted useEffect pattern when browser supports it. */
+  transition: opacity var(--motion-micro);
+
+  @starting-style {
+    opacity: 0;
+  }
 }
