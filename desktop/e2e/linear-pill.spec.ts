@@ -13,7 +13,7 @@ async function launchApp(): Promise<{ app: ElectronApplication; window: Page }> 
 }
 
 test.describe('Linear workspace pill', () => {
-  test('shows three tabs and tab order setting updates DOM order', async () => {
+  test('shows four tabs and tab order setting updates DOM order', async () => {
     const { app, window } = await launchApp()
     try {
       await window.evaluate(() => {
@@ -27,7 +27,7 @@ test.describe('Linear workspace pill', () => {
       await expect(window.getByTestId('linear-workspace-panel')).toBeVisible({ timeout: 5000 })
 
       const pill = window.getByTestId('linear-workspace-view-pill')
-      await expect(pill.getByRole('tab')).toHaveCount(3)
+      await expect(pill.getByRole('tab')).toHaveCount(4)
 
       await window.evaluate(() => {
         const store = (
@@ -38,7 +38,7 @@ test.describe('Linear workspace pill', () => {
           }
         ).__store.getState()
         store.updateSettings({
-          linearWorkspaceTabOrder: ['updates', 'tickets', 'issues'],
+          linearWorkspaceTabOrder: ['updates', 'tickets', 'projects', 'issues'],
         })
       })
 
@@ -51,7 +51,7 @@ test.describe('Linear workspace pill', () => {
           }
         ).__store.getState().settings.linearWorkspaceTabOrder
       })
-      expect(orderFromStore).toEqual(['updates', 'tickets', 'issues'])
+      expect(orderFromStore).toEqual(['updates', 'tickets', 'projects', 'issues'])
     } finally {
       await app.close()
     }

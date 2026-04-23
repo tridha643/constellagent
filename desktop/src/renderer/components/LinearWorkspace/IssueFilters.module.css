@@ -1,0 +1,334 @@
+.root {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 2px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+/* Scope segmented pill (Assigned / Created) — shares the floating-card palette */
+.segment {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  border: 1px solid var(--panel-border-inner, var(--border-subtle));
+  flex-shrink: 0;
+}
+
+.segBtn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  height: 24px;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out);
+}
+
+.segBtn[data-active='true'] {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 12%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .segBtn:hover:not([data-active='true']) {
+    color: var(--text-primary);
+  }
+}
+
+/* Text search — standard floating-card focus ring */
+.searchWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  border: 1px solid var(--panel-border-inner, var(--border-subtle));
+  min-width: 200px;
+  max-width: 260px;
+  flex: 1 1 200px;
+  transition: border-color 120ms var(--ease-out);
+}
+
+.searchWrap:focus-within {
+  border-color: color-mix(in srgb, var(--text-primary) 18%, var(--panel-border-inner, var(--border-subtle)));
+}
+
+.searchIcon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text-primary);
+  outline: none;
+  outline-offset: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+.searchInput:focus,
+.searchInput:focus-visible {
+  outline: none;
+  outline-offset: 0;
+  box-shadow: none;
+}
+
+.searchInput::placeholder {
+  color: var(--text-tertiary);
+}
+
+.searchClear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: none;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .searchClear:hover {
+    background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+    color: var(--text-primary);
+  }
+}
+
+/* Chips (Priority / State / Team) */
+.chipGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.chipMenu {
+  position: relative;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border-inner, var(--border-subtle));
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out),
+    border-color 140ms var(--ease-out);
+}
+
+.chip[data-active='true'] {
+  background: color-mix(in srgb, var(--accent-blue) 14%, var(--surface-2));
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent-blue) 40%, var(--panel-border-inner));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chip:hover {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  }
+
+  .chip[data-active='true']:hover {
+    background: color-mix(in srgb, var(--accent-blue) 22%, var(--surface-2));
+  }
+}
+
+.chipLabel {
+  white-space: nowrap;
+}
+
+.chipCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-blue) 28%, transparent);
+  color: var(--text-primary);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chipChevron {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.chipList {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 160px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--panel-border, var(--border-default));
+  background: var(--surface-2);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.chipItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: calc(var(--radius-md) - 2px);
+  cursor: pointer;
+  text-align: left;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chipItem:hover {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+    color: var(--text-primary);
+  }
+}
+
+.chipItemCheck {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--panel-border-inner, var(--border-subtle));
+  background: transparent;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.chipItemCheck[data-checked='true'] {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+.chipItemCheck[data-checked='true']::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  width: 4px;
+  height: 7px;
+  border: solid var(--surface-0);
+  border-width: 0 1.4px 1.4px 0;
+  transform: rotate(45deg);
+}
+
+.chipItemLabel {
+  flex: 1;
+}
+
+.trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.clearLink {
+  border: none;
+  background: transparent;
+  color: var(--accent-blue);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .clearLink:hover {
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+  }
+}
+
+.densityToggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  border: 1px solid var(--panel-border-inner, var(--border-subtle));
+}
+
+.densityBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out);
+}
+
+.densityBtn[data-active='true'] {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 10%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .densityBtn:hover:not([data-active='true']) {
+    color: var(--text-primary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segBtn,
+  .chip,
+  .chipItem,
+  .clearLink,
+  .densityBtn,
+  .searchClear,
+  .searchWrap {
+    transition: none;
+  }
+}
