@@ -482,6 +482,8 @@ export interface AppState {
   swapSidebarRoles: () => void
   setPanelDockDrag: (drag: PanelDockDrag | null) => void
   toggleSidePanel: (side: Side) => void
+  /** Open or close a physical sidebar host (used by Allotment snap + shortcuts). */
+  setSidePanelOpen: (side: Side, open: boolean) => void
   toggleRightPanel: () => void
   toggleSidebar: () => void
   toggleProjectCollapsed: (projectId: string) => void

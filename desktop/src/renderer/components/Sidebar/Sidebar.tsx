@@ -1122,7 +1122,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
 
   return (
     <div className={`${styles.sidebar} ${embedded ? styles.sidebarEmbedded : ''}`}>
-      {showTitleArea && <div className={styles.titleArea} />}
+      {showTitleArea && <div className={styles.titleRow} aria-hidden="true" />}
 
       <div className={styles.projectList}>
         {projects.length === 0 && (

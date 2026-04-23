@@ -1,23 +1,32 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim-overlay, rgba(0, 0, 0, 0.46));
+  backdrop-filter: blur(var(--scrim-blur, 6px));
+  -webkit-backdrop-filter: blur(var(--scrim-blur, 6px));
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .overlay {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 .dialog {
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-2) 96%, transparent);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-xl, 14px);
   padding: var(--space-8);
-  width: 520px;
+  width: 540px;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-overlay, var(--shadow-lg));
   transform-origin: center;
 }
 
@@ -58,9 +67,9 @@
   gap: var(--space-2);
   width: 100%;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
-  background: var(--surface-0);
+  background: color-mix(in srgb, var(--surface-0) 92%, transparent);
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
@@ -198,27 +207,30 @@
   line-height: 1.45;
   box-sizing: border-box;
   padding: var(--space-3) var(--space-4);
-  background: var(--surface-0);
-  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--surface-0) 92%, transparent);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   outline: none;
-  transition: border-color var(--motion-fast);
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-fast);
 }
 
 .commandTextarea:focus {
-  border-color: var(--accent-blue);
+  border-color: color-mix(in srgb, var(--accent-blue) 55%, var(--panel-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 25%, transparent);
 }
 
 .expandCmdBtn {
   width: 28px;
   height: 28px;
   flex-shrink: 0;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
-  background: var(--surface-0);
+  background: color-mix(in srgb, var(--surface-0) 92%, transparent);
   color: var(--text-tertiary);
   font-size: 10px;
   line-height: 1;
@@ -256,20 +268,23 @@
 .commandRowTop .input {
   flex: 1;
   padding: var(--space-3) var(--space-4);
-  background: var(--surface-0);
-  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--surface-0) 92%, transparent);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   outline: none;
-  transition: border-color var(--motion-fast);
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-fast);
   min-width: 0;
 }
 
 .commandRow .input:focus,
 .commandRowTop .input:focus {
-  border-color: var(--accent-blue);
+  border-color: color-mix(in srgb, var(--accent-blue) 55%, var(--panel-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 25%, transparent);
 }
 
 .nameInput {
@@ -292,8 +307,8 @@
 
 .waitSelect {
   padding: var(--space-1) var(--space-2);
-  background: var(--surface-0);
-  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--surface-0) 92%, transparent);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: var(--text-xs);
@@ -308,8 +323,8 @@
 
 .conditionInput {
   padding: var(--space-1) var(--space-2);
-  background: var(--surface-0);
-  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--surface-0) 92%, transparent);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: var(--text-xs);
@@ -331,8 +346,8 @@
 .selectInput {
   width: 100%;
   padding: var(--space-3) var(--space-4);
-  background: var(--surface-0);
-  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--surface-0) 92%, transparent);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: var(--text-sm);
@@ -366,7 +381,7 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
-  border: 1px dashed var(--border-default);
+  border: 1px dashed var(--panel-border);
   border-radius: var(--radius-md);
   background: none;
   color: var(--text-tertiary);
@@ -385,7 +400,7 @@
 
 .cancelBtn {
   padding: var(--space-2) var(--space-6);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   background: none;
   color: var(--text-secondary);

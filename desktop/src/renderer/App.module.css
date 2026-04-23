@@ -8,6 +8,10 @@
   overflow: hidden;
   background: var(--surface-0);
   position: relative;
+  border-radius: var(--radius-window);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
 }
 
 .layout {
@@ -17,12 +21,39 @@
   overflow: hidden;
 }
 
-/* Center panel */
+/* Inset wrapper so each sidebar reads as a floating card over the main column */
+.sidePanelShell {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidePanelShellLeft {
+  padding: var(--side-panel-float-inset) var(--side-panel-float-gap) var(--side-panel-float-inset) var(--side-panel-float-inset);
+}
+
+.sidePanelShellRight {
+  padding: var(--side-panel-float-inset) var(--side-panel-float-inset) var(--side-panel-float-inset) var(--side-panel-float-gap);
+}
+
+/* Center panel
+ *
+ * Top inset matches the sidebar shell's `--side-panel-float-inset` so the tab
+ * row starts at the same window-y as the sidebar panel headers (y=10). That
+ * puts all three surfaces (tab row, sidebar panel header, traffic lights) on
+ * the same vertical center (y=26), so toggling the left sidebar doesn't shift
+ * anything visually. No horizontal padding here — the sidebars provide the
+ * left/right inset when open, and the editor/welcome cards already use
+ * `--side-panel-float-inset` internally for their own side gutters. */
 .centerPanel {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-width: 0;
+  padding-top: var(--side-panel-float-inset);
   background: var(--surface-0);
 }
 
@@ -34,29 +65,72 @@
   min-height: 0;
 }
 
-/* Welcome state when no tabs open */
-.welcome {
+/* Welcome state when no tabs open — quiet floating card. */
+.welcomeWrap {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
+  width: 100%;
   height: 100%;
-  gap: var(--space-8);
+  padding: var(--side-panel-float-inset);
+  box-sizing: border-box;
+}
+
+.welcome {
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
   color: var(--text-ghost);
+  min-width: min(100%, 460px);
+  max-width: 560px;
+  text-align: center;
+}
+
+/* Stagger the three children in — cascade fade-in per plan. */
+.welcome > * {
+  opacity: 0;
+  transform: translateY(4px);
+  animation: welcomeItemEnter 320ms var(--ease-out) forwards;
+}
+
+.welcome > *:nth-child(1) {
+  animation-delay: 40ms;
+}
+
+.welcome > *:nth-child(2) {
+  animation-delay: 110ms;
+}
+
+.welcome > *:nth-child(3) {
+  animation-delay: 180ms;
+}
+
+@keyframes welcomeItemEnter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .welcomeLogo {
-  font-size: 48px;
-  opacity: 0.15;
+  font-size: 42px;
+  opacity: 0.18;
   font-weight: 200;
   font-family: var(--font-ui);
-  letter-spacing: -2px;
+  letter-spacing: -1.5px;
+  line-height: 1;
 }
 
 .welcomeHint {
   font-size: var(--text-sm);
   color: var(--text-tertiary);
   font-family: var(--font-mono);
+  line-height: 1.6;
+  text-wrap: pretty;
 }
 
 .welcomeShortcut {
@@ -71,6 +145,14 @@
   margin: 0 var(--space-1);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .welcome > * {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .dockEdgeTarget {
   position: absolute;
   top: 0;
@@ -79,9 +161,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
+  width: 36px;
   padding: var(--space-4) 0;
   opacity: 0.72;
+  pointer-events: auto;
   transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
 }
 

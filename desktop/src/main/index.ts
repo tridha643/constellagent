@@ -33,7 +33,10 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 12, y: 12 },
+    // Vertically center the 12px traffic lights against the tab row.
+    // Center panel top inset = 10px (--side-panel-float-inset); tab row =
+    // `--tab-height` (42px) → row center y = 10 + 21 = 31. Lights top = 31 - 6.
+    trafficLightPosition: { x: 22, y: 25 },
     backgroundColor: '#13141b',
     show: false,
     webPreferences: {

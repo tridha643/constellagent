@@ -307,14 +307,39 @@ body {
    ALLOTMENT OVERRIDES — style the split pane sashes
    ═══════════════════════════════════════════════════════ */
 
-.sash-container .sash {
-  background: var(--border-subtle) !important;
-  transition: background var(--motion-default) !important;
+/* Allotment uses CSS-module hashed class names (e.g. sash-module_sash__K-9lB)
+   and paints the visible hover/active strip via `.sash::before` whose width
+   and color come from :root custom properties. Override those variables so the
+   floating side-panel cards are divided by a quiet, theme-tinted hairline
+   instead of the stock 4px opaque `#007fd4` bar. */
+:root {
+  --focus-border: color-mix(in srgb, var(--accent-blue) 42%, transparent);
+  --sash-hover-size: 2px;
+  --sash-hover-transition-duration: 160ms;
 }
 
-.sash-container .sash:hover,
-.sash-container .sash.active {
-  background: var(--accent-blue) !important;
+/* Keep the underlying 8px wide hit-target invisible — all visuals live on the
+   ::before pseudo element. */
+[class*="sash-module_sash"] {
+  background: transparent !important;
+}
+
+/* Slightly delay the show so a quick mouse-over doesn't flash the indicator. */
+[class*="sash-module_sash"]::before {
+  transition-property: background-color, opacity !important;
+  transition-duration: var(--sash-hover-transition-duration) !important;
+  transition-delay: 80ms !important;
+}
+
+[class*="sash-module_sash"][class*="sash-module_hover"]::before,
+[class*="sash-module_sash"][class*="sash-module_active"]::before {
+  transition-delay: 0ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [class*="sash-module_sash"]::before {
+    transition: none !important;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════

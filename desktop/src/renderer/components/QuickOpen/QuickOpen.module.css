@@ -1,13 +1,21 @@
+/**
+ * Command-palette chrome. Shared by QuickOpen (Cmd+P), ChangesFileFind,
+ * and extended by PlanPalette. Styled as a floating card so it reads as
+ * a sibling of SidePanelHost / FloatingPanel rather than a flat modal.
+ */
+
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--scrim-overlay-soft, rgba(0, 0, 0, 0.32));
+  backdrop-filter: blur(var(--scrim-blur, 6px));
+  -webkit-backdrop-filter: blur(var(--scrim-blur, 6px));
   display: flex;
   justify-content: center;
   padding-top: 15vh;
   z-index: 100;
   opacity: 1;
-  transition: opacity var(--duration-micro) var(--ease-out);
+  transition: opacity var(--motion-palette-enter);
 
   @starting-style {
     opacity: 0;
@@ -15,22 +23,29 @@
 }
 
 .panel {
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  width: 500px;
-  max-height: 400px;
+  background: color-mix(in srgb, var(--surface-2) 94%, transparent);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-xl, 14px);
+  width: 520px;
+  max-height: 420px;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-overlay, var(--shadow-lg));
   overflow: hidden;
   align-self: flex-start;
   opacity: 1;
-  /* High-frequency palette (Cmd+P): opacity only — no scale (Emil: 100+/day) */
-  transition: opacity var(--duration-micro) var(--ease-out);
+  transform: translateY(0) scale(1);
+  transform-origin: top center;
+  /* High-frequency palette (Cmd+P): opacity + tiny rise. No scale-down on open
+     per Emil — the 2px translate provides just enough "settle" without feeling
+     like a modal. */
+  transition:
+    opacity var(--motion-palette-enter),
+    transform var(--motion-palette-enter);
 
   @starting-style {
     opacity: 0;
+    transform: translateY(-2px) scale(1);
   }
 }
 
@@ -38,6 +53,8 @@
   .overlay,
   .panel {
     transition: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .overlay {
@@ -56,52 +73,64 @@
 
 .inputWrap {
   padding: var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--panel-border-inner);
   flex-shrink: 0;
 }
 
 .input {
   width: 100%;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
-  background: var(--surface-1);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
   color: var(--text-primary);
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   outline: none;
-  transition: border-color var(--motion-fast);
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-fast);
 }
 
 .input:focus {
-  border-color: var(--accent-blue);
+  border-color: color-mix(in srgb, var(--accent-blue) 55%, var(--panel-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 25%, transparent);
 }
 
 .input::placeholder {
   color: var(--text-ghost);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .input {
+    transition: none;
+  }
+}
+
 .results {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-2) 0;
+  padding: var(--space-2) var(--space-2);
 }
 
 .resultItem {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-6);
+  padding: var(--space-2) var(--space-4);
   cursor: pointer;
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   color: var(--text-secondary);
-  transition: background-color var(--motion-fast), color var(--motion-fast);
+  border-radius: var(--radius-md);
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .resultItem:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
   }
 }
 

@@ -8,6 +8,7 @@ import type { DiffFileData } from '../../types/working-tree-diff'
 import { DiffFileSection, FileStrip } from '../Editor/DiffFileSection'
 import { loadWorkingTreeExpandableDiffMetadata } from '../Editor/buildWorkingTreeDiffFileData'
 import { loadWorkingTreeDiffFiles } from '../Editor/loadWorkingTreeDiffFiles'
+import { FloatingPanel } from '../FloatingPanel/FloatingPanel'
 import { AnnotationsSummary } from './AnnotationsSummary'
 import { TourRail } from './TourRail'
 import { resolveAnnotationPathForDiff } from '../../utils/annotation-diff-path'
@@ -611,16 +612,18 @@ export function HunkReview({ worktreePath }: Props) {
         onClick={closeHunkReview}
       />
 
-      {/* Panel */}
-      <div
-        className={styles.panel}
+      {/* Panel — floating drawer */}
+      <FloatingPanel
+        variant="drawer"
+        testId="hunk-review-panel"
+        shellClassName={styles.drawerShell}
+        cardClassName={styles.drawerCard}
+        shellStyle={{ width: panelWidth }}
         ref={panelRef}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Review Changes"
-        data-testid="hunk-review-panel"
-        style={{ width: panelWidth }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
             e.stopPropagation()
@@ -773,7 +776,7 @@ export function HunkReview({ worktreePath }: Props) {
             })}
           </div>
         )}
-      </div>
+      </FloatingPanel>
     </>
   )
 }

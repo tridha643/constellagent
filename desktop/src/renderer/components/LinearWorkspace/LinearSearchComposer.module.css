@@ -432,7 +432,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   font-size: 11px;
   margin-bottom: 4px;
   font-family: var(--font-ui);

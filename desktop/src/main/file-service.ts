@@ -1,6 +1,6 @@
-import { readdir, readFile as fsReadFile, writeFile as fsWriteFile, stat, rm, copyFile, mkdir } from 'fs/promises'
+import { readdir, readFile as fsReadFile, writeFile as fsWriteFile, stat, rm, copyFile, mkdir, realpath } from 'fs/promises'
 import { homedir } from 'os'
-import { join, basename, relative } from 'path'
+import { join, basename, relative, dirname } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { FileFinder as FileFinderType, GrepCursor } from '@ff-labs/fff-node'
@@ -113,19 +113,32 @@ export class FileService {
   private static quickOpenFinders = new Map<string, Promise<QuickOpenFinderState>>()
   private static quickOpenFallbackFiles = new Map<string, Promise<QuickOpenFallbackFile[]>>()
   private static codeSearchFallbackFiles = new Map<string, Promise<CodeSearchFallbackFile[]>>()
+
+  /** Canonical filesystem root for a workspace (symlink-safe). Used by IPC + tree. */
+  static async normalizeFsRoot(dirPath: string): Promise<string> {
+    const trimmed = normalizeRootPath(dirPath)
+    try {
+      return normalizeRootPath(await realpath(trimmed))
+    } catch {
+      return trimmed
+    }
+  }
+
   static async getTree(dirPath: string, depth = 0): Promise<FileNode[]> {
     if (depth > 8) return [] // prevent infinite recursion
+
+    const effectiveDir = depth === 0 ? await this.normalizeFsRoot(dirPath) : dirPath
 
     // Use git ls-files if in a git repo for gitignore respect
     if (depth === 0) {
       try {
-        return await this.getGitTree(dirPath)
+        return await this.getGitTree(effectiveDir)
       } catch {
         // Fall back to manual traversal
       }
     }
 
-    const entries = await readdir(dirPath, { withFileTypes: true })
+    const entries = await readdir(effectiveDir, { withFileTypes: true })
     const nodes: FileNode[] = []
 
     const sorted = entries
@@ -139,7 +152,7 @@ export class FileService {
       })
 
     for (const entry of sorted) {
-      const fullPath = join(dirPath, entry.name)
+      const fullPath = join(effectiveDir, entry.name)
       if (entry.isDirectory()) {
         const children = await this.getTree(fullPath, depth + 1)
         nodes.push({
@@ -161,17 +174,60 @@ export class FileService {
   }
 
   private static async getGitTree(dirPath: string): Promise<FileNode[]> {
+    const cwd = normalizeRootPath(dirPath)
+
+    try {
+      await execFileAsync('git', ['rev-parse', '--git-dir'], {
+        cwd,
+        maxBuffer: 1024 * 1024,
+      })
+    } catch {
+      throw new Error('not a git repository')
+    }
+
+    /** Paths from ls-files are repo-root-relative; strip this to get cwd-relative segments. */
+    let subPrefix = ''
+    try {
+      const { stdout: prefixOut } = await execFileAsync('git', ['rev-parse', '--show-prefix'], {
+        cwd,
+        maxBuffer: 1024 * 1024,
+      })
+      const raw = prefixOut.trim()
+      subPrefix = raw ? toPosixPath(raw.replace(/\/+$/, '')) : ''
+    } catch {
+      subPrefix = ''
+    }
+
     const [{ stdout }, alwaysVisibleFiles] = await Promise.all([
-      execFileAsync(
-        'git',
-        ['ls-files', '--others', '--cached', '--exclude-standard'],
-        { cwd: dirPath }
-      ),
-      this.collectAlwaysVisibleFiles(dirPath),
+      execFileAsync('git', ['ls-files', '--others', '--cached', '--exclude-standard'], {
+        cwd,
+        maxBuffer: 64 * 1024 * 1024,
+      }),
+      this.collectAlwaysVisibleFiles(cwd),
     ])
 
-    const files = stdout.trim().split('\n').filter(Boolean)
-    return this.buildTreeFromPaths(dirPath, [...files, ...alwaysVisibleFiles])
+    const rawLines = stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => toPosixPath(line))
+
+    let relForTree: string[]
+    if (!subPrefix) {
+      relForTree = rawLines
+    } else {
+      const stripped = rawLines.flatMap((line) => {
+        if (line === subPrefix) return []
+        if (line.startsWith(`${subPrefix}/`)) {
+          return [line.slice(subPrefix.length + 1)]
+        }
+        return []
+      })
+      // If git reports paths cwd-relative (some setups) stripping removes everything — fall back.
+      relForTree = stripped.length > 0 ? stripped : rawLines
+    }
+
+    return this.buildTreeFromPaths(cwd, [...relForTree, ...alwaysVisibleFiles])
   }
 
   private static async collectAlwaysVisibleFiles(
@@ -256,6 +312,10 @@ export class FileService {
   }
 
   static async writeFile(filePath: string, content: string): Promise<void> {
+    const parent = dirname(filePath)
+    if (parent && parent !== filePath) {
+      await mkdir(parent, { recursive: true })
+    }
     await fsWriteFile(filePath, content, 'utf-8')
     this.invalidateQuickOpenCachesForPath(filePath)
   }

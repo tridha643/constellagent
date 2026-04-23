@@ -1,12 +1,13 @@
-import { preparePresortedFileTreeInput } from '@pierre/trees'
 import { FileTree as TreesFileTree, useFileTree } from '@pierre/trees/react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { CONSTELLAGENT_PATH_MIME } from '../../utils/add-to-chat'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import { SHARED_FILE_TREE_ICONS } from '../../utils/file-presentation'
 import { buildFileTreeSnapshot, readExpandedDirectoryPaths, type FileNode, type FileTreeSnapshot } from './file-tree-adapter'
+import { fileTreeActions } from './file-tree-actions'
+import { ensureLetterBadgeSheet, findTreeShadowRoot } from './file-tree-shadow-css'
 import styles from './RightPanel.module.css'
 
 interface Props {
@@ -15,7 +16,6 @@ interface Props {
 }
 
 const EMPTY_PATHS: string[] = []
-const EMPTY_PREPARED_INPUT = preparePresortedFileTreeInput(EMPTY_PATHS)
 const EMPTY_SNAPSHOT: FileTreeSnapshot = { paths: [], gitStatus: [] }
 
 function toAbsolutePath(worktreePath: string, relativePath: string): string {
@@ -108,6 +108,75 @@ function FileTreeContextMenu({
   )
 }
 
+function FileTreeNamePrompt({
+  kind,
+  onSubmit,
+  onCancel,
+}: {
+  kind: 'file' | 'folder'
+  onSubmit: (name: string) => void
+  onCancel: () => void
+}) {
+  const [value, setValue] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const title = kind === 'file' ? 'New file' : 'New folder'
+  const confirmLabel = kind === 'file' ? 'Create file' : 'Create folder'
+
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.focus()
+    el.select()
+  }, [kind])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  return (
+    <div className={styles.namePromptOverlay} onClick={onCancel} data-testid="file-tree-name-prompt">
+      <div
+        className={styles.namePromptDialog}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-labelledby="file-tree-name-prompt-title"
+        aria-modal="true"
+      >
+        <div id="file-tree-name-prompt-title" className={styles.namePromptTitle}>
+          {title}
+        </div>
+        <p className={styles.namePromptHint}>Path relative to the workspace root. Nested folders are created automatically.</p>
+        <input
+          ref={inputRef}
+          className={styles.namePromptInput}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              onSubmit(value)
+            }
+          }}
+          placeholder={kind === 'file' ? 'e.g. notes.txt or src/lib.ts' : 'e.g. src/components'}
+          autoComplete="off"
+        />
+        <div className={styles.namePromptActions}>
+          <button type="button" className={styles.namePromptCancel} onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className={styles.namePromptConfirm} onClick={() => onSubmit(value)}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function FileTree({ worktreePath, isActive }: Props) {
   const tabs = useAppStore((s) => s.tabs)
   const activeTabId = useAppStore((s) => s.activeTabId)
@@ -120,8 +189,12 @@ export function FileTree({ worktreePath, isActive }: Props) {
 
   const requestIdRef = useRef(0)
   const expandedPathsRef = useRef<string[]>([])
+  const treeContainerRef = useRef<HTMLDivElement | null>(null)
   const [snapshot, setSnapshot] = useState<FileTreeSnapshot>(EMPTY_SNAPSHOT)
   const [isLoaded, setIsLoaded] = useState(false)
+  const [namePrompt, setNamePrompt] = useState<null | { kind: 'file' | 'folder' }>(null)
+  /** Matches absolute paths on FileNode rows from main (realpath); may differ from `worktreePath` when symlinks/casing differ. */
+  const [treeRoot, setTreeRoot] = useState(worktreePath)
 
   const { model } = useFileTree({
     dragAndDrop: {
@@ -132,20 +205,14 @@ export function FileTree({ worktreePath, isActive }: Props) {
     initialExpansion: 'closed',
     itemHeight: 26,
     paths: EMPTY_PATHS,
-    preparedInput: EMPTY_PREPARED_INPUT,
     stickyFolders: false,
   })
-
-  const preparedInput = useMemo(
-    () => preparePresortedFileTreeInput(snapshot.paths),
-    [snapshot.paths],
-  )
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId)
   const activeRelativePath = useMemo(() => {
     if (activeTab?.type !== 'file' && activeTab?.type !== 'markdownPreview') return null
-    return toRelativePath(worktreePath, activeTab.filePath)
-  }, [activeTab, worktreePath])
+    return toRelativePath(treeRoot, activeTab.filePath)
+  }, [activeTab, treeRoot])
 
   const syncExpandedPaths = useCallback(() => {
     expandedPathsRef.current = readExpandedDirectoryPaths(model.getFileTreeContainer() ?? null)
@@ -157,12 +224,14 @@ export function FileTree({ worktreePath, isActive }: Props) {
     requestIdRef.current = requestId
 
     try {
-      const nodes = await window.api.fs.getTreeWithStatus(worktreePath) as FileNode[]
+      const { rootPath, tree: nodes } = await window.api.fs.getTreeWithStatus(worktreePath)
       if (requestId !== requestIdRef.current) return
-      setSnapshot(buildFileTreeSnapshot(worktreePath, nodes))
+      setTreeRoot(rootPath)
+      setSnapshot(buildFileTreeSnapshot(rootPath, nodes as FileNode[]))
       setIsLoaded(true)
     } catch {
       if (requestId !== requestIdRef.current) return
+      setTreeRoot(worktreePath)
       setSnapshot(EMPTY_SNAPSHOT)
       setIsLoaded(true)
     }
@@ -189,7 +258,7 @@ export function FileTree({ worktreePath, isActive }: Props) {
   }, [addToast, dismissConfirmDialog, fetchTree, showConfirmDialog])
 
   const renderContextMenu = useCallback((item: { kind: 'file' | 'directory'; path: string }, context: { anchorRect: DOMRect | { left: number; bottom: number }; close: () => void }) => {
-    const absolutePath = toAbsolutePath(worktreePath, item.path)
+    const absolutePath = toAbsolutePath(treeRoot, item.path)
     const close = () => context.close()
 
     return (
@@ -215,11 +284,32 @@ export function FileTree({ worktreePath, isActive }: Props) {
         }}
       />
     )
-  }, [handleDelete, openFileInSplit, openFileTab, openMarkdownPreview, worktreePath])
+  }, [handleDelete, openFileInSplit, openFileTab, openMarkdownPreview, treeRoot])
+
+  const createTreeItem = useCallback(
+    async (kind: 'file' | 'folder', rawName: string) => {
+      const name = rawName.trim()
+      if (!name) return
+      const label = kind === 'file' ? 'file' : 'folder'
+      try {
+        const targetPath =
+          kind === 'file' ? toAbsolutePath(treeRoot, name) : `${toAbsolutePath(treeRoot, name)}/.gitkeep`
+        await window.api.fs.writeFile(targetPath, '')
+        await fetchTree()
+        if (kind === 'file') openFileTab(toAbsolutePath(treeRoot, name))
+      } catch (err) {
+        const message = err instanceof Error ? err.message : `Failed to create ${label}`
+        addToast({ id: crypto.randomUUID(), message, type: 'error' })
+      }
+    },
+    [addToast, fetchTree, openFileTab, treeRoot],
+  )
 
   useEffect(() => {
     setIsLoaded(false)
     setSnapshot(EMPTY_SNAPSHOT)
+    setTreeRoot(worktreePath)
+    setNamePrompt(null)
     expandedPathsRef.current = []
   }, [worktreePath])
 
@@ -240,21 +330,80 @@ export function FileTree({ worktreePath, isActive }: Props) {
     return () => window.removeEventListener('git:files-changed', onGitFilesChanged)
   }, [fetchTree, isActive, worktreePath])
 
+  useLayoutEffect(() => {
+    try {
+      model.resetPaths(snapshot.paths, {
+        initialExpandedPaths: expandedPathsRef.current,
+      })
+      model.setGitStatus(snapshot.gitStatus)
+      model.setIcons(SHARED_FILE_TREE_ICONS)
+    } catch (err) {
+      console.error('[FileTree] model sync failed:', err)
+    }
+  }, [model, snapshot.gitStatus, snapshot.paths])
+
+  // Attach the M/A/D/R/U letter-badge stylesheet into pierre's shadow root.
+  // Pierre may mount its shadow host asynchronously on first render, so we
+  // both probe immediately and observe future DOM mutations until attached.
   useEffect(() => {
-    model.resetPaths(snapshot.paths, {
-      initialExpandedPaths: expandedPathsRef.current,
-      preparedInput,
+    if (!isLoaded) return
+    const container = treeContainerRef.current
+    if (!container) return
+
+    const attach = () => {
+      const root = findTreeShadowRoot(container)
+      if (!root) return false
+      ensureLetterBadgeSheet(root)
+      return true
+    }
+
+    if (attach()) return
+
+    const observer = new MutationObserver(() => {
+      if (attach()) observer.disconnect()
     })
-    model.setGitStatus(snapshot.gitStatus)
-    model.setIcons(SHARED_FILE_TREE_ICONS)
-  }, [model, preparedInput, snapshot.gitStatus, snapshot.paths])
+    observer.observe(container, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [isLoaded])
+
+  // Wire header toolbar actions (collapse-all / new file / new folder / search)
+  // without coupling SidePanelHost to pierre or the store.
+  // Do not use window.prompt — Electron's renderer does not show native prompts; it returns null.
+  useEffect(() => {
+    return fileTreeActions.on((action) => {
+      if (!isActive) return
+      if (action === 'collapseAll') {
+        try {
+          expandedPathsRef.current = []
+          model.resetPaths(snapshot.paths, { initialExpandedPaths: [] })
+          model.setGitStatus(snapshot.gitStatus)
+        } catch (err) {
+          console.error('[FileTree] collapseAll failed:', err)
+        }
+        return
+      }
+
+      if (action === 'focusSearch') {
+        useAppStore.getState().toggleQuickOpen()
+        return
+      }
+
+      if (action === 'newFile' || action === 'newFolder') {
+        setNamePrompt({ kind: action === 'newFile' ? 'file' : 'folder' })
+      }
+    })
+  }, [isActive, model, snapshot.gitStatus, snapshot.paths])
 
   useEffect(() => {
     if (!activeRelativePath) return
-    const item = model.getItem(activeRelativePath)
-    if (!item) return
-    model.focusPath(activeRelativePath)
-    item.select()
+    try {
+      const item = model.getItem(activeRelativePath)
+      if (!item) return
+      model.focusPath(activeRelativePath)
+      item.select()
+    } catch (err) {
+      console.error('[FileTree] focus selection failed:', err)
+    }
   }, [activeRelativePath, model, snapshot.paths])
 
   const handleTreeClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
@@ -275,7 +424,7 @@ export function FileTree({ worktreePath, isActive }: Props) {
     event.preventDefault()
     event.stopPropagation()
 
-    const absolutePath = toAbsolutePath(worktreePath, relativePath)
+    const absolutePath = toAbsolutePath(treeRoot, relativePath)
     const item = model.getItem(relativePath)
     item?.select()
     model.focusPath(relativePath)
@@ -291,7 +440,7 @@ export function FileTree({ worktreePath, isActive }: Props) {
     }
 
     openFileTab(absolutePath)
-  }, [model, openFileInSplit, openFileTab, openMarkdownPreview, syncExpandedPaths, worktreePath])
+  }, [model, openFileInSplit, openFileTab, openMarkdownPreview, syncExpandedPaths, treeRoot])
 
   const handleTreeDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     const target = getTreeItemElement(event.nativeEvent)
@@ -300,32 +449,47 @@ export function FileTree({ worktreePath, isActive }: Props) {
     const relativePath = target.dataset.itemPath
     if (!relativePath || !event.dataTransfer) return
 
-    const absolutePath = toAbsolutePath(worktreePath, relativePath)
+    const absolutePath = toAbsolutePath(treeRoot, relativePath)
     event.dataTransfer.setData(CONSTELLAGENT_PATH_MIME, absolutePath)
     event.dataTransfer.setData('text/plain', absolutePath)
     event.dataTransfer.effectAllowed = 'copy'
-  }, [worktreePath])
+  }, [treeRoot])
 
   return (
-    <div
-      className={styles.treeContainer}
-      data-testid="file-tree-wrapper"
-      onClickCapture={handleTreeClickCapture}
-      onDragStart={handleTreeDragStart}
-    >
-      {!isLoaded ? (
-        <div className={styles.emptyState}>
-          <span className={styles.emptyText}>Loading files...</span>
-        </div>
-      ) : (
-        <TreesFileTree
-          className={styles.treeHost}
-          data-testid="file-tree"
-          model={model}
-          renderContextMenu={renderContextMenu}
-          style={{ height: '100%' }}
+    <>
+      {namePrompt && (
+        <FileTreeNamePrompt
+          kind={namePrompt.kind}
+          onCancel={() => setNamePrompt(null)}
+          onSubmit={(name) => {
+            const k = namePrompt.kind
+            setNamePrompt(null)
+            if (!name.trim()) return
+            void createTreeItem(k, name)
+          }}
         />
       )}
-    </div>
+      <div
+        ref={treeContainerRef}
+        className={styles.treeContainer}
+        data-testid="file-tree-wrapper"
+        onClickCapture={handleTreeClickCapture}
+        onDragStart={handleTreeDragStart}
+      >
+        {!isLoaded ? (
+          <div className={styles.emptyState}>
+            <span className={styles.emptyText}>Loading files...</span>
+          </div>
+        ) : (
+          <TreesFileTree
+            className={styles.treeHost}
+            data-testid="file-tree"
+            model={model}
+            renderContextMenu={renderContextMenu}
+            style={{ height: '100%' }}
+          />
+        )}
+      </div>
+    </>
   )
 }

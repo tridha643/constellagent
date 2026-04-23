@@ -23,7 +23,9 @@ import {
   normalizeWorktreeCredentialPattern,
   type WorktreeCredentialRuleKind,
 } from '../../../shared/worktree-credentials'
+import { ChevronLeft } from 'lucide-react'
 import { Tooltip } from '../Tooltip/Tooltip'
+import { FloatingPanel } from '../FloatingPanel/FloatingPanel'
 import { APPEARANCE_THEME_OPTIONS, type AppearanceThemeId } from '../../theme/appearance'
 import { shouldConfirmAppRestart } from './restart-app'
 import { linearFetchViewer } from '../../linear/linear-api'
@@ -758,14 +760,17 @@ function McpServerCard({ server, onDelete, onOpenConfig }: {
         </div>
       </div>
 
-      {expanded && (
+      <div
+        className={`${styles.mcpCardExpandWrap} ${expanded ? styles.mcpCardExpandWrapOpen : ''}`}
+        aria-hidden={!expanded}
+      >
         <div className={styles.mcpCardExpanded}>
           <div className={styles.mcpCardDetail}>
             <span className={styles.mcpDetailLabel}>Command</span>
             <span className={styles.mcpDetailValue}>{server.command} {server.args.join(' ')}</span>
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -1070,23 +1075,26 @@ export function SettingsPanel() {
   }, [toggleSettings])
 
   return (
-    <div className={styles.panel}>
-      <div className={styles.header}>
-        <div className={styles.headerInner}>
-          <div className={styles.headerLeft}>
-            <Tooltip label="Back" shortcut="⌘,">
-              <button className={styles.backBtn} onClick={toggleSettings}>‹</button>
-            </Tooltip>
-            <div className={styles.headerText}>
-              <h2 className={styles.title}>Settings</h2>
-              <p className={styles.subtitle}>Tune appearance, integrations, shortcuts, and worktree defaults.</p>
-            </div>
-          </div>
-        </div>
-      </div>
+    <FloatingPanel variant="fullscreen" testId="settings-panel">
+      <FloatingPanel.Titlebar trafficLightPad>
+        <Tooltip label="Back" shortcut="⌘,">
+          <button
+            type="button"
+            className={styles.backBtn}
+            onClick={toggleSettings}
+            aria-label="Close settings"
+          >
+            <ChevronLeft size={16} strokeWidth={2} aria-hidden />
+          </button>
+        </Tooltip>
+        <h2 className={styles.title}>Settings</h2>
+      </FloatingPanel.Titlebar>
 
       <div className={styles.content}>
         <div className={styles.inner}>
+        <p className={styles.subtitle}>
+          Tune appearance, integrations, shortcuts, and worktree defaults.
+        </p>
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Appearance</div>
 
@@ -1272,6 +1280,6 @@ export function SettingsPanel() {
         </div>
         </div>
       </div>
-    </div>
+    </FloatingPanel>
   )
 }

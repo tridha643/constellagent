@@ -22,26 +22,18 @@
   }
 }
 
-.panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 65vw;
-  max-width: 900px;
-  background: var(--surface-1);
-  border-left: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-lg);
+/*
+ * FloatingPanel drawer inherits animation + chrome (border, radius, shadow)
+ * from the shared primitive. These overrides narrow the slot to clamp width
+ * and lift the z-index above the backdrop.
+ */
+.drawerShell {
   z-index: 101;
-  display: flex;
-  flex-direction: column;
-  max-width: 100vw;
-  transform: translateX(0);
-  transition: transform var(--duration-slow) var(--ease-drawer);
+  max-width: calc(100vw - var(--side-panel-float-inset) * 2);
+}
 
-  @starting-style {
-    transform: translateX(100%);
-  }
+.drawerCard {
+  background: var(--surface-1);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -52,14 +44,6 @@
       opacity: 1;
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
-    }
-  }
-
-  .panel {
-    transition: none;
-
-    @starting-style {
-      transform: none;
     }
   }
 }
@@ -100,11 +84,14 @@
   bottom: 0;
   width: 12px;
   padding: 0;
+  margin: 0;
   border: none;
   background: transparent;
   cursor: col-resize;
   user-select: none;
   touch-action: none;
+  z-index: 2;
+  transition: transform 120ms var(--ease-press);
 }
 
 .resizeGrip {
@@ -112,17 +99,37 @@
   top: 50%;
   left: 50%;
   width: 3px;
-  height: 64px;
+  height: 60px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--border-strong) 85%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 22%, transparent);
   transform: translate(-50%, -50%);
-  transition: background-color var(--motion-fast), opacity var(--motion-fast);
-  opacity: 0.5;
+  transition:
+    background-color 160ms var(--ease-out),
+    opacity 160ms var(--ease-out);
+  opacity: 0.55;
 }
 
+.resizeHandle:active {
+  transform: scale(0.97);
+}
+
+.resizeHandleActive .resizeGrip,
+.resizeHandle:active .resizeGrip {
+  background: var(--accent-blue);
+  opacity: 0.95;
+}
 
 .resizeHandle:focus-visible {
   outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resizeHandle {
+    transition: none;
+  }
+  .resizeHandle:active {
+    transform: none;
+  }
 }
 
 /* ── Header ── */
@@ -132,8 +139,8 @@
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-6);
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  border-bottom: 1px solid var(--panel-border-inner);
   flex-shrink: 0;
 }
 
@@ -234,8 +241,8 @@
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   padding: var(--space-2) var(--space-6);
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  border-bottom: 1px solid var(--panel-border-inner);
   line-height: 1.4;
   flex-shrink: 0;
 }

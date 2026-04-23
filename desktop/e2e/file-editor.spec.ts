@@ -38,6 +38,45 @@ function createTestRepo(name: string): string {
   return repoPath
 }
 
+/** Monorepo-style layout: tracked files only under apps/pkg (exercises git ls-files prefix vs cwd). */
+function createMonorepoSubfolderRepo(name: string): string {
+  const repoPath = join('/tmp', `test-mono-${name}-${Date.now()}`)
+  mkdirSync(join(repoPath, 'apps', 'pkg'), { recursive: true })
+  execSync('git init', { cwd: repoPath })
+  execSync('git checkout -b main', { cwd: repoPath })
+  writeFileSync(join(repoPath, 'apps', 'pkg', 'foo.ts'), 'export const x = 1\n')
+  writeFileSync(join(repoPath, 'apps', 'pkg', 'README.md'), '# pkg\n')
+  execSync('git add .', { cwd: repoPath })
+  execSync('git commit -m "init"', { cwd: repoPath })
+  return repoPath
+}
+
+async function setupWorkspaceAtPath(
+  window: Page,
+  repoPath: string,
+  worktreePath: string,
+  suffix: string,
+): Promise<string> {
+  return await window.evaluate(
+    ({ repo, wt, sfx }: { repo: string; wt: string; sfx: string }) => {
+      const store = (window as any).__store.getState()
+      store.hydrateState({ projects: [], workspaces: [] })
+      const projectId = crypto.randomUUID()
+      store.addProject({ id: projectId, name: 'mono-repo', repoPath: repo })
+      const wsId = crypto.randomUUID()
+      store.addWorkspace({
+        id: wsId,
+        name: `pkg-${sfx}`,
+        branch: 'main',
+        worktreePath: wt,
+        projectId,
+      })
+      return wt
+    },
+    { repo: repoPath, wt: worktreePath, sfx: suffix },
+  )
+}
+
 function commitAll(repoPath: string, message: string, date: string): void {
   const env = {
     ...process.env,
@@ -201,6 +240,11 @@ async function getFileDiffSlices(
 }
 
 test.describe('File tree & editor integration', () => {
+  /**
+   * Regression guard for the Files panel after SidePanelHost landed (0a0348c).
+   * Manual check from repo root: `cd desktop && bun run build && bun run verify:files-panel`
+   * Baseline before that refactor: `git log -1 0a0348c~1 -- desktop/src/renderer/components/RightPanel/FileTree.tsx`
+   */
   test('file tree loads and shows files when workspace is active', async () => {
     const repoPath = createTestRepo('ftree-1')
     const { app, window } = await launchApp()
@@ -210,9 +254,21 @@ test.describe('File tree & editor integration', () => {
       await window.waitForTimeout(1000)
 
       // Right panel should show file tree by default
-      const filesBtn = window.locator('button', { hasText: 'Files' })
+      const filesBtn = window.getByTestId('right-panel-mode-files')
       const filesBtnClass = await filesBtn.getAttribute('class')
       expect(filesBtnClass).toContain('active')
+
+      const worktreePath = await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        const ws = store.workspaces.find((w: any) => w.id === store.activeWorkspaceId)
+        return ws?.worktreePath as string
+      })
+      const ipc = await window.evaluate(async (wt: string) => {
+        return (window as any).api.fs.getTreeWithStatus(wt)
+      }, worktreePath)
+      expect(ipc.tree?.length ?? 0, 'main IPC should return a non-empty tree').toBeGreaterThan(0)
+      expect(typeof ipc.rootPath).toBe('string')
+      expect(ipc.rootPath.length).toBeGreaterThan(0)
 
       // Wait for tree to load
       await window.waitForTimeout(1000)
@@ -227,6 +283,28 @@ test.describe('File tree & editor integration', () => {
       await window.screenshot({
         path: resolve(__dirname, 'screenshots/file-tree-loaded.png'),
       })
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('file tree loads when workspace root is a monorepo subfolder', async () => {
+    const repoPath = createMonorepoSubfolderRepo('mono-ftree')
+    const subRoot = join(repoPath, 'apps', 'pkg')
+    const { app, window } = await launchApp()
+
+    try {
+      await setupWorkspaceAtPath(window, repoPath, subRoot, 'mono')
+      await window.waitForTimeout(800)
+
+      const ipc = await window.evaluate(async (wt: string) => {
+        return (window as any).api.fs.getTreeWithStatus(wt)
+      }, subRoot)
+      expect(ipc.tree?.length ?? 0, 'IPC tree for git subfolder cwd must not be empty').toBeGreaterThan(0)
+
+      const fooItem = window.locator('[data-item-path="foo.ts"][data-item-type="file"]')
+      await expect(fooItem).toBeVisible({ timeout: 10000 })
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
