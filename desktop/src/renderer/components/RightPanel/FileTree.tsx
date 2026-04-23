@@ -397,14 +397,34 @@ export function FileTree({ worktreePath, isActive }: Props) {
   useEffect(() => {
     if (!activeRelativePath) return
     try {
+      // Expand every ancestor directory so a deeply-nested file (opened via
+      // quick-open / Cmd-P, a tab click, etc.) is actually visible in the tree
+      // — otherwise focusPath targets a collapsed, unrendered row.
+      // Directory paths in this tree carry a trailing slash; file paths do not.
+      const segments = activeRelativePath.split('/')
+      let didExpand = false
+      for (let i = 1; i < segments.length; i++) {
+        const ancestorPath = `${segments.slice(0, i).join('/')}/`
+        const ancestor = model.getItem(ancestorPath)
+        if (!ancestor || !ancestor.isDirectory()) continue
+        if (!ancestor.isExpanded()) {
+          ancestor.expand()
+          didExpand = true
+        }
+      }
+
       const item = model.getItem(activeRelativePath)
       if (!item) return
       model.focusPath(activeRelativePath)
       item.select()
+
+      // Persist the programmatic expansion so the next fs-watcher-driven
+      // `resetPaths` doesn't collapse the freshly-opened path back down.
+      if (didExpand) requestAnimationFrame(syncExpandedPaths)
     } catch (err) {
       console.error('[FileTree] focus selection failed:', err)
     }
-  }, [activeRelativePath, model, snapshot.paths])
+  }, [activeRelativePath, model, snapshot.paths, syncExpandedPaths])
 
   const handleTreeClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement | null)?.closest?.('[data-file-tree-context-menu-root="true"]')) return

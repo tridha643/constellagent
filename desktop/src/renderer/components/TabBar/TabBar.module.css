@@ -51,8 +51,11 @@
 .tabList {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-2);
+  gap: var(--space-1);
+  /* Asymmetric: a bit of breathing room on the left so the first tab never
+     butts against the sidebar's floating edge; tight on the right so the
+     reorder slot and action buttons stay compact. */
+  padding: 0 var(--space-1) 0 var(--space-3);
   min-width: 0;
   -webkit-app-region: no-drag;
 }
@@ -79,7 +82,7 @@
   gap: var(--space-1);
   padding: 0 var(--space-2);
   min-width: 0;
-  max-width: 176px;
+  max-width: 156px;
   /* Shorter pills inside `--tab-height` so the traffic-light lane stays tall
      but tabs read as compact (not full-row blocks). */
   height: calc(var(--tab-height) - 12px);
