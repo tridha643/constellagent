@@ -10,7 +10,7 @@ import {
   type MouseEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { GitBranch } from 'lucide-react'
+import { GitBranch, X } from 'lucide-react'
 import { useAppStore } from '../../store/app-store'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { normalizeWorkspaceBranch } from '../../store/workspace-branch'
@@ -19,6 +19,8 @@ import styles from './Sidebar.module.css'
 const POPOVER_WIDTH = 320
 const POPOVER_GAP = 6
 const POPOVER_EDGE_MARGIN = 12
+// Matches --duration-exit (140ms) so the unmount tail aligns with the CSS transition.
+const POPOVER_EXIT_MS = 140
 
 interface Props {
   projectId: string
@@ -97,6 +99,12 @@ export function BranchAndPrLauncher({
   const visible = onDefaultBranch && hasDirtyChanges
 
   const [open, setOpen] = useState(false)
+  // Two-stage mount: `open` controls presence in the DOM, `entered` drives the
+  // CSS enter/exit transition. Flipping `entered` one frame after mount lets
+  // the browser paint the "starting" styles before transitioning to the open
+  // state, which is what makes scale/opacity animate instead of snapping.
+  const [entered, setEntered] = useState(false)
+  const [originY, setOriginY] = useState<'top' | 'bottom'>('top')
   const [branchName, setBranchName] = useState('')
   const [commitMessage, setCommitMessage] = useState('')
   const [generatingMessage, setGeneratingMessage] = useState(false)
@@ -106,6 +114,7 @@ export function BranchAndPrLauncher({
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const popoverRef = useRef<HTMLDivElement | null>(null)
   const branchInputRef = useRef<HTMLInputElement | null>(null)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Position the popover via fixed coords anchored under the trigger so it can
   // overflow the sidebar's clipped x-axis (.projectList uses overflow-x: hidden).
@@ -134,6 +143,7 @@ export function BranchAndPrLauncher({
       ? Math.max(POPOVER_EDGE_MARGIN, rect.top - POPOVER_GAP - measuredHeight)
       : belowTop
 
+    setOriginY(flipAbove ? 'bottom' : 'top')
     setPopoverStyle({
       position: 'fixed',
       top,
@@ -144,18 +154,37 @@ export function BranchAndPrLauncher({
 
   const closePopover = useCallback(() => {
     if (busy) return
-    setOpen(false)
-    setPopoverStyle(null)
+    // Play the exit transition, then unmount after it finishes. If the user
+    // re-opens quickly, the open effect will clear this timer.
+    setEntered(false)
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = setTimeout(() => {
+      setOpen(false)
+      setPopoverStyle(null)
+      closeTimerRef.current = null
+    }, POPOVER_EXIT_MS)
   }, [busy])
 
+  useEffect(() => () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+  }, [])
+
   // Measure + reposition on open, and whenever the window geometry shifts.
+  // Also drive the enter transition: paint the starting styles on frame 1,
+  // flip `entered=true` on frame 2 so CSS interpolates instead of snapping.
   useLayoutEffect(() => {
     if (!open) return
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
     computePosition()
-    // Second pass after the popover has actually rendered so we can use its
-    // measured height for the above/below flip decision.
-    const raf = requestAnimationFrame(computePosition)
-    return () => cancelAnimationFrame(raf)
+    const raf1 = requestAnimationFrame(() => {
+      computePosition()
+      const raf2 = requestAnimationFrame(() => setEntered(true))
+      return () => cancelAnimationFrame(raf2)
+    })
+    return () => cancelAnimationFrame(raf1)
   }, [open, computePosition])
 
   useEffect(() => {
@@ -273,7 +302,13 @@ export function BranchAndPrLauncher({
       })
       if (created.url) window.open(created.url, '_blank')
 
-      setOpen(false)
+      setEntered(false)
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = setTimeout(() => {
+        setOpen(false)
+        setPopoverStyle(null)
+        closeTimerRef.current = null
+      }, POPOVER_EXIT_MS)
     } catch (err) {
       const recoveryHint = branchCreated && !branchCommitted
         ? ` Your changes are now on "${trimmedBranch}" — finish or roll back there.`
@@ -307,14 +342,28 @@ export function BranchAndPrLauncher({
       ref={popoverRef}
       className={styles.branchPrPopover}
       style={popoverStyle}
+      data-entered={entered}
+      data-origin-y={originY}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onKeyDown={handleFormKey}
       role="dialog"
       aria-label="Branch changes and open pull request"
     >
-      <div className={styles.branchPrPopoverTitle}>
-        Move {dirtyFileCount} change{dirtyFileCount === 1 ? '' : 's'} off {trunkLabel}
+      <div className={styles.branchPrPopoverHeader}>
+        <div className={styles.branchPrPopoverTitle}>
+          Move {dirtyFileCount} change{dirtyFileCount === 1 ? '' : 's'} off{' '}
+          <span className={styles.branchPrTrunkName}>{trunkLabel}</span>
+        </div>
+        <button
+          type="button"
+          className={styles.branchPrClose}
+          onClick={closePopover}
+          disabled={busy}
+          aria-label="Close"
+        >
+          <X size={12} strokeWidth={2.25} />
+        </button>
       </div>
       <label className={styles.branchPrLabel}>
         <span>New branch</span>
@@ -335,9 +384,13 @@ export function BranchAndPrLauncher({
         </div>
       )}
       <label className={styles.branchPrLabel}>
-        <span>Commit message{generatingMessage ? ' (generating…)' : ''}</span>
+        <span>
+          Commit message
+          {generatingMessage && <span className={styles.branchPrGenerating}>generating…</span>}
+        </span>
         <textarea
           className={styles.branchPrTextarea}
+          data-generating={generatingMessage}
           value={commitMessage}
           onChange={(e) => setCommitMessage(e.target.value)}
           placeholder="Describe this change"
@@ -361,7 +414,10 @@ export function BranchAndPrLauncher({
           disabled={!canSubmit}
           title="⌘⏎ / Ctrl+⏎"
         >
-          {busy ? busyLabel || 'Working…' : `Create PR to ${trunkLabel}`}
+          <span className={styles.branchPrPrimaryLabel}>
+            {busy ? busyLabel || 'Working…' : `Create PR to ${trunkLabel}`}
+          </span>
+          {!busy && <kbd className={styles.branchPrKbd}>⌘⏎</kbd>}
         </button>
       </div>
     </div>
@@ -373,11 +429,17 @@ export function BranchAndPrLauncher({
         <button
           ref={buttonRef}
           className={styles.branchPrBtn}
+          data-open={open}
           onClick={(e: MouseEvent<HTMLButtonElement>) => {
             e.stopPropagation()
-            setOpen((prev) => !prev)
+            if (open) {
+              closePopover()
+            } else {
+              setOpen(true)
+            }
           }}
           aria-label="Branch changes and open pull request"
+          aria-expanded={open}
           type="button"
         >
           <GitBranch size={12} strokeWidth={2} />
