@@ -10,6 +10,9 @@ import { IPC } from '../shared/ipc-channels'
 import type { HostUiResponse } from '@pi-gui/session-driver'
 import type { PlanAgent } from '../shared/agent-plan-path'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
+import type { CloneRepoOptions, CloneRepoProgressEvent, CloneRepoResult } from '../shared/clone-repo'
+import { CLONE_ERROR_CODES } from '../shared/clone-repo'
+import { parseGithubUrl } from '../shared/github-url'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GraphiteStackAction } from '../shared/graphite-types'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
@@ -302,6 +305,38 @@ export function registerIpcHandlers(): void {
     return GitService.initRepo(dirPath)
   })
 
+  ipcMain.handle(IPC.GIT_CLONE_REPO, async (_e, opts: CloneRepoOptions): Promise<CloneRepoResult> => {
+    if (!opts || typeof opts.url !== 'string' || typeof opts.destPath !== 'string' || typeof opts.requestId !== 'string') {
+      throw new Error('Invalid clone request')
+    }
+
+    // Defense-in-depth: renderer validates with the same parser, but re-validate here before spawning git.
+    if (parseGithubUrl(opts.url) === null && !opts.url.startsWith('file://')) {
+      throw new Error(CLONE_ERROR_CODES.INVALID_URL)
+    }
+
+    // Pre-check destination before handing off to the cloner so we can surface a
+    // clean, typed error that the renderer can convert into a dialog.
+    if (existsSync(opts.destPath)) {
+      const isRepo = await GitService.isGitRepo(opts.destPath)
+      if (isRepo) {
+        throw new Error(CLONE_ERROR_CODES.DEST_EXISTS_REPO)
+      }
+      // `cloneRepo` handles the non-empty case (see git-service.ts), but we fail fast here
+      // to avoid the spawn cost when the target is known to be unusable.
+    }
+
+    return GitService.cloneRepo(opts, (progress) => {
+      const payload: CloneRepoProgressEvent = { ...progress, requestId: opts.requestId }
+      _e.sender.send(IPC.GIT_CLONE_REPO_PROGRESS, payload)
+    })
+  })
+
+  ipcMain.on(IPC.GIT_CLONE_REPO_CANCEL, (_e, requestId: string) => {
+    if (typeof requestId !== 'string' || requestId.length === 0) return
+    GitService.cancelClone(requestId)
+  })
+
   ipcMain.handle(IPC.GIT_CREATE_WORKTREE, async (_e, repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[]) => {
     return GitService.createWorktree(
       repoPath,
@@ -473,6 +508,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.GITHUB_GET_PR_REVIEW_COMMENTS, async (_e, repoPath: string, prNumber: number) => {
     return GithubService.fetchPrReviewComments(repoPath, prNumber)
+  })
+
+  ipcMain.handle(IPC.GITHUB_CLONE_SUGGESTIONS, async (_e, query: string) => {
+    return typeof query === 'string' ? GithubService.listCloneRepoSuggestions(query) : []
   })
 
   // ── Graphite handlers ──

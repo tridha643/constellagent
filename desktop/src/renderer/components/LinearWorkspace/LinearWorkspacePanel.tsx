@@ -1,4 +1,5 @@
 import {
+  ArrowSquareOut,
   Kanban,
   ListBullets,
   PaperPlaneTilt,
@@ -36,6 +37,7 @@ import {
   linearFetchViewer,
   linearOpenExternal,
   linearUserPickerWithViewer,
+  buildLinearProjectSubviewUrl,
   type LinearIssueNode,
   type LinearProjectNode,
   type LinearProjectUpdateNode,
@@ -400,6 +402,42 @@ export function LinearWorkspacePanel() {
   }, [e2eLinearIssues, settings.linearIssueScope, assigned, created]);
 
   const workspaceView = settings.linearWorkspaceView;
+
+  const openLinearTarget = useMemo<{
+    url: string;
+    label: string;
+    destinationName: string;
+  }>(() => {
+    const project = scopeProjectId
+      ? projects.find((p) => p.id === scopeProjectId)
+      : undefined;
+    if (!project) {
+      return {
+        url: "https://linear.app",
+        label: "Open Linear",
+        destinationName: "Linear workspace",
+      };
+    }
+    if (workspaceView === "updates") {
+      return {
+        url: buildLinearProjectSubviewUrl(project, "updates"),
+        label: "Open updates",
+        destinationName: `${project.name} · updates`,
+      };
+    }
+    if (workspaceView === "issues" || workspaceView === "tickets") {
+      return {
+        url: buildLinearProjectSubviewUrl(project, "issues"),
+        label: "Open issues",
+        destinationName: `${project.name} · issues`,
+      };
+    }
+    return {
+      url: "https://linear.app",
+      label: "Open Linear",
+      destinationName: "Linear workspace",
+    };
+  }, [workspaceView, scopeProjectId, projects]);
 
   const setBar = (next: LinearProjectUpdateBarEntry[]) => {
     updateSettings({ linearProjectUpdateBar: next });
@@ -840,13 +878,24 @@ export function LinearWorkspacePanel() {
                 </div>
               ) : null}
             </div>
-            <button
-              type="button"
-              className={`${styles.headerToolBtn} ${styles.headerToolBtnAccent}`}
-              onClick={() => void linearOpenExternal("https://linear.app")}
+            <Tooltip
+              label={`Open ${openLinearTarget.destinationName} in Linear`}
             >
-              Open Linear
-            </button>
+              <button
+                type="button"
+                className={`${styles.headerToolBtn} ${styles.headerToolBtnAccent} ${styles.headerToolBtnOpenLinear}`}
+                onClick={() => void linearOpenExternal(openLinearTarget.url)}
+                aria-label={`Open ${openLinearTarget.destinationName} in Linear`}
+              >
+                <ArrowSquareOut size={12} aria-hidden weight="bold" />
+                <span
+                  key={openLinearTarget.label}
+                  className={styles.headerToolBtnLabel}
+                >
+                  {openLinearTarget.label}
+                </span>
+              </button>
+            </Tooltip>
           </div>
       </FloatingPanel.Titlebar>
 

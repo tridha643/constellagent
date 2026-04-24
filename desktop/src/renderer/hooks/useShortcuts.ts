@@ -26,6 +26,7 @@ import {
   cancelChangesFileFindSelection,
   tryOpenChangesFindFromSource,
 } from '../utils/changes-file-find-bridge'
+import { ADD_PROJECT_DIALOG_SEGMENT, type AddProjectDialogSegmentDetail } from '../utils/add-project-dialog-segment'
 
 function isTypingContext(target: EventTarget | null): boolean {
   const element = target instanceof HTMLElement
@@ -87,6 +88,27 @@ export function useShortcuts() {
             window.api.pty.write(pty, '\x15') // Ctrl+U — kill to beginning of line
             return
           }
+        }
+      }
+
+      // Add Project is modal, so while it is open these chords should belong to the dialog
+      // even if focus is still on the launcher button or another non-dialog element.
+      if (document.querySelector('[data-constellagent-add-project-dialog]') && e.metaKey && !e.ctrlKey && !e.shiftKey) {
+        const inDialog: AddProjectDialogSegmentDetail | null =
+          !e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+            ? { direction: e.key === 'ArrowRight' ? 'forward' : 'back' }
+            : e.altKey
+                && (e.key === 'ArrowLeft'
+                  || e.key === 'ArrowRight'
+                  || e.key === 'Home'
+                  || e.key === 'End')
+                ? { direction: e.key === 'ArrowRight' || e.key === 'End' ? 'forward' : 'back' }
+                : null
+        if (inDialog) {
+          e.preventDefault()
+          e.stopPropagation()
+          window.dispatchEvent(new CustomEvent<AddProjectDialogSegmentDetail>(ADD_PROJECT_DIALOG_SEGMENT, { detail: inDialog }))
+          return
         }
       }
 

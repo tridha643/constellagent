@@ -41,6 +41,9 @@ export const IPC = {
   /** True when workspace root is a linked worktree (resolved path differs from main repo). */
   GIT_IS_SECONDARY_WORKTREE_ROOT: 'git:is-secondary-worktree-root',
   GIT_INIT_REPO: 'git:init-repo',
+  GIT_CLONE_REPO: 'git:clone-repo',
+  GIT_CLONE_REPO_PROGRESS: 'git:clone-repo-progress',
+  GIT_CLONE_REPO_CANCEL: 'git:clone-repo-cancel',
   /** Renderer → main: worktree paths that have an active agent (busy for sync) */
   GIT_SYNC_SET_BUSY: 'git:sync-set-busy',
 
@@ -137,6 +140,7 @@ export const IPC = {
   GITHUB_CREATE_PR: 'github:create-pr',
   GITHUB_REOPEN_PR: 'github:reopen-pr',
   GITHUB_GET_PR_REVIEW_COMMENTS: 'github:get-pr-review-comments',
+  GITHUB_CLONE_SUGGESTIONS: 'github:clone-suggestions',
 
   // LSP operations
   LSP_GET_PORT: 'lsp:get-port',

@@ -455,6 +455,8 @@ export interface Settings {
    * Value can be a preset id or custom string (same as plan build).
    */
   linearIssueCodingModel: string
+  /** Last-used parent directory in the Add Project → Clone from GitHub flow. Pre-fills the picker on next use. */
+  lastClonedParentDir?: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {

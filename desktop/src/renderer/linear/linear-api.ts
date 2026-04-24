@@ -872,6 +872,27 @@ export async function linearOpenExternal(url: string): Promise<void> {
   await window.api.app.openExternal(url)
 }
 
+/**
+ * Build a Linear project URL pointed at a specific subview. Linear's GraphQL
+ * `project.url` can arrive as a bare project URL or one ending in a subview
+ * segment (e.g. `/overview`); we strip the known trailing segment before
+ * appending the desired subview so the result is always well-formed.
+ */
+export function buildLinearProjectSubviewUrl(
+  project: Pick<LinearProjectNode, 'url' | 'slugId'> | null | undefined,
+  subview: 'issues' | 'updates' | 'overview',
+): string {
+  if (!project) return 'https://linear.app'
+  const base =
+    project.url?.trim() ||
+    (project.slugId ? `https://linear.app/project/${project.slugId}` : '')
+  if (!base) return 'https://linear.app'
+  const stripped = base
+    .replace(/\/$/, '')
+    .replace(/\/(overview|issues|updates|documents|members|activity)$/, '')
+  return `${stripped}/${subview}`
+}
+
 /** Structured execution brief for coding agents launched from a Linear issue. */
 export function formatLinearIssueAgentPrompt(issue: LinearIssueNode): string {
   const description = issue.description?.trim() || '(No additional issue description provided.)'
