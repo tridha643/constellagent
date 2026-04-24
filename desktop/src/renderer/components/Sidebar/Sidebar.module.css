@@ -267,22 +267,37 @@
   padding: 0;
   line-height: 1;
   z-index: 1;
-  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
-.branchPrBtn:hover {
-  background: color-mix(in srgb, var(--accent-blue) 28%, transparent);
-  color: color-mix(in srgb, var(--accent-blue) 85%, white);
+@media (hover: hover) and (pointer: fine) {
+  .branchPrBtn:hover {
+    background: color-mix(in srgb, var(--accent-blue) 28%, transparent);
+    color: color-mix(in srgb, var(--accent-blue) 85%, white);
+  }
 }
 
 .branchPrBtn:active {
-  transform: scale(0.97);
+  transform: scale(0.92);
+}
+
+.branchPrBtn[data-open='true'] {
+  background: color-mix(in srgb, var(--accent-blue) 32%, transparent);
+  color: color-mix(in srgb, var(--accent-blue) 90%, white);
 }
 
 /*
  * Anchored via `createPortal` + inline `position: fixed` coords computed from
  * the button's bounding rect. Lives on `document.body` to escape the sidebar's
  * `overflow-x: hidden` clipping; width + coords are set inline by the component.
+ *
+ * Enter: origin-aware scale-up from trigger corner (top-right by default,
+ * bottom-right when flipped above). Driven by data-entered flipping one frame
+ * after mount. Exit: faster, matching --duration-exit (140ms) — the mount
+ * tail in the component waits that long before unmounting.
  */
 .branchPrPopover {
   z-index: 105;
@@ -297,21 +312,135 @@
   font-family: var(--font-ui);
   color: var(--text-primary);
   cursor: default;
+
+  opacity: 0;
+  transform: scale(0.97) translateY(-2px);
+  transform-origin: top right;
+  transition:
+    opacity var(--motion-dialog-exit),
+    transform var(--motion-dialog-exit);
+  will-change: transform, opacity;
+}
+
+.branchPrPopover[data-origin-y='bottom'] {
+  transform-origin: bottom right;
+  transform: scale(0.97) translateY(2px);
+}
+
+.branchPrPopover[data-entered='true'] {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  transition:
+    opacity var(--motion-dialog-enter),
+    transform var(--motion-dialog-enter);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .branchPrPopover,
+  .branchPrPopover[data-origin-y='bottom'] {
+    transform: none;
+    transition: opacity var(--duration-fast) var(--ease-out);
+  }
+
+  .branchPrPopover[data-entered='true'] {
+    transform: none;
+  }
+}
+
+.branchPrPopoverHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .branchPrPopoverTitle {
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+}
+
+.branchPrTrunkName {
+  font-family: var(--font-mono);
+  font-size: calc(var(--text-sm) * 0.95);
+  color: var(--accent-blue);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+}
+
+.branchPrClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: -2px -2px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .branchPrClose:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+    color: var(--text-primary);
+  }
+}
+
+.branchPrClose:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.branchPrClose:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .branchPrLabel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
+  gap: 6px;
   font-family: var(--font-ui);
+}
+
+.branchPrLabel > span {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.branchPrGenerating {
+  font-weight: var(--weight-regular);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-size: var(--text-xs);
+  color: color-mix(in srgb, var(--accent-blue) 70%, var(--text-tertiary));
+  animation: branchPrPulse 1.6s var(--ease-in-out) infinite;
+}
+
+@keyframes branchPrPulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .branchPrGenerating { animation: none; opacity: 0.85; }
 }
 
 .branchPrInput,
@@ -327,39 +456,63 @@
   line-height: 1.4;
   resize: none;
   outline: none;
-  transition: border-color var(--motion-fast), background-color var(--motion-fast);
+  transition:
+    border-color var(--motion-fast),
+    background-color var(--motion-fast),
+    box-shadow var(--motion-fast);
 }
 
 .branchPrInput:focus,
 .branchPrTextarea:focus {
   border-color: var(--accent-blue);
   background: var(--surface-0);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 22%, transparent);
 }
 
 .branchPrTextarea {
-  min-height: 60px;
+  min-height: 64px;
+}
+
+.branchPrTextarea[data-generating='true'] {
+  color: var(--text-tertiary);
+  transition:
+    color var(--motion-default),
+    border-color var(--motion-fast),
+    background-color var(--motion-fast),
+    box-shadow var(--motion-fast);
 }
 
 .branchPrHint {
   font-size: var(--text-xs);
-  color: var(--accent-red);
+  color: color-mix(in srgb, var(--accent-red) 78%, var(--text-secondary));
+  padding-left: 2px;
 }
 
 .branchPrActions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: var(--space-2);
+  margin-top: 2px;
 }
 
 .branchPrSecondary,
 .branchPrPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   font-family: var(--font-ui);
+  font-weight: var(--weight-medium);
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
+  transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
 .branchPrSecondary {
@@ -368,9 +521,15 @@
   border-color: var(--border-subtle);
 }
 
-.branchPrSecondary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
-  color: var(--text-primary);
+@media (hover: hover) and (pointer: fine) {
+  .branchPrSecondary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+    color: var(--text-primary);
+  }
+}
+
+.branchPrSecondary:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .branchPrPrimary {
@@ -378,14 +537,41 @@
   color: var(--surface-0);
 }
 
-.branchPrPrimary:hover:not(:disabled) {
-  filter: brightness(1.08);
+@media (hover: hover) and (pointer: fine) {
+  .branchPrPrimary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent-blue) 88%, white);
+  }
+}
+
+.branchPrPrimary:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.branchPrPrimaryLabel {
+  font-variant-numeric: tabular-nums;
+}
+
+.branchPrKbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 16px;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  color: color-mix(in srgb, var(--surface-0) 75%, var(--accent-blue));
+  background: color-mix(in srgb, var(--surface-0) 22%, transparent);
+  border-radius: 3px;
+  line-height: 1;
 }
 
 .branchPrPrimary:disabled,
 .branchPrSecondary:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+  transform: none;
 }
 
 .projectPrModalOverlay {
