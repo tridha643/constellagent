@@ -963,6 +963,11 @@ export class GitService {
     await git(['add', '--', ...paths], worktreePath)
   }
 
+  /** Stage every change in the worktree including deletions (`git add -A`). */
+  static async stageAll(worktreePath: string): Promise<void> {
+    await git(['add', '-A'], worktreePath)
+  }
+
   static async unstage(worktreePath: string, paths: string[]): Promise<void> {
     if (paths.length === 0) return
     await git(['reset', 'HEAD', '--', ...paths], worktreePath)
@@ -1008,6 +1013,27 @@ export class GitService {
       await git(['push', '--set-upstream', 'origin', 'HEAD'], worktreePath)
     } catch (err) {
       throw new Error(friendlyGitError(err, 'Failed to push current branch'))
+    }
+  }
+
+  /**
+   * Switch to `branch` inside `worktreePath`. When `createNew` is set, creates
+   * the branch at current HEAD (`git checkout -b`), carrying any uncommitted
+   * working-tree changes along — this is what powers the "branch this work"
+   * flow for users who have edits on their default branch.
+   */
+  static async checkoutBranch(
+    worktreePath: string,
+    branch: string,
+    createNew = false,
+  ): Promise<void> {
+    const trimmed = branch.trim()
+    if (!trimmed) throw new Error('Branch name is required.')
+    const args = createNew ? ['checkout', '-b', trimmed] : ['checkout', trimmed]
+    try {
+      await git(args, worktreePath)
+    } catch (err) {
+      throw new Error(friendlyGitError(err, `Failed to checkout ${trimmed}`))
     }
   }
 

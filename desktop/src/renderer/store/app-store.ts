@@ -427,6 +427,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeClaudeWorkspaceIds: new Set<string>(),
   prStatusMap: new Map(),
   ghAvailability: new Map(),
+  defaultBranchByProjectId: new Map(),
   gitFileStatuses: new Map(),
   workingTreeDiffSnapshots: new Map(),
   worktreeSyncStatus: new Map(),
@@ -476,6 +477,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       )
       const newGhAvailability = new Map(s.ghAvailability)
       newGhAvailability.delete(id)
+      const newDefaultBranchByProjectId = new Map(s.defaultBranchByProjectId)
+      newDefaultBranchByProjectId.delete(id)
 
       const newWorktreeSyncStatus = new Map(s.worktreeSyncStatus)
       const newGraphiteStacks = new Map(s.graphiteStacks)
@@ -511,6 +514,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeClaudeWorkspaceIds: newActiveClaude,
         prStatusMap: newPrStatusMap,
         ghAvailability: newGhAvailability,
+        defaultBranchByProjectId: newDefaultBranchByProjectId,
         worktreeSyncStatus: newWorktreeSyncStatus,
         graphiteStacks: newGraphiteStacks,
         collapsedProjectIds,
@@ -2199,6 +2203,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       const newMap = new Map(s.ghAvailability)
       newMap.set(projectId, available)
       return { ghAvailability: newMap }
+    }),
+
+  setProjectDefaultBranch: (projectId, branch) =>
+    set((s) => {
+      const normalized = branch.trim()
+      if (!normalized) return {}
+      if (s.defaultBranchByProjectId.get(projectId) === normalized) return {}
+      const next = new Map(s.defaultBranchByProjectId)
+      next.set(projectId, normalized)
+      return { defaultBranchByProjectId: next }
     }),
 
   setWorktreeSyncStatus: (projectId, workspaces) =>

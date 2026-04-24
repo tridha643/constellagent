@@ -56,6 +56,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const setPrStatuses = useAppStore((s) => s.setPrStatuses)
   const setGhAvailability = useAppStore((s) => s.setGhAvailability)
   const updateWorkspaceBranch = useAppStore((s) => s.updateWorkspaceBranch)
+  const setProjectDefaultBranch = useAppStore((s) => s.setProjectDefaultBranch)
 
   const workspace = workspaces.find((ws) => ws.id === workspaceId)
   const project = workspace ? projects.find((p) => p.id === workspace.projectId) : undefined
@@ -136,8 +137,12 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     window.api.git.getDefaultBranch(project.repoPath)
       .then((resolved) => {
         if (cancelled) return
-        setDefaultBranch(normalizeBranchName(resolved))
+        const normalized = normalizeWorkspaceBranch(resolved)
+        setDefaultBranch(normalized)
         setDefaultBranchLoading(false)
+        if (normalized) {
+          setProjectDefaultBranch(project.id, normalized)
+        }
       })
       .catch(() => {
         if (cancelled) return
@@ -146,7 +151,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
       })
 
     return () => { cancelled = true }
-  }, [project])
+  }, [project, setProjectDefaultBranch])
 
   const refreshPrStatus = useCallback(async (targetBranch?: string) => {
     const effectiveBranch = (targetBranch ?? branch).trim()

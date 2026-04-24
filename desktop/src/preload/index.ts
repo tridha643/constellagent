@@ -75,6 +75,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_GET_BRANCHES, repoPath),
     stage: (worktreePath: string, paths: string[]) =>
       ipcRenderer.invoke(IPC.GIT_STAGE, worktreePath, paths),
+    stageAll: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.GIT_STAGE_ALL, worktreePath) as Promise<void>,
     unstage: (worktreePath: string, paths: string[]) =>
       ipcRenderer.invoke(IPC.GIT_UNSTAGE, worktreePath, paths),
     discard: (worktreePath: string, paths: string[], untracked: string[]) =>
@@ -85,6 +87,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_COMMIT, worktreePath, message),
     pushCurrentBranch: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.GIT_PUSH_CURRENT_BRANCH, worktreePath) as Promise<void>,
+    checkoutBranch: (worktreePath: string, branch: string, createNew?: boolean) =>
+      ipcRenderer.invoke(IPC.GIT_CHECKOUT_BRANCH, worktreePath, branch, createNew === true) as Promise<void>,
     getCurrentBranch: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_CURRENT_BRANCH, worktreePath) as Promise<string>,
     getHeadHash: (worktreePath: string) =>

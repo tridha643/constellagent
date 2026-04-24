@@ -571,6 +571,8 @@ export interface AppState {
   activeClaudeWorkspaceIds: Set<string>
   prStatusMap: Map<string, PrInfo | null>
   ghAvailability: Map<string, boolean>
+  /** Resolved default branch per project id (`git symbolic-ref refs/remotes/origin/HEAD`). */
+  defaultBranchByProjectId: Map<string, string>
   gitFileStatuses: Map<string, Map<string, string>>
   workingTreeDiffSnapshots: Map<string, WorkingTreeDiffSnapshot>
   /** Per-workspace worktree sync status (key = workspace id) */
@@ -736,6 +738,7 @@ export interface AppState {
   // PR status actions
   setPrStatuses: (projectId: string, statuses: Record<string, PrInfo | null>) => void
   setGhAvailability: (projectId: string, available: boolean) => void
+  setProjectDefaultBranch: (projectId: string, branch: string) => void
   setWorktreeSyncStatus: (projectId: string, workspaces: Record<string, WorkspaceSyncInfo>) => void
   setGraphiteStack: (workspaceId: string, stack: GraphiteStackInfo | null) => void
   toggleGraphiteStackExpanded: () => void
