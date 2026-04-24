@@ -1,6 +1,10 @@
 import { useEffect, useRef } from 'react'
 import type { PrLookupResult } from '@shared/github-types'
 import { useAppStore } from '../store/app-store'
+import {
+  isStableWorkspaceBranch,
+  normalizeWorkspaceBranch,
+} from '../store/workspace-branch'
 
 const FAST_POLL_INTERVAL = 7_000
 const NORMAL_POLL_INTERVAL = 25_000
@@ -78,8 +82,8 @@ export function usePrStatusPoller(): void {
         polledWorkspaces.map(async (ws) => {
           if (!ws.worktreePath) return
           try {
-            const actual = await window.api.git.getCurrentBranch(ws.worktreePath)
-            if (actual && actual !== ws.branch) {
+            const actual = normalizeWorkspaceBranch(await window.api.git.getCurrentBranch(ws.worktreePath))
+            if (isStableWorkspaceBranch(actual) && actual !== ws.branch) {
               updateWorkspaceBranch(ws.id, actual)
             }
           } catch {
@@ -102,15 +106,16 @@ export function usePrStatusPoller(): void {
         backgroundCursor,
       )) {
         const project = projects.find((p) => p.id === ws.projectId)
-        if (!project || !ws.branch) continue
+        const branch = normalizeWorkspaceBranch(ws.branch)
+        if (!project || !isStableWorkspaceBranch(branch)) continue
 
         let entry = projectBranches.get(project.id)
         if (!entry) {
           entry = { repoPath: project.repoPath, branches: [] }
           projectBranches.set(project.id, entry)
         }
-        if (!entry.branches.includes(ws.branch)) {
-          entry.branches.push(ws.branch)
+        if (!entry.branches.includes(branch)) {
+          entry.branches.push(branch)
         }
       }
 

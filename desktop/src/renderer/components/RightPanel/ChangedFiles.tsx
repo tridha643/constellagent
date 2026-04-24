@@ -8,6 +8,10 @@ import { PiIcon } from '../Icons/PiIcon'
 import styles from './RightPanel.module.css'
 import { registerChangesFindSource } from '../../utils/changes-file-find-bridge'
 import { buildWorkingTreeStatusSignature } from '../../types/working-tree-diff'
+import {
+  normalizeWorkspaceBranch,
+  preserveWorkspaceBranch,
+} from '../../store/workspace-branch'
 
 const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
 
@@ -26,10 +30,6 @@ interface Props {
 function errorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message.trim()) return err.message.trim()
   return fallback
-}
-
-function normalizeBranchName(branch: string): string {
-  return branch.trim().replace(/^refs\/heads\//, '').replace(/^origin\//, '')
 }
 
 export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
@@ -59,7 +59,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
   const workspace = workspaces.find((ws) => ws.id === workspaceId)
   const project = workspace ? projects.find((p) => p.id === workspace.projectId) : undefined
-  const branch = normalizeBranchName(currentBranch || workspace?.branch || '')
+  const branch = normalizeWorkspaceBranch(currentBranch || workspace?.branch || '')
   const prInfo = project && branch ? prStatusMap.get(`${project.id}:${branch}`) ?? null : null
 
   const refresh = useCallback(async () => {
@@ -112,12 +112,10 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
     window.api.git.getCurrentBranch(worktreePath).then((actual) => {
       if (cancelled) return
-      const normalized = actual.trim()
-      if (normalized) {
-        setCurrentBranch(normalized)
-        if (normalized !== workspace.branch) updateWorkspaceBranch(workspace.id, normalized)
-      } else {
-        setCurrentBranch(workspace.branch)
+      const resolvedBranch = preserveWorkspaceBranch(workspace.branch, actual)
+      setCurrentBranch(resolvedBranch || workspace.branch)
+      if (resolvedBranch && resolvedBranch !== workspace.branch) {
+        updateWorkspaceBranch(workspace.id, resolvedBranch)
       }
     }).catch(() => {
       if (!cancelled) setCurrentBranch(workspace.branch)

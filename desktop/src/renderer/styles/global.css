@@ -316,6 +316,11 @@ body {
   --focus-border: color-mix(in srgb, var(--accent-blue) 42%, transparent);
   --sash-hover-size: 2px;
   --sash-hover-transition-duration: 160ms;
+  /* Kill Allotment's default 1px `rgba(128,128,128,0.35)` separator that
+     paints between every pane. That was the hard vertical seam visible
+     where the sidebar meets the main panel — with this transparent the
+     two `--surface-1` surfaces merge seamlessly (Claude-desktop style). */
+  --separator-border: transparent;
 }
 
 /* Keep the underlying 8px wide hit-target invisible — all visuals live on the
