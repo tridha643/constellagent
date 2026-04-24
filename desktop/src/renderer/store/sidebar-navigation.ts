@@ -1,15 +1,11 @@
 import type { Project, Workspace } from './types'
 
-export function isRenderableWorkspaceBranch(branch: string): boolean {
-  return branch.trim().toUpperCase() !== 'HEAD'
-}
-
 export function getVisibleProjects(projects: Project[]): Project[] {
   return projects
 }
 
 export function getRenderableProjectWorkspaces(workspaces: Workspace[], projectId: string): Workspace[] {
-  return workspaces.filter((workspace) => workspace.projectId === projectId && isRenderableWorkspaceBranch(workspace.branch))
+  return workspaces.filter((workspace) => workspace.projectId === projectId)
 }
 
 export function getVisibleWorkspaces(

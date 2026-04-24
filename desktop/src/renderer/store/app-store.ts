@@ -82,6 +82,10 @@ import {
   getVisibleWorkspaces,
   resolveProjectTargetWorkspace as resolveSidebarProjectTargetWorkspace,
 } from './sidebar-navigation'
+import {
+  isDetachedHeadBranchLabel,
+  preserveWorkspaceBranch,
+} from './workspace-branch'
 import { formatReviewForAgent } from '../utils/review-formatter'
 import { maybeShowStaleMainToast } from '../utils/ipc-stale-main'
 import {
@@ -651,9 +655,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateWorkspaceBranch: (id, branch) =>
-    set((s) => ({
-      workspaces: s.workspaces.map((w) => w.id === id ? { ...w, branch } : w),
-    })),
+    set((s) => {
+      let changed = false
+      const workspaces = s.workspaces.map((w) => {
+        if (w.id !== id) return w
+        const nextBranch = preserveWorkspaceBranch(w.branch, branch)
+        if (nextBranch === w.branch) return w
+        changed = true
+        return { ...w, branch: nextBranch }
+      })
+      return changed ? { workspaces } : s
+    }),
 
   refreshGitWorktrees: () => {
     void reconcileGitWorktreesForStore(null)
@@ -2449,52 +2461,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 }))
 
-/** Detached git checkouts report as branch `HEAD`; they are not useful sidebar rows. */
-function isDetachedHeadBranchLabel(branch: string): boolean {
-  return branch.trim().toUpperCase() === 'HEAD'
-}
-
 /** t3 agent sandboxes live under `~/.t3/worktrees/<repoDir>/…`. */
 function isT3WorktreePath(path: string): boolean {
   return path.replace(/\\/g, '/').includes('/.t3/worktrees/')
-}
-
-/** Drop workspaces that only represent detached HEAD (from older reconcile / git state). */
-function pruneDetachedHeadWorkspaces(): void {
-  useAppStore.setState((s) => {
-    const removeIds = new Set(
-      s.workspaces.filter((w) => isDetachedHeadBranchLabel(w.branch)).map((w) => w.id),
-    )
-    if (removeIds.size === 0) return s
-
-    const newWorkspaces = s.workspaces.filter((w) => !removeIds.has(w.id))
-    const newTabs = s.tabs.filter((t) => !removeIds.has(t.workspaceId))
-    const tabMap = { ...s.lastActiveTabByWorkspace }
-    for (const id of removeIds) delete tabMap[id]
-
-    let activeWorkspaceId = s.activeWorkspaceId
-    if (activeWorkspaceId && removeIds.has(activeWorkspaceId)) {
-      activeWorkspaceId = newWorkspaces[0]?.id ?? null
-    }
-    const activeTabId = newTabs.some((t) => t.id === s.activeTabId)
-      ? s.activeTabId
-      : (newTabs.find((t) => t.workspaceId === activeWorkspaceId)?.id ?? newTabs[0]?.id ?? null)
-    const lastActiveWorkspaceByProjectId = pruneLastActiveWorkspaceByProjectId(
-      s.lastActiveWorkspaceByProjectId,
-      s.projects,
-      newWorkspaces,
-    )
-
-    return {
-      workspaces: newWorkspaces,
-      tabs: newTabs,
-      activeWorkspaceId,
-      activeTabId,
-      lastActiveWorkspaceByProjectId,
-      lastActiveTabByWorkspace: tabMap,
-      planBuildTerminalByPlanPath: planBuildMapForTabs(s.planBuildTerminalByPlanPath, newTabs),
-    }
-  })
 }
 
 async function resolveListedWorktreeBranch(
@@ -2519,8 +2488,6 @@ async function resolveListedWorktreeBranch(
  * Also repairs persisted rows stuck with branch `HEAD` / empty when git now reports a real branch.
  */
 async function runReconcileGitWorktreesForStore(projectIdFilter: string | null): Promise<void> {
-  pruneDetachedHeadWorkspaces()
-
   const projects =
     projectIdFilter === null
       ? useAppStore.getState().projects
