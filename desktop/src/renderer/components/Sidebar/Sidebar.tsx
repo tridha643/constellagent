@@ -15,6 +15,7 @@ import { WorkspaceDialog } from "./WorkspaceDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { GraphiteStack } from "./GraphiteStack";
 import { BranchAndPrLauncher } from "./BranchAndPrLauncher";
+import { AddProjectDialog } from "./AddProjectDialog";
 
 import { Tooltip } from "../Tooltip/Tooltip";
 import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME, CONSTELLAGENT_PROJECT_MIME } from "../../utils/add-to-chat";
@@ -363,7 +364,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const workspaces = useAppStore((s) => s.workspaces);
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
   const setActiveWorkspace = useAppStore((s) => s.setActiveWorkspace);
-  const addProject = useAppStore((s) => s.addProject);
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const addTab = useAppStore((s) => s.addTab);
   const addToast = useAppStore((s) => s.addToast);
@@ -406,7 +406,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const [workspaceCreation, setWorkspaceCreation] =
     useState<WorkspaceCreationState | null>(null);
   const [showSlowCreateMessage, setShowSlowCreateMessage] = useState(false);
-  const [isInitializingRepo, setIsInitializingRepo] = useState(false);
+  const [addProjectDialogOpen, setAddProjectDialogOpen] = useState(false);
   const [openProjectPrPopoverId, setOpenProjectPrPopoverId] = useState<
     string | null
   >(null);
@@ -499,52 +499,9 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
     if (openProjectPrPopoverId === id) closeProjectPrModal();
   }, [closeProjectPrModal, openProjectPrPopoverId, toggleProjectCollapsed]);
 
-  const handleAddProject = useCallback(async () => {
-    const dirPath = await window.api.app.selectDirectory();
-    if (!dirPath) return;
-
-    try {
-      const isRepo = await window.api.git.checkIsRepo(dirPath);
-      const name = dirPath.split("/").pop() || dirPath;
-      const id = crypto.randomUUID();
-
-      const addSelectedProject = async () => {
-        const repoPath = isRepo
-          ? await window.api.git.getProjectRepoAnchor(dirPath).catch(() => dirPath)
-          : dirPath;
-        addProject({ id, name, repoPath });
-      };
-
-      if (!isRepo) {
-        showConfirmDialog({
-          title: "Initialize Git Repository",
-          message: `"${name}" is not a git repository. Initialize one to get started?`,
-          confirmLabel: "Initialize",
-          onConfirm: async () => {
-            dismissConfirmDialog();
-            setIsInitializingRepo(true);
-            try {
-              await window.api.git.initRepo(dirPath);
-              await addSelectedProject();
-            } catch (err) {
-              const msg =
-                err instanceof Error ? err.message : "Failed to initialize repo";
-              addToast({ id: crypto.randomUUID(), message: msg, type: "error" });
-            } finally {
-              setIsInitializingRepo(false);
-            }
-          },
-        });
-        return;
-      }
-
-      await addSelectedProject();
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to inspect directory";
-      addToast({ id: crypto.randomUUID(), message: msg, type: "error" });
-    }
-  }, [addProject, addToast, dismissConfirmDialog, showConfirmDialog]);
+  const handleAddProject = useCallback(() => {
+    setAddProjectDialogOpen(true);
+  }, []);
 
   const finishCreateWorkspace = useCallback(
     async (
@@ -1063,11 +1020,10 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const actionButtonConfigs = useMemo<Record<SidebarActionId, ActionButtonConfig>>(() => ({
     'add-project': {
       id: 'add-project',
-      icon: isInitializingRepo ? '…' : '+',
-      label: isInitializingRepo ? 'Initializing…' : 'Add project',
-      tooltipLabel: isInitializingRepo ? 'Initializing repository…' : 'Add project',
+      icon: '+',
+      label: 'Add project',
+      tooltipLabel: 'Add project',
       onClick: handleAddProject,
-      disabled: isInitializingRepo,
     },
     automations: {
       id: 'automations',
@@ -1114,7 +1070,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       shortcut: '⌘,',
       onClick: toggleSettings,
     },
-  }), [isInitializingRepo, handleAddProject, toggleAutomations, toggleLinear, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
+  }), [handleAddProject, toggleAutomations, toggleLinear, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
 
   const orderedActions = useMemo(
     () => sidebarActionOrder.map((id) => actionButtonConfigs[id]),
@@ -1656,6 +1612,10 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
             )}
           </div>
         </div>
+      )}
+
+      {addProjectDialogOpen && (
+        <AddProjectDialog onClose={() => setAddProjectDialogOpen(false)} />
       )}
 
       {dialogProject && (

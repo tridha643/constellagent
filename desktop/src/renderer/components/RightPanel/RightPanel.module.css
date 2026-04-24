@@ -199,17 +199,19 @@
 .commitInput {
   flex: 1;
   min-width: 0;
-  min-height: 32px;
-  max-height: 80px;
-  padding: var(--space-2) var(--space-3);
+  min-height: 36px;
+  max-height: 140px;
+  padding: var(--space-3);
   background: transparent;
   border: none;
   border-radius: 0;
   color: var(--text-primary);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
   font-family: var(--font-ui);
   resize: vertical;
   outline: none;
+  transition: filter var(--motion-default);
 }
 
 .commitInput:focus {
@@ -220,8 +222,29 @@
   color: var(--text-tertiary);
 }
 
+/* Subtle settle when a generated message lands — blur bridges the crossfade
+   between empty and populated text without hiding the content. Pairs with the
+   border flash on .commitInputCompoundFlash so they read as one event. */
+.commitInputCompoundFlash .commitInput {
+  animation: commitInputSettle var(--duration-slow) var(--ease-out) both;
+}
+
+@keyframes commitInputSettle {
+  from { filter: blur(1.5px); }
+  to   { filter: blur(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .commitInput {
+    transition: none;
+  }
+  .commitInputCompoundFlash .commitInput {
+    animation: none;
+  }
+}
+
 .commitPiButton {
-  width: 40px;
+  width: 36px;
   flex-shrink: 0;
   align-self: stretch;
   display: inline-flex;
@@ -236,7 +259,11 @@
   box-shadow: none;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out), transform 100ms var(--ease-out), opacity 140ms var(--ease-out);
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast),
+    opacity var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
 .commitPiButton:not(:disabled):hover {
@@ -259,7 +286,7 @@
 }
 
 .commitPiIconBusy {
-  animation: commitPiPulse 620ms cubic-bezier(0.23, 1, 0.32, 1) infinite;
+  animation: commitPiPulse 620ms var(--ease-out) infinite;
 }
 
 @keyframes commitPiPulse {
@@ -355,7 +382,7 @@
 /* ── Change Sections ── */
 
 .changeSection {
-  padding: var(--space-2) 0;
+  padding: var(--space-2) 0 var(--space-3);
 }
 
 .sectionHeader {
@@ -368,7 +395,7 @@
   font-weight: var(--weight-semibold);
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 
 .sectionLabel {
@@ -376,14 +403,18 @@
 }
 
 .sectionCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 var(--space-2);
   background: color-mix(in srgb, var(--text-primary) 8%, transparent);
   border-radius: var(--radius-full);
-  padding: 0 6px;
   font-size: 10px;
-  line-height: 18px;
-  min-width: 18px;
-  text-align: center;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .sectionActions {
@@ -402,11 +433,14 @@
   border: none;
   background: none;
   color: var(--text-tertiary);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: var(--weight-semibold);
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: color var(--motion-fast), background-color var(--motion-fast), transform 100ms var(--ease-out);
+  transition:
+    color var(--motion-fast),
+    background-color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
 .sectionAction:disabled {
@@ -414,12 +448,23 @@
   cursor: not-allowed;
 }
 
+.sectionAction:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 45%, transparent);
+}
+
 .sectionAction:active,
 .fileActionBtn:active {
   transform: scale(0.97);
 }
 
-/* ── File Rows ── */
+/* ── File Rows ──
+ *
+ * Row entry: subtle slide + opacity settle so newly-appearing files don't pop
+ * into place. Fires on mount, which for this list means: initial render AND
+ * whenever a file's staged/unstaged key flips (row remounts under a new key).
+ * Keeps the stage/unstage interaction feeling like motion, not teleport.
+ * Uses @starting-style so it's pure CSS — no effect + data-mounted tax. */
 
 .changedFile {
   display: flex;
@@ -431,7 +476,40 @@
   font-family: var(--font-mono);
   color: var(--text-secondary);
   border-radius: var(--radius-md);
-  transition: background-color var(--motion-fast);
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast),
+    opacity var(--motion-default),
+    transform var(--duration-default) var(--ease-out);
+}
+
+@starting-style {
+  .changedFile {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+.changedFile:active {
+  transform: scale(0.997);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .changedFile {
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+    transform: none;
+  }
+  .changedFile:active {
+    transform: none;
+  }
+  @starting-style {
+    .changedFile {
+      opacity: 1;
+      transform: none;
+    }
+  }
 }
 
 .statusBadge {
@@ -440,13 +518,15 @@
   width: 14px;
   text-align: center;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .statusBadge.modified {
   color: var(--accent-orange);
 }
 
-.statusBadge.added {
+.statusBadge.added,
+.statusBadge.untracked {
   color: var(--accent-green);
 }
 
@@ -464,13 +544,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+  transition: color var(--motion-fast);
 }
 
 .changeDir {
   color: var(--text-tertiary);
+  transition: color var(--motion-fast);
 }
 
-/* ── File Action Buttons (hover-reveal) ── */
+/* ── File Action Buttons (hover-reveal) ──
+ *
+ * Resting state has the actions slightly offset so they slide in from the
+ * right on hover rather than fading straight on top of the path. Stays on
+ * transform+opacity only (GPU-only) and uses the press curve so the reveal
+ * feels snappy. */
 
 .fileActions {
   display: flex;
@@ -478,7 +565,24 @@
   gap: 2px;
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity var(--motion-fast);
+  transform: translateX(4px);
+  transition:
+    opacity var(--motion-default),
+    transform var(--motion-default);
+}
+
+/* Keyboard / focus access: when any action button inside is focused, reveal
+   the action bar so keyboard users get the same affordance as hover. */
+.fileActions:focus-within {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fileActions {
+    transform: none;
+    transition: opacity var(--duration-fast) linear;
+  }
 }
 
 .fileActionBtn {
@@ -535,6 +639,31 @@
   border-radius: var(--radius-xl);
   background: color-mix(in srgb, var(--surface-2) 84%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity var(--duration-slow) var(--ease-out),
+    transform var(--duration-slow) var(--ease-out);
+}
+
+@starting-style {
+  .emptyState {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .emptyState {
+    transition: opacity var(--duration-fast) linear;
+    transform: none;
+  }
+  @starting-style {
+    .emptyState {
+      opacity: 1;
+      transform: none;
+    }
+  }
 }
 
 .emptyIcon {
@@ -703,15 +832,24 @@
   }
 
   .changedFile:hover {
-    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+    color: var(--text-primary);
+  }
+
+  /* When the row is hovered, lift the directory from ghost → tertiary so the
+     path reads as a whole, then let the filename inherit --text-primary from
+     the row. Small unseen detail, compounds across every hover. */
+  .changedFile:hover .changeDir {
+    color: color-mix(in srgb, var(--text-tertiary) 85%, var(--text-primary));
   }
 
   .changedFile:hover .fileActions {
     opacity: 1;
+    transform: translateX(0);
   }
 
   .fileActionBtn:hover {
     color: var(--text-primary);
-    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+    background: color-mix(in srgb, var(--text-primary) 7%, transparent);
   }
 }

@@ -4,7 +4,10 @@ import type {
   LinearProjectNode,
   LinearProjectUpdateNode,
 } from '../../linear/linear-api'
-import { linearOpenExternal } from '../../linear/linear-api'
+import {
+  buildLinearProjectSubviewUrl,
+  linearOpenExternal,
+} from '../../linear/linear-api'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { matchesFffQuery } from './fff-text-match'
 import styles from './ProjectsView.module.css'
@@ -162,7 +165,7 @@ export function ProjectsView({
                     className={styles.actionGhost}
                     onClick={() =>
                       void linearOpenExternal(
-                        p.url || `https://linear.app/project/${p.slugId}`,
+                        buildLinearProjectSubviewUrl(p, 'overview'),
                       )
                     }
                   >

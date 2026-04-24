@@ -314,6 +314,38 @@
   }
 }
 
+.headerToolBtnOpenLinear {
+  gap: 6px;
+}
+
+.headerToolBtnLabel {
+  display: inline-block;
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+    filter 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@starting-style {
+  .headerToolBtnLabel {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .headerToolBtnLabel {
+    transition: opacity 120ms ease;
+  }
+
+  @starting-style {
+    .headerToolBtnLabel {
+      filter: blur(0);
+    }
+  }
+}
+
 .content {
   flex: 1;
   min-height: 0;

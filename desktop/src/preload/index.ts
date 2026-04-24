@@ -8,6 +8,7 @@ import type {
   AutomationWorkspaceEvent,
 } from '../shared/automation-types'
 import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
+import type { CloneRepoOptions, CloneRepoProgressEvent, CloneRepoResult } from '../shared/clone-repo'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { AgentPlanSearchRequest, AgentPlanSearchResult, PlanAgent } from '../shared/agent-plan-path'
 import type { PiModelOption } from '../shared/plan-build-command'
@@ -22,6 +23,7 @@ import type { CodeSearchRequest, CodeSearchResult } from '../shared/code-search-
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
+import type { GithubCloneRepoSuggestion } from '../shared/github-clone-suggestions'
 
 /** Linear GraphQL via main process (renderer fetch hits CORS). Exposed on `api` and `api.app`. */
 function linearGraphql(
@@ -50,6 +52,17 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_IS_SECONDARY_WORKTREE_ROOT, repoPath, workspaceRoot) as Promise<boolean>,
     initRepo: (dirPath: string) =>
       ipcRenderer.invoke(IPC.GIT_INIT_REPO, dirPath) as Promise<void>,
+    cloneRepo: (opts: CloneRepoOptions) =>
+      ipcRenderer.invoke(IPC.GIT_CLONE_REPO, opts) as Promise<CloneRepoResult>,
+    cancelClone: (requestId: string) =>
+      ipcRenderer.send(IPC.GIT_CLONE_REPO_CANCEL, requestId),
+    onCloneRepoProgress: (callback: (progress: CloneRepoProgressEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, progress: CloneRepoProgressEvent) => callback(progress)
+      ipcRenderer.on(IPC.GIT_CLONE_REPO_PROGRESS, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.GIT_CLONE_REPO_PROGRESS, listener)
+      }
+    },
     createWorktree: (repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[]) =>
       ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE, repoPath, name, branch, newBranch, baseBranch, force, requestId, credentialRules),
     createWorktreeFromPr: (repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[]) =>
@@ -385,6 +398,8 @@ const api = {
       ipcRenderer.invoke(IPC.GITHUB_REOPEN_PR, repoPath, prNumber) as Promise<{ number: number; url: string }>,
     getPrReviewComments: (repoPath: string, prNumber: number) =>
       ipcRenderer.invoke(IPC.GITHUB_GET_PR_REVIEW_COMMENTS, repoPath, prNumber) as Promise<import('../main/github-service').PrReviewComment[]>,
+    listCloneRepoSuggestions: (query: string) =>
+      ipcRenderer.invoke(IPC.GITHUB_CLONE_SUGGESTIONS, query) as Promise<GithubCloneRepoSuggestion[]>,
   },
 
   lsp: {

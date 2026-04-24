@@ -453,14 +453,41 @@
   font-family: var(--font-mono);
   cursor: pointer;
   white-space: nowrap;
+  opacity: 1;
   transition:
     color var(--motion-fast),
     background-color var(--motion-fast),
+    opacity var(--motion-default),
     transform var(--duration-micro) var(--ease-press);
+}
+
+@starting-style {
+  .fileStripItem {
+    opacity: 0;
+  }
 }
 
 .fileStripItem:active {
   transform: scale(0.97);
+}
+
+.fileStripItem:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 45%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fileStripItem {
+    transition: color var(--motion-fast), background-color var(--motion-fast);
+  }
+  .fileStripItem:active {
+    transform: none;
+  }
+  @starting-style {
+    .fileStripItem {
+      opacity: 1;
+    }
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -686,7 +713,10 @@
   font-weight: 600;
   cursor: pointer;
   line-height: 1;
-  transition: background-color 120ms ease-out, transform 120ms ease-out;
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
 @media (hover: hover) and (pointer: fine) {

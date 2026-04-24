@@ -8,13 +8,11 @@ import type {
   OpenPrInfo,
   ListOpenPrsResult,
 } from '../shared/github-types'
+import { parseGithubUrl } from '../shared/github-url'
+import type { GithubRepoInfo } from '../shared/github-url'
+import type { GithubCloneRepoSuggestion } from '../shared/github-clone-suggestions'
 
 const execFileAsync = promisify(execFile)
-
-interface GithubRepoInfo {
-  owner: string
-  name: string
-}
 
 interface GraphqlPullRequestNode {
   number: number
@@ -195,6 +193,38 @@ export class GithubService {
       this.ghAvailable = false
     }
     return this.ghAvailable
+  }
+
+  /**
+   * Clone-tab suggestions: your repos (empty query) or `gh search repos` (non-empty).
+   * Returns [] if `gh` is missing, not logged in, or the command errors.
+   */
+  static async listCloneRepoSuggestions(query: string): Promise<GithubCloneRepoSuggestion[]> {
+    if (!(await this.isGhAvailable())) return []
+    const trimmed = query.trim()
+    try {
+      if (trimmed.length === 0) {
+        const { stdout } = await execFileAsync(
+          'gh',
+          ['repo', 'list', '-L', '25', '--json', 'nameWithOwner,url'],
+          { timeout: 12_000 },
+        )
+        const rows = JSON.parse(stdout) as Array<{ nameWithOwner: string; url: string }>
+        if (!Array.isArray(rows)) return []
+        return rows.map((r) => ({ fullName: r.nameWithOwner, webUrl: r.url }))
+      }
+      const q = trimmed.slice(0, 200)
+      const { stdout } = await execFileAsync(
+        'gh',
+        ['search', 'repos', q, '--limit', '20', '--json', 'fullName,url'],
+        { timeout: 12_000 },
+      )
+      const rows = JSON.parse(stdout) as Array<{ fullName: string; url: string }>
+      if (!Array.isArray(rows)) return []
+      return rows.map((r) => ({ fullName: r.fullName, webUrl: r.url }))
+    } catch {
+      return []
+    }
   }
 
   static async isGithubRepo(repoPath: string): Promise<boolean> {
@@ -482,35 +512,8 @@ export class GithubService {
   }
 
   private static parseGithubRemote(remote: string): GithubRepoInfo | null {
-    const trimmed = remote.trim()
-    if (!trimmed) return null
-
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('ssh://')) {
-      try {
-        const parsed = new URL(trimmed)
-        if (parsed.hostname.toLowerCase() !== 'github.com') return null
-        const parts = parsed.pathname.replace(/^\/+/, '').replace(/\/+$/, '').split('/')
-        if (parts.length < 2) return null
-        const owner = parts[0]
-        const name = parts[1].replace(/\.git$/i, '')
-        if (!owner || !name) return null
-        return { owner, name }
-      } catch {
-        return null
-      }
-    }
-
-    const sshMatch = trimmed.match(/^[^@]+@github\.com:([^/\s:]+)\/([^/\s]+?)(?:\.git)?$/i)
-    if (sshMatch?.[1] && sshMatch?.[2]) {
-      return { owner: sshMatch[1], name: sshMatch[2] }
-    }
-
-    const plainMatch = trimmed.match(/^github\.com[:/]([^/\s:]+)\/([^/\s]+?)(?:\.git)?$/i)
-    if (plainMatch?.[1] && plainMatch?.[2]) {
-      return { owner: plainMatch[1], name: plainMatch[2] }
-    }
-
-    return null
+    const parsed = parseGithubUrl(remote)
+    return parsed ? { owner: parsed.owner, name: parsed.name } : null
   }
 
   private static cacheKey(repoPath: string, branches: string[]): string {

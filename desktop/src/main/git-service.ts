@@ -9,6 +9,13 @@ import type { GitLogEntry, WorktreeInfo } from '../shared/git-types'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
+import type {
+  CloneRepoOptions,
+  CloneRepoProgress,
+  CloneRepoResult,
+} from '../shared/clone-repo'
+import { CLONE_ERROR_CODES } from '../shared/clone-repo'
+import type { ChildProcess } from 'child_process'
 import { buildSingleHunkGitPatch } from '../shared/git-hunk-patch'
 import { copyWorktreeCredentialArtifacts } from './worktree-credential-copy'
 
@@ -92,6 +99,90 @@ function spawnAndCapture(command: string, args: string[], cwd: string, maxBuffer
   })
 }
 
+/** Module-level registry of in-flight clone child processes, keyed by requestId, so Cancel can SIGTERM them. */
+const cloneProcesses = new Map<string, ChildProcess>()
+
+/**
+ * Spawn a process, buffer stdout, and stream stderr line-by-line to a callback.
+ * Used for `git clone --progress` where stderr carries the human-readable progress feed.
+ * Stores the child in `cloneProcesses` under `requestId` when provided so it can be cancelled.
+ */
+function spawnAndStreamStderr(
+  command: string,
+  args: string[],
+  cwd: string,
+  opts: {
+    onStderrLine?: (line: string) => void
+    env?: NodeJS.ProcessEnv
+    requestId?: string
+  } = {},
+): Promise<string> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(command, args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: opts.env ?? process.env,
+    })
+
+    if (opts.requestId) cloneProcesses.set(opts.requestId, child)
+
+    let stdout = ''
+    let stderrBuf = ''
+    let stderrRemainder = ''
+    let settled = false
+
+    const cleanup = () => {
+      if (opts.requestId && cloneProcesses.get(opts.requestId) === child) {
+        cloneProcesses.delete(opts.requestId)
+      }
+    }
+
+    const reject = (
+      err: Error & { stdout?: string; stderr?: string; code?: string | number | null; signal?: NodeJS.Signals | null },
+    ) => {
+      if (settled) return
+      settled = true
+      err.stdout = stdout
+      err.stderr = stderrBuf
+      cleanup()
+      rejectPromise(err)
+    }
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf8')
+    })
+
+    child.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString('utf8')
+      stderrBuf += text
+      if (!opts.onStderrLine) return
+      // Git emits progress lines terminated by \r; split on both.
+      const combined = stderrRemainder + text
+      const parts = combined.split(/\r\n|\r|\n/)
+      stderrRemainder = parts.pop() ?? ''
+      for (const part of parts) {
+        if (part.length > 0) opts.onStderrLine(part)
+      }
+    })
+
+    child.on('error', (err) => reject(err))
+    child.on('close', (code, signal) => {
+      if (settled) return
+      if (opts.onStderrLine && stderrRemainder.length > 0) {
+        opts.onStderrLine(stderrRemainder)
+      }
+      if (code === 0) {
+        settled = true
+        cleanup()
+        resolvePromise(stdout.trimEnd())
+        return
+      }
+      reject(Object.assign(new Error(`${command} exited with code ${code ?? signal}`), { code, signal }))
+    })
+  })
+}
+
 function buildSyntheticSymlinkPatch(filePath: string, target: string): string {
   return [
     `diff --git a/${filePath} b/${filePath}`,
@@ -145,6 +236,32 @@ function friendlyGitError(err: unknown, fallback: string): string {
 
   // "fatal: not a git repository"
   if (stderr.includes('not a git repository')) return 'Not a git repository'
+
+  // Clone: auth failed / prompts disabled / private repo without creds
+  if (
+    /Authentication failed/i.test(stderr) ||
+    /could not read Username/i.test(stderr) ||
+    /terminal prompts disabled/i.test(stderr) ||
+    /Permission denied \(publickey\)/i.test(stderr)
+  ) {
+    return CLONE_ERROR_CODES.AUTH_FAILED
+  }
+
+  // Clone: network reachability
+  if (
+    /Could not resolve host/i.test(stderr) ||
+    /Connection refused/i.test(stderr) ||
+    /Connection timed out/i.test(stderr) ||
+    /Operation timed out/i.test(stderr) ||
+    /Failed to connect to/i.test(stderr)
+  ) {
+    return CLONE_ERROR_CODES.NETWORK
+  }
+
+  // Clone: repo missing or no access
+  if (/Repository not found/i.test(stderr) || /ERROR: Repository not found/i.test(stderr)) {
+    return CLONE_ERROR_CODES.NOT_FOUND
+  }
 
   // Generic: grab the fatal line
   const fatal = stderr.match(/fatal: (.+)/)?.[1]?.trim()
@@ -234,6 +351,116 @@ export class GitService {
     } catch (err) {
       throw new Error(friendlyGitError(err, 'Failed to initialize repository'))
     }
+  }
+
+  /**
+   * Clone a remote repository into `destPath`. Full-history clone (worktree creation
+   * later requires non-default branches). Progress is streamed stage-by-stage through
+   * `onProgress`; during the `cloning` stage, percent values are extracted from git's
+   * stderr `--progress` output. Use `cancelClone(requestId)` to abort.
+   */
+  static async cloneRepo(
+    opts: CloneRepoOptions,
+    onProgress?: (progress: CloneRepoProgress) => void,
+  ): Promise<CloneRepoResult> {
+    const { url, destPath, requestId } = opts
+
+    onProgress?.({ stage: 'validate-url', message: 'Validating URL…' })
+
+    // Prepare destination. Fail fast if the path exists and is non-empty (caller
+    // has already distinguished between "empty dir" / "existing repo" / "non-empty" via IPC pre-checks).
+    onProgress?.({ stage: 'prepare-destination', message: 'Preparing destination…' })
+    const parent = dirname(destPath)
+    if (!existsSync(parent)) {
+      throw new Error('Parent directory does not exist')
+    }
+    if (existsSync(destPath)) {
+      const entries = await readdir(destPath).catch(() => [])
+      if (entries.length > 0) {
+        // The renderer may choose to fall through to "Add existing repo" before reaching us;
+        // by the time we are here, this is an unrecoverable collision.
+        throw new Error(CLONE_ERROR_CODES.DEST_EXISTS_NON_EMPTY)
+      }
+    }
+
+    onProgress?.({ stage: 'cloning', message: 'Starting clone…', percent: 0 })
+
+    try {
+      await spawnAndStreamStderr(
+        'git',
+        ['clone', '--progress', '--no-single-branch', url, destPath],
+        parent,
+        {
+          requestId,
+          env: {
+            ...process.env,
+            // Fail fast on missing credentials instead of hanging for an interactive prompt.
+            GIT_TERMINAL_PROMPT: '0',
+            // Disable macOS/Windows graphical credential popups so auth failures surface as errors.
+            GIT_ASKPASS: 'echo',
+            SSH_ASKPASS: 'echo',
+          },
+          onStderrLine: (line) => {
+            const match = line.match(
+              /^(Receiving objects|Resolving deltas|Counting objects|Compressing objects):\s+(\d+)%/,
+            )
+            if (match) {
+              onProgress?.({
+                stage: 'cloning',
+                message: line,
+                percent: Math.min(100, Math.max(0, Number(match[2]))),
+              })
+            } else if (line.trim().length > 0) {
+              onProgress?.({ stage: 'cloning', message: line })
+            }
+          },
+        },
+      )
+    } catch (err) {
+      // Clean up partial checkout so retry works.
+      await rm(destPath, { recursive: true, force: true }).catch(() => {})
+
+      const signal = typeof err === 'object' && err !== null ? (err as { signal?: NodeJS.Signals | null }).signal : null
+      if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+        throw new Error(CLONE_ERROR_CODES.CANCELLED)
+      }
+      throw new Error(friendlyGitError(err, 'Failed to clone repository'))
+    }
+
+    onProgress?.({ stage: 'finalizing', message: 'Finalizing…', percent: 100 })
+
+    // Canonicalize path (handles macOS /private symlink + user-supplied case) and read HEAD branch.
+    let repoPath: string
+    try {
+      repoPath = await realpath(destPath)
+    } catch {
+      repoPath = resolve(destPath)
+    }
+
+    let defaultBranch = ''
+    try {
+      defaultBranch = (await git(['symbolic-ref', '--short', 'HEAD'], repoPath)).trim()
+    } catch {
+      // Detached HEAD or no commits — not critical; caller treats empty as "unknown".
+      defaultBranch = ''
+    }
+
+    return { repoPath, defaultBranch }
+  }
+
+  /**
+   * Cancel an in-flight clone. Returns `true` if a matching request was found and signalled.
+   * The `cloneRepo` call will reject with `CLONE_CANCELLED` and the partial destination is cleaned up.
+   */
+  static cancelClone(requestId: string): boolean {
+    const child = cloneProcesses.get(requestId)
+    if (!child) return false
+    try {
+      child.kill('SIGTERM')
+    } catch {
+      return false
+    }
+    return true
   }
 
   static async listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {

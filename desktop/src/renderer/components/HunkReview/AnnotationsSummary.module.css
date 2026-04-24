@@ -19,7 +19,9 @@
   font-size: var(--text-xs);
   font-family: var(--font-ui);
   cursor: pointer;
-  transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition:
+    background-color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
   text-align: left;
 }
 
@@ -37,7 +39,7 @@
   text-align: center;
   color: var(--text-tertiary);
   flex-shrink: 0;
-  transition: transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform var(--motion-default);
 }
 
 .sectionTitle {
@@ -134,8 +136,33 @@
 .row {
   padding: 8px var(--space-6) 8px calc(var(--space-6) + var(--space-2));
   border-top: 1px solid rgba(255, 255, 255, 0.03);
-  transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1);
   cursor: pointer;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    background-color var(--motion-fast),
+    opacity var(--motion-default),
+    transform var(--motion-default);
+}
+
+@starting-style {
+  .row {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    transition: background-color var(--motion-fast);
+    transform: none;
+  }
+  @starting-style {
+    .row {
+      opacity: 1;
+      transform: none;
+    }
+  }
 }
 
 .row:hover {
@@ -163,7 +190,7 @@
   font-weight: 600;
   flex-shrink: 0;
   letter-spacing: 0.02em;
-  transition: transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform var(--motion-default);
 }
 
 .row:hover .rowAvatar {
@@ -213,8 +240,10 @@
   padding: 1px 4px;
   cursor: pointer;
   border-radius: 3px;
-  transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1),
-              background-color 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition:
+    color var(--motion-fast),
+    background-color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
 .lineLink:hover {
@@ -270,7 +299,10 @@
   border: none;
   padding: 0;
   cursor: pointer;
-  transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition:
+    color var(--motion-fast),
+    opacity var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
 .actionBtn:disabled {
@@ -312,11 +344,11 @@
 }
 
 :global(.highlightFlash) {
-  animation: annotationHighlight 1.2s cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation: annotationHighlight 1.2s var(--ease-out) both;
 }
 
 .highlightFlash {
-  animation: annotationHighlight 1.2s cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation: annotationHighlight 1.2s var(--ease-out) both;
 }
 
 /* ── Reduced motion ── */
