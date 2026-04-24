@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildLinearProjectSubviewUrl, type LinearProjectNode } from './linear-api'
+import {
+  buildLinearProjectSubviewUrl,
+  buildLinearWorkspaceProjectsListUrl,
+  type LinearProjectNode,
+} from './linear-api'
 
 describe('buildLinearProjectSubviewUrl', () => {
   const base: LinearProjectNode = {
@@ -59,5 +63,33 @@ describe('buildLinearProjectSubviewUrl', () => {
   it('returns workspace root when both url and slugId are missing', () => {
     const p: LinearProjectNode = { id: 'p1', name: 'R', slugId: '', url: '' }
     expect(buildLinearProjectSubviewUrl(p, 'issues')).toBe('https://linear.app')
+  })
+})
+
+describe('buildLinearWorkspaceProjectsListUrl', () => {
+  it('derives /{org}/projects/all from an org-scoped project url', () => {
+    expect(
+      buildLinearWorkspaceProjectsListUrl([
+        {
+          url: 'https://linear.app/boardy/project/abc-123/overview',
+        },
+      ]),
+    ).toBe('https://linear.app/boardy/projects/all')
+  })
+
+  it('uses the first project with an org-scoped url', () => {
+    expect(
+      buildLinearWorkspaceProjectsListUrl([
+        { url: 'https://linear.app/project/xyz' },
+        { url: 'https://linear.app/acme/project/p1' },
+      ]),
+    ).toBe('https://linear.app/acme/projects/all')
+  })
+
+  it('falls back to linear.app root when no org key can be parsed', () => {
+    expect(buildLinearWorkspaceProjectsListUrl([{ url: 'https://linear.app/project/xyz' }])).toBe(
+      'https://linear.app',
+    )
+    expect(buildLinearWorkspaceProjectsListUrl([])).toBe('https://linear.app')
   })
 })

@@ -893,6 +893,34 @@ export function buildLinearProjectSubviewUrl(
   return `${stripped}/${subview}`
 }
 
+const LINEAR_APP_ORIGIN = 'https://linear.app'
+
+/**
+ * Open the Linear web UI “all projects” page for the workspace org, e.g.
+ * `https://linear.app/acme/projects/all`, using any project URL that includes the org key.
+ * Falls back to `https://linear.app` if no org-scoped project URL is available.
+ */
+export function buildLinearWorkspaceProjectsListUrl(
+  projects: Pick<LinearProjectNode, 'url'>[],
+): string {
+  for (const p of projects) {
+    const u = p.url?.trim()
+    if (!u) continue
+    try {
+      const { hostname, pathname } = new URL(u)
+      if (hostname !== 'linear.app' && hostname !== 'www.linear.app') continue
+      const parts = pathname.replace(/\/$/, '').split('/').filter(Boolean)
+      // /{orgKey}/project/{slugId}/… — not /project/{slugId} (no org in path)
+      if (parts.length >= 3 && parts[1] === 'project' && parts[0] !== 'project') {
+        return `${LINEAR_APP_ORIGIN}/${parts[0]}/projects/all`
+      }
+    } catch {
+      // ignore invalid URL
+    }
+  }
+  return LINEAR_APP_ORIGIN
+}
+
 /** Structured execution brief for coding agents launched from a Linear issue. */
 export function formatLinearIssueAgentPrompt(issue: LinearIssueNode): string {
   const description = issue.description?.trim() || '(No additional issue description provided.)'
