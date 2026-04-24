@@ -38,6 +38,7 @@ import {
   linearOpenExternal,
   linearUserPickerWithViewer,
   buildLinearProjectSubviewUrl,
+  buildLinearWorkspaceProjectsListUrl,
   type LinearIssueNode,
   type LinearProjectNode,
   type LinearProjectUpdateNode,
@@ -408,6 +409,13 @@ export function LinearWorkspacePanel() {
     label: string;
     destinationName: string;
   }>(() => {
+    if (workspaceView === "projects") {
+      return {
+        url: buildLinearWorkspaceProjectsListUrl(projects),
+        label: "Open Linear",
+        destinationName: "all projects",
+      };
+    }
     const project = scopeProjectId
       ? projects.find((p) => p.id === scopeProjectId)
       : undefined;
