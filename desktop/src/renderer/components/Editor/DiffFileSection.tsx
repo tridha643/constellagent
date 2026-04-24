@@ -109,6 +109,10 @@ export interface DiffFileSectionProps {
   onHunkAccepted?: (request: GitHunkActionRequest) => Promise<void> | void
   onHunkRejected?: (request: GitHunkActionRequest) => Promise<void> | void
   onEnsureFileDiff?: (filePath: string) => void
+  /** Hunk review / working-tree diff: mark file as reviewed and collapse to focus remaining files. */
+  enableViewedToggle?: boolean
+  viewed?: boolean
+  onViewedChange?: (viewed: boolean) => void
 }
 
 export const DiffFileSection = memo(function DiffFileSection({
@@ -129,6 +133,9 @@ export const DiffFileSection = memo(function DiffFileSection({
   onHunkAccepted,
   onHunkRejected,
   onEnsureFileDiff,
+  enableViewedToggle = false,
+  viewed: viewedProp = false,
+  onViewedChange,
 }: DiffFileSectionProps) {
   const [selectedLines, setSelectedLines] = useState<PierreSelectedRange | null>(null)
   const [showFullContextOverride, setShowFullContextOverride] = useState<boolean | null>(null)
@@ -170,6 +177,14 @@ export const DiffFileSection = memo(function DiffFileSection({
     if (collapseTouchedRef.current) return
     setCollapsed(defaultCollapsed)
   }, [defaultCollapsed])
+
+  useEffect(() => {
+    if (!enableViewedToggle) return
+    if (viewedProp) {
+      collapseTouchedRef.current = false
+      setCollapsed(true)
+    }
+  }, [viewedProp, enableViewedToggle, data.filePath])
 
   useEffect(() => {
     if (collapsed) return
@@ -471,11 +486,58 @@ export const DiffFileSection = memo(function DiffFileSection({
     ],
   )
 
+  const expandSection = useCallback(() => {
+    collapseTouchedRef.current = true
+    setCollapsed(false)
+    if (enableViewedToggle && viewedProp) {
+      onViewedChange?.(false)
+    }
+  }, [enableViewedToggle, viewedProp, onViewedChange])
+
+  const handleViewedInputChange = useCallback(
+    (e: { target: { checked: boolean } }) => {
+      const next = e.target.checked
+      onViewedChange?.(next)
+      collapseTouchedRef.current = true
+      if (next) {
+        setCollapsed(true)
+      } else {
+        setCollapsed(false)
+      }
+    },
+    [onViewedChange],
+  )
+
+  const renderViewedControl = useCallback(
+    (className: string) => {
+      if (!enableViewedToggle) return null
+      return (
+        <label
+          className={className}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            className={styles.viewedInput}
+            checked={viewedProp}
+            onChange={handleViewedInputChange}
+            data-testid="diff-viewed-toggle"
+            aria-label="Viewed: collapse this file"
+          />
+          <span className={styles.viewedLabelText}>Viewed</span>
+        </label>
+      )
+    },
+    [enableViewedToggle, viewedProp, handleViewedInputChange],
+  )
+
   // ── Pierre native header metadata slot ──
 
   const renderHeaderMetadata = useCallback(
     (_props: unknown) => (
       <div className={styles.headerMeta}>
+        {renderViewedControl(styles.viewedLabel)}
         <button
           className={styles.headerMetaContextBtn}
           data-testid="diff-collapse-toggle"
@@ -515,7 +577,7 @@ export const DiffFileSection = memo(function DiffFileSection({
         </button>
       </div>
     ),
-    [canShowFullContext, collapsed, data.status, defaultShowFullContext, fullPath, onOpenFile, showFullContext],
+    [canShowFullContext, collapsed, data.status, defaultShowFullContext, fullPath, onOpenFile, showFullContext, renderViewedControl],
   )
 
   // ── Hover utility: "+" button on hovered lines ──
@@ -545,16 +607,6 @@ export const DiffFileSection = memo(function DiffFileSection({
   const hasAnnotationUi = displayLineAnnotations.length > 0
   const combinedMergePatch = !data.fileDiff && isCombinedMergePatch(data.patch)
 
-  const expandSection = useCallback(() => {
-    collapseTouchedRef.current = true
-    setCollapsed(false)
-  }, [])
-
-  const toggleCollapsed = useCallback(() => {
-    collapseTouchedRef.current = true
-    setCollapsed((prev) => !prev)
-  }, [])
-
   if (collapsed) {
     return (
       <div className={styles.diffFileSection} id={`diff-${data.filePath}`}>
@@ -578,6 +630,7 @@ export const DiffFileSection = memo(function DiffFileSection({
             {fileName}
           </span>
           <div className={styles.headerMeta}>
+            {renderViewedControl(`${styles.viewedLabel} ${styles.viewedLabelCollapsed}`)}
             {(patchSummary.additions > 0 || patchSummary.deletions > 0) && (
               <span className={styles.collapsedDiffSummary}>
                 {patchSummary.additions > 0 ? `+${patchSummary.additions}` : ''}
@@ -591,7 +644,7 @@ export const DiffFileSection = memo(function DiffFileSection({
               aria-pressed="false"
               onClick={(e) => {
                 e.stopPropagation()
-                toggleCollapsed()
+                expandSection()
               }}
             >
               Expand
@@ -637,6 +690,14 @@ export const DiffFileSection = memo(function DiffFileSection({
                 {dir && <span className={styles.fileHeaderDir}>{dir}</span>}
                 {fileName}
               </span>
+              <div
+                className={styles.mergeHeaderViewed}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                role="presentation"
+              >
+                {renderViewedControl(styles.viewedLabel)}
+              </div>
             </div>
             <p className={styles.combinedDiffNote}>
               Merge commit: combined diff (<code className={styles.combinedDiffCode}>diff --cc</code> /{' '}
@@ -695,10 +756,13 @@ export function FileStrip({
   files,
   activeFile,
   onSelectFile,
+  viewedFilePaths,
 }: {
   files: DiffFileData[]
   activeFile: string | null
   onSelectFile?: (filePath: string) => void
+  /** When set, strip chips for viewed files are muted and show a check. */
+  viewedFilePaths?: ReadonlySet<string>
 }) {
   const scrollTo = (filePath: string) => {
     if (onSelectFile) {
@@ -711,15 +775,19 @@ export function FileStrip({
 
   return (
     <div className={styles.fileStrip}>
-      {files.map((f) => (
+      {files.map((f) => {
+        const viewed = viewedFilePaths?.has(f.filePath) ?? false
+        return (
         <button
           key={f.filePath}
-          className={`${styles.fileStripItem} ${f.filePath === activeFile ? styles.active : ''}`}
+          type="button"
+          className={`${styles.fileStripItem} ${f.filePath === activeFile ? styles.active : ''} ${viewed ? styles.fileStripItemViewed : ''}`}
           onClick={() => scrollTo(f.filePath)}
         >
           {f.filePath.split('/').pop()}
         </button>
-      ))}
+        )
+      })}
     </div>
   )
 }

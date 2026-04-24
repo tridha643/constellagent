@@ -77,6 +77,8 @@ export function HunkReview({ worktreePath }: Props) {
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_FILES)
   const [draftWidth, setDraftWidth] = useState<number | null>(null)
   const [isResizing, setIsResizing] = useState(false)
+  /** Files marked “Viewed” in session — collapses the diff to focus the rest. */
+  const [viewedFilePaths, setViewedFilePaths] = useState<Set<string>>(() => new Set())
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
@@ -252,6 +254,19 @@ export function HunkReview({ worktreePath }: Props) {
     setDraftWidth(null)
     draftWidthRef.current = null
   }, [persistedWidth, worktreePath])
+
+  useEffect(() => {
+    setViewedFilePaths(new Set())
+  }, [worktreePath])
+
+  const setFileViewed = useCallback((filePath: string, viewed: boolean) => {
+    setViewedFilePaths((prev) => {
+      const next = new Set(prev)
+      if (viewed) next.add(filePath)
+      else next.delete(filePath)
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     if (!isResizing) return
@@ -704,7 +719,14 @@ export function HunkReview({ worktreePath }: Props) {
         </p>
 
         {/* File strip */}
-        {files.length > 0 && <FileStrip files={files} activeFile={activeFile} onSelectFile={scrollToFile} />}
+        {files.length > 0 && (
+          <FileStrip
+            files={files}
+            activeFile={activeFile}
+            onSelectFile={scrollToFile}
+            viewedFilePaths={viewedFilePaths}
+          />
+        )}
 
         {/* Annotations summary from constell-annotate SQLite DB */}
         {reviewMode === 'tour' ? (
@@ -770,6 +792,9 @@ export function HunkReview({ worktreePath }: Props) {
                     onHunkAccepted={applyHunkAction}
                     onHunkRejected={applyHunkAction}
                     onEnsureFileDiff={ensureFileDiffLoaded}
+                    enableViewedToggle
+                    viewed={viewedFilePaths.has(f.filePath)}
+                    onViewedChange={(v) => setFileViewed(f.filePath, v)}
                   />
                 </div>
               )

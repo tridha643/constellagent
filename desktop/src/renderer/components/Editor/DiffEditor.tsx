@@ -37,6 +37,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   const [loading, setLoading] = useState(true)
   const [annotations, setAnnotations] = useState<DiffAnnotation[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
+  const [viewedFilePaths, setViewedFilePaths] = useState<Set<string>>(() => new Set())
   const [expectedFileCount, setExpectedFileCount] = useState(0)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const loadGenerationRef = useRef(0)
@@ -58,6 +59,21 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   const setWorkingTreeDiffSnapshot = useAppStore((s) => s.setWorkingTreeDiffSnapshot)
 
   const enableAcceptReject = !commitHash
+
+  const setFileViewed = useCallback((filePath: string, viewed: boolean) => {
+    setViewedFilePaths((prev) => {
+      const next = new Set(prev)
+      if (viewed) next.add(filePath)
+      else next.delete(filePath)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    setViewedFilePaths(new Set())
+  }, [worktreePath, commitHash])
+
+  const showViewedToggle = !commitHash
 
   useEffect(() => {
     filesRef.current = files
@@ -515,7 +531,12 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
       </p>
 
       {/* File strip */}
-      <FileStrip files={files} activeFile={activeFile} onSelectFile={scrollToFile} />
+      <FileStrip
+        files={files}
+        activeFile={activeFile}
+        onSelectFile={scrollToFile}
+        viewedFilePaths={showViewedToggle ? viewedFilePaths : undefined}
+      />
 
       {/* Stacked diffs */}
       <div ref={scrollAreaRef} className={styles.diffScrollArea}>
@@ -535,6 +556,9 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
             onHunkAccepted={applyHunkAction}
             onHunkRejected={applyHunkAction}
             onEnsureFileDiff={commitHash ? undefined : ensureFileDiffLoaded}
+            enableViewedToggle={showViewedToggle}
+            viewed={viewedFilePaths.has(file.filePath)}
+            onViewedChange={(v) => setFileViewed(file.filePath, v)}
           />
         ))}
       </div>
