@@ -14,6 +14,7 @@ import type { OpenPrInfo, GithubLookupError } from "../../../shared/github-types
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { GraphiteStack } from "./GraphiteStack";
+import { BranchAndPrLauncher } from "./BranchAndPrLauncher";
 
 import { Tooltip } from "../Tooltip/Tooltip";
 import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME, CONSTELLAGENT_PROJECT_MIME } from "../../utils/add-to-chat";
@@ -1356,6 +1357,13 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                             graphitePreferredTrunk={project.graphitePreferredTrunk}
                           />
                         </div>
+                        <BranchAndPrLauncher
+                          projectId={project.id}
+                          repoPath={project.repoPath}
+                          workspaceId={ws.id}
+                          worktreePath={ws.worktreePath}
+                          workspaceBranch={ws.branch}
+                        />
                         <Tooltip label="Delete workspace">
                           <button
                             className={styles.deleteBtn}

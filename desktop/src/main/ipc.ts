@@ -368,6 +368,10 @@ export function registerIpcHandlers(): void {
     return GitService.stage(worktreePath, paths)
   })
 
+  ipcMain.handle(IPC.GIT_STAGE_ALL, async (_e, worktreePath: string) => {
+    return GitService.stageAll(worktreePath)
+  })
+
   ipcMain.handle(IPC.GIT_UNSTAGE, async (_e, worktreePath: string, paths: string[]) => {
     return GitService.unstage(worktreePath, paths)
   })
@@ -386,6 +390,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.GIT_PUSH_CURRENT_BRANCH, async (_e, worktreePath: string) => {
     return GitService.pushCurrentBranch(worktreePath)
+  })
+
+  ipcMain.handle(IPC.GIT_CHECKOUT_BRANCH, async (_e, worktreePath: string, branch: string, createNew?: boolean) => {
+    return GitService.checkoutBranch(worktreePath, branch, createNew === true)
   })
 
   ipcMain.handle(IPC.GIT_GET_CURRENT_BRANCH, async (_e, worktreePath: string) => {
