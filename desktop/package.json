@@ -16,7 +16,7 @@
     "verify:automations": "bash scripts/verify-automations.sh",
     "rebuild": "bunx electron-rebuild",
     "dist": "node scripts/electron-vite-build.mjs && electron-builder --mac --arm64",
-    "postinstall": "bash scripts/patch-electron-dev.sh && bunx electron-rebuild"
+    "postinstall": "node scripts/postinstall.mjs"
   },
   "keywords": [],
   "author": "",
