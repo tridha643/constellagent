@@ -24,6 +24,12 @@ import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 import type { GithubCloneRepoSuggestion } from '../shared/github-clone-suggestions'
+import type {
+  BrowserContextEvent,
+  BrowserContextStatus,
+  BrowserSourceSnippet,
+} from '../shared/browser-context-types'
+import type { BrowserSourceLookupRequest } from '../shared/browser-source-lookup'
 
 /** Linear GraphQL via main process (renderer fetch hits CORS). Exposed on `api` and `api.app`. */
 function linearGraphql(
@@ -453,6 +459,32 @@ const api = {
       ipcRenderer.invoke(IPC.T3CODE_START, cwd) as Promise<string>,
     stop: (cwd: string) =>
       ipcRenderer.invoke(IPC.T3CODE_STOP, cwd),
+  },
+
+  browserContext: {
+    status: () =>
+      ipcRenderer.invoke(IPC.BROWSER_CONTEXT_STATUS) as Promise<BrowserContextStatus>,
+    connect: () =>
+      ipcRenderer.invoke(IPC.BROWSER_CONTEXT_CONNECT) as Promise<BrowserContextStatus>,
+    disconnect: () =>
+      ipcRenderer.invoke(IPC.BROWSER_CONTEXT_DISCONNECT) as Promise<BrowserContextStatus>,
+    setInspect: (enabled: boolean) =>
+      ipcRenderer.invoke(IPC.BROWSER_CONTEXT_SET_INSPECT, enabled) as Promise<void>,
+    setEdit: (enabled: boolean) =>
+      ipcRenderer.invoke(IPC.BROWSER_CONTEXT_SET_EDIT, enabled) as Promise<void>,
+    clear: () =>
+      ipcRenderer.invoke(IPC.BROWSER_CONTEXT_CLEAR) as Promise<void>,
+    applyStyle: (property: string, value: string) =>
+      ipcRenderer.invoke(IPC.BROWSER_CONTEXT_APPLY_STYLE, property, value) as Promise<void>,
+    readSource: (request: BrowserSourceLookupRequest) =>
+      ipcRenderer.invoke(IPC.BROWSER_CONTEXT_READ_SOURCE, request) as Promise<BrowserSourceSnippet | null>,
+    onEvent: (callback: (event: BrowserContextEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, event: BrowserContextEvent) => callback(event)
+      ipcRenderer.on(IPC.BROWSER_CONTEXT_EVENT, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.BROWSER_CONTEXT_EVENT, listener)
+      }
+    },
   },
 
   webview: {

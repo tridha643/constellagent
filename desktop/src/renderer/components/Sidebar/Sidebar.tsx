@@ -377,6 +377,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const toggleSettings = useAppStore((s) => s.toggleSettings);
   const toggleAutomations = useAppStore((s) => s.toggleAutomations);
   const toggleLinear = useAppStore((s) => s.toggleLinear);
+  const activatePanel = useAppStore((s) => s.activatePanel);
   const toggleHunkReview = useAppStore((s) => s.toggleHunkReview);
   const openLatestAgentPlan = useAppStore((s) => s.openLatestAgentPlan);
   const sidebarActionOrder = useAppStore((s) => s.sidebarActionOrder);
@@ -1054,6 +1055,13 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       tooltipLabel: 'Open newest agent plan across all agents',
       onClick: () => { void openLatestAgentPlan(); },
     },
+    browser: {
+      id: 'browser',
+      icon: '◉',
+      label: 'Browser',
+      tooltipLabel: 'Browser',
+      onClick: () => activatePanel('browser'),
+    },
     review: {
       id: 'review',
       icon: '±',
@@ -1070,7 +1078,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       shortcut: '⌘,',
       onClick: toggleSettings,
     },
-  }), [handleAddProject, toggleAutomations, toggleLinear, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
+  }), [handleAddProject, toggleAutomations, toggleLinear, openLatestAgentPlan, activatePanel, toggleSettings, toggleHunkReview]);
 
   const orderedActions = useMemo(
     () => sidebarActionOrder.map((id) => actionButtonConfigs[id]),

@@ -5,6 +5,7 @@ import {
   FolderTree,
   GitBranch,
   LayoutList,
+  MousePointer2,
   Search,
 } from 'lucide-react'
 import { useCallback, useMemo, useState, type ComponentType, type DragEvent } from 'react'
@@ -15,6 +16,7 @@ import { Sidebar } from '../Sidebar/Sidebar'
 import { FileTree } from '../RightPanel/FileTree'
 import { ChangedFiles } from '../RightPanel/ChangedFiles'
 import { GitGraph } from '../RightPanel/GitGraph'
+import { BrowserContextPanel } from '../BrowserContext/BrowserContextPanel'
 import { fileTreeActions } from '../RightPanel/file-tree-actions'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
@@ -32,6 +34,7 @@ const PANEL_ICONS: Record<PanelType, ComponentType<{ size?: number; strokeWidth?
   changes: FileDiff,
   graph: GitBranch,
   project: LayoutList,
+  browser: MousePointer2,
 }
 
 function SidePanelEmptyState({
@@ -55,6 +58,9 @@ function SidePanelEmptyState({
 function renderPanel(panel: PanelType, workspace: { id: string; worktreePath: string } | undefined) {
   if (panel === 'project') {
     return <Sidebar embedded showTitleArea={false} />
+  }
+  if (panel === 'browser') {
+    return <BrowserContextPanel />
   }
   if (!workspace) {
     return (

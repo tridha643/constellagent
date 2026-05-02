@@ -1,6 +1,6 @@
 import { ipcMain, dialog, app, BrowserWindow, clipboard, webContents, shell, type WebContents } from 'electron'
 import { join, relative } from 'path'
-import { mkdir, writeFile } from 'fs/promises'
+import { mkdir, writeFile, readFile } from 'fs/promises'
 import { existsSync, mkdirSync, writeFileSync, realpathSync } from 'fs'
 import { tmpdir, homedir } from 'os'
 import { watch, type FSWatcher } from 'fs'
@@ -34,6 +34,7 @@ import { LspService } from './lsp/lsp-service'
 import { SkillsService } from './skills-service'
 import { GraphiteService } from './graphite-service'
 import { t3codeService } from './t3code-service.js'
+import { browserCdpService } from './browser-cdp-service'
 import { ContextWindowService } from './context-window-service'
 import { closeAllAgentFS } from './agentfs-service'
 import { AnnotationService } from './annotation-service'
@@ -54,6 +55,8 @@ import {
 } from './project-startup-settings'
 import { getConstellPiHost } from './pi-host-service'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
+import { validateBrowserSourceLookupRequest, type BrowserSourceLookupRequest } from '../shared/browser-source-lookup'
+import type { BrowserSourceSnippet } from '../shared/browser-context-types'
 
 const ptyManager = new PtyManager()
 const worktreeSyncService = new WorktreeSyncService()
@@ -1416,6 +1419,46 @@ export function registerIpcHandlers(): void {
     t3codeService.stop(cwd)
   })
 
+  // External browser DOM context via Chromium CDP
+  ipcMain.handle(IPC.BROWSER_CONTEXT_STATUS, async () => browserCdpService.getStatus())
+
+  ipcMain.handle(IPC.BROWSER_CONTEXT_CONNECT, async (_e) => browserCdpService.connect(_e.sender))
+
+  ipcMain.handle(IPC.BROWSER_CONTEXT_DISCONNECT, async () => {
+    browserCdpService.disconnect()
+    return browserCdpService.getStatus()
+  })
+
+  ipcMain.handle(IPC.BROWSER_CONTEXT_SET_INSPECT, async (_e, enabled: boolean) => {
+    await browserCdpService.setInspect(Boolean(enabled))
+  })
+
+  ipcMain.handle(IPC.BROWSER_CONTEXT_SET_EDIT, async (_e, enabled: boolean) => {
+    await browserCdpService.setEdit(Boolean(enabled))
+  })
+
+  ipcMain.handle(IPC.BROWSER_CONTEXT_CLEAR, async () => {
+    await browserCdpService.clear()
+  })
+
+  ipcMain.handle(IPC.BROWSER_CONTEXT_APPLY_STYLE, async (_e, property: string, value: string) => {
+    await browserCdpService.applyStyle(property, value)
+  })
+
+  ipcMain.handle(IPC.BROWSER_CONTEXT_READ_SOURCE, async (_e, request: BrowserSourceLookupRequest): Promise<BrowserSourceSnippet | null> => {
+    const plan = validateBrowserSourceLookupRequest(request)
+    const text = await readFile(plan.absolutePath, 'utf-8')
+    const lines = text.split(/\r?\n/)
+    const start = Math.max(1, plan.startLine)
+    const end = Math.min(lines.length, plan.endLine)
+    return {
+      filePath: plan.absolutePath,
+      startLine: start,
+      endLine: end,
+      text: lines.slice(start - 1, end).join('\n'),
+    }
+  })
+
   // ── Webview guest tab-switch interception ──
   // Electron <webview> guests swallow keyboard events; register before-input-event
   // on the guest WebContents so ⌘⌥←/→ still switches tabs.
@@ -1573,6 +1616,7 @@ export function cleanupAll(): void {
   FileService.disposeQuickOpenSearch()
   LinearFffService.disposeAll()
   t3codeService.stopAll()
+  browserCdpService.shutdown()
   guestTabSwitchListeners.clear()
   closeAllAgentFS().catch(() => {})
 }

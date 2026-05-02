@@ -195,6 +195,17 @@ export const IPC = {
   T3CODE_START: 't3code:start',
   T3CODE_STOP: 't3code:stop',
 
+  // External browser DOM context via Chromium CDP
+  BROWSER_CONTEXT_STATUS: 'browser-context:status',
+  BROWSER_CONTEXT_CONNECT: 'browser-context:connect',
+  BROWSER_CONTEXT_DISCONNECT: 'browser-context:disconnect',
+  BROWSER_CONTEXT_SET_INSPECT: 'browser-context:set-inspect',
+  BROWSER_CONTEXT_SET_EDIT: 'browser-context:set-edit',
+  BROWSER_CONTEXT_CLEAR: 'browser-context:clear',
+  BROWSER_CONTEXT_APPLY_STYLE: 'browser-context:apply-style',
+  BROWSER_CONTEXT_EVENT: 'browser-context:event',
+  BROWSER_CONTEXT_READ_SOURCE: 'browser-context:read-source',
+
   // Webview guest keyboard shortcuts (T3 Code webview focus bypass)
   /** Renderer → main: register guest webContentsId for tab-switch interception */
   WEBVIEW_REGISTER_TAB_SWITCH: 'webview:register-tab-switch',

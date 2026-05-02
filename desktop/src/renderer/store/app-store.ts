@@ -437,6 +437,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeMonacoEditor: null,
   planBuildTerminalByPlanPath: {},
   contextWindowData: null,
+  browserContextStatus: { enabled: true, connected: false, port: 9222 },
+  browserInspectMode: false,
+  browserEditMode: false,
+  browserSelectedComponent: null,
+  browserLatestMutation: null,
   sidebarActionOrder: [...DEFAULT_SIDEBAR_ACTION_ORDER],
 
   addProject: (project) => {
@@ -2245,6 +2250,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ graphiteStackExpanded: !s.graphiteStackExpanded })),
 
   setContextWindowData: (data) => set({ contextWindowData: data }),
+  setBrowserContextStatus: (status) => set({ browserContextStatus: status }),
+  setBrowserInspectMode: (enabled) => set({ browserInspectMode: enabled }),
+  setBrowserEditMode: (enabled) => set({ browserEditMode: enabled }),
+  setBrowserSelectedComponent: (component) => set({ browserSelectedComponent: component }),
+  setBrowserLatestMutation: (mutation) => set({ browserLatestMutation: mutation }),
 
   addAutomation: (automation) =>
     set((s) => ({ automations: [...s.automations, normalizeRendererAutomation(automation)] })),

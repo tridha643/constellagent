@@ -7,6 +7,14 @@ export function formatChatContext(snippets: ChatSnippet[]): string {
   const parts: string[] = []
 
   for (const s of snippets) {
+    if (s.contextItem) {
+      parts.push([
+        `Context item: ${s.contextItem.type}`,
+        s.contextItem.fallbackText,
+      ].join('\n'))
+      continue
+    }
+
     let header = ''
     if (s.filePath) {
       header = `@${s.filePath}`

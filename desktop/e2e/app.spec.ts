@@ -40,13 +40,14 @@ test.describe('app shell', () => {
       expect(sidePanels.right).toEqual({
         open: true,
         activePanel: 'files',
-        panelOrder: ['files', 'changes', 'graph'],
+        panelOrder: ['files', 'changes', 'graph', 'browser'],
       })
 
       await expect(window.getByTestId('side-panel-tab-project')).toBeVisible()
       await expect(window.getByTestId('right-panel-mode-files')).toBeVisible()
       await expect(window.getByTestId('right-panel-mode-changes')).toBeVisible()
       await expect(window.getByTestId('right-panel-mode-graph')).toBeVisible()
+      await expect(window.getByTestId('right-panel-mode-browser')).toBeVisible()
     } finally {
       await app.close()
       rmSync(userDataPath, { recursive: true, force: true })
@@ -68,20 +69,20 @@ test.describe('app shell', () => {
       await expect(window.getByTestId('side-panel-left')).toBeVisible({ timeout: 5000 })
 
       let sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
-      expect(sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph'])
+      expect(sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph', 'browser'])
       expect(sidePanels.right.panelOrder).toEqual(['project'])
 
       await app.close()
 
       ;({ app, window } = await launchApp(userDataPath))
       sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
-      expect(sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph'])
+      expect(sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph', 'browser'])
       expect(sidePanels.right.panelOrder).toEqual(['project'])
 
       const persisted = await window.evaluate(async () => {
         return await (window as any).api.state.load()
       })
-      expect(persisted.sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph'])
+      expect(persisted.sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph', 'browser'])
       expect(persisted.sidePanels.right.panelOrder).toEqual(['project'])
     } finally {
       if (app) await app.close()

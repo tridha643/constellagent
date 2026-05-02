@@ -98,6 +98,8 @@ function looksBinary(content: string): boolean {
 }
 
 const MAX_DIFF_FILE_BYTES = 2_000_000
+const PURE_ADDED_OVERVIEW_COLOR = 'rgba(163, 190, 140, 1)'
+const PURE_DELETED_OVERVIEW_COLOR = 'rgba(191, 97, 106, 1)'
 
 type MonacoApi = Awaited<ReturnType<typeof loader.init>>
 
@@ -151,6 +153,7 @@ function buildPureChangeDecorations(
   const linesDecorationsClassName = kind === 'added'
     ? 'cga-full-file-added-gutter'
     : 'cga-full-file-deleted-gutter'
+  const overviewColor = kind === 'added' ? PURE_ADDED_OVERVIEW_COLOR : PURE_DELETED_OVERVIEW_COLOR
   const decorations: editor.IModelDeltaDecoration[] = []
   for (let line = 1; line <= lineCount; line += 1) {
     decorations.push({
@@ -159,6 +162,10 @@ function buildPureChangeDecorations(
         isWholeLine: true,
         className,
         linesDecorationsClassName,
+        overviewRuler: {
+          color: overviewColor,
+          position: monaco.editor.OverviewRulerLane.Right,
+        },
       },
     })
   }

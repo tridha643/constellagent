@@ -9,6 +9,7 @@ import type { GraphiteStackInfo } from '../../shared/graphite-types'
 import type { AppearanceThemeId } from '../theme/appearance'
 import type { EditorLanguageOverride } from '../utils/language-map'
 import type { GitStatusSnapshot, WorkingTreeDiffSnapshot, WorkingTreeFileStatus } from '../types/working-tree-diff'
+import type { BrowserContextStatus, ComponentMutationContext, SelectedComponentContext } from '../../shared/browser-context-types'
 import { getDefaultWorktreeCredentialRules } from '../../shared/worktree-credentials'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
@@ -104,7 +105,7 @@ export type Tab = {
 
 export type Side = 'left' | 'right'
 
-export type PanelType = 'project' | 'files' | 'changes' | 'graph'
+export type PanelType = 'project' | 'files' | 'changes' | 'graph' | 'browser'
 
 export interface SidePanelState {
   open: boolean
@@ -122,9 +123,9 @@ export interface PanelDockDrag {
   side: Side
 }
 
-export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'graph']
+export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'graph', 'browser']
 
-export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes', 'graph']
+export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes', 'graph', 'browser']
 
 export const DEFAULT_SIDE_PANEL_LAYOUT: SidePanelLayout = {
   left: {
@@ -135,7 +136,7 @@ export const DEFAULT_SIDE_PANEL_LAYOUT: SidePanelLayout = {
   right: {
     open: true,
     activePanel: 'files',
-    panelOrder: ['files', 'changes', 'graph'],
+    panelOrder: ['files', 'changes', 'graph', 'browser'],
   },
 }
 
@@ -522,7 +523,20 @@ export interface ChatSnippet {
   filePath?: string
   startLine?: number
   endLine?: number
+  contextItem?: ChatContextItem
 }
+
+export type ChatContextItem =
+  | {
+      type: 'selected-ui-component'
+      selectedComponent: SelectedComponentContext
+      fallbackText: string
+    }
+  | {
+      type: 'ui-component-mutation'
+      mutation: ComponentMutationContext
+      fallbackText: string
+    }
 
 export interface AppState {
   // Data
@@ -589,6 +603,11 @@ export interface AppState {
   planBuildTerminalByPlanPath: Record<string, string>
   /** Ephemeral: context window usage for the active workspace's Claude Code session. */
   contextWindowData: ContextWindowData | null
+  browserContextStatus: BrowserContextStatus
+  browserInspectMode: boolean
+  browserEditMode: boolean
+  browserSelectedComponent: SelectedComponentContext | null
+  browserLatestMutation: ComponentMutationContext | null
 
   // Sidebar action order (persisted)
   sidebarActionOrder: SidebarActionId[]
@@ -718,6 +737,11 @@ export interface AppState {
   setActiveMonacoEditor: (editor: editor.IStandaloneCodeEditor | null) => void
   getFirstAgentTerminalPtyId: () => string | undefined
   sendContextToAgent: (snippets: ChatSnippet[]) => void
+  setBrowserContextStatus: (status: BrowserContextStatus) => void
+  setBrowserInspectMode: (enabled: boolean) => void
+  setBrowserEditMode: (enabled: boolean) => void
+  setBrowserSelectedComponent: (component: SelectedComponentContext | null) => void
+  setBrowserLatestMutation: (mutation: ComponentMutationContext | null) => void
 
   // Unread indicator actions
   markWorkspaceUnread: (workspaceId: string) => void
@@ -770,13 +794,14 @@ export interface AppState {
   resolveProjectTargetWorkspace: (projectId: string) => Workspace | undefined
 }
 
-export type SidebarActionId = 'add-project' | 'automations' | 'linear' | 'plans' | 'settings' | 'review'
+export type SidebarActionId = 'add-project' | 'automations' | 'linear' | 'plans' | 'browser' | 'settings' | 'review'
 
 export const DEFAULT_SIDEBAR_ACTION_ORDER: SidebarActionId[] = [
   'add-project',
   'automations',
   'linear',
   'plans',
+  'browser',
   'review',
   'settings',
 ]

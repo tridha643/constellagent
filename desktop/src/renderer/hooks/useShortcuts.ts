@@ -27,6 +27,7 @@ import {
   tryOpenChangesFindFromSource,
 } from '../utils/changes-file-find-bridge'
 import { ADD_PROJECT_DIALOG_SEGMENT, type AddProjectDialogSegmentDetail } from '../utils/add-project-dialog-segment'
+import { formatSelectedComponentContext } from '../../shared/browser-context-format'
 
 function isTypingContext(target: EventTarget | null): boolean {
   const element = target instanceof HTMLElement
@@ -250,6 +251,21 @@ export function useShortcuts() {
             activePlanFilePath,
             activeTab?.type === 'markdownPreview' ? { fallbackMode: 'header-only' } : undefined,
           )
+          return
+        }
+
+        if (store.browserSelectedComponent) {
+          const fallbackText = formatSelectedComponentContext(store.browserSelectedComponent)
+          consume()
+          store.sendContextToAgent([{
+            text: fallbackText,
+            filePath: store.browserSelectedComponent.sourceSnippet?.filePath,
+            contextItem: {
+              type: 'selected-ui-component',
+              selectedComponent: store.browserSelectedComponent,
+              fallbackText,
+            },
+          }])
           return
         }
       }
