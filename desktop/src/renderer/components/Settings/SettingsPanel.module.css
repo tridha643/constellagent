@@ -45,13 +45,80 @@
 }
 
 /* ══════════════════════════════════════════════════════════
-   Content — scrollable body with gentle fade mask at the edges
+   Two-column chrome: slim navigation + bounded detail pane
    ══════════════════════════════════════════════════════════ */
 
-.content {
+.settingsBody {
+  padding: 0;
+}
+
+.settingsShell {
+  display: flex;
   flex: 1;
+  min-height: 0;
+  min-width: 0;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5) var(--space-4) var(--space-4);
+}
+
+.settingsNav {
+  width: 214px;
+  flex-shrink: 0;
+  align-self: stretch;
+  border-radius: var(--radius-xl);
+  border: 1px solid color-mix(in srgb, var(--panel-border-inner) 55%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 22%, var(--surface-1) 78%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent);
   overflow-y: auto;
-  padding: var(--space-8) var(--space-12) var(--space-12);
+}
+
+.settingsTabs {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--space-5) var(--space-3) var(--space-5) var(--space-4);
+}
+
+.settingsTab {
+  appearance: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  padding: var(--space-3) var(--space-3);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform 100ms var(--ease-press);
+}
+
+.settingsTab:active {
+  transform: scale(0.99);
+}
+
+.settingsTab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-blue) 60%, transparent);
+  outline-offset: 2px;
+}
+
+.settingsTabActive {
+  background: color-mix(in srgb, var(--accent-blue) 17%, transparent);
+  color: var(--text-primary);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent-blue) 35%, transparent);
+}
+
+.settingsPane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-7) var(--space-10) var(--space-12) 0;
   /* Scroll fade mask — soft hint that content continues past the edge */
   mask-image: linear-gradient(
     to bottom,
@@ -105,13 +172,10 @@
   animation: settingsSectionEnter var(--duration-slow) var(--ease-out) both;
 }
 
-/* Cascade the section enter animation (capped at 6 so large forms don't wait). */
-.inner > .section:nth-of-type(1) { animation-delay: 0ms; }
-.inner > .section:nth-of-type(2) { animation-delay: 40ms; }
-.inner > .section:nth-of-type(3) { animation-delay: 80ms; }
-.inner > .section:nth-of-type(4) { animation-delay: 120ms; }
-.inner > .section:nth-of-type(5) { animation-delay: 160ms; }
-.inner > .section:nth-of-type(n+6) { animation-delay: 200ms; }
+/* Single detail card swaps per sidebar selection — reuse one eased entrance. */
+.inner > .section {
+  animation-delay: 0ms;
+}
 
 .settingBlock {
   display: flex;
@@ -781,6 +845,16 @@
     color: var(--text-primary);
   }
 
+  .settingsTab:not(.settingsTabActive):hover {
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+    color: var(--text-primary);
+  }
+
+  .settingsTabActive:hover {
+    background: color-mix(in srgb, var(--accent-blue) 21%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent-blue) 42%, transparent);
+  }
+
   .row:hover,
   .mcpCardMain:hover,
   .entryRow:hover,
@@ -827,7 +901,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .content {
+  .settingsPane {
     mask-image: none;
   }
 
@@ -845,6 +919,7 @@
   }
 
   .themePresetCard:active,
+  .settingsTab:active,
   .backBtn:active {
     transform: none;
   }

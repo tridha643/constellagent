@@ -62,6 +62,7 @@ test.describe('app shell', () => {
       ;({ app, window } = await launchApp(userDataPath))
 
       await window.keyboard.press('Meta+,')
+      await window.getByRole('tab', { name: 'Sidebar' }).click()
       await expect(window.getByText('Sidebar Layout')).toBeVisible({ timeout: 5000 })
       await window.getByRole('button', { name: 'Swap' }).click()
       await window.keyboard.press('Meta+,')
