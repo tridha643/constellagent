@@ -67,6 +67,69 @@ const SHORTCUTS = [
   { action: 'Settings', keys: '⌘,' },
 ]
 
+type SettingsSectionId =
+  | 'appearance'
+  | 'sidebar'
+  | 'general'
+  | 'linear'
+  | 'mcp'
+  | 'integrations'
+  | 'worktree'
+  | 'skills'
+  | 'shortcuts'
+
+const SETTINGS_SIDEBAR: readonly {
+  id: SettingsSectionId
+  label: string
+  blurb: string
+}[] = [
+  {
+    id: 'appearance',
+    label: 'Appearance',
+    blurb: 'Themes, font sizes, and editor diagnostics tuning.',
+  },
+  {
+    id: 'sidebar',
+    label: 'Sidebar',
+    blurb: 'Dock Projects against Files / Changes / Git.',
+  },
+  {
+    id: 'general',
+    label: 'General',
+    blurb: 'Saving habits, integrations, terminals, utilities.',
+  },
+  {
+    id: 'linear',
+    label: 'Linear',
+    blurb: 'Issues panel API access plus coding defaults.',
+  },
+  {
+    id: 'mcp',
+    label: 'MCP Servers',
+    blurb: 'Agents, commands, and config files backing MCP.',
+  },
+  {
+    id: 'integrations',
+    label: 'Agents',
+    blurb: 'Claude + Codex hooks and session resumes.',
+  },
+  {
+    id: 'worktree',
+    label: 'Worktrees',
+    blurb: 'Credential propagation into new repositories.',
+  },
+  {
+    id: 'skills',
+    label: 'Skills',
+    blurb: 'Mounted skills directories and Markdown subagents.',
+  },
+  {
+    id: 'shortcuts',
+    label: 'Shortcuts',
+    blurb: 'Keyboard cheatsheet mirrored from the rest of Constellagent.',
+  },
+]
+
 function ToggleRow({ label, description, value, onChange }: {
   label: string
   description: string
@@ -1022,79 +1085,24 @@ function McpServersSection() {
   )
 }
 
-export function SettingsPanel() {
-  const settings = useAppStore((s) => s.settings)
-  const tabs = useAppStore((s) => s.tabs)
-  const updateSettings = useAppStore((s) => s.updateSettings)
-  const toggleSettings = useAppStore((s) => s.toggleSettings)
-  const showConfirmDialog = useAppStore((s) => s.showConfirmDialog)
-  const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
-  const addToast = useAppStore((s) => s.addToast)
-  const [restarting, setRestarting] = useState(false)
+type SettingsSectionBodyProps = {
+  section: SettingsSectionId
+  settings: Settings
+  update: <K extends keyof Settings>(key: K, value: Settings[K]) => void
+  requestRestart: () => void
+  restarting: boolean
+}
 
-  const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
-    updateSettings({ [key]: value })
-  }
-
-  const triggerRestart = async () => {
-    if (restarting) return
-    setRestarting(true)
-    try {
-      await window.api.app.relaunch()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to restart Constellagent'
-      addToast({ id: crypto.randomUUID(), message, type: 'error' })
-      setRestarting(false)
-    }
-  }
-
-  const requestRestart = () => {
-    if (restarting) return
-    if (shouldConfirmAppRestart(settings.confirmOnClose, tabs)) {
-      showConfirmDialog({
-        title: 'Restart app',
-        message: 'Restart Constellagent now? Some open files have unsaved changes that will be lost.',
-        confirmLabel: 'Restart',
-        tip: 'Use this after pulling or rebuilding so the main process and preload scripts fully reload.',
-        onConfirm: () => {
-          dismissConfirmDialog()
-          void triggerRestart()
-        },
-      })
-      return
-    }
-    void triggerRestart()
-  }
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') toggleSettings()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [toggleSettings])
-
-  return (
-    <FloatingPanel variant="fullscreen" testId="settings-panel">
-      <FloatingPanel.Titlebar trafficLightPad>
-        <Tooltip label="Back" shortcut="⌘,">
-          <button
-            type="button"
-            className={styles.backBtn}
-            onClick={toggleSettings}
-            aria-label="Close settings"
-          >
-            <ChevronLeft size={16} strokeWidth={2} aria-hidden />
-          </button>
-        </Tooltip>
-        <h2 className={styles.title}>Settings</h2>
-      </FloatingPanel.Titlebar>
-
-      <div className={styles.content}>
-        <div className={styles.inner}>
-        <p className={styles.subtitle}>
-          Tune appearance, integrations, shortcuts, and worktree defaults.
-        </p>
+function SettingsSectionBody({
+  section,
+  settings,
+  update,
+  requestRestart,
+  restarting,
+}: SettingsSectionBodyProps) {
+  switch (section) {
+    case 'appearance':
+      return (
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Appearance</div>
 
@@ -1130,9 +1138,13 @@ export function SettingsPanel() {
             onChange={(v) => update('editorMonacoSemanticDiagnostics', v)}
           />
         </div>
+      )
 
-        <SidePanelSettingsSection />
+    case 'sidebar':
+      return <SidePanelSettingsSection />
 
+    case 'general':
+      return (
         <div className={styles.section}>
           <div className={styles.sectionTitle}>General</div>
 
@@ -1244,7 +1256,10 @@ export function SettingsPanel() {
             </button>
           </div>
         </div>
+      )
 
+    case 'linear':
+      return (
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Linear</div>
           <LinearSettingsSection
@@ -1252,16 +1267,22 @@ export function SettingsPanel() {
             onKeyChange={(v) => update('linearApiKey', v)}
           />
         </div>
+      )
 
+    case 'mcp':
+      return (
         <div className={styles.section}>
           <div className={styles.sectionTitle}>MCP Servers</div>
           <McpServersSection />
         </div>
+      )
 
+    case 'integrations':
+      return (
         <div className={styles.section}>
-        <div className={styles.sectionTitle}>Agent Integrations</div>
-        <ClaudeHooksSection />
-        <CodexHooksSection />
+          <div className={styles.sectionTitle}>Agent Integrations</div>
+          <ClaudeHooksSection />
+          <CodexHooksSection />
 
           <ToggleRow
             label="Auto-resume sessions"
@@ -1270,11 +1291,16 @@ export function SettingsPanel() {
             onChange={(v) => update('sessionResumeEnabled', v)}
           />
         </div>
+      )
 
-        <WorktreeCredentialsSection />
+    case 'worktree':
+      return <WorktreeCredentialsSection />
 
-        <SkillsSubagentsSection />
+    case 'skills':
+      return <SkillsSubagentsSection />
 
+    case 'shortcuts':
+      return (
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Keyboard Shortcuts</div>
 
@@ -1285,8 +1311,130 @@ export function SettingsPanel() {
             </div>
           ))}
         </div>
+      )
+
+    default:
+      return null
+  }
+}
+
+export function SettingsPanel() {
+  const settings = useAppStore((s) => s.settings)
+  const tabs = useAppStore((s) => s.tabs)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+  const toggleSettings = useAppStore((s) => s.toggleSettings)
+  const showConfirmDialog = useAppStore((s) => s.showConfirmDialog)
+  const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
+  const addToast = useAppStore((s) => s.addToast)
+  const [restarting, setRestarting] = useState(false)
+  const [section, setSection] = useState<SettingsSectionId>('appearance')
+
+  const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+    updateSettings({ [key]: value })
+  }
+
+  const triggerRestart = async () => {
+    if (restarting) return
+    setRestarting(true)
+    try {
+      await window.api.app.relaunch()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to restart Constellagent'
+      addToast({ id: crypto.randomUUID(), message, type: 'error' })
+      setRestarting(false)
+    }
+  }
+
+  const requestRestart = () => {
+    if (restarting) return
+    if (shouldConfirmAppRestart(settings.confirmOnClose, tabs)) {
+      showConfirmDialog({
+        title: 'Restart app',
+        message: 'Restart Constellagent now? Some open files have unsaved changes that will be lost.',
+        confirmLabel: 'Restart',
+        tip: 'Use this after pulling or rebuilding so the main process and preload scripts fully reload.',
+        onConfirm: () => {
+          dismissConfirmDialog()
+          void triggerRestart()
+        },
+      })
+      return
+    }
+    void triggerRestart()
+  }
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') toggleSettings()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [toggleSettings])
+
+  const activeBlurb =
+    SETTINGS_SIDEBAR.find((item) => item.id === section)?.blurb
+    ?? SETTINGS_SIDEBAR[0].blurb
+
+  return (
+    <FloatingPanel variant="fullscreen" testId="settings-panel">
+      <FloatingPanel.Titlebar trafficLightPad>
+        <Tooltip label="Back" shortcut="⌘,">
+          <button
+            type="button"
+            className={styles.backBtn}
+            onClick={toggleSettings}
+            aria-label="Close settings"
+          >
+            <ChevronLeft size={16} strokeWidth={2} aria-hidden />
+          </button>
+        </Tooltip>
+        <h2 className={styles.title}>Settings</h2>
+      </FloatingPanel.Titlebar>
+
+      <FloatingPanel.Body className={styles.settingsBody}>
+        <div className={styles.settingsShell}>
+          <aside className={styles.settingsNav} aria-label="Settings categories">
+            <div role="tablist" aria-orientation="vertical" className={styles.settingsTabs}>
+              {SETTINGS_SIDEBAR.map((item) => {
+                const selected = section === item.id
+
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    id={`settings-tab-${item.id}`}
+                    aria-controls="settings-pane"
+                    className={`${styles.settingsTab} ${selected ? styles.settingsTabActive : ''}`}
+                    onClick={() => setSection(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                )
+              })}
+            </div>
+          </aside>
+
+          <div
+            role="tabpanel"
+            aria-labelledby={`settings-tab-${section}`}
+            id="settings-pane"
+            className={styles.settingsPane}
+          >
+            <div className={styles.inner}>
+              <p className={styles.subtitle}>{activeBlurb}</p>
+              <SettingsSectionBody
+                section={section}
+                settings={settings}
+                update={update}
+                requestRestart={requestRestart}
+                restarting={restarting}
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      </FloatingPanel.Body>
     </FloatingPanel>
   )
 }

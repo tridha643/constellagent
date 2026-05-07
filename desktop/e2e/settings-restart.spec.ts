@@ -18,6 +18,7 @@ test.describe('Settings restart control', () => {
 
     try {
       await window.keyboard.press('Meta+,')
+      await window.getByRole('tab', { name: 'General' }).click()
       const restartRow = window.locator('[class*="row"]').filter({
         has: window.locator('[class*="rowLabel"]', { hasText: 'Restart app' }),
       }).first()
