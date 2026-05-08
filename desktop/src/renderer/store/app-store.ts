@@ -1954,13 +1954,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
     if (!ws) return
 
-    const hasAgent = s.tabs.some(
-      (t) => t.workspaceId === ws.id && t.type === 'terminal' && t.agentType,
-    )
-    if (!hasAgent) {
-      s.addToast({ id: `review-no-agent-${Date.now()}`, message: 'No agent detected', type: 'info' })
-      return
-    }
     set({
       hunkReviewOpen: true,
       hunkReviewWorkspaceId: ws.id,

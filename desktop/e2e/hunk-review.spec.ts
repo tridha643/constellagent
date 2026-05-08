@@ -84,6 +84,28 @@ async function setupWorkspaceWithAgent(window: Page, repoPath: string, suffix: s
   }, { repo: repoPath, sfx: suffix })
 }
 
+async function setupWorkspaceWithoutAgent(window: Page, repoPath: string, suffix: string) {
+  return await window.evaluate(async ({ repo, sfx }: { repo: string; sfx: string }) => {
+    const store = (window as any).__store.getState()
+    store.hydrateState({ projects: [], workspaces: [], settings: {} })
+
+    const projectId = crypto.randomUUID()
+    store.addProject({ id: projectId, name: 'review-test-repo', repoPath: repo })
+
+    const worktreePath = await (window as any).api.git.createWorktree(repo, `review-${sfx}`, `review-${sfx}`, true)
+    const wsId = crypto.randomUUID()
+    store.addWorkspace({
+      id: wsId,
+      name: `review-${sfx}`,
+      branch: `review-${sfx}`,
+      worktreePath,
+      projectId,
+    })
+
+    return { wsId, worktreePath }
+  }, { repo: repoPath, sfx: suffix })
+}
+
 test.describe('Review annotations IPC integration', () => {
   test('full comment lifecycle via IPC: add/list/remove/clear', async () => {
     const repoPath = createTestRepo('review-ipc')
@@ -238,15 +260,33 @@ test.describe('Review annotations IPC integration', () => {
       const beforeBox = await panel.boundingBox()
       if (!beforeBox) throw new Error('Missing review panel bounds before resize')
 
-      await handle.hover()
-      await window.mouse.down()
-      await window.mouse.move(beforeBox.x - 220, beforeBox.y + 24, { steps: 12 })
-      await window.mouse.up()
+      await handle.evaluate((el) => {
+        const rect = el.getBoundingClientRect()
+        const startX = rect.left + rect.width / 2
+        const startY = rect.top + rect.height / 2
+        const endX = startX + 180
+        const base = {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          pointerType: 'mouse',
+          isPrimary: true,
+          clientY: startY,
+        }
+        el.dispatchEvent(new PointerEvent('pointerdown', { ...base, clientX: startX }))
+        for (let step = 1; step <= 12; step += 1) {
+          el.dispatchEvent(new PointerEvent('pointermove', {
+            ...base,
+            clientX: startX + ((endX - startX) * step) / 12,
+          }))
+        }
+        el.dispatchEvent(new PointerEvent('pointerup', { ...base, clientX: endX }))
+      })
       await window.waitForTimeout(250)
 
       const afterResizeBox = await panel.boundingBox()
       if (!afterResizeBox) throw new Error('Missing review panel bounds after resize')
-      expect(afterResizeBox.width).toBeGreaterThan(beforeBox.width + 150)
+      expect(afterResizeBox.width).toBeLessThan(beforeBox.width - 100)
 
       await window.keyboard.press('Escape')
       await expect(panel).toBeHidden()
@@ -258,6 +298,26 @@ test.describe('Review annotations IPC integration', () => {
       const afterReopenBox = await panel.boundingBox()
       if (!afterReopenBox) throw new Error('Missing review panel bounds after reopen')
       expect(Math.abs(afterReopenBox.width - afterResizeBox.width)).toBeLessThanOrEqual(2)
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('review drawer opens without an agent terminal', async () => {
+    const repoPath = createTestRepo('review-no-agent')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const { worktreePath } = await setupWorkspaceWithoutAgent(window, realRepo, 'no-agent')
+      writeFileSync(join(worktreePath, 'README.md'), '# Modified\nNo agent yet\n')
+
+      await window.waitForTimeout(1200)
+      await window.keyboard.press('Meta+Shift+R')
+
+      await expect(window.getByTestId('hunk-review-panel')).toBeVisible()
+      await expect(window.locator('text=Start an agent terminal before submitting selected comments.')).toBeVisible()
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
