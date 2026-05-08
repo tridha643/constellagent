@@ -14,13 +14,10 @@ export type FilePresentationGitStatus = keyof typeof STATUS_LABELS | 'ignored'
 export type SharedFileIconToken = string
 
 /** Maps UI appearance presets to `@pierre/trees` built-in sprites (`minimal` | `standard` | `complete`). */
-export function getFileTreeIconsForAppearance(themeId: AppearanceThemeId): FileTreeIconConfig {
-  switch (themeId) {
-    case 'absolutely':
-      return { set: 'standard', colored: true }
-    default:
-      return { set: 'complete', colored: true }
-  }
+export function getFileTreeIconsForAppearance(_themeId: AppearanceThemeId): FileTreeIconConfig {
+  // Pierre only stamps `data-file-tree-colored-icons` for the `complete` set
+  // (`isColoredBuiltInIconSet`); `standard` keeps tree icons on `--trees-fg-muted`.
+  return { set: 'complete', colored: true }
 }
 
 /** Back-compat alias; same as Default preset (`complete`). */
