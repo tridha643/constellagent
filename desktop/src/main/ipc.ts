@@ -1494,6 +1494,60 @@ export function registerIpcHandlers(): void {
     return sanitized.data
   })
 
+  // ── Track 6: terminal scrollback persistence ──
+  // Per-tab scrollback survives app quit so users can scroll up after reopen.
+  // Capped per-file to bound disk usage; sanitized key prevents path traversal.
+  const SCROLLBACK_DIR = () => join(app.getPath('userData'), 'scrollback')
+  const SCROLLBACK_MAX_BYTES = 2 * 1024 * 1024 // 2 MB — matches plan budget
+  const sanitizeScrollbackKey = (key: unknown): string | null => {
+    if (typeof key !== 'string') return null
+    // Defence-in-depth: only allow characters used in UUIDs / pty ids / hex.
+    if (!/^[A-Za-z0-9._-]+$/.test(key)) return null
+    if (key === '.' || key === '..' || key.length === 0 || key.length > 200) return null
+    return key
+  }
+  const scrollbackPathFor = (key: string) => join(SCROLLBACK_DIR(), `${key}.txt`)
+
+  ipcMain.handle(IPC.PTY_SCROLLBACK_LOAD, async (_e, key: unknown) => {
+    const sanitized = sanitizeScrollbackKey(key)
+    if (!sanitized) return ''
+    try {
+      const { readFile } = await import('fs/promises')
+      return await readFile(scrollbackPathFor(sanitized), 'utf-8')
+    } catch {
+      return ''
+    }
+  })
+
+  ipcMain.handle(IPC.PTY_SCROLLBACK_SAVE, async (_e, key: unknown, text: unknown) => {
+    const sanitized = sanitizeScrollbackKey(key)
+    if (!sanitized || typeof text !== 'string') return false
+    try {
+      await mkdir(SCROLLBACK_DIR(), { recursive: true })
+      // If the buffer overshoots the cap, drop the oldest bytes (keep tail) so
+      // the user always sees their most-recent terminal output on reopen.
+      const trimmed = text.length > SCROLLBACK_MAX_BYTES
+        ? text.slice(text.length - SCROLLBACK_MAX_BYTES)
+        : text
+      await writeFile(scrollbackPathFor(sanitized), trimmed, 'utf-8')
+      return true
+    } catch {
+      return false
+    }
+  })
+
+  ipcMain.handle(IPC.PTY_SCROLLBACK_DELETE, async (_e, key: unknown) => {
+    const sanitized = sanitizeScrollbackKey(key)
+    if (!sanitized) return false
+    try {
+      const { unlink } = await import('fs/promises')
+      await unlink(scrollbackPathFor(sanitized))
+      return true
+    } catch {
+      return false
+    }
+  })
+
   ipcMain.handle(IPC.PROJECT_STARTUP_SETTINGS_LOAD_ALL, async () => {
     return await listProjectStartupSettings()
   })

@@ -199,6 +199,13 @@ const api = {
         ipcRenderer.removeListener(IPC.PTY_AGENT_DETECTED, listener)
       }
     },
+    /** Track 6: per-tab scrollback persistence (survives app quit/restart). */
+    loadScrollback: (key: string) =>
+      ipcRenderer.invoke(IPC.PTY_SCROLLBACK_LOAD, key) as Promise<string>,
+    saveScrollback: (key: string, text: string) =>
+      ipcRenderer.invoke(IPC.PTY_SCROLLBACK_SAVE, key, text) as Promise<boolean>,
+    deleteScrollback: (key: string) =>
+      ipcRenderer.invoke(IPC.PTY_SCROLLBACK_DELETE, key) as Promise<boolean>,
   },
 
   fs: {

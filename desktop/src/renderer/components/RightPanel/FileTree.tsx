@@ -189,6 +189,10 @@ export function FileTree({ worktreePath, isActive }: Props) {
   const showConfirmDialog = useAppStore((s) => s.showConfirmDialog)
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
   const addToast = useAppStore((s) => s.addToast)
+  const workspaceId = useAppStore((s) =>
+    s.workspaces.find((w) => w.worktreePath === worktreePath)?.id ?? null,
+  )
+  const setFileTreeExpandedPaths = useAppStore((s) => s.setFileTreeExpandedPaths)
 
   const requestIdRef = useRef(0)
   const expandedPathsRef = useRef<string[]>([])
@@ -217,9 +221,18 @@ export function FileTree({ worktreePath, isActive }: Props) {
     return toRelativePath(treeRoot, activeTab.filePath)
   }, [activeTab, treeRoot])
 
+  const expansionWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const syncExpandedPaths = useCallback(() => {
     expandedPathsRef.current = readExpandedDirectoryPaths(model.getFileTreeContainer() ?? null)
-  }, [model])
+    // Debounced persist: file tree expansion is a per-workspace UI hint,
+    // so it survives quit/restart without thrashing disk on every click.
+    if (!workspaceId) return
+    if (expansionWriteTimerRef.current) clearTimeout(expansionWriteTimerRef.current)
+    expansionWriteTimerRef.current = setTimeout(() => {
+      setFileTreeExpandedPaths(workspaceId, expandedPathsRef.current)
+    }, 500)
+  }, [model, workspaceId, setFileTreeExpandedPaths])
 
   const fetchTree = useCallback(async () => {
     syncExpandedPaths()
@@ -313,13 +326,39 @@ export function FileTree({ worktreePath, isActive }: Props) {
     setSnapshot(EMPTY_SNAPSHOT)
     setTreeRoot(worktreePath)
     setNamePrompt(null)
-    expandedPathsRef.current = []
-  }, [worktreePath])
+    // Seed expansion from the persisted per-workspace map so reopened
+    // worktrees come back with their previously open folders intact. Read
+    // through getState() so persistence writes don't re-trigger this effect
+    // (which would cause flicker mid-interaction).
+    const seed = workspaceId
+      ? useAppStore.getState().fileTreeExpandedPathsByWorkspace[workspaceId]
+      : undefined
+    expandedPathsRef.current = seed ? [...seed] : []
+    if (expansionWriteTimerRef.current) {
+      clearTimeout(expansionWriteTimerRef.current)
+      expansionWriteTimerRef.current = null
+    }
+    // Persisted paths missing from the live tree fail silently in pierre;
+    // we filter them once the snapshot lands via the resetPaths layout effect.
+  }, [worktreePath, workspaceId])
 
   useEffect(() => {
     if (!isActive) return
     void fetchTree()
   }, [fetchTree, isActive])
+
+  useEffect(() => {
+    return () => {
+      if (expansionWriteTimerRef.current) {
+        clearTimeout(expansionWriteTimerRef.current)
+        expansionWriteTimerRef.current = null
+        // Flush any pending expansion write so unmount doesn't drop it.
+        if (workspaceId) {
+          setFileTreeExpandedPaths(workspaceId, expandedPathsRef.current)
+        }
+      }
+    }
+  }, [workspaceId, setFileTreeExpandedPaths])
 
   useFileWatcher(worktreePath, fetchTree, Boolean(isActive))
 

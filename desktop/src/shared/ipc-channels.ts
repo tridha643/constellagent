@@ -210,6 +210,14 @@ export const IPC = {
   STATE_SAVE_SYNC: 'state:save-sync',
   STATE_LOAD: 'state:load',
 
+  // Per-terminal scrollback persistence (Track 6 — survives app restart)
+  /** Renderer → main: load saved scrollback text for a tab id, or '' if none. */
+  PTY_SCROLLBACK_LOAD: 'pty:scrollback:load',
+  /** Renderer → main: save scrollback text for a tab id, capped to ~2 MB. */
+  PTY_SCROLLBACK_SAVE: 'pty:scrollback:save',
+  /** Renderer → main: delete the scrollback file when a tab is closed. */
+  PTY_SCROLLBACK_DELETE: 'pty:scrollback:delete',
+
   // External project startup settings
   PROJECT_STARTUP_SETTINGS_LOAD_ALL: 'project-startup-settings:load-all',
   PROJECT_STARTUP_SETTINGS_GET: 'project-startup-settings:get',
