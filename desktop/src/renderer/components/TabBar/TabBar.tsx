@@ -271,7 +271,7 @@ export function TabBar() {
     <div
       className={`${styles.tabBar} ${!leftSidePanelOpen ? styles.tabBarCollapsed : ''} ${panelDockDrag ? styles.tabBarPanelDocking : ''}`}
     >
-      <SharedFileIconDefs />
+      <SharedFileIconDefs appearanceThemeId={settings.appearanceThemeId} />
       <div className={styles.tabList}>
         {tabs.map((tab) => {
           const { icon, className } = TAB_ICONS[tab.type]
@@ -321,7 +321,7 @@ export function TabBar() {
               ) : agentIcon ? (
                 <img src={agentIcon.src} alt={agentIcon.alt} className={styles.agentIcon} />
               ) : isFileLike ? (
-                <SharedFileIcon path={tab.filePath} className={`${styles.tabIcon} ${styles.fileGlyph}`} />
+                <SharedFileIcon path={tab.filePath} appearanceThemeId={settings.appearanceThemeId} className={`${styles.tabIcon} ${styles.fileGlyph}`} />
               ) : (
                 <span className={`${styles.tabIcon} ${className}`}>{icon}</span>
               )}

@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { createServer } from 'net'
 import { request } from 'http'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { cliEnvWithStandardPath } from './cli-env'
 
@@ -94,22 +94,23 @@ class T3CodeService {
   private starting = new Map<string, Promise<string>>()
 
   async start(cwd: string): Promise<string> {
-    const existing = this.byCwd.get(cwd)
+    const key = resolvePath(cwd)
+    const existing = this.byCwd.get(key)
     if (existing) {
       return t3CodeWebUrl(existing.port, existing.desktopBootstrapToken)
     }
 
-    const pending = this.starting.get(cwd)
+    const pending = this.starting.get(key)
     if (pending) return pending
 
-    const p = this.startImpl(cwd).finally(() => {
-      this.starting.delete(cwd)
+    const p = this.startImpl(key).finally(() => {
+      this.starting.delete(key)
     })
-    this.starting.set(cwd, p)
+    this.starting.set(key, p)
     return p
   }
 
-  private async startImpl(cwd: string): Promise<string> {
+  private async startImpl(resolvedCwd: string): Promise<string> {
     const port = await getFreePort()
     const desktopBootstrapToken = randomBytes(32).toString('hex')
     const t3Bin = resolveT3BinPath()
@@ -121,6 +122,8 @@ class T3CodeService {
 
     // `npx` spawns a nested Node process, so stdio fd 3 never reaches `t3` (BootstrapError / EBADF on macOS).
     // Spawn the bundled CLI directly and run Electron as Node, matching pingdotgg/t3code's desktop backend.
+    // Trailing positional matches `t3 [flags] [<cwd>]` / `t3 start [flags] [<cwd>]` so the server cwd
+    // is explicit (Electron spawns do not always match shell cwd the way `npx t3 <path>` does).
     const args = [
       t3Bin,
       '--no-browser',
@@ -132,14 +135,16 @@ class T3CodeService {
       'desktop',
       '--bootstrap-fd',
       '3',
+      resolvedCwd,
     ]
 
     const proc = spawn(process.execPath, args, {
-      cwd,
+      cwd: resolvedCwd,
       stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
       env: {
         ...cliEnvWithStandardPath(),
         ELECTRON_RUN_AS_NODE: '1',
+        T3CODE_WORKTREE_PATH: resolvedCwd,
       },
     })
 
@@ -242,18 +247,19 @@ class T3CodeService {
     await waitForHttpOk(url, 20_000)
 
     proc.once('exit', () => {
-      this.byCwd.delete(cwd)
+      this.byCwd.delete(resolvedCwd)
     })
 
-    this.byCwd.set(cwd, { proc, port, desktopBootstrapToken })
+    this.byCwd.set(resolvedCwd, { proc, port, desktopBootstrapToken })
     return t3CodeWebUrl(port, desktopBootstrapToken)
   }
 
   stop(cwd: string): void {
-    const m = this.byCwd.get(cwd)
+    const key = resolvePath(cwd)
+    const m = this.byCwd.get(key)
     if (!m) return
     m.proc.kill('SIGTERM')
-    this.byCwd.delete(cwd)
+    this.byCwd.delete(key)
   }
 
   stopAll(): void {

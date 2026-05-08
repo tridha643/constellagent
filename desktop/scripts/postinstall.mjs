@@ -2,9 +2,12 @@ import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { patchPierreDiffContentLineSelection } from './patch-pierre-diff-content-line-selection.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const desktopRoot = resolve(__dirname, '..')
+
+patchPierreDiffContentLineSelection(desktopRoot)
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {

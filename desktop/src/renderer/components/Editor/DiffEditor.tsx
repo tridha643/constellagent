@@ -527,7 +527,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
       </div>
 
       <p className={styles.diffCommentHint}>
-        Hover a line and click + to comment, or drag across line numbers for a range.
+        Hover a line and click + to comment, or drag across the code or line numbers for a range.
       </p>
 
       {/* File strip */}

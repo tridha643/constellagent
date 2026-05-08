@@ -1,5 +1,7 @@
 import type { editor } from 'monaco-editor'
 
+import { getMonacoSyntaxRules } from './monaco-syntax-rules'
+
 export type AppearanceThemeId = 'default' | 'absolutely'
 
 interface ThemePreview {
@@ -166,7 +168,7 @@ const DEFAULT_THEME: AppearanceThemePreset = {
   monacoTheme: {
     base: 'vs-dark',
     inherit: true,
-    rules: [],
+    rules: getMonacoSyntaxRules('default'),
     colors: {
       'editor.background': '#111111',
       'editor.foreground': '#eeeeee',
@@ -180,16 +182,17 @@ const DEFAULT_THEME: AppearanceThemePreset = {
       'editorWidget.background': '#212121',
       'editorHoverWidget.background': '#212121',
       'editorGutter.background': '#111111',
-      'diffEditor.insertedTextBackground': 'rgba(163, 190, 140, 0.6)',
-      'diffEditor.removedTextBackground': 'rgba(191, 97, 106, 0.57)',
-      'diffEditor.insertedLineBackground': 'rgba(163, 190, 140, 0.26)',
-      'diffEditor.removedLineBackground': 'rgba(191, 97, 106, 0.24)',
-      'diffEditorGutter.insertedLineBackground': 'rgba(163, 190, 140, 0.38)',
-      'diffEditorGutter.removedLineBackground': 'rgba(191, 97, 106, 0.36)',
-      'diffEditorOverview.insertedForeground': 'rgba(163, 190, 140, 1)',
-      'diffEditorOverview.removedForeground': 'rgba(191, 97, 106, 1)',
+      'diffEditor.insertedTextBackground': '#a3be8c99',
+      'diffEditor.removedTextBackground': '#bf616a91',
+      'diffEditor.insertedLineBackground': '#a3be8c42',
+      'diffEditor.removedLineBackground': '#bf616a3d',
+      'diffEditorGutter.insertedLineBackground': '#a3be8c61',
+      'diffEditorGutter.removedLineBackground': '#bf616a5c',
+      /** Standalone Monaco parses theme colors via Color.fromHex only — rgba() parses as null → falls back to pure red */
+      'diffEditorOverview.insertedForeground': '#a3be8c',
+      'diffEditorOverview.removedForeground': '#bf616a',
       'diffEditor.border': '#00000000',
-      'diffEditor.diagonalFill': 'rgba(255, 255, 255, 0.03)',
+      'diffEditor.diagonalFill': '#ffffff08',
     },
   },
   mermaidThemeVariables: {
@@ -324,7 +327,7 @@ const ABSOLUTELY_THEME: AppearanceThemePreset = {
   monacoTheme: {
     base: 'vs-dark',
     inherit: true,
-    rules: [],
+    rules: getMonacoSyntaxRules('absolutely'),
     colors: {
       'editor.background': '#242422',
       'editor.foreground': '#f9f9f7',
@@ -338,16 +341,16 @@ const ABSOLUTELY_THEME: AppearanceThemePreset = {
       'editorWidget.background': '#343432',
       'editorHoverWidget.background': '#343432',
       'editorGutter.background': '#242422',
-      'diffEditor.insertedTextBackground': 'rgba(139, 184, 168, 0.6)',
-      'diffEditor.removedTextBackground': 'rgba(204, 125, 94, 0.57)',
-      'diffEditor.insertedLineBackground': 'rgba(139, 184, 168, 0.26)',
-      'diffEditor.removedLineBackground': 'rgba(204, 125, 94, 0.24)',
-      'diffEditorGutter.insertedLineBackground': 'rgba(139, 184, 168, 0.38)',
-      'diffEditorGutter.removedLineBackground': 'rgba(204, 125, 94, 0.36)',
-      'diffEditorOverview.insertedForeground': 'rgba(139, 184, 168, 1)',
-      'diffEditorOverview.removedForeground': 'rgba(204, 125, 94, 1)',
+      'diffEditor.insertedTextBackground': '#8bb8a899',
+      'diffEditor.removedTextBackground': '#cc7d5e91',
+      'diffEditor.insertedLineBackground': '#8bb8a842',
+      'diffEditor.removedLineBackground': '#cc7d5e3d',
+      'diffEditorGutter.insertedLineBackground': '#8bb8a861',
+      'diffEditorGutter.removedLineBackground': '#cc7d5e5c',
+      'diffEditorOverview.insertedForeground': '#00c853',
+      'diffEditorOverview.removedForeground': '#cc7d5e',
       'diffEditor.border': '#00000000',
-      'diffEditor.diagonalFill': 'rgba(255, 255, 255, 0.03)',
+      'diffEditor.diagonalFill': '#ffffff08',
     },
   },
   mermaidThemeVariables: {

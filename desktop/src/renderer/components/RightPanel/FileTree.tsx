@@ -4,7 +4,7 @@ import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { CONSTELLAGENT_PATH_MIME } from '../../utils/add-to-chat'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
-import { SHARED_FILE_TREE_ICONS } from '../../utils/file-presentation'
+import { getFileTreeIconsForAppearance } from '../../utils/file-presentation'
 import { buildFileTreeSnapshot, readExpandedDirectoryPaths, type FileNode, type FileTreeSnapshot } from './file-tree-adapter'
 import { fileTreeActions } from './file-tree-actions'
 import { ensureLetterBadgeSheet, findTreeShadowRoot } from './file-tree-shadow-css'
@@ -178,6 +178,9 @@ function FileTreeNamePrompt({
 }
 
 export function FileTree({ worktreePath, isActive }: Props) {
+  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
+  const treeIcons = useMemo(() => getFileTreeIconsForAppearance(appearanceThemeId), [appearanceThemeId])
+
   const tabs = useAppStore((s) => s.tabs)
   const activeTabId = useAppStore((s) => s.activeTabId)
   const openFileTab = useAppStore((s) => s.openFileTab)
@@ -201,7 +204,7 @@ export function FileTree({ worktreePath, isActive }: Props) {
       canDrag: (paths) => paths.length === 1 && !paths[0]?.endsWith('/'),
       canDrop: () => false,
     },
-    icons: SHARED_FILE_TREE_ICONS,
+    icons: treeIcons,
     initialExpansion: 'closed',
     itemHeight: 26,
     paths: EMPTY_PATHS,
@@ -336,11 +339,11 @@ export function FileTree({ worktreePath, isActive }: Props) {
         initialExpandedPaths: expandedPathsRef.current,
       })
       model.setGitStatus(snapshot.gitStatus)
-      model.setIcons(SHARED_FILE_TREE_ICONS)
+      model.setIcons(treeIcons)
     } catch (err) {
       console.error('[FileTree] model sync failed:', err)
     }
-  }, [model, snapshot.gitStatus, snapshot.paths])
+  }, [model, snapshot.gitStatus, snapshot.paths, treeIcons])
 
   // Attach the M/A/D/R/U letter-badge stylesheet into pierre's shadow root.
   // Pierre may mount its shadow host asynchronously on first render, so we

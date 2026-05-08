@@ -231,22 +231,37 @@ test.describe('Review annotations IPC integration', () => {
       await window.keyboard.press('Meta+Shift+R')
 
       const panel = window.getByTestId('hunk-review-panel')
-      const handle = window.getByTestId('hunk-review-resize-handle')
+      const handle = panel.getByTestId('hunk-review-resize-handle')
       await expect(panel).toBeVisible()
       await expect(handle).toBeVisible()
 
-      const beforeBox = await panel.boundingBox()
-      if (!beforeBox) throw new Error('Missing review panel bounds before resize')
+      // Drawer enters with translate-X + opacity; sequential Playwright boundingBox() snapshots can drift
+      // apart mid-motion and send mouse.down() to the wrong coordinates (backdrop / chrome).
+      await window.waitForTimeout(500)
 
-      await handle.hover()
+      const geometry = await window.evaluate(() => {
+        const card = document.querySelector('[data-testid="hunk-review-panel"]')
+        const resize = document.querySelector('[data-testid="hunk-review-resize-handle"]')
+        if (!(card instanceof HTMLElement) || !(resize instanceof HTMLElement)) return null
+        const pr = card.getBoundingClientRect()
+        const hr = resize.getBoundingClientRect()
+        return {
+          beforeWidth: pr.width,
+          startX: hr.left + hr.width / 2,
+          startY: hr.top + hr.height / 2,
+        }
+      })
+      if (!geometry) throw new Error('Missing hunk review drawer geometry')
+
+      await window.mouse.move(geometry.startX, geometry.startY)
       await window.mouse.down()
-      await window.mouse.move(beforeBox.x - 220, beforeBox.y + 24, { steps: 12 })
+      await window.mouse.move(geometry.startX - 400, geometry.startY, { steps: 16 })
       await window.mouse.up()
       await window.waitForTimeout(250)
 
       const afterResizeBox = await panel.boundingBox()
       if (!afterResizeBox) throw new Error('Missing review panel bounds after resize')
-      expect(afterResizeBox.width).toBeGreaterThan(beforeBox.width + 150)
+      expect(afterResizeBox.width).toBeGreaterThan(geometry.beforeWidth + 150)
 
       await window.keyboard.press('Escape')
       await expect(panel).toBeHidden()

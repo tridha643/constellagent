@@ -113,6 +113,11 @@
   transform: scale(0.97);
 }
 
+/* During drag, skip transform tween so the handle doesn’t fight the layout thread. */
+.resizeHandleActive {
+  transition: none;
+}
+
 .resizeHandleActive .resizeGrip,
 .resizeHandle:active .resizeGrip {
   background: var(--accent-blue);

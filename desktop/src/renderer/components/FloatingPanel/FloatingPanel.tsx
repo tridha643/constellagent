@@ -1,5 +1,5 @@
 import { forwardRef } from 'react'
-import type { CSSProperties, HTMLAttributes, ReactNode } from 'react'
+import type { CSSProperties, HTMLAttributes, ReactNode, Ref } from 'react'
 import styles from './FloatingPanel.module.css'
 
 export type FloatingPanelVariant = 'fullscreen' | 'drawer'
@@ -15,6 +15,8 @@ interface FloatingPanelProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title
   /** Optional inline style forwarded to the shell (used by HunkReview to drive
    *  drawer width while preserving the floating inset). */
   shellStyle?: CSSProperties
+  /** Ref to the outer `.shell` (width is driven here for drawer layouts). */
+  shellRef?: Ref<HTMLDivElement>
   /** Extra class on the outer .shell wrapper. */
   shellClassName?: string
 }
@@ -41,6 +43,7 @@ export const FloatingPanel = forwardRef<HTMLDivElement, FloatingPanelProps>(func
     testId,
     cardClassName,
     shellClassName,
+    shellRef,
     shellStyle,
     className,
     tabIndex,
@@ -56,6 +59,7 @@ export const FloatingPanel = forwardRef<HTMLDivElement, FloatingPanelProps>(func
   const shellVariantClass = variant === 'drawer' ? styles.drawer : styles.fullscreen
   return (
     <div
+      ref={shellRef}
       className={[styles.shell, shellVariantClass, shellClassName, className]
         .filter(Boolean)
         .join(' ')}

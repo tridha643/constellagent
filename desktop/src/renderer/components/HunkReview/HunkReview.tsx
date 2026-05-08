@@ -1,4 +1,12 @@
-import { useEffect, useState, useCallback, useRef, useMemo, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  useMemo,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import type { DiffAnnotation } from '@shared/diff-annotation-types'
 import type { GitHunkActionRequest } from '@shared/git-hunk-action-types'
 import { useAppStore } from '../../store/app-store'
@@ -75,13 +83,18 @@ export function HunkReview({ worktreePath }: Props) {
   const [activeTourStepId, setActiveTourStepId] = useState<string | null>(null)
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_FILES)
-  const [draftWidth, setDraftWidth] = useState<number | null>(null)
   const [isResizing, setIsResizing] = useState(false)
   /** Files marked “Viewed” in session — collapses the diff to focus the rest. */
   const [viewedFilePaths, setViewedFilePaths] = useState<Set<string>>(() => new Set())
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const shellRef = useRef<HTMLDivElement>(null)
+  const resizeDragFinishRef = useRef<(() => void) | null>(null)
+  const dragStateRef = useRef<{
+    /** Last observed pointer X — incremental delta avoids coordinate-space quirks. */
+    lastClientX: number
+    workingWidth: number
+  } | null>(null)
   const draftWidthRef = useRef<number | null>(null)
   const loadGenerationRef = useRef(0)
   const filesRef = useRef<DiffFileData[]>([])
@@ -100,7 +113,14 @@ export function HunkReview({ worktreePath }: Props) {
   const closeHunkReview = useAppStore((s) => s.closeHunkReview)
   const submitHunkReview = useAppStore((s) => s.submitHunkReview)
   const addToast = useAppStore((s) => s.addToast)
-  const panelWidth = clampPanelWidth(draftWidth ?? persistedWidth)
+  const panelWidth = clampPanelWidth(persistedWidth)
+
+  /** Recomputed every render so any store-driven re-render during drag picks up latest `draftWidthRef`. */
+  const drawerShellStyle: CSSProperties = {
+    width: clampPanelWidth(
+      isResizing && draftWidthRef.current !== null ? draftWidthRef.current : panelWidth,
+    ),
+  }
 
   useEffect(() => {
     filesRef.current = files
@@ -251,9 +271,9 @@ export function HunkReview({ worktreePath }: Props) {
   }, [])
 
   useEffect(() => {
-    setDraftWidth(null)
+    if (isResizing) return
     draftWidthRef.current = null
-  }, [persistedWidth, worktreePath])
+  }, [persistedWidth, worktreePath, isResizing])
 
   useEffect(() => {
     setViewedFilePaths(new Set())
@@ -269,61 +289,20 @@ export function HunkReview({ worktreePath }: Props) {
   }, [])
 
   useEffect(() => {
-    if (!isResizing) return
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const dragState = dragStateRef.current
-      if (!dragState) return
-      const nextWidth = clampPanelWidth(dragState.startWidth + (dragState.startX - event.clientX))
-      draftWidthRef.current = nextWidth
-      setDraftWidth(nextWidth)
-    }
-
-    const finishResize = () => {
-      const nextWidth = draftWidthRef.current ?? persistedWidth
-      dragStateRef.current = null
-      draftWidthRef.current = null
-      setIsResizing(false)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      setDraftWidth(null)
-      if (nextWidth !== persistedWidth) {
-        updateSettings({ hunkReviewWidthPx: nextWidth })
-      }
-    }
-
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', finishResize)
-    window.addEventListener('pointercancel', finishResize)
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', finishResize)
-      window.removeEventListener('pointercancel', finishResize)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      dragStateRef.current = null
-      draftWidthRef.current = null
-    }
-  }, [isResizing, persistedWidth, updateSettings])
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (draftWidth !== null) {
-        const clamped = clampPanelWidth(draftWidth)
-        draftWidthRef.current = clamped
-        setDraftWidth(clamped)
-        return
-      }
-      if (persistedWidth == null) return
+    const handleViewportResize = () => {
       const clamped = clampPanelWidth(persistedWidth)
       if (clamped !== persistedWidth) {
         updateSettings({ hunkReviewWidthPx: clamped })
       }
     }
 
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [draftWidth, persistedWidth, updateSettings])
+    window.addEventListener('resize', handleViewportResize)
+    return () => window.removeEventListener('resize', handleViewportResize)
+  }, [persistedWidth, updateSettings])
+
+  useEffect(() => {
+    return () => resizeDragFinishRef.current?.()
+  }, [])
 
   const openFileFromDiff = useCallback(
     (fullPath: string) => {
@@ -606,16 +585,116 @@ export function HunkReview({ worktreePath }: Props) {
     return () => root.removeEventListener('scroll', onScroll)
   }, [files.length, renderedFiles.length])
 
-  const handleResizeStart = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    event.preventDefault()
-    event.stopPropagation()
-    dragStateRef.current = { startX: event.clientX, startWidth: panelWidth }
-    draftWidthRef.current = panelWidth
-    setDraftWidth(panelWidth)
-    setIsResizing(true)
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }, [panelWidth])
+  const handleResizeStart = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      event.stopPropagation()
+
+      resizeDragFinishRef.current?.()
+
+      const handleEl = event.currentTarget
+      const pointerId = event.pointerId
+
+      draftWidthRef.current = panelWidth
+      dragStateRef.current = {
+        lastClientX: event.clientX,
+        workingWidth: panelWidth,
+      }
+
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+      setIsResizing(true)
+
+      try {
+        handleEl.setPointerCapture(pointerId)
+      } catch {
+        /* synthesized / legacy pointer stacks */
+      }
+
+      const applyDragWidth = (clientX: number) => {
+        const dragState = dragStateRef.current
+        if (!dragState) return
+        if (!shellRef.current && !panelRef.current) return
+        const dx = clientX - dragState.lastClientX
+        dragState.lastClientX = clientX
+        const nextWidth = clampPanelWidth(dragState.workingWidth - dx)
+        dragState.workingWidth = nextWidth
+        draftWidthRef.current = nextWidth
+        const px = `${nextWidth}px`
+        /** Shell draws layout slot; `.card` is data-test target — both must shrink/grow together. */
+        shellRef.current?.style.setProperty('width', px)
+        panelRef.current?.style.setProperty('width', px)
+      }
+
+      const onPointerMove = (moveEvent: PointerEvent) => applyDragWidth(moveEvent.clientX)
+      const onMouseMove = (moveEvent: MouseEvent) => applyDragWidth(moveEvent.clientX)
+
+      const handleMoveOpts: AddEventListenerOptions = { passive: true }
+      const windowMoveOpts: AddEventListenerOptions = { capture: true, passive: true }
+      const windowEndOpts: AddEventListenerOptions = { capture: true }
+
+      let finished = false
+      const releaseCapture = () => {
+        try {
+          if (handleEl.hasPointerCapture?.(pointerId)) handleEl.releasePointerCapture(pointerId)
+        } catch {
+          /* noop */
+        }
+      }
+
+      const teardownListeners = () => {
+        handleEl.removeEventListener('pointermove', onPointerMove as EventListener, handleMoveOpts)
+        handleEl.removeEventListener('mouseup', onMouseEnd as EventListener, handleMoveOpts)
+        window.removeEventListener('mousemove', onMouseMove as EventListener, windowMoveOpts)
+        window.removeEventListener('pointermove', onPointerMove as EventListener, windowMoveOpts)
+        window.removeEventListener('pointerup', finishResize as EventListener, windowEndOpts)
+        window.removeEventListener('pointercancel', finishResize as EventListener, windowEndOpts)
+        window.removeEventListener('mouseup', finishResize as EventListener, windowEndOpts)
+        releaseCapture()
+      }
+
+      const finishResize = () => {
+        if (finished) return
+        finished = true
+        resizeDragFinishRef.current = null
+        teardownListeners()
+
+        const pinnedRaw = draftWidthRef.current
+        dragStateRef.current = null
+        draftWidthRef.current = null
+        shellRef.current?.style.removeProperty('width')
+        panelRef.current?.style.removeProperty('width')
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+
+        const persistedNow = clampPanelWidth(
+          useAppStore.getState().settings.hunkReviewWidthPx ?? getDefaultPanelWidth(),
+        )
+        const nextWidth = clampPanelWidth(pinnedRaw ?? persistedNow)
+        if (nextWidth !== persistedNow) {
+          updateSettings({ hunkReviewWidthPx: nextWidth })
+        }
+        setIsResizing(false)
+      }
+
+      /** Extra end hook for synthesized mouse dragging without a pointer-up on the button. */
+      function onMouseEnd() {
+        finishResize()
+      }
+
+      resizeDragFinishRef.current = finishResize
+
+      handleEl.addEventListener('pointermove', onPointerMove as EventListener, handleMoveOpts)
+      handleEl.addEventListener('mouseup', onMouseEnd as EventListener, handleMoveOpts)
+      window.addEventListener('mousemove', onMouseMove as EventListener, windowMoveOpts)
+      window.addEventListener('pointermove', onPointerMove as EventListener, windowMoveOpts)
+      window.addEventListener('pointerup', finishResize as EventListener, windowEndOpts)
+      window.addEventListener('pointercancel', finishResize as EventListener, windowEndOpts)
+      window.addEventListener('mouseup', finishResize as EventListener, windowEndOpts)
+    },
+    [panelWidth, updateSettings],
+  )
 
   return (
     <>
@@ -633,7 +712,8 @@ export function HunkReview({ worktreePath }: Props) {
         testId="hunk-review-panel"
         shellClassName={styles.drawerShell}
         cardClassName={styles.drawerCard}
-        shellStyle={{ width: panelWidth }}
+        shellRef={shellRef}
+        shellStyle={drawerShellStyle}
         ref={panelRef}
         tabIndex={-1}
         role="dialog"
@@ -715,7 +795,7 @@ export function HunkReview({ worktreePath }: Props) {
         <p className={styles.hint}>
           {reviewMode === 'tour'
             ? 'Walk the key agent-authored changes step by step. Click any step to sync the diff with the tour.'
-            : 'Hover a line and click + to comment, or drag across line numbers for a range. Submit sends selected comments to the agent.'}
+            : 'Hover a line and click + to comment, or drag across the code or line numbers for a range. Submit sends selected comments to the agent.'}
         </p>
 
         {/* File strip */}

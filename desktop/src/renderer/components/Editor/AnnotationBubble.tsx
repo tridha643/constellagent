@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import {
   annotationLineEnd,
   type DiffAnnotation,
@@ -26,6 +26,11 @@ function getAvatarStyle(name: string) {
   const hash = key.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
   const hue = hash % 360
   return { bg: `hsla(${hue}, 60%, 50%, 0.2)`, text: `hsl(${hue}, 70%, 75%)` }
+}
+
+function modShortcutHintLabel(): string {
+  if (typeof navigator === 'undefined') return 'Ctrl'
+  return /Mac|iPhone|iPod|iPad/i.test(navigator.platform) ? '⌘' : 'Ctrl'
 }
 
 function formatTimeAgo(isoDate: string): string {
@@ -97,6 +102,7 @@ export function CommentBubble({
   const end = annotationLineEnd(annotation)
   const rangeLabel =
     end !== annotation.lineNumber ? `L${annotation.lineNumber}–L${end}` : `L${annotation.lineNumber}`
+  const sideShort = annotation.side === 'additions' ? 'New' : 'Old'
   const isAgent = !!annotation.author
   const isGithub = annotation.id.startsWith('PRR') || annotation.id.startsWith('IC_')
 
@@ -115,6 +121,10 @@ export function CommentBubble({
       ].filter(Boolean).join(' ')}
       data-annotation-id={annotation.id}
     >
+      <div className={styles.commentLocationRow}>
+        <span className={styles.linePill}>{rangeLabel}</span>
+        <span className={styles.sidePill}>{sideShort}</span>
+      </div>
       <div className={styles.commentThread}>
         <div
           className={styles.avatar}
@@ -177,6 +187,7 @@ export function CommentComposer({
   lineEnd,
   onCancel,
   onSaved,
+  onDirtyChange,
 }: {
   worktreePath: string
   filePath: string
@@ -185,10 +196,22 @@ export function CommentComposer({
   lineEnd: number
   onCancel: () => void
   onSaved: () => void
+  /** Fires when non-whitespace content differs from empty (draft state). */
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const [body, setBody] = useState('')
   const [busy, setBusy] = useState(false)
   const addToast = useAppStore((s) => s.addToast)
+
+  useEffect(() => {
+    onDirtyChange?.(body.trim().length > 0)
+  }, [body, onDirtyChange])
+
+  useEffect(() => {
+    return () => {
+      onDirtyChange?.(false)
+    }
+  }, [onDirtyChange])
 
   const submit = async () => {
     const trimmed = body.trim()
@@ -215,21 +238,27 @@ export function CommentComposer({
     }
   }
 
-  const sideLabel = side === 'additions' ? 'New' : 'Old'
-  const lineLabel =
-    lineEnd > lineNumber ? `lines ${lineNumber}–${lineEnd}` : `line ${lineNumber}`
+  const sideShort = side === 'additions' ? 'New' : 'Old'
+  const linePillText =
+    lineEnd > lineNumber ? `Lines ${lineNumber}–${lineEnd}` : `Line ${lineEnd}`
+  const mod = modShortcutHintLabel()
 
   return (
     <div className={styles.composerBubble} data-diff-annotation-composer>
-      <div className={styles.composerLabel}>
-        Comment on {sideLabel} {lineLabel}
+      <div className={styles.composerHeader}>
+        <span className={styles.composerTitle}>New comment</span>
+        <div className={styles.composerLineMeta}>
+          <span className={styles.linePill}>{linePillText}</span>
+          <span className={styles.sidePill}>{sideShort}</span>
+        </div>
       </div>
       <textarea
         className={styles.composerTextarea}
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="Leave a comment..."
+        placeholder="Leave a comment…"
         autoFocus
+        rows={3}
         onKeyDown={(e) => {
           if (e.key === 'Escape') onCancel()
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -254,7 +283,9 @@ export function CommentComposer({
         >
           Cancel
         </button>
-        <span className={styles.composerHint}>&#8984;Enter to submit</span>
+        <span className={styles.composerHint}>
+          {mod}+Enter to submit
+        </span>
       </div>
     </div>
   )

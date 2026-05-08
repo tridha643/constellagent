@@ -199,6 +199,7 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
       lineNumbersMinChars: 2,
       lineDecorationsWidth: 4,
       showFoldingControls: 'mouseover',
+      'semanticHighlighting.enabled': true,
       // Render hover/suggest/context widgets outside the editor's clipping
       // boundary so the rounded floating-card chrome doesn't cut them off.
       fixedOverflowWidgets: true,
