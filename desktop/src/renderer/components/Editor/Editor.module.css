@@ -87,32 +87,46 @@
   );
 }
 
-.diffScrollArea :global(.cga-full-file-added-line) {
-  background: color-mix(in srgb, var(--accent-green) 38%, transparent);
-}
-
-.diffScrollArea :global(.cga-full-file-deleted-line) {
-  background: color-mix(in srgb, var(--accent-red) 38%, transparent);
-}
+/* Full-file pure add/delete (Monaco standalone): gutter stripes only — no whole-line washes. */
 
 .diffScrollArea :global(.cga-full-file-added-gutter) {
-  margin-left: 3px;
+  margin-left: 2px;
   width: 3px !important;
-  background: var(--accent-green-muted, var(--accent-green));
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--accent-green-muted, var(--accent-green)) 92%, var(--surface-1));
   opacity: 1;
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent-green-muted, var(--accent-green)) 82%, var(--surface-1)),
-    0 0 4px 0 color-mix(in srgb, var(--accent-green-muted, var(--accent-green)) 35%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--accent-green-muted, var(--accent-green)) 45%, transparent);
 }
 
 .diffScrollArea :global(.cga-full-file-deleted-gutter) {
-  margin-left: 3px;
+  margin-left: 2px;
   width: 3px !important;
-  background: var(--accent-red);
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--accent-red) 88%, var(--surface-1));
   opacity: 1;
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent-red) 82%, var(--surface-1)),
-    0 0 4px 0 color-mix(in srgb, var(--accent-red) 35%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--accent-red) 42%, transparent);
+}
+
+.fullFilePureChangeBanner {
+  flex-shrink: 0;
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--surface-0) 92%, var(--surface-1));
+  border-bottom: 1px solid var(--panel-border-inner);
+}
+
+.fullFilePureChangeBannerAdded {
+  border-left: 3px solid var(--accent-green-muted, var(--accent-green));
+  padding-left: calc(var(--space-5) - 3px);
+}
+
+.fullFilePureChangeBannerDeleted {
+  border-left: 3px solid var(--accent-red);
+  padding-left: calc(var(--space-5) - 3px);
 }
 
 /* Diff editor controls */

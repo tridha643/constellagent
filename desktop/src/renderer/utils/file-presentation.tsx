@@ -4,22 +4,40 @@ import {
   getBuiltInSpriteSheet,
   type FileTreeIconConfig,
 } from '@pierre/trees'
+import type { AppearanceThemeId } from '../theme/appearance'
 import { STATUS_LABELS } from '../../shared/status-labels'
 
 export type FilePresentationGitStatus = keyof typeof STATUS_LABELS | 'ignored'
 
-// Pierre's built-in tokens for the 'complete' icon set. Kept as a string type
+// Pierre's built-in tokens for built-in icon sets. Kept as a string type
 // because `@pierre/trees` does not re-export `BuiltInFileIconToken`.
 export type SharedFileIconToken = string
 
-const TREE_ICON_SET = 'complete' as const
-
-export const SHARED_FILE_TREE_ICONS: FileTreeIconConfig = {
-  set: TREE_ICON_SET,
-  colored: true,
+/** Maps UI appearance presets to `@pierre/trees` built-in sprites (`minimal` | `standard` | `complete`). */
+export function getFileTreeIconsForAppearance(themeId: AppearanceThemeId): FileTreeIconConfig {
+  switch (themeId) {
+    case 'absolutely':
+      return { set: 'standard', colored: true }
+    default:
+      return { set: 'complete', colored: true }
+  }
 }
 
-const sharedIconResolver = createFileTreeIconResolver(SHARED_FILE_TREE_ICONS)
+/** Back-compat alias; same as Default preset (`complete`). */
+export const SHARED_FILE_TREE_ICONS: FileTreeIconConfig = getFileTreeIconsForAppearance('default')
+
+const iconResolverCache = new Map<string, ReturnType<typeof createFileTreeIconResolver>>()
+
+function resolverForAppearance(themeId: AppearanceThemeId) {
+  const icons = getFileTreeIconsForAppearance(themeId)
+  const key = `${icons.set}:${Boolean(icons.colored)}`
+  let resolver = iconResolverCache.get(key)
+  if (!resolver) {
+    resolver = createFileTreeIconResolver(icons)
+    iconResolverCache.set(key, resolver)
+  }
+  return resolver
+}
 
 export interface FilePresentation {
   displayTitle: string
@@ -42,9 +60,9 @@ interface ResolvedSharedIcon {
   symbolId: string
 }
 
-function resolveSharedIcon(path: string): ResolvedSharedIcon {
+function resolveSharedIcon(path: string, appearanceThemeId: AppearanceThemeId): ResolvedSharedIcon {
   const fileName = getBaseName(path)
-  const resolved = sharedIconResolver.resolveIcon('file-tree-icon-file', fileName) as {
+  const resolved = resolverForAppearance(appearanceThemeId).resolveIcon('file-tree-icon-file', fileName) as {
     name: string
     token?: string
   }
@@ -54,8 +72,13 @@ function resolveSharedIcon(path: string): ResolvedSharedIcon {
   }
 }
 
-export function resolveSharedFileIconToken(path: string): SharedFileIconToken {
-  return resolveSharedIcon(path).token
+/** Pierre only paints per-token colors in-host when the set is `complete`; match that so tabs align with the file tree. */
+function useSemanticBuiltinIconColors(themeId: AppearanceThemeId): boolean {
+  return getFileTreeIconsForAppearance(themeId).set === 'complete'
+}
+
+export function resolveSharedFileIconToken(path: string, appearanceThemeId: AppearanceThemeId = 'default'): SharedFileIconToken {
+  return resolveSharedIcon(path, appearanceThemeId).token
 }
 
 export function getFileGitBadge(status: FilePresentationGitStatus | null | undefined): string | null {
@@ -66,29 +89,32 @@ export function getFileGitBadge(status: FilePresentationGitStatus | null | undef
 export function getFilePresentation(
   path: string,
   gitStatus?: FilePresentationGitStatus | null,
+  appearanceThemeId: AppearanceThemeId = 'default',
 ): FilePresentation {
   const fileName = getBaseName(path)
-  const { token, symbolId } = resolveSharedIcon(path)
+  const { token, symbolId } = resolveSharedIcon(path, appearanceThemeId)
 
   return {
     displayTitle: fileName,
     fileName,
     gitBadge: getFileGitBadge(gitStatus),
     gitStatus: gitStatus ?? null,
-    iconColor: getBuiltInFileIconColor(token),
+    iconColor: useSemanticBuiltinIconColors(appearanceThemeId) ? getBuiltInFileIconColor(token) : undefined,
     iconSymbolId: symbolId,
     iconToken: token,
   }
 }
 
-const SHARED_TREE_ICON_SPRITE_SHEET = getBuiltInSpriteSheet(TREE_ICON_SET)
-
-export function SharedFileIconDefs() {
+/** SVG `<symbol>` defs for tab strip — must match the same {@link AppearanceThemeId} passed to {@link SharedFileIcon}. */
+export function SharedFileIconDefs({ appearanceThemeId }: { appearanceThemeId: AppearanceThemeId }) {
+  const set = getFileTreeIconsForAppearance(appearanceThemeId).set ?? 'complete'
+  const sheet = getBuiltInSpriteSheet(set)
   return (
     <div
       aria-hidden="true"
       style={{ display: 'none' }}
-      dangerouslySetInnerHTML={{ __html: SHARED_TREE_ICON_SPRITE_SHEET }}
+      key={appearanceThemeId}
+      dangerouslySetInnerHTML={{ __html: sheet }}
     />
   )
 }
@@ -96,11 +122,13 @@ export function SharedFileIconDefs() {
 export function SharedFileIcon({
   path,
   className,
+  appearanceThemeId,
 }: {
   path: string
   className?: string
+  appearanceThemeId: AppearanceThemeId
 }) {
-  const presentation = getFilePresentation(path)
+  const presentation = getFilePresentation(path, undefined, appearanceThemeId)
   return (
     <svg
       aria-hidden="true"

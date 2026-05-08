@@ -14,9 +14,10 @@ import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
 import { CommentBubble, CommentComposer, HunkActionAnnotation } from './AnnotationBubble'
 import annotationUi from './AnnotationBubble.module.css'
 import styles from './Editor.module.css'
+import { CODEX_ABSOLUTELY_DIFF_THEME_ID } from '../../themes/diff/codex-absolutely-dark'
 import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
 
-const DIFFS_THEME = 'pierre-dark' as const
+const DIFFS_THEME = CODEX_ABSOLUTELY_DIFF_THEME_ID
 
 /**
  * Pierre’s `[data-hover-slot]` is a flex row without vertical alignment; the React slotted
@@ -61,6 +62,24 @@ export function normalizeDiffSelection(range: PierreSelectedRange): {
   const lo = Math.min(range.start, range.end)
   const hi = Math.max(range.start, range.end)
   return { side, lineNumber: lo, lineEnd: hi }
+}
+
+/** Restore Pierre `selectedLines` from a pending comment anchor (single-side range). */
+export function pendingRangeToPierreSelection(p: {
+  side: DiffAnnotationSide
+  lineNumber: number
+  lineEnd: number
+}): PierreSelectedRange {
+  const lo = Math.min(p.lineNumber, p.lineEnd)
+  const hi = Math.max(p.lineNumber, p.lineEnd)
+  return { start: lo, end: hi, side: p.side, endSide: p.side }
+}
+
+function normalizedPendingRangesEqual(
+  a: { side: DiffAnnotationSide; lineNumber: number; lineEnd: number },
+  b: { side: DiffAnnotationSide; lineNumber: number; lineEnd: number },
+) {
+  return a.side === b.side && a.lineNumber === b.lineNumber && a.lineEnd === b.lineEnd
 }
 
 /**
@@ -152,6 +171,7 @@ export const DiffFileSection = memo(function DiffFileSection({
     keys: [],
   })
   const [pendingHunkAction, setPendingHunkAction] = useState<string | null>(null)
+  const composerDirtyRef = useRef(false)
   const collapseTouchedRef = useRef(false)
   const fileDiffSourceKeyRef = useRef<string | null>(null)
   const fileDiffSourceKey = `${data.filePath}\u0000${data.patch}`
@@ -167,6 +187,16 @@ export const DiffFileSection = memo(function DiffFileSection({
   useEffect(() => {
     setShowFullContextOverride(null)
   }, [data.filePath, data.patch, data.fileDiff])
+
+  useEffect(() => {
+    if (!pendingRange) {
+      composerDirtyRef.current = false
+    }
+  }, [pendingRange])
+
+  const handleComposerDirtyChange = useCallback((dirty: boolean) => {
+    composerDirtyRef.current = dirty
+  }, [])
 
   useEffect(() => {
     collapseTouchedRef.current = false
@@ -304,18 +334,35 @@ export const DiffFileSection = memo(function DiffFileSection({
     return [...merged.values()]
   }, [lineAnnotations, hunkStartAnnotations, pendingRange])
 
-  const handleLineSelectionStart = useCallback(() => {
-    setPendingRange(null)
-  }, [])
+  const handleLineSelectionStart = useCallback(() => {}, [])
 
-  const handleLineSelectionEnd = useCallback((range: PierreSelectedRange | null) => {
-    setSelectedLines(range)
-    if (!range) {
-      setPendingRange(null)
-      return
-    }
-    setPendingRange(normalizeDiffSelection(range))
-  }, [])
+  const handleLineSelectionEnd = useCallback(
+    (range: PierreSelectedRange | null) => {
+      if (!range) {
+        if (composerDirtyRef.current && pendingRange) {
+          if (!window.confirm('Discard your comment draft?')) {
+            setSelectedLines(pendingRangeToPierreSelection(pendingRange))
+            return
+          }
+        }
+        setSelectedLines(null)
+        setPendingRange(null)
+        return
+      }
+      const normalized = normalizeDiffSelection(range)
+      if (pendingRange && composerDirtyRef.current) {
+        if (!normalizedPendingRangesEqual(normalized, pendingRange)) {
+          if (!window.confirm('Discard your comment draft?')) {
+            setSelectedLines(pendingRangeToPierreSelection(pendingRange))
+            return
+          }
+        }
+      }
+      setSelectedLines(range)
+      setPendingRange(normalized)
+    },
+    [pendingRange],
+  )
 
   const patchOptions = useMemo(
     () => ({
@@ -456,12 +503,14 @@ export const DiffFileSection = memo(function DiffFileSection({
           ))}
           {showComposer && (
             <CommentComposer
+              key={`${pendingRange.side}-${pendingRange.lineNumber}-${pendingRange.lineEnd}`}
               worktreePath={worktreePath}
               filePath={data.filePath}
               side={pendingRange.side}
               lineNumber={pendingRange.lineNumber}
               lineEnd={pendingRange.lineEnd}
               onCancel={clearSelectionAndComposer}
+              onDirtyChange={handleComposerDirtyChange}
               onSaved={() => {
                 clearSelectionAndComposer()
                 onAnnotationsChanged()
@@ -483,6 +532,7 @@ export const DiffFileSection = memo(function DiffFileSection({
       activeTourAnnotationId,
       handleAcceptHunk,
       handleRejectHunk,
+      handleComposerDirtyChange,
     ],
   )
 

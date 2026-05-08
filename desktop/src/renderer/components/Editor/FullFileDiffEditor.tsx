@@ -133,21 +133,22 @@ function buildReadOnlyEditorOptions(
     automaticLayout: true,
     glyphMargin: false,
     lineNumbersMinChars: 2,
-    lineDecorationsWidth: 4,
+    lineDecorationsWidth: 6,
     fixedOverflowWidgets: true,
+    'semanticHighlighting.enabled': true,
     fontFamily: "'SF Mono', Menlo, 'Cascadia Code', monospace",
     fontSize,
     wordWrap: 'off',
   }
 }
 
+/** Git-style gutter stripe only — full-line green/red washes make entire new/deleted files unreadable. */
 function buildPureChangeDecorations(
   monaco: MonacoApi,
   model: editor.ITextModel,
   kind: 'added' | 'deleted',
 ): editor.IModelDeltaDecoration[] {
   const lineCount = model.getLineCount()
-  const className = kind === 'added' ? 'cga-full-file-added-line' : 'cga-full-file-deleted-line'
   const linesDecorationsClassName = kind === 'added'
     ? 'cga-full-file-added-gutter'
     : 'cga-full-file-deleted-gutter'
@@ -157,12 +158,24 @@ function buildPureChangeDecorations(
       range: new monaco.Range(line, 1, line, 1),
       options: {
         isWholeLine: true,
-        className,
         linesDecorationsClassName,
       },
     })
   }
   return decorations
+}
+
+function PureChangeBanner({ kind }: { kind: 'added' | 'deleted' }) {
+  return (
+    <div
+      role="note"
+      className={`${styles.fullFilePureChangeBanner} ${kind === 'added' ? styles.fullFilePureChangeBannerAdded : styles.fullFilePureChangeBannerDeleted}`}
+    >
+      {kind === 'added'
+        ? 'Entirely new at HEAD — green line stripes flag additions; syntax colors stay readable.'
+        : 'Entirely removed on disk — red line stripes flag deletions; syntax colors stay readable.'}
+    </div>
+  )
 }
 
 type EditorBundle = {
@@ -360,17 +373,34 @@ function PureFileChangeSurface({
 
   if (inline) {
     return (
-      <div className={styles.diffScrollArea} style={{ overflow: 'hidden' }}>
-        <div ref={hostRef} className={styles.fullFileEditorHost} />
+      <div
+        className={styles.diffScrollArea}
+        style={{
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <PureChangeBanner kind={kind} />
+        <div ref={hostRef} className={styles.fullFileEditorHost} style={{ flex: 1, minHeight: 0 }} />
       </div>
     )
   }
 
   return (
-    <div className={styles.diffScrollArea} style={{ overflow: 'hidden' }}>
+    <div
+      className={styles.diffScrollArea}
+      style={{
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <PureChangeBanner kind={kind} />
       <div
         ref={splitWrapRef}
         className={`${styles.fullFileSplit} ${isResizing ? styles.fullFileSplitResizing : ''}`}
+        style={{ flex: 1, minHeight: 0 }}
       >
         <div
           ref={leftRef}

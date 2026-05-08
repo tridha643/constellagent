@@ -48,12 +48,11 @@ function createWindow(): void {
     },
   })
 
-  // Show window when ready to avoid white flash (skip in tests)
-  if (!isE2eRun()) {
-    mainWindow.on('ready-to-show', () => {
-      mainWindow?.show()
-    })
-  }
+  // Always show once content is ready. E2e uses real mouse synthesis; leaving the
+  // BrowserWindow hidden (show: false) can swallow move events needed for resize/drag specs.
+  mainWindow.on('ready-to-show', () => {
+    mainWindow?.show()
+  })
 
   // Open external links in browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

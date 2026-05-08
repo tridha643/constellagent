@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import './themes/diff/registerPierreThemes'
 import { App } from './App'
 import { useAppStore, hydrateFromDisk } from './store/app-store'
 import { applyAppearanceTheme } from './theme/appearance'

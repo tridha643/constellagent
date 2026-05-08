@@ -1,4 +1,12 @@
-import { useEffect, useState, useCallback, useRef, useMemo, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  useMemo,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import type { DiffAnnotation } from '@shared/diff-annotation-types'
 import type { GitHunkActionRequest } from '@shared/git-hunk-action-types'
 import { useAppStore } from '../../store/app-store'
@@ -261,8 +269,9 @@ export function HunkReview({ worktreePath }: Props) {
   }, [])
 
   useEffect(() => {
+    if (isResizing) return
     draftWidthRef.current = null
-  }, [persistedWidth, worktreePath])
+  }, [persistedWidth, worktreePath, isResizing])
 
   useEffect(() => () => {
     const dragState = dragStateRef.current
@@ -300,7 +309,6 @@ export function HunkReview({ worktreePath }: Props) {
         if (shellRef.current) shellRef.current.style.width = `${clamped}px`
         return
       }
-      if (persistedWidth == null) return
       const clamped = clampPanelWidth(persistedWidth)
       if (clamped !== persistedWidth) {
         updateSettings({ hunkReviewWidthPx: clamped })

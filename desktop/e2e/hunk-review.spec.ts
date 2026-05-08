@@ -253,40 +253,37 @@ test.describe('Review annotations IPC integration', () => {
       await window.keyboard.press('Meta+Shift+R')
 
       const panel = window.getByTestId('hunk-review-panel')
-      const handle = window.getByTestId('hunk-review-resize-handle')
+      const handle = panel.getByTestId('hunk-review-resize-handle')
       await expect(panel).toBeVisible()
       await expect(handle).toBeVisible()
 
-      const beforeBox = await panel.boundingBox()
-      if (!beforeBox) throw new Error('Missing review panel bounds before resize')
+      // Drawer enters with translate-X + opacity; sequential Playwright boundingBox() snapshots can drift
+      // apart mid-motion and send mouse.down() to the wrong coordinates (backdrop / chrome).
+      await window.waitForTimeout(500)
 
-      await handle.evaluate((el) => {
-        const rect = el.getBoundingClientRect()
-        const startX = rect.left + rect.width / 2
-        const startY = rect.top + rect.height / 2
-        const endX = startX + 180
-        const base = {
-          bubbles: true,
-          cancelable: true,
-          pointerId: 1,
-          pointerType: 'mouse',
-          isPrimary: true,
-          clientY: startY,
+      const geometry = await window.evaluate(() => {
+        const card = document.querySelector('[data-testid="hunk-review-panel"]')
+        const resize = document.querySelector('[data-testid="hunk-review-resize-handle"]')
+        if (!(card instanceof HTMLElement) || !(resize instanceof HTMLElement)) return null
+        const pr = card.getBoundingClientRect()
+        const hr = resize.getBoundingClientRect()
+        return {
+          beforeWidth: pr.width,
+          startX: hr.left + hr.width / 2,
+          startY: hr.top + hr.height / 2,
         }
-        el.dispatchEvent(new PointerEvent('pointerdown', { ...base, clientX: startX }))
-        for (let step = 1; step <= 12; step += 1) {
-          el.dispatchEvent(new PointerEvent('pointermove', {
-            ...base,
-            clientX: startX + ((endX - startX) * step) / 12,
-          }))
-        }
-        el.dispatchEvent(new PointerEvent('pointerup', { ...base, clientX: endX }))
       })
+      if (!geometry) throw new Error('Missing hunk review drawer geometry')
+
+      await window.mouse.move(geometry.startX, geometry.startY)
+      await window.mouse.down()
+      await window.mouse.move(geometry.startX - 400, geometry.startY, { steps: 16 })
+      await window.mouse.up()
       await window.waitForTimeout(250)
 
       const afterResizeBox = await panel.boundingBox()
       if (!afterResizeBox) throw new Error('Missing review panel bounds after resize')
-      expect(afterResizeBox.width).toBeLessThan(beforeBox.width - 100)
+      expect(afterResizeBox.width).toBeGreaterThan(geometry.beforeWidth + 150)
 
       await window.keyboard.press('Escape')
       await expect(panel).toBeHidden()

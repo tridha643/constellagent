@@ -3,6 +3,7 @@ import {
   SHARED_FILE_TREE_ICONS,
   getFileGitBadge,
   getFilePresentation,
+  getFileTreeIconsForAppearance,
   resolveSharedFileIconToken,
 } from './file-presentation'
 
@@ -27,6 +28,13 @@ describe('resolveSharedFileIconToken', () => {
   it('falls back to default for unknown file types', () => {
     expect(resolveSharedFileIconToken('weird.unknownext')).toBe('default')
   })
+
+  it('Absolutely preset uses standard icon tier (fewer dedicated glyphs than complete)', () => {
+    expect(resolveSharedFileIconToken('biome.json', 'absolutely')).toBe('json')
+    expect(resolveSharedFileIconToken('biome.json', 'default')).toBe('biome')
+    expect(resolveSharedFileIconToken('vite.config.ts', 'absolutely')).toBe('typescript')
+    expect(resolveSharedFileIconToken('vite.config.ts', 'default')).toBe('vite')
+  })
 })
 
 describe('getFilePresentation', () => {
@@ -40,10 +48,25 @@ describe('getFilePresentation', () => {
     expect(presentation.iconColor).toContain('--trees-file-icon-color-typescript')
   })
 
+  it('omits per-token icon color for Absolutely so tabs match monochrome tree icons', () => {
+    const presentation = getFilePresentation('src/index.ts', 'modified', 'absolutely')
+    expect(presentation.iconToken).toBe('typescript')
+    expect(presentation.iconColor).toBeUndefined()
+  })
+
   it('uses shared git badge mapping', () => {
     expect(getFileGitBadge('added')).toBe('A')
     expect(getFileGitBadge('deleted')).toBe('D')
     expect(getFileGitBadge('ignored')).toBeNull()
+  })
+})
+
+describe('getFileTreeIconsForAppearance', () => {
+  it('uses complete set for Default and standard for Absolutely', () => {
+    expect(getFileTreeIconsForAppearance('default').set).toBe('complete')
+    expect(getFileTreeIconsForAppearance('absolutely').set).toBe('standard')
+    expect(getFileTreeIconsForAppearance('default').colored).toBe(true)
+    expect(getFileTreeIconsForAppearance('absolutely').colored).toBe(true)
   })
 })
 
