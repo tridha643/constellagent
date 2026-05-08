@@ -94,7 +94,7 @@ export type Tab = {
   workspaceId: string
 } & (
   | { type: 'terminal'; title: string; ptyId: string; agentType?: AgentType; splitRoot?: SplitNode; focusedPaneId?: string }
-  | { type: 'file'; filePath: string; unsaved?: boolean; deleted?: boolean; splitRoot?: SplitNode; focusedPaneId?: string; initialPosition?: { lineNumber: number; column: number } }
+  | { type: 'file'; filePath: string; unsaved?: boolean; deleted?: boolean; splitRoot?: SplitNode; focusedPaneId?: string; initialPosition?: { lineNumber: number; column: number }; viewState?: editor.ICodeEditorViewState | null }
   | { type: 'diff'; commitHash?: string; commitMessage?: string }
   | { type: 'fileDiff'; filePath: string; status?: WorkingTreeFileStatus['status']; originalRef?: string }
   | { type: 'markdownPreview'; filePath: string; title: string }
@@ -524,6 +524,17 @@ export interface ChatSnippet {
   endLine?: number
 }
 
+export interface ReviewPanelPersistedState {
+  reviewMode: 'annotations' | 'tour'
+  activeTourStepId: string | null
+  activeFile: string | null
+  visibleCount: number
+  /** Set<string> of viewed file paths, serialized as a sorted array. */
+  viewedFilePaths: string[]
+  /** Selected human comment ids in the review submission selection. */
+  selectedIds: string[]
+}
+
 export interface AppState {
   // Data
   projects: Project[]
@@ -534,6 +545,17 @@ export interface AppState {
   activeTabId: string | null
   lastActiveTabByWorkspace: Record<string, string>
   sidePanels: SidePanelLayout
+  /** Per-workspace overrides for `sidePanels`. Falls back to the global `sidePanels`
+   *  when no entry exists for a workspace yet. */
+  sidePanelsByWorkspace: Record<string, SidePanelLayout>
+  /** Per-workspace HunkReview floating panel width override. */
+  hunkReviewWidthByWorkspace: Record<string, number>
+  /** Per-workspace expanded folder paths in the file tree. */
+  fileTreeExpandedPathsByWorkspace: Record<string, string[]>
+  /** Per-workspace HunkReview UI state (mode, active file, scroll, selection). */
+  reviewPanelStateByWorkspace: Record<string, ReviewPanelPersistedState>
+  /** Per-workspace staged-file selection in the right-panel Changes view. */
+  stagedSelectionByWorkspace: Record<string, string[]>
   /** Ephemeral: active drag payload while a side-panel tab is being docked. */
   panelDockDrag: PanelDockDrag | null
   /** Ephemeral: manually collapsed project sections in the project navigation panel. */
@@ -759,6 +781,17 @@ export interface AppState {
   removeSubagent: (id: string) => void
   updateSubagent: (id: string, partial: Partial<Omit<SubagentEntry, 'id'>>) => void
 
+  // Per-workspace UI persistence setters
+  setSidePanelsForWorkspace: (workspaceId: string, layout: SidePanelLayout) => void
+  setHunkReviewWidth: (workspaceId: string, widthPx: number | undefined) => void
+  setFileTreeExpandedPaths: (workspaceId: string, paths: string[]) => void
+  setReviewPanelState: (
+    workspaceId: string,
+    partial: Partial<ReviewPanelPersistedState>,
+  ) => void
+  setStagedSelection: (workspaceId: string, paths: string[]) => void
+  setFileTabViewState: (tabId: string, viewState: editor.ICodeEditorViewState | null) => void
+
   // Hydration
   hydrateState: (data: PersistedState) => void
 
@@ -791,5 +824,10 @@ export interface PersistedState {
   lastActiveTabByWorkspace?: Record<string, string>
   settings?: Settings
   sidePanels?: SidePanelLayout
+  sidePanelsByWorkspace?: Record<string, SidePanelLayout>
+  hunkReviewWidthByWorkspace?: Record<string, number>
+  fileTreeExpandedPathsByWorkspace?: Record<string, string[]>
+  reviewPanelStateByWorkspace?: Record<string, ReviewPanelPersistedState>
+  stagedSelectionByWorkspace?: Record<string, string[]>
   sidebarActionOrder?: SidebarActionId[]
 }

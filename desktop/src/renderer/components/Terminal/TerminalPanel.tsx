@@ -24,16 +24,35 @@ interface Props {
   onFocus?: (paneId: string) => void
   /** Whether this pane is the focused pane within a split */
   isFocusedPane?: boolean
+  /**
+   * Stable key (tab id) used to persist this terminal's scrollback to disk so it
+   * survives app quit. Only set for standalone terminals — split panes are
+   * collapsed on restart, so their scrollback is intentionally ephemeral.
+   */
+  scrollbackKey?: string
 }
 
-export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocusedPane }: Props) {
+/** Cap on the in-memory scrollback ring per terminal (matches main-side cap). */
+const SCROLLBACK_RING_MAX_BYTES = 2 * 1024 * 1024
+
+export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocusedPane, scrollbackKey }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termDivRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitFnRef = useRef<(() => void) | null>(null)
   const inputLineRef = useRef('')
+  /** Append-only ring of PTY output bytes — flushed to disk on quit. */
+  const scrollbackRingRef = useRef('')
   const terminalFontSize = useAppStore((s) => s.settings.terminalFontSize)
   const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
+
+  const appendToScrollbackRing = (chunk: string) => {
+    const next = scrollbackRingRef.current + chunk
+    scrollbackRingRef.current =
+      next.length > SCROLLBACK_RING_MAX_BYTES
+        ? next.slice(next.length - SCROLLBACK_RING_MAX_BYTES)
+        : next
+  }
 
   const emitPrPollHint = (command: string) => {
     const normalized = command.trim().toLowerCase()
@@ -148,15 +167,29 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
         }
         fitFnRef.current = fitTerminal
 
-        // Defer fit until container has real dimensions.
-        let fitAttempts = 0
+        // Defer fit until container has real dimensions. The previous 30-frame
+        // budget (~500 ms) sometimes ran out before the contentArea finished
+        // laying out — the terminal then rendered blank with no recovery
+        // because xterm had been opened against a 0×0 div. Keep retrying
+        // until the div has dimensions or the component is disposed; on the
+        // first non-zero size, also force a refresh so xterm re-paints from
+        // its (now-correct) buffer geometry.
+        let didFirstFit = false
         const tryFit = () => {
           if (disposed) return
           if (termDiv.clientWidth > 0 && termDiv.clientHeight > 0) {
             fitTerminal()
-          } else if (++fitAttempts < 30) {
-            requestAnimationFrame(tryFit)
+            if (!didFirstFit) {
+              didFirstFit = true
+              try {
+                term.refresh(0, term.rows - 1)
+              } catch {
+                /* refresh is best-effort — xterm versions vary */
+              }
+            }
+            return
           }
+          requestAnimationFrame(tryFit)
         }
         requestAnimationFrame(tryFit)
 
@@ -202,7 +235,23 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
         const unsubData = window.api.pty.onData(ptyId, (data: string) => {
           if (disposed) return
           term.write(data)
+          // Track 6: keep an in-memory ring of PTY output so the scrollback
+          // can be re-written into a fresh xterm on the next session.
+          if (scrollbackKey) appendToScrollbackRing(data)
         })
+
+        // Track 6: replay any saved scrollback before live data flows so the
+        // user sees their old terminal state on reopen. Bytes appended after
+        // load are guaranteed to come from the live stream above.
+        if (scrollbackKey) {
+          void window.api.pty.loadScrollback(scrollbackKey).then((saved) => {
+            if (disposed || !saved) return
+            // Prepend a soft visual divider so it's clear what's restored
+            // history vs. live output. Plain ANSI dim — survives any theme.
+            term.write(saved)
+            scrollbackRingRef.current = saved
+          }).catch(() => {})
+        }
 
         termRef.current = term
 
@@ -235,6 +284,28 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
       inputLineRef.current = ''
     }
   }, [ptyId])
+
+  // Track 6: persist scrollback to disk on quit and on tab close. Capture
+  // phase keeps us ahead of app-store's bubble-phase saveSync handler so the
+  // save IPC actually fires before the renderer is torn down.
+  useEffect(() => {
+    if (!scrollbackKey) return
+    const flush = () => {
+      const text = scrollbackRingRef.current
+      if (!text) return
+      void window.api.pty.saveScrollback(scrollbackKey, text).catch(() => {})
+    }
+    window.addEventListener('beforeunload', flush, true)
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      // Flush one last time on unmount: covers tab-close and workspace-switch
+      // cases that don't trigger beforeunload.
+      flush()
+      window.removeEventListener('beforeunload', flush, true)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [scrollbackKey])
 
   // Update font size on live terminals.
   useEffect(() => {

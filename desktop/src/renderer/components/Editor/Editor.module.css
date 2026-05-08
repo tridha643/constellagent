@@ -16,6 +16,15 @@
   overflow: hidden;
 }
 
+/* Inactive file editor — hide visually but keep mounted so unsaved edits,
+   cursor, scroll position, selection, and undo stack persist across tab
+   switches. Mirrors the terminal "render-all, hide-inactive" pattern. */
+.editorContainer.inactive {
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
 /* Monaco overrides — gutter shares the editor background so line numbers
    flow seamlessly into the code instead of reading as a separate column. */
 .editorContainer :global(.monaco-editor) {

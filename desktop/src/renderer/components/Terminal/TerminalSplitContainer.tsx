@@ -25,13 +25,16 @@ export function TerminalSplitContainer({ tab, active, worktreePath }: ContainerP
     [tab.id, setFocusedPane],
   )
 
-  // No splits — render a single TerminalPanel in standalone mode
+  // No splits — render a single TerminalPanel in standalone mode.
+  // tab.id is stable across restart, so we use it as the scrollback key —
+  // ptyId is reissued on respawn and would orphan the saved file.
   if (!tab.splitRoot) {
     return (
       <TerminalPanel
         key={tab.ptyId}
         ptyId={tab.ptyId}
         active={active}
+        scrollbackKey={tab.id}
       />
     )
   }

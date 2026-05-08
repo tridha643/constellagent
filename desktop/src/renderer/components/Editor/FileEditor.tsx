@@ -94,6 +94,16 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   const setTabDeleted = useAppStore((s) => s.setTabDeleted)
   const notifyTabSaved = useAppStore((s) => s.notifyTabSaved)
   const clearFileTabInitialPosition = useAppStore((s) => s.clearFileTabInitialPosition)
+  const setFileTabViewState = useAppStore((s) => s.setFileTabViewState)
+  // Captured once at mount: holds the persisted view state read from the tab
+  // record so we restore scroll/cursor position without fighting the live
+  // editor state on subsequent re-renders.
+  const initialViewStateRef = useRef<editor.ICodeEditorViewState | null | undefined>(undefined)
+  const viewStateRestoredRef = useRef(false)
+  if (initialViewStateRef.current === undefined) {
+    const tab = useAppStore.getState().tabs.find((t) => t.id === tabId)
+    initialViewStateRef.current = tab && tab.type === 'file' ? tab.viewState ?? null : null
+  }
   const initialPosition = useAppStore((s) => {
     const tab = s.tabs.find((t) => t.id === tabId)
     return tab?.type === 'file' ? tab.initialPosition : undefined
@@ -449,6 +459,30 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
     })
   }, [editorInstance, effectiveLanguage])
 
+  // Restore Monaco view state (scroll, cursor, selection, folded ranges) on
+  // first mount once the editor has the disk content. We bail if there's no
+  // persisted state and let `initialPosition` (Quick Open jump) win when set —
+  // the restore happens before that effect's revealLine/setPosition.
+  useEffect(() => {
+    if (viewStateRestoredRef.current) return
+    const ed = editorInstance
+    const persisted = initialViewStateRef.current
+    if (!ed || content === null || !persisted) {
+      if (ed && content !== null) viewStateRestoredRef.current = true
+      return
+    }
+    try {
+      ed.restoreViewState(persisted)
+    } catch (err) {
+      // restoreViewState is documented as best-effort across model changes;
+      // if it ever throws (e.g. malformed shape from an older version), drop
+      // the persisted entry rather than crash the editor.
+      console.warn('[FileEditor] restoreViewState failed; clearing:', err)
+      setFileTabViewState(tabId, null)
+    }
+    viewStateRestoredRef.current = true
+  }, [editorInstance, content, tabId, setFileTabViewState])
+
   // Reveal requested line/column once Monaco is mounted and the file content is loaded
   // (e.g. when Quick Open's code search opens a match). Clear the ephemeral hint after
   // consuming it so subsequent re-renders don't re-jump.
@@ -472,7 +506,39 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
     closeLspSession()
     findShortcutDisposeRef.current?.()
     findShortcutDisposeRef.current = null
-  }, [closeLspSession])
+    // Persist Monaco view state (scroll, cursor, selection) on unmount so the
+    // tab can resume exactly where the user left off — including across an
+    // app restart, since `tabs` is part of the persisted slice.
+    const ed = editorRef.current
+    if (ed) {
+      try {
+        const vs = ed.saveViewState()
+        if (vs) setFileTabViewState(tabId, vs)
+      } catch {
+        /* save best-effort: never block teardown on a bad serialization */
+      }
+    }
+  }, [closeLspSession, tabId, setFileTabViewState])
+
+  // Mirror the unmount-time view-state save onto window `beforeunload` so an
+  // app quit captures the latest scroll/cursor before the store's saveSync
+  // flush runs — React unmount cleanup doesn't fire on `beforeunload`.
+  // Capture phase ensures we run before the app-store's bubble-phase
+  // saveSync handler that was registered at module init.
+  useEffect(() => {
+    const handler = () => {
+      const ed = editorRef.current
+      if (!ed) return
+      try {
+        const vs = ed.saveViewState()
+        if (vs) setFileTabViewState(tabId, vs)
+      } catch {
+        /* best-effort */
+      }
+    }
+    window.addEventListener('beforeunload', handler, true)
+    return () => window.removeEventListener('beforeunload', handler, true)
+  }, [tabId, setFileTabViewState])
 
   const handleLanguageOverrideChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
     const nextValue = event.target.value
@@ -549,9 +615,15 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
     }
   }, [editorInstance, effectiveLanguage, filePath, addToast, setActiveMonacoEditor])
 
+  // When the tab is inactive, hide the editor card via visibility (not unmount)
+  // so unsaved edits, cursor, scroll position, and undo stack survive tab switches.
+  const containerClass = active
+    ? styles.editorContainer
+    : `${styles.editorContainer} ${styles.inactive}`
+
   if (content === null) {
     return (
-      <div className={styles.editorContainer}>
+      <div className={containerClass}>
         <div
           role="status"
           aria-busy="true"
@@ -575,7 +647,7 @@ export const FileEditor = forwardRef<FileEditorHandle, Props>(function FileEdito
   }
 
   return (
-    <div className={styles.editorContainer}>
+    <div className={containerClass}>
       <div className={styles.fileEditorToolbar}>
         <div className={styles.markdownToolbarEnd}>
           {isPlan && worktreePath && (

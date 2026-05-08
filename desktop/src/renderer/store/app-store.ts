@@ -379,6 +379,86 @@ function normalizeSidebarActionOrder(raw: SidebarActionId[] | undefined): Sideba
   return result
 }
 
+/** Track 4/3/7: deserialize string-array-by-workspace maps with light validation. */
+function normalizeStringArrayByWorkspace(
+  raw: Record<string, string[]> | undefined,
+): Record<string, string[]> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, string[]> = {}
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof k !== 'string' || !Array.isArray(v)) continue
+    out[k] = v.filter((p): p is string => typeof p === 'string')
+  }
+  return out
+}
+
+/** Track 3: deserialize the per-workspace HunkReview UI state. */
+function normalizeReviewPanelStateByWorkspace(
+  raw: Record<string, Partial<import('./types').ReviewPanelPersistedState>> | undefined,
+): Record<string, import('./types').ReviewPanelPersistedState> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, import('./types').ReviewPanelPersistedState> = {}
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof k !== 'string' || !v || typeof v !== 'object') continue
+    const reviewMode = v.reviewMode === 'tour' ? 'tour' : 'annotations'
+    const activeTourStepId = typeof v.activeTourStepId === 'string' ? v.activeTourStepId : null
+    const activeFile = typeof v.activeFile === 'string' ? v.activeFile : null
+    const visibleCount = typeof v.visibleCount === 'number' && Number.isFinite(v.visibleCount)
+      ? Math.max(1, Math.floor(v.visibleCount))
+      : 50
+    const viewedFilePaths = Array.isArray(v.viewedFilePaths)
+      ? v.viewedFilePaths.filter((p): p is string => typeof p === 'string')
+      : []
+    const selectedIds = Array.isArray(v.selectedIds)
+      ? v.selectedIds.filter((p): p is string => typeof p === 'string')
+      : []
+    out[k] = { reviewMode, activeTourStepId, activeFile, visibleCount, viewedFilePaths, selectedIds }
+  }
+  return out
+}
+
+/** Track 8: per-workspace panel layout migration. On first load after upgrade,
+ *  seed every existing workspace with the previous global layout so the UI
+ *  doesn't snap back to defaults. */
+function normalizeSidePanelsByWorkspace(
+  raw: Record<string, import('./types').SidePanelLayout> | undefined,
+  fallback: import('./types').SidePanelLayout,
+  workspaces: Workspace[],
+): Record<string, import('./types').SidePanelLayout> {
+  const out: Record<string, import('./types').SidePanelLayout> = {}
+  const wsIds = new Set(workspaces.map((w) => w.id))
+  if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw)) {
+      if (!wsIds.has(k) || !v || typeof v !== 'object') continue
+      out[k] = normalizeSidePanelLayout(v)
+    }
+  }
+  // Seed any missing workspaces with the previous global layout (acts as
+  // forward-migration: existing users keep their layout per workspace).
+  for (const ws of workspaces) {
+    if (!out[ws.id]) out[ws.id] = normalizeSidePanelLayout(fallback)
+  }
+  return out
+}
+
+/** Track 8: per-workspace HunkReview width override. Seed missing entries from
+ *  the legacy global setting so existing widths stay intact. */
+function normalizeHunkReviewWidthByWorkspace(
+  raw: Record<string, number> | undefined,
+  fallback: number | undefined,
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof k === 'string' && typeof v === 'number' && Number.isFinite(v)) out[k] = v
+    }
+  }
+  // If a legacy global value exists and the map is empty, leave map empty —
+  // entries will be seeded lazily as the user resizes per-workspace.
+  void fallback
+  return out
+}
+
 function pruneLastActiveWorkspaceByProjectId(
   lastActiveWorkspaceByProjectId: Record<string, string>,
   projects: Project[],
@@ -404,6 +484,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeTabId: null,
   lastActiveTabByWorkspace: {},
   sidePanels: DEFAULT_SIDE_PANEL_LAYOUT,
+  sidePanelsByWorkspace: {},
+  hunkReviewWidthByWorkspace: {},
+  fileTreeExpandedPathsByWorkspace: {},
+  reviewPanelStateByWorkspace: {},
+  stagedSelectionByWorkspace: {},
   panelDockDrag: null,
   collapsedProjectIds: new Set<string>(),
   lastActiveWorkspaceByProjectId: {},
@@ -713,6 +798,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? remembered
         : wsTabs[0]?.id ?? null
 
+      // Track 8: snapshot the leaving workspace's panel layout, then load the
+      // entering workspace's layout (or seed it from the current one if none
+      // exists yet, so first-time switches don't snap to defaults).
+      const sidePanelsByWorkspace = { ...s.sidePanelsByWorkspace }
+      if (s.activeWorkspaceId) sidePanelsByWorkspace[s.activeWorkspaceId] = s.sidePanels
+      const nextSidePanels = id
+        ? sidePanelsByWorkspace[id] ?? s.sidePanels
+        : s.sidePanels
+      if (id && !sidePanelsByWorkspace[id]) sidePanelsByWorkspace[id] = nextSidePanels
+
       return {
         activeWorkspaceId: id,
         activeTabId,
@@ -720,6 +815,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastActiveWorkspaceByProjectId,
         unreadWorkspaceIds: newUnread,
         collapsedProjectIds,
+        sidePanels: nextSidePanels,
+        sidePanelsByWorkspace,
       }
     }),
 
@@ -735,6 +832,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (removed?.type === 't3code') {
         const ws = s.workspaces.find((w) => w.id === removed.workspaceId)
         if (ws) void window.api.t3code.stop(ws.worktreePath)
+      }
+      // Track 6: drop the saved scrollback file when its tab closes so the
+      // userData/scrollback dir doesn't accrue stale entries.
+      if (removed?.type === 'terminal') {
+        void window.api.pty.deleteScrollback(removed.id).catch(() => {})
       }
       let planBuildTerminalByPlanPath = s.planBuildTerminalByPlanPath
       if (removed?.type === 'terminal') {
@@ -2339,6 +2441,77 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
+  setSidePanelsForWorkspace: (workspaceId, layout) => {
+    set((s) => ({
+      sidePanelsByWorkspace: { ...s.sidePanelsByWorkspace, [workspaceId]: layout },
+    }))
+  },
+
+  setHunkReviewWidth: (workspaceId, widthPx) => {
+    set((s) => {
+      const next = { ...s.hunkReviewWidthByWorkspace }
+      if (widthPx === undefined || !Number.isFinite(widthPx)) delete next[workspaceId]
+      else next[workspaceId] = widthPx
+      return { hunkReviewWidthByWorkspace: next }
+    })
+  },
+
+  setFileTreeExpandedPaths: (workspaceId, paths) => {
+    set((s) => {
+      const prev = s.fileTreeExpandedPathsByWorkspace[workspaceId] ?? []
+      // Avoid no-op writes that would otherwise cause persistence churn
+      if (
+        prev.length === paths.length &&
+        prev.every((p, i) => p === paths[i])
+      ) {
+        return {}
+      }
+      return {
+        fileTreeExpandedPathsByWorkspace: {
+          ...s.fileTreeExpandedPathsByWorkspace,
+          [workspaceId]: [...paths],
+        },
+      }
+    })
+  },
+
+  setReviewPanelState: (workspaceId, partial) => {
+    set((s) => {
+      const prev = s.reviewPanelStateByWorkspace[workspaceId] ?? {
+        reviewMode: 'annotations' as const,
+        activeTourStepId: null,
+        activeFile: null,
+        visibleCount: 50,
+        viewedFilePaths: [],
+        selectedIds: [],
+      }
+      const next = { ...prev, ...partial }
+      return {
+        reviewPanelStateByWorkspace: {
+          ...s.reviewPanelStateByWorkspace,
+          [workspaceId]: next,
+        },
+      }
+    })
+  },
+
+  setStagedSelection: (workspaceId, paths) => {
+    set((s) => ({
+      stagedSelectionByWorkspace: {
+        ...s.stagedSelectionByWorkspace,
+        [workspaceId]: [...paths],
+      },
+    }))
+  },
+
+  setFileTabViewState: (tabId, viewState) => {
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === tabId && t.type === 'file' ? { ...t, viewState } : t,
+      ),
+    }))
+  },
+
   hydrateState: (data) => {
     const projects = (data.projects ?? []).map((project) => normalizeProject(project))
     const workspaces = data.workspaces ?? []
@@ -2392,7 +2565,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         settingsMerged.editorLanguageOverrides,
       ),
     }
-    const sidePanels = normalizePersistedSidePanelLayout(data)
+    const globalSidePanels = normalizePersistedSidePanelLayout(data)
+    // Track 8: prefer the active workspace's persisted layout over the legacy
+    // global one so per-workspace remembered layouts survive a restart.
+    const sidePanelsMap = normalizeSidePanelsByWorkspace(data.sidePanelsByWorkspace, globalSidePanels, workspaces)
+    const activeIdGuess = data.activeWorkspaceId && workspaces.some((w) => w.id === data.activeWorkspaceId)
+      ? data.activeWorkspaceId
+      : workspaces[0]?.id ?? null
+    const sidePanels = (activeIdGuess && sidePanelsMap[activeIdGuess]) || globalSidePanels
     const activeWorkspaceId = settings.restoreWorkspace
       ? ((saved && workspaces.some((w) => w.id === saved) ? saved : workspaces[0]?.id) ?? null)
       : null
@@ -2434,6 +2614,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeMonacoEditor: null,
       planBuildTerminalByPlanPath: {},
       sidebarActionOrder: normalizeSidebarActionOrder(data.sidebarActionOrder),
+      sidePanelsByWorkspace: sidePanelsMap,
+      hunkReviewWidthByWorkspace: normalizeHunkReviewWidthByWorkspace(data.hunkReviewWidthByWorkspace, settings.hunkReviewWidthPx),
+      fileTreeExpandedPathsByWorkspace: normalizeStringArrayByWorkspace(data.fileTreeExpandedPathsByWorkspace),
+      reviewPanelStateByWorkspace: normalizeReviewPanelStateByWorkspace(data.reviewPanelStateByWorkspace),
+      stagedSelectionByWorkspace: normalizeStringArrayByWorkspace(data.stagedSelectionByWorkspace),
     })
   },
 
@@ -2649,6 +2834,11 @@ function getPersistedSlice(state: AppState): PersistedState {
     lastActiveTabByWorkspace: state.lastActiveTabByWorkspace,
     settings: state.settings,
     sidePanels: state.sidePanels,
+    sidePanelsByWorkspace: state.sidePanelsByWorkspace,
+    hunkReviewWidthByWorkspace: state.hunkReviewWidthByWorkspace,
+    fileTreeExpandedPathsByWorkspace: state.fileTreeExpandedPathsByWorkspace,
+    reviewPanelStateByWorkspace: state.reviewPanelStateByWorkspace,
+    stagedSelectionByWorkspace: state.stagedSelectionByWorkspace,
     sidebarActionOrder: state.sidebarActionOrder,
   }
 }
@@ -2673,10 +2863,33 @@ useAppStore.subscribe((state, prevState) => {
     state.activeWorkspaceId !== prevState.activeWorkspaceId ||
     state.settings !== prevState.settings ||
     state.sidePanels !== prevState.sidePanels ||
+    state.sidePanelsByWorkspace !== prevState.sidePanelsByWorkspace ||
+    state.hunkReviewWidthByWorkspace !== prevState.hunkReviewWidthByWorkspace ||
+    state.fileTreeExpandedPathsByWorkspace !== prevState.fileTreeExpandedPathsByWorkspace ||
+    state.reviewPanelStateByWorkspace !== prevState.reviewPanelStateByWorkspace ||
+    state.stagedSelectionByWorkspace !== prevState.stagedSelectionByWorkspace ||
     state.sidebarActionOrder !== prevState.sidebarActionOrder
   ) {
     debouncedSave(state)
   }
+})
+
+// Track 8: mirror in-workspace sidePanels mutations into the per-workspace
+// map so the layout sticks to the workspace, not the app. Skipping the
+// activeWorkspace check here would clobber the map with the global default
+// before any workspace is active.
+useAppStore.subscribe((state, prevState) => {
+  if (state.sidePanels === prevState.sidePanels) return
+  if (state.activeWorkspaceId !== prevState.activeWorkspaceId) return
+  const wsId = state.activeWorkspaceId
+  if (!wsId) return
+  if (state.sidePanelsByWorkspace[wsId] === state.sidePanels) return
+  useAppStore.setState({
+    sidePanelsByWorkspace: {
+      ...state.sidePanelsByWorkspace,
+      [wsId]: state.sidePanels,
+    },
+  })
 })
 
 // T3 Code: auto-collapse both physical side hosts when the active tab is t3code

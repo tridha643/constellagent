@@ -271,6 +271,9 @@ export function App() {
 
   // All terminal tabs across every workspace — kept alive to preserve PTY state
   const allTerminals = allTabs.filter((t): t is Extract<typeof t, { type: 'terminal' }> => t.type === 'terminal')
+  // All file tabs — kept mounted so unsaved edits, scroll position, cursor,
+  // selection, and undo stack survive tab switches (mirrors terminal pattern).
+  const allFileTabs = allTabs.filter((t): t is Extract<typeof t, { type: 'file' }> => t.type === 'file')
 
   return (
     <MotionConfig reducedMotion="user">
@@ -322,6 +325,32 @@ export function App() {
                     )
                   })}
 
+                  {/* Keep ALL file editor tabs alive so unsaved edits, cursor,
+                      scroll position, and undo stack survive tab switches */}
+                  {allFileTabs.map((t) => {
+                    const ws = workspaces.find((w) => w.id === t.workspaceId)
+                    const isActive = t.id === activeTabId
+                    if (t.splitRoot) {
+                      return (
+                        <FileTabSplitContainer
+                          key={t.id}
+                          tab={t}
+                          active={isActive}
+                          worktreePath={ws?.worktreePath}
+                        />
+                      )
+                    }
+                    return (
+                      <FileEditor
+                        key={t.id}
+                        tabId={t.id}
+                        filePath={t.filePath}
+                        active={isActive}
+                        worktreePath={ws?.worktreePath}
+                      />
+                    )
+                  })}
+
                   {!activeTab ? (
                     <div className={styles.welcomeWrap}>
                       <FloatingPanel.Surface className={styles.welcome}>
@@ -335,24 +364,7 @@ export function App() {
                     </div>
                   ) : (
                     <>
-                      {/* Render active file editor */}
-                      {activeTab?.type === 'file' && activeTab.splitRoot && tabWorkspace && (
-                        <FileTabSplitContainer
-                          key={activeTab.id}
-                          tab={activeTab}
-                          active={true}
-                          worktreePath={tabWorkspace.worktreePath}
-                        />
-                      )}
-                      {activeTab?.type === 'file' && !activeTab.splitRoot && (
-                        <FileEditor
-                          key={activeTab.id}
-                          tabId={activeTab.id}
-                          filePath={activeTab.filePath}
-                          active={true}
-                          worktreePath={tabWorkspace?.worktreePath}
-                        />
-                      )}
+                      {/* File editors are rendered above (mount-all pattern). */}
 
                       {/* Render active diff viewer */}
                       {activeTab?.type === 'diff' && workspace && (

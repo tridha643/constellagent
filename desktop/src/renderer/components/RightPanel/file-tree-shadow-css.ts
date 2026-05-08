@@ -32,6 +32,16 @@ const LETTER_BADGE_CSS = `
   color: var(--trees-item-git-status-color, currentColor);
 }
 
+/* Pierre's tree row is a flexbox; the name cell is a flex child without
+   min-width:0, so it refuses to shrink below its intrinsic content width
+   and overflows the panel when filenames are long. Force ellipsis instead. */
+[data-item-section='name'] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 [data-item-git-status='modified']  [data-item-section='git'] > span::after { content: 'M'; }
 [data-item-git-status='added']     [data-item-section='git'] > span::after { content: 'A'; }
 [data-item-git-status='deleted']   [data-item-section='git'] > span::after { content: 'D'; }

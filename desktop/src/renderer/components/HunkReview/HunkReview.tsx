@@ -76,16 +76,42 @@ function clampPanelWidth(width: number, viewportWidth = getViewportWidth()) {
 }
 
 export function HunkReview({ worktreePath }: Props) {
+  // Per-workspace persisted UI state — hydrated lazily so the panel reopens
+  // with the same mode, scroll position, and selection it had last time.
+  const reviewWorkspaceId = useAppStore((s) =>
+    s.workspaces.find((w) => w.worktreePath === worktreePath)?.id ?? null,
+  )
+  const persistedReviewState = useAppStore((s) =>
+    reviewWorkspaceId ? s.reviewPanelStateByWorkspace[reviewWorkspaceId] : undefined,
+  )
+  const setReviewPanelState = useAppStore((s) => s.setReviewPanelState)
+
   const [files, setFiles] = useState<DiffFileData[]>([])
   const [loading, setLoading] = useState(true)
   const [annotations, setAnnotations] = useState<DiffAnnotation[]>([])
-  const [reviewMode, setReviewMode] = useState<ReviewMode>('annotations')
-  const [activeTourStepId, setActiveTourStepId] = useState<string | null>(null)
-  const [activeFile, setActiveFile] = useState<string | null>(null)
-  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_FILES)
+  const [reviewMode, setReviewMode] = useState<ReviewMode>(
+    () => persistedReviewState?.reviewMode ?? 'annotations',
+  )
+  const [activeTourStepId, setActiveTourStepId] = useState<string | null>(
+    () => persistedReviewState?.activeTourStepId ?? null,
+  )
+  const [activeFile, setActiveFile] = useState<string | null>(
+    () => persistedReviewState?.activeFile ?? null,
+  )
+  const [visibleCount, setVisibleCount] = useState(
+    () => persistedReviewState?.visibleCount ?? INITIAL_VISIBLE_FILES,
+  )
   const [isResizing, setIsResizing] = useState(false)
   /** Files marked “Viewed” in session — collapses the diff to focus the rest. */
-  const [viewedFilePaths, setViewedFilePaths] = useState<Set<string>>(() => new Set())
+  const [viewedFilePaths, setViewedFilePaths] = useState<Set<string>>(
+    () => new Set(persistedReviewState?.viewedFilePaths ?? []),
+  )
+  // Tracks whether the auto-select-all effect should run on initial annotation
+  // load. If we hydrated from a persisted selection, we keep that selection
+  // instead of replacing it with select-all.
+  const initialSelectionFromStoreRef = useRef<string[] | null>(
+    persistedReviewState?.selectedIds ?? null,
+  )
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
@@ -134,7 +160,9 @@ export function HunkReview({ worktreePath }: Props) {
     [annotations],
   )
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(persistedReviewState?.selectedIds ?? []),
+  )
 
   const tourSteps = useMemo(
     () => annotations
@@ -216,8 +244,20 @@ export function HunkReview({ worktreePath }: Props) {
     })
   }, [ensureFileVisible])
 
-  // Auto-select all human comments when annotations load/change
+  // Auto-select all human comments when annotations load/change.
+  // If the panel was hydrated from a persisted selection, intersect it with
+  // the live annotations on the first run (filters out stale ids) instead of
+  // replacing with select-all. After that first reconciliation, normal
+  // select-all-on-annotations-change behavior resumes.
   useEffect(() => {
+    const persisted = initialSelectionFromStoreRef.current
+    if (persisted !== null) {
+      const liveIds = new Set(humanAnnotations.map((a) => a.id))
+      const filtered = persisted.filter((id) => liveIds.has(id))
+      setSelectedIds(new Set(filtered))
+      initialSelectionFromStoreRef.current = null
+      return
+    }
     setSelectedIds(new Set(humanAnnotations.map((a) => a.id)))
   }, [humanAnnotations])
 
@@ -287,8 +327,14 @@ export function HunkReview({ worktreePath }: Props) {
   }, [])
 
   useEffect(() => {
-    setViewedFilePaths(new Set())
-  }, [worktreePath])
+    // When the workspace changes, reseed `viewedFilePaths` from this
+    // workspace's persisted state (rather than wiping). For a workspace with
+    // no prior state, this resolves to an empty Set.
+    const seed = reviewWorkspaceId
+      ? useAppStore.getState().reviewPanelStateByWorkspace[reviewWorkspaceId]?.viewedFilePaths
+      : undefined
+    setViewedFilePaths(new Set(seed ?? []))
+  }, [worktreePath, reviewWorkspaceId])
 
   const setFileViewed = useCallback((filePath: string, viewed: boolean) => {
     setViewedFilePaths((prev) => {
@@ -651,6 +697,33 @@ export function HunkReview({ worktreePath }: Props) {
     }
     if (shellRef.current) shellRef.current.style.width = `${nextWidth}px`
   }, [persistedWidth, updateSettings])
+
+  // Debounced persist — review-panel UI changes rarely fire faster than the
+  // user can perceive, so 250ms is plenty to coalesce rapid changes (typing,
+  // arrow-key navigation, scroll) into one disk write.
+  useEffect(() => {
+    if (!reviewWorkspaceId) return
+    const timer = setTimeout(() => {
+      setReviewPanelState(reviewWorkspaceId, {
+        reviewMode,
+        activeTourStepId,
+        activeFile,
+        visibleCount,
+        viewedFilePaths: Array.from(viewedFilePaths).sort(),
+        selectedIds: Array.from(selectedIds).sort(),
+      })
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [
+    reviewWorkspaceId,
+    setReviewPanelState,
+    reviewMode,
+    activeTourStepId,
+    activeFile,
+    visibleCount,
+    viewedFilePaths,
+    selectedIds,
+  ])
 
   return (
     <>
