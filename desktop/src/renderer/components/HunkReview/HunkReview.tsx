@@ -75,13 +75,18 @@ export function HunkReview({ worktreePath }: Props) {
   const [activeTourStepId, setActiveTourStepId] = useState<string | null>(null)
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_FILES)
-  const [draftWidth, setDraftWidth] = useState<number | null>(null)
   const [isResizing, setIsResizing] = useState(false)
   /** Files marked “Viewed” in session — collapses the diff to focus the rest. */
   const [viewedFilePaths, setViewedFilePaths] = useState<Set<string>>(() => new Set())
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const shellRef = useRef<HTMLDivElement>(null)
+  const dragStateRef = useRef<{
+    startX: number
+    startWidth: number
+    pointerId: number
+    handle: HTMLButtonElement
+  } | null>(null)
   const draftWidthRef = useRef<number | null>(null)
   const loadGenerationRef = useRef(0)
   const filesRef = useRef<DiffFileData[]>([])
@@ -100,7 +105,12 @@ export function HunkReview({ worktreePath }: Props) {
   const closeHunkReview = useAppStore((s) => s.closeHunkReview)
   const submitHunkReview = useAppStore((s) => s.submitHunkReview)
   const addToast = useAppStore((s) => s.addToast)
-  const panelWidth = clampPanelWidth(draftWidth ?? persistedWidth)
+  const hasAgentPty = useAppStore((s) => {
+    const ws = s.workspaces.find((w) => w.worktreePath === worktreePath)
+    if (!ws) return false
+    return s.tabs.some((t) => t.workspaceId === ws.id && t.type === 'terminal' && t.agentType)
+  })
+  const panelWidth = clampPanelWidth(persistedWidth)
 
   useEffect(() => {
     filesRef.current = files
@@ -251,9 +261,21 @@ export function HunkReview({ worktreePath }: Props) {
   }, [])
 
   useEffect(() => {
-    setDraftWidth(null)
     draftWidthRef.current = null
   }, [persistedWidth, worktreePath])
+
+  useEffect(() => () => {
+    const dragState = dragStateRef.current
+    if (dragState?.handle.hasPointerCapture(dragState.pointerId)) {
+      try {
+        dragState.handle.releasePointerCapture(dragState.pointerId)
+      } catch {
+        // Pointer capture can already be gone while the drawer is unmounting.
+      }
+    }
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }, [])
 
   useEffect(() => {
     setViewedFilePaths(new Set())
@@ -269,49 +291,13 @@ export function HunkReview({ worktreePath }: Props) {
   }, [])
 
   useEffect(() => {
-    if (!isResizing) return
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const dragState = dragStateRef.current
-      if (!dragState) return
-      const nextWidth = clampPanelWidth(dragState.startWidth + (dragState.startX - event.clientX))
-      draftWidthRef.current = nextWidth
-      setDraftWidth(nextWidth)
-    }
-
-    const finishResize = () => {
-      const nextWidth = draftWidthRef.current ?? persistedWidth
-      dragStateRef.current = null
-      draftWidthRef.current = null
-      setIsResizing(false)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      setDraftWidth(null)
-      if (nextWidth !== persistedWidth) {
-        updateSettings({ hunkReviewWidthPx: nextWidth })
-      }
-    }
-
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', finishResize)
-    window.addEventListener('pointercancel', finishResize)
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', finishResize)
-      window.removeEventListener('pointercancel', finishResize)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      dragStateRef.current = null
-      draftWidthRef.current = null
-    }
-  }, [isResizing, persistedWidth, updateSettings])
-
-  useEffect(() => {
     const handleResize = () => {
-      if (draftWidth !== null) {
+      if (isResizing) {
+        const draftWidth = draftWidthRef.current
+        if (draftWidth == null) return
         const clamped = clampPanelWidth(draftWidth)
         draftWidthRef.current = clamped
-        setDraftWidth(clamped)
+        if (shellRef.current) shellRef.current.style.width = `${clamped}px`
         return
       }
       if (persistedWidth == null) return
@@ -323,7 +309,7 @@ export function HunkReview({ worktreePath }: Props) {
 
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [draftWidth, persistedWidth, updateSettings])
+  }, [isResizing, persistedWidth, updateSettings])
 
   const openFileFromDiff = useCallback(
     (fullPath: string) => {
@@ -609,20 +595,61 @@ export function HunkReview({ worktreePath }: Props) {
   const handleResizeStart = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
     event.stopPropagation()
-    dragStateRef.current = { startX: event.clientX, startWidth: panelWidth }
+    const handle = event.currentTarget
+    try {
+      handle.setPointerCapture(event.pointerId)
+    } catch {
+      // Synthetic pointer events in tests may not have an active pointer capture target.
+    }
+    dragStateRef.current = {
+      startX: event.clientX,
+      startWidth: panelWidth,
+      pointerId: event.pointerId,
+      handle,
+    }
     draftWidthRef.current = panelWidth
-    setDraftWidth(panelWidth)
+    if (shellRef.current) shellRef.current.style.width = `${panelWidth}px`
     setIsResizing(true)
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
   }, [panelWidth])
+
+  const handleResizeMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const dragState = dragStateRef.current
+    if (!dragState) return
+    event.preventDefault()
+    const nextWidth = clampPanelWidth(dragState.startWidth + (dragState.startX - event.clientX))
+    draftWidthRef.current = nextWidth
+    if (shellRef.current) shellRef.current.style.width = `${nextWidth}px`
+  }, [])
+
+  const finishResize = useCallback(() => {
+    const nextWidth = draftWidthRef.current ?? persistedWidth
+    const dragState = dragStateRef.current
+    if (dragState?.handle.hasPointerCapture(dragState.pointerId)) {
+      try {
+        dragState.handle.releasePointerCapture(dragState.pointerId)
+      } catch {
+        // Pointer capture can already be gone after cancellation or synthetic tests.
+      }
+    }
+    dragStateRef.current = null
+    draftWidthRef.current = null
+    setIsResizing(false)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    if (nextWidth !== persistedWidth) {
+      updateSettings({ hunkReviewWidthPx: nextWidth })
+    }
+    if (shellRef.current) shellRef.current.style.width = `${nextWidth}px`
+  }, [persistedWidth, updateSettings])
 
   return (
     <>
       {/* Backdrop */}
       <button
         type="button"
-        className={styles.backdrop}
+        className={`${styles.backdrop} ${isResizing ? styles.backdropResizing : ''}`}
         aria-label="Close review panel"
         onClick={closeHunkReview}
       />
@@ -634,6 +661,7 @@ export function HunkReview({ worktreePath }: Props) {
         shellClassName={styles.drawerShell}
         cardClassName={styles.drawerCard}
         shellStyle={{ width: panelWidth }}
+        shellRef={shellRef}
         ref={panelRef}
         tabIndex={-1}
         role="dialog"
@@ -652,6 +680,9 @@ export function HunkReview({ worktreePath }: Props) {
           aria-label="Resize review panel"
           data-testid="hunk-review-resize-handle"
           onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={finishResize}
+          onPointerCancel={finishResize}
         >
           <span className={styles.resizeGrip} aria-hidden="true" />
         </button>
@@ -715,7 +746,9 @@ export function HunkReview({ worktreePath }: Props) {
         <p className={styles.hint}>
           {reviewMode === 'tour'
             ? 'Walk the key agent-authored changes step by step. Click any step to sync the diff with the tour.'
-            : 'Hover a line and click + to comment, or drag across line numbers for a range. Submit sends selected comments to the agent.'}
+            : hasAgentPty
+              ? 'Hover a line and click + to comment, or drag across line numbers for a range. Submit sends selected comments to the agent.'
+              : 'Hover a line and click + to comment, or drag across line numbers for a range. Start an agent terminal before submitting selected comments.'}
         </p>
 
         {/* File strip */}
