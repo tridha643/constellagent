@@ -29,10 +29,10 @@ describe('resolveSharedFileIconToken', () => {
     expect(resolveSharedFileIconToken('weird.unknownext')).toBe('default')
   })
 
-  it('Absolutely preset uses standard icon tier (fewer dedicated glyphs than complete)', () => {
-    expect(resolveSharedFileIconToken('biome.json', 'absolutely')).toBe('json')
+  it('Absolutely preset uses complete tier like Default so pierre enables colored tree icons', () => {
+    expect(resolveSharedFileIconToken('biome.json', 'absolutely')).toBe('biome')
     expect(resolveSharedFileIconToken('biome.json', 'default')).toBe('biome')
-    expect(resolveSharedFileIconToken('vite.config.ts', 'absolutely')).toBe('typescript')
+    expect(resolveSharedFileIconToken('vite.config.ts', 'absolutely')).toBe('vite')
     expect(resolveSharedFileIconToken('vite.config.ts', 'default')).toBe('vite')
   })
 })
@@ -48,10 +48,10 @@ describe('getFilePresentation', () => {
     expect(presentation.iconColor).toContain('--trees-file-icon-color-typescript')
   })
 
-  it('omits per-token icon color for Absolutely so tabs match monochrome tree icons', () => {
+  it('applies per-token icon color for Absolutely when tree uses complete colored set', () => {
     const presentation = getFilePresentation('src/index.ts', 'modified', 'absolutely')
     expect(presentation.iconToken).toBe('typescript')
-    expect(presentation.iconColor).toBeUndefined()
+    expect(presentation.iconColor).toContain('--trees-file-icon-color-typescript')
   })
 
   it('uses shared git badge mapping', () => {
@@ -62,9 +62,9 @@ describe('getFilePresentation', () => {
 })
 
 describe('getFileTreeIconsForAppearance', () => {
-  it('uses complete set for Default and standard for Absolutely', () => {
+  it('uses complete colored set for both presets (pierre only enables colors on complete)', () => {
     expect(getFileTreeIconsForAppearance('default').set).toBe('complete')
-    expect(getFileTreeIconsForAppearance('absolutely').set).toBe('standard')
+    expect(getFileTreeIconsForAppearance('absolutely').set).toBe('complete')
     expect(getFileTreeIconsForAppearance('default').colored).toBe(true)
     expect(getFileTreeIconsForAppearance('absolutely').colored).toBe(true)
   })

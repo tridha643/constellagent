@@ -68,24 +68,23 @@
   --trees-hover-bg-override: color-mix(in srgb, var(--text-primary) 4%, transparent);
   --trees-row-selected-radius: var(--radius-md);
 
-  /* ── Per-file-type icon palette (theme-driven) ───────────────────
-     Pierre derives each file-type icon color from one of these
-     shared vars (e.g. typescript → blue, css → blue, js → yellow).
-     Re-pointing them at the active preset's --accent-* tokens is how
-     the colored VSCode-style glyphs re-theme automatically. ────── */
-  --trees-icon-blue: var(--accent-blue);
-  --trees-icon-cyan: var(--accent-cyan);
-  --trees-icon-green: var(--accent-green);
-  --trees-icon-orange: var(--accent-orange);
-  --trees-icon-red: var(--accent-red);
-  --trees-icon-yellow: var(--accent-yellow);
-  --trees-icon-purple: var(--accent-purple);
-  --trees-icon-indigo: var(--accent-purple);
-  --trees-icon-pink: var(--accent-red);
-  --trees-icon-teal: var(--accent-cyan);
-  --trees-icon-gray: var(--text-tertiary);
-  --trees-icon-mauve: var(--text-tertiary);
-  --trees-icon-vermilion: var(--accent-orange);
+  /* Pull Pierre hue slots from `:root` (appearance presets); shadow `:host` defaults
+     would otherwise override inherited custom properties on this element. */
+  --trees-icon-blue: inherit;
+  --trees-icon-cyan: inherit;
+  --trees-icon-green: inherit;
+  --trees-icon-orange: inherit;
+  --trees-icon-red: inherit;
+  --trees-icon-yellow: inherit;
+  --trees-icon-purple: inherit;
+  --trees-icon-indigo: inherit;
+  --trees-icon-pink: inherit;
+  --trees-icon-teal: inherit;
+  --trees-icon-gray: inherit;
+  --trees-icon-mauve: inherit;
+  --trees-icon-vermilion: inherit;
+
+  /* Per-file-type token vars: `theme/file-tree-icon-bridge.css` (+ tabs). */
 }
 
 .fileContextMenu {
