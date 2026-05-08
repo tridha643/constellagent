@@ -84,6 +84,28 @@ async function setupWorkspaceWithAgent(window: Page, repoPath: string, suffix: s
   }, { repo: repoPath, sfx: suffix })
 }
 
+async function setupWorkspaceWithoutAgent(window: Page, repoPath: string, suffix: string) {
+  return await window.evaluate(async ({ repo, sfx }: { repo: string; sfx: string }) => {
+    const store = (window as any).__store.getState()
+    store.hydrateState({ projects: [], workspaces: [], settings: {} })
+
+    const projectId = crypto.randomUUID()
+    store.addProject({ id: projectId, name: 'review-test-repo', repoPath: repo })
+
+    const worktreePath = await (window as any).api.git.createWorktree(repo, `review-${sfx}`, `review-${sfx}`, true)
+    const wsId = crypto.randomUUID()
+    store.addWorkspace({
+      id: wsId,
+      name: `review-${sfx}`,
+      branch: `review-${sfx}`,
+      worktreePath,
+      projectId,
+    })
+
+    return { wsId, worktreePath }
+  }, { repo: repoPath, sfx: suffix })
+}
+
 test.describe('Review annotations IPC integration', () => {
   test('full comment lifecycle via IPC: add/list/remove/clear', async () => {
     const repoPath = createTestRepo('review-ipc')
@@ -273,6 +295,26 @@ test.describe('Review annotations IPC integration', () => {
       const afterReopenBox = await panel.boundingBox()
       if (!afterReopenBox) throw new Error('Missing review panel bounds after reopen')
       expect(Math.abs(afterReopenBox.width - afterResizeBox.width)).toBeLessThanOrEqual(2)
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('review drawer opens without an agent terminal', async () => {
+    const repoPath = createTestRepo('review-no-agent')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const { worktreePath } = await setupWorkspaceWithoutAgent(window, realRepo, 'no-agent')
+      writeFileSync(join(worktreePath, 'README.md'), '# Modified\nNo agent yet\n')
+
+      await window.waitForTimeout(1200)
+      await window.keyboard.press('Meta+Shift+R')
+
+      await expect(window.getByTestId('hunk-review-panel')).toBeVisible()
+      await expect(window.locator('text=Start an agent terminal before submitting selected comments.')).toBeVisible()
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

@@ -22,6 +22,12 @@
   }
 }
 
+.backdropResizing {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: opacity var(--duration-slow) var(--ease-drawer);
+}
+
 /*
  * FloatingPanel drawer inherits animation + chrome (border, radius, shadow)
  * from the shared primitive. These overrides narrow the slot to clamp width
