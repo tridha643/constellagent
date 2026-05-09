@@ -19,7 +19,7 @@ declare module "@pi-gui/catalogs" {
   export interface WorktreeCatalogEntry {
     worktreeId: WorktreeId;
     workspaceId: WorkspaceId;
-    path: string;
+    path: string; 
     displayName: string;
     kind: WorktreeKind;
     status: WorktreeStatus;
