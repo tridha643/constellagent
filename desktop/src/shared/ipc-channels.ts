@@ -245,4 +245,18 @@ export const IPC = {
   /** Main → renderer */
   PI_STATE_CHANGED: 'pi:state-changed',
   PI_SELECTED_TRANSCRIPT_CHANGED: 'pi:selected-transcript-changed',
+
+  /** Composio webhooks + trigger API (main process). */
+  COMPOSIO_WEBHOOK_STATUS: 'composio:webhook-status',
+  COMPOSIO_WEBHOOK_APPLY_SETTINGS: 'composio:webhook-apply-settings',
+  COMPOSIO_SUBSCRIBE_WEBHOOK: 'composio:subscribe-webhook',
+  COMPOSIO_NGROK_STATUS: 'composio:ngrok-status',
+  COMPOSIO_NGROK_START: 'composio:ngrok-start',
+  COMPOSIO_NGROK_STOP: 'composio:ngrok-stop',
+  COMPOSIO_UPSERT_TRIGGER: 'composio:upsert-trigger',
+  COMPOSIO_PARSE_PI_DRAFT: 'composio:parse-pi-draft',
+  COMPOSIO_SUGGEST_GITHUB_CONNECTED_ACCOUNT: 'composio:suggest-github-connected-account',
+  COMPOSIO_LIST_AUTOMATION_DEFINITIONS: 'composio:list-automation-definitions',
+  COMPOSIO_SET_AUTOMATION_DEFINITION_ENABLED: 'composio:set-automation-definition-enabled',
+  COMPOSIO_SET_AUTOMATION_DEFINITION_INSTRUCTIONS: 'composio:set-automation-definition-instructions',
 } as const

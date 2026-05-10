@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   AutomationAction,
   AutomationAgentType,
@@ -10,6 +10,10 @@ import { DEFAULT_AUTOMATION_COOLDOWN_MS } from '../../../shared/automation-types
 import { ChevronLeft } from 'lucide-react'
 import { useAppStore } from '../../store/app-store'
 import type { Automation } from '../../store/types'
+import {
+  COMPOSIO_AUTOMATION_AGENT_GUARDRAILS,
+  type ComposioAutomationDefinition,
+} from '../../../shared/composio-types'
 import { FloatingPanel } from '../FloatingPanel/FloatingPanel'
 import { Tooltip } from '../Tooltip/Tooltip'
 import styles from './AutomationsPanel.module.css'
@@ -74,6 +78,7 @@ function toAutomationIpcConfig(automation: Automation, repoPath: string): Automa
     enabled: automation.enabled,
     repoPath,
     cooldownMs: automation.cooldownMs ?? DEFAULT_AUTOMATION_COOLDOWN_MS,
+    ...(automation.composio ? { composio: automation.composio } : {}),
   }
 }
 
@@ -82,6 +87,225 @@ function describeTrigger(automation: Automation): string {
   if (!trigger || trigger.type === 'cron') return automation.cronExpression || 'Schedule'
   if (trigger.type === 'manual') return 'Manual'
   return EVENT_OPTIONS.find((option) => option.value === trigger.eventType)?.label ?? trigger.eventType
+}
+
+function formatComposioUpdatedAt(value?: string): string {
+  if (!value) return 'Not updated yet'
+  const ms = Date.parse(value)
+  if (!Number.isFinite(ms)) return value
+  return formatLastRun(ms)
+}
+
+function ComposioAutomationPromptField({
+  definition,
+  saveDisabled,
+  onUpdated,
+}: {
+  definition: ComposioAutomationDefinition
+  saveDisabled?: boolean
+  onUpdated: (d: ComposioAutomationDefinition) => void
+}) {
+  const addToast = useAppStore((s) => s.addToast)
+  const [text, setText] = useState(definition.instructions)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setText(definition.instructions)
+  }, [definition.instructions, definition.updatedAt, definition.id])
+
+  const flush = useCallback(async () => {
+    if (text === definition.instructions) return
+    setSaving(true)
+    try {
+      const updated = await window.api.composio.setAutomationDefinitionInstructions({
+        repoPath: definition.repoPath,
+        id: definition.id,
+        instructions: text,
+      })
+      onUpdated(updated)
+      addToast({
+        id: crypto.randomUUID(),
+        type: 'info',
+        message: `Saved prompt for “${definition.name}”`,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save prompt'
+      addToast({ id: crypto.randomUUID(), type: 'error', message })
+      setText(definition.instructions)
+    } finally {
+      setSaving(false)
+    }
+  }, [addToast, definition.id, definition.instructions, definition.name, definition.repoPath, onUpdated, text])
+
+  return (
+    <div className={styles.composioPromptBlock}>
+      <label className={styles.composioPromptLabel} htmlFor={`composio-prompt-${definition.id}`}>
+        Agent prompt
+      </label>
+      <textarea
+        id={`composio-prompt-${definition.id}`}
+        className={styles.composioPromptInput}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => void flush()}
+        rows={4}
+        spellCheck={false}
+        disabled={saveDisabled || saving}
+        placeholder="What should the agent do when this trigger fires? (Webhook JSON is not sent to the agent.)"
+      />
+      <p className={styles.composioGuardrailHint}>
+        <span className={styles.composioGuardrailLead}>Always appended to the agent:</span>
+        {COMPOSIO_AUTOMATION_AGENT_GUARDRAILS}
+      </p>
+    </div>
+  )
+}
+
+function ComposioAutomationsSection() {
+  const addToast = useAppStore((s) => s.addToast)
+  const projects = useAppStore((s) => s.projects)
+  const repoPaths = useMemo(() => projects.map((project) => project.repoPath).filter(Boolean), [projects])
+  const [definitions, setDefinitions] = useState<ComposioAutomationDefinition[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [togglingKey, setTogglingKey] = useState<string | null>(null)
+
+  const projectForRepo = useCallback((repoPath: string) => {
+    const normalized = repoPath.replace(/\/+$/, '')
+    return projects.find((project) => project.repoPath.replace(/\/+$/, '') === normalized)
+  }, [projects])
+
+  const refreshDefinitions = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const next = await window.api.composio.listAutomationDefinitions(repoPaths)
+      setDefinitions(next)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load Composio automations'
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
+  }, [repoPaths])
+
+  useEffect(() => {
+    void refreshDefinitions()
+  }, [refreshDefinitions])
+
+  const patchDefinition = useCallback((updated: ComposioAutomationDefinition) => {
+    setDefinitions((prev) => prev.map((entry) => (
+      entry.repoPath === updated.repoPath && entry.id === updated.id ? updated : entry
+    )))
+  }, [])
+
+  const toggleDefinition = useCallback(async (definition: ComposioAutomationDefinition) => {
+    const key = `${definition.repoPath}:${definition.id}`
+    const enabled = !definition.enabled
+    setTogglingKey(key)
+    setDefinitions((prev) => prev.map((entry) => (
+      entry.repoPath === definition.repoPath && entry.id === definition.id ? { ...entry, enabled } : entry
+    )))
+    try {
+      const updated = await window.api.composio.setAutomationDefinitionEnabled({
+        repoPath: definition.repoPath,
+        id: definition.id,
+        enabled,
+      })
+      setDefinitions((prev) => prev.map((entry) => (
+        entry.repoPath === definition.repoPath && entry.id === definition.id ? updated : entry
+      )))
+      addToast({
+        id: crypto.randomUUID(),
+        message: `${updated.name} ${updated.enabled ? 'enabled' : 'disabled'}`,
+        type: 'info',
+      })
+    } catch (err) {
+      setDefinitions((prev) => prev.map((entry) => (
+        entry.repoPath === definition.repoPath && entry.id === definition.id ? definition : entry
+      )))
+      const message = err instanceof Error ? err.message : 'Failed to update Composio automation'
+      setError(message)
+      addToast({ id: crypto.randomUUID(), message, type: 'error' })
+    } finally {
+      setTogglingKey(null)
+    }
+  }, [addToast])
+
+  return (
+    <div className={styles.composioSection}>
+      <div className={styles.composioHeaderRow}>
+        <div>
+          <h3 className={styles.composioHeading}>Composio automations</h3>
+          <p className={styles.composioHint}>
+            File-backed definitions from the Composio × Pi flow. Configure the webhook in Settings → Composio.
+            Edit the agent prompt for each automation below (saved to the repo’s <code>.composio/automations.json</code>).
+            The raw Composio payload is not sent to the agent.
+          </p>
+        </div>
+        <button type="button" className={styles.smallBtn} onClick={() => void refreshDefinitions()} disabled={loading}>
+          {loading ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+
+      {error ? <p className={styles.composioError}>{error}</p> : null}
+
+      {loading && definitions.length === 0 ? (
+        <p className={styles.composioHint}>Loading Composio automations…</p>
+      ) : definitions.length === 0 ? (
+        <div className={styles.composioEmptyState}>
+          <span className={styles.emptyTitle}>No Composio file automations found</span>
+          <span className={styles.emptyCopy}>
+            {projects.length === 0
+              ? 'Open a repository first, then create a Composio automation.'
+              : 'Create definitions from the Composio extension or save them to .composio/automations.json in one of your open repositories.'}
+          </span>
+        </div>
+      ) : (
+        <div className={styles.composioDefinitionList}>
+          {definitions.map((definition) => {
+            const project = projectForRepo(definition.repoPath)
+            const key = `${definition.repoPath}:${definition.id}`
+            const triggerLabel = definition.triggerSlug || definition.triggerId || 'Composio trigger'
+            return (
+              <div
+                key={key}
+                className={`${styles.composioDefinitionRow} ${!definition.enabled ? styles.composioDefinitionDisabled : ''}`}
+              >
+                <div className={styles.rowInfo}>
+                  <div className={styles.rowName}>{definition.name}</div>
+                  <div className={styles.rowMeta}>
+                    <span>{project?.name ?? 'Unknown repo'}</span>
+                    <span>{triggerLabel}</span>
+                    <span>{definition.agent}</span>
+                    <span>{formatComposioUpdatedAt(definition.updatedAt)}</span>
+                  </div>
+                  <ComposioAutomationPromptField
+                    definition={definition}
+                    saveDisabled={togglingKey === key}
+                    onUpdated={patchDefinition}
+                  />
+                  <code className={styles.composioFilePath}>{definition.filePath}</code>
+                </div>
+                <div className={styles.rowActions}>
+                  <button
+                    type="button"
+                    className={`${styles.toggle} ${definition.enabled ? styles.toggleOn : ''}`}
+                    onClick={() => void toggleDefinition(definition)}
+                    disabled={togglingKey === key}
+                    aria-label={`${definition.enabled ? 'Disable' : 'Enable'} ${definition.name}`}
+                    aria-pressed={definition.enabled}
+                  >
+                    <span className={styles.toggleKnob} />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function automationFieldId(prefix: string, suffix: string): string {
@@ -376,6 +600,7 @@ function AutomationForm({
       cooldownMs,
       lastRunAt: editingAutomation?.lastRunAt,
       lastRunStatus: editingAutomation?.lastRunStatus,
+      composio: editingAutomation?.composio,
     }
 
     if (editingAutomation) {
@@ -671,7 +896,10 @@ export function AutomationsPanel() {
         <div className={styles.inner}>
           <p className={styles.subtitle}>Schedule prompts, event hooks, and repeatable workflows.</p>
           {view === 'list' ? (
-            <AutomationList onNew={handleNew} onEdit={handleEdit} />
+            <>
+              <ComposioAutomationsSection />
+              <AutomationList onNew={handleNew} onEdit={handleEdit} />
+            </>
           ) : (
             <AutomationForm editingAutomation={editingAutomation} onBack={handleBack} />
           )}

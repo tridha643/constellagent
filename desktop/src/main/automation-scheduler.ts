@@ -95,9 +95,11 @@ export class AutomationScheduler {
         automationId: config.id,
         automationName: config.name,
         projectId: config.projectId,
+        repoPath: config.repoPath,
         ptyId,
         worktreePath,
         branch,
+        agentType: 'claude-code',
       }
       win.webContents.send(IPC.AUTOMATION_RUN_STARTED, event)
     }

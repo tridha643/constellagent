@@ -1,4 +1,5 @@
 import type { PrInfo } from './github-types'
+import type { ComposioAutomationLink } from './composio-types'
 
 export type AutomationAgentType = 'claude-code' | 'codex' | 'gemini' | 'cursor' | 'opencode' | 'pi-constell'
 
@@ -105,6 +106,8 @@ export interface AutomationConfigV2 {
   enabled: boolean
   repoPath: string
   cooldownMs?: number
+  /** Optional Composio trigger linkage; ignored by AutomationEngine trigger matching. */
+  composio?: ComposioAutomationLink
 }
 
 export type AutomationConfigLike = AutomationConfig | AutomationConfigV2
@@ -139,9 +142,13 @@ export interface AutomationRunStartedEvent {
   automationId: string
   automationName: string
   projectId: string
+  /** Repo root used for the run; renderer can match a project if projectId is missing or stale. */
+  repoPath?: string
   ptyId: string
   worktreePath: string
   branch: string
+  /** Drives terminal chrome (activity indicators, etc.). */
+  agentType?: AutomationAgentType
 }
 
 export type AutomationRunStatus = 'success' | 'failed' | 'timeout'

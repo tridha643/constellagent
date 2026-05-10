@@ -38,7 +38,7 @@ import { ContextWindowService } from './context-window-service'
 import { closeAllAgentFS } from './agentfs-service'
 import { AnnotationService } from './annotation-service'
 import { emitAutomationEvent, onAutomationEvent } from './automation-event-bus'
-import { lookupPersistedProjectRepo } from './persisted-state'
+import { lookupPersistedProjectRepo, readPersistedPiCommitMessageModel } from './persisted-state'
 import { GithubPollService } from './github-poll-service'
 import { listPiModels } from './pi-models'
 import { CommitMessageService } from './commit-message-service'
@@ -54,11 +54,27 @@ import {
 } from './project-startup-settings'
 import { getConstellPiHost } from './pi-host-service'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
+import type { ComposioWebhookSettings } from '../shared/composio-types'
+import { composioWebhookService } from './composio-webhook-service'
+import { composioNgrokService } from './composio-ngrok-service'
+import { composioSubscribeTriggerWebhookWithKeyFallback } from './composio-webhook-subscriptions'
+import { composioTriggerUpsertWithCliFallback, composioSuggestGithubConnectedAccountId } from './composio-trigger-client'
+import { parseComposioPiAutomationDraft } from './composio-pi-draft'
+import { AutomationRunner } from './automations/automation-runner'
+import { AutomationDeliveryRouter } from './automations/delivery-router'
+import {
+  listComposioAutomationDefinitions,
+  setComposioAutomationDefinitionEnabled,
+  setComposioAutomationDefinitionInstructions,
+} from './automations/composio-definition-store'
 
 const ptyManager = new PtyManager()
 const worktreeSyncService = new WorktreeSyncService()
 
 const automationEngine = new AutomationEngine(ptyManager)
+const automationRunner = new AutomationRunner(ptyManager)
+const automationDeliveryRouter = new AutomationDeliveryRouter(automationRunner)
+composioWebhookService.setDeliveryHandler((payload) => automationDeliveryRouter.handleComposioPayload(payload))
 const githubPollService = new GithubPollService()
 const lspService = new LspService()
 
@@ -283,7 +299,35 @@ function isAllowedShellOpenUrl(url: string): boolean {
   }
 }
 
+/**
+ * electron-vite dev can reload the main bundle without exiting the process. A second
+ * `registerIpcHandlers()` call would throw on the first duplicate `ipcMain.handle`, so every
+ * handler after that point (including Composio / ngrok) would stay unregistered while the
+ * renderer still invokes those channels.
+ */
+function resetMainProcessIpcHandlers(): void {
+  for (const channel of Object.values(IPC)) {
+    ipcMain.removeHandler(channel)
+  }
+  const ipcOnChannels = [
+    IPC.GIT_CLONE_REPO_CANCEL,
+    IPC.GIT_SYNC_SET_BUSY,
+    IPC.PTY_WRITE,
+    IPC.PTY_SUGGEST_TAB_TITLE,
+    IPC.PTY_RESIZE,
+    IPC.PTY_DESTROY,
+    IPC.FS_WATCH_STOP,
+    IPC.AUTOMATION_WORKSPACE_EVENT,
+    IPC.STATE_SAVE_SYNC,
+  ] as const
+  for (const ch of ipcOnChannels) {
+    ipcMain.removeAllListeners(ch)
+  }
+}
+
 export function registerIpcHandlers(): void {
+  resetMainProcessIpcHandlers()
+
   // ── Git handlers ──
   ipcMain.handle(IPC.GIT_LIST_WORKTREES, async (_e, repoPath: string) => {
     return GitService.listWorktrees(repoPath)
@@ -824,7 +868,8 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.APP_GENERATE_COMMIT_MESSAGE, async (_e, worktreePath: string) => {
-    return CommitMessageService.generateWithPi(worktreePath)
+    const model = readPersistedPiCommitMessageModel()
+    return CommitMessageService.generateWithPi(worktreePath, model ? { model } : undefined)
   })
 
   ipcMain.handle(
@@ -1468,6 +1513,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.STATE_SAVE, async (_e, data: unknown) => {
     await mkdir(app.getPath('userData'), { recursive: true })
     await saveJsonFile(stateFilePath(), data)
+    composioWebhookService.applyFromPersistedState(data)
   })
 
   // Synchronous save for beforeunload — guarantees state is written before window closes
@@ -1475,6 +1521,7 @@ export function registerIpcHandlers(): void {
     try {
       mkdirSync(app.getPath('userData'), { recursive: true })
       writeFileSync(stateFilePath(), JSON.stringify(data, null, 2), 'utf-8')
+      composioWebhookService.applyFromPersistedState(data)
       event.returnValue = true
     } catch {
       event.returnValue = false
@@ -1493,6 +1540,158 @@ export function registerIpcHandlers(): void {
     }
     return sanitized.data
   })
+
+  const getComposioWebhookStatus = () => {
+    const st = composioWebhookService.getStatus()
+    const settings = composioWebhookService.getSettings()
+    const pathNorm = settings.path.startsWith('/') ? settings.path : `/${settings.path}`
+    const base = (settings.publicBaseUrl || `http://127.0.0.1:${st.port || settings.port}`).replace(/\/+$/, '')
+    const callbackUrl = `${base}${pathNorm}`
+    return { ...st, callbackUrl, settings: { ...settings } }
+  }
+
+  ipcMain.handle(IPC.COMPOSIO_WEBHOOK_STATUS, async () => getComposioWebhookStatus())
+
+  ipcMain.handle(IPC.COMPOSIO_WEBHOOK_APPLY_SETTINGS, async (_e, settings: ComposioWebhookSettings) => {
+    await composioWebhookService.applySettings(settings)
+    return getComposioWebhookStatus()
+  })
+
+  ipcMain.handle(IPC.COMPOSIO_SUGGEST_GITHUB_CONNECTED_ACCOUNT, async () => {
+    const key = composioWebhookService.getSettings().apiKey.trim()
+    const connectedAccountId = await composioSuggestGithubConnectedAccountId(key)
+    return { connectedAccountId }
+  })
+
+  ipcMain.handle(IPC.COMPOSIO_SUBSCRIBE_WEBHOOK, async (_e, input?: { publicBaseUrl?: string }) => {
+    const settings = composioWebhookService.getSettings()
+    const st = composioWebhookService.getStatus()
+    const pathNorm = settings.path.startsWith('/') ? settings.path : `/${settings.path}`
+    const publicBaseUrl = typeof input?.publicBaseUrl === 'string' ? input.publicBaseUrl.trim().replace(/\/+$/, '') : settings.publicBaseUrl
+    const base = (publicBaseUrl || `http://127.0.0.1:${st.port || settings.port}`).replace(/\/+$/, '')
+    let registerUrl = `${base}${pathNorm}`
+    const sec = settings.sharedSecret.trim()
+    if (sec) {
+      const u = new URL(registerUrl)
+      u.searchParams.set('secret', sec)
+      registerUrl = u.toString()
+    }
+    if (!publicBaseUrl.trim()) {
+      throw new Error(
+        'Set Public base URL to your HTTPS tunnel (e.g. ngrok) so Composio can reach this machine. Then click Register again.',
+      )
+    }
+    const key = settings.apiKey.trim()
+    try {
+      return await composioSubscribeTriggerWebhookWithKeyFallback(key, registerUrl)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg.includes('401') || msg.includes('Unauthorized') || msg.includes('10401')) {
+        throw new Error(
+          `${msg}\n\n` +
+            `Composio auth is provided by the Pi extension, COMPOSIO_API_KEY, or the CLI login at ~/.composio/user_data.json. Reconnect Composio there and try again.`,
+        )
+      }
+      throw e
+    }
+  })
+
+  ipcMain.handle(IPC.COMPOSIO_NGROK_STATUS, async () => composioNgrokService.getStatus())
+
+  ipcMain.handle(IPC.COMPOSIO_NGROK_START, async (_e, localPort: number) => {
+    return composioNgrokService.start(localPort)
+  })
+
+  ipcMain.handle(IPC.COMPOSIO_NGROK_STOP, async () => composioNgrokService.stop())
+
+  ipcMain.handle(
+    IPC.COMPOSIO_UPSERT_TRIGGER,
+    async (
+      _e,
+      input: {
+        slug: string
+        connectedAccountId: string
+        triggerConfig: Record<string, unknown>
+        apiKey?: string
+      },
+    ) => {
+      const key = input.apiKey?.trim() || composioWebhookService.getSettings().apiKey.trim()
+      try {
+        return await composioTriggerUpsertWithCliFallback({
+          apiKey: key,
+          slug: input.slug,
+          connectedAccountId: input.connectedAccountId,
+          triggerConfig: input.triggerConfig,
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        if (msg.includes('401') || msg.includes('Unauthorized') || msg.includes('10401')) {
+          throw new Error(
+            `${msg}\n\n` +
+              `Composio auth is provided by the Pi extension, COMPOSIO_API_KEY, or the CLI login at ~/.composio/user_data.json. Reconnect Composio there and try again. ` +
+              `Dashboard "project" keys are different from CLI login unless you copy the same value.`,
+          )
+        }
+        if (
+          msg.includes('404') &&
+          (msg.includes('Connected account') || msg.includes('ConnectedAccount') || msg.includes('"code":606'))
+        ) {
+          throw new Error(
+            `${msg}\n\n` +
+              `connectedAccountId must belong to the same Composio user as your API key. From the repo where you ran \`composio dev init\`, run:\n` +
+              `  composio dev connected-accounts list --toolkits github\n` +
+              `Copy an ACTIVE account's \`id\` (e.g. ca_…) into your JSON draft. If you switched between dashboard keys and CLI (\`uak_…\`) keys, list again — ids are scoped to that identity.`,
+          )
+        }
+        throw e
+      }
+    },
+  )
+
+  ipcMain.handle(IPC.COMPOSIO_PARSE_PI_DRAFT, async (_e, jsonText: string) => {
+    let raw: unknown
+    try {
+      raw = JSON.parse(typeof jsonText === 'string' ? jsonText : '')
+    } catch {
+      throw new Error('Invalid JSON')
+    }
+    return parseComposioPiAutomationDraft(raw)
+  })
+
+  ipcMain.handle(IPC.COMPOSIO_LIST_AUTOMATION_DEFINITIONS, async (_e, repoPaths?: string[]) => {
+    return listComposioAutomationDefinitions(Array.isArray(repoPaths) ? repoPaths : undefined)
+  })
+
+  ipcMain.handle(
+    IPC.COMPOSIO_SET_AUTOMATION_DEFINITION_ENABLED,
+    async (_e, input: { repoPath: string; id: string; enabled: boolean }) => {
+      if (!input || typeof input.repoPath !== 'string' || typeof input.id !== 'string') {
+        throw new Error('Invalid Composio automation toggle request')
+      }
+      return setComposioAutomationDefinitionEnabled({
+        repoPath: input.repoPath,
+        id: input.id,
+        enabled: Boolean(input.enabled),
+      })
+    },
+  )
+
+  ipcMain.handle(
+    IPC.COMPOSIO_SET_AUTOMATION_DEFINITION_INSTRUCTIONS,
+    async (_e, input: { repoPath: string; id: string; instructions: string }) => {
+      if (!input || typeof input.repoPath !== 'string' || typeof input.id !== 'string') {
+        throw new Error('Invalid Composio automation prompt update request')
+      }
+      if (typeof input.instructions !== 'string') {
+        throw new Error('Invalid instructions value')
+      }
+      return setComposioAutomationDefinitionInstructions({
+        repoPath: input.repoPath,
+        id: input.id,
+        instructions: input.instructions,
+      })
+    },
+  )
 
   // ── Track 6: terminal scrollback persistence ──
   // Per-tab scrollback survives app quit so users can scroll up after reopen.
@@ -1622,6 +1821,8 @@ export function cleanupAll(): void {
   ptyManager.destroyAll()
   automationEngine.destroyAll()
   githubPollService.stop()
+  composioNgrokService.stop()
+  void composioWebhookService.stop()
   lspService.shutdown()
   AnnotationService.cleanupAll()
   FileService.disposeQuickOpenSearch()

@@ -18,6 +18,7 @@ interface PersistedWorkspaceRecord {
 interface PersistedStateRecord {
   projects?: PersistedProjectRecord[]
   workspaces?: PersistedWorkspaceRecord[]
+  settings?: { piCommitMessageModel?: unknown }
 }
 
 function stateFilePath(): string {
@@ -104,5 +105,14 @@ export function listPersistedProjectsWithBranches(): Array<{
     repoPath: value.repoPath,
     branches: Array.from(value.branches).sort(),
   }))
+}
+
+/** Pi model id for commit message generation; empty/undefined means use app default in pi-run-prompt. */
+export function readPersistedPiCommitMessageModel(): string | undefined {
+  const state = loadState()
+  const raw = state.settings?.piCommitMessageModel
+  if (typeof raw !== 'string') return undefined
+  const t = raw.trim()
+  return t || undefined
 }
 

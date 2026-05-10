@@ -2,6 +2,8 @@ import type { PrInfo } from '../shared/github-types'
 import { GithubService } from './github-service'
 import { emitAutomationEvent } from './automation-event-bus'
 import { listPersistedProjectsWithBranches } from './persisted-state'
+import { getGithubRepoForRepoPath } from './composio-repo-resolve'
+import { mergeDedupeKeyForGithubPr, shouldEmitMergeDedupeKey } from './automation-merge-dedupe'
 
 const POLL_INTERVAL_MS = 60_000
 
@@ -56,7 +58,7 @@ export class GithubPollService {
             this.previousStatuses.delete(key)
             continue
           }
-          this.emitTransitions(project.projectId, branch, previous, info)
+          this.emitTransitions(project.projectId, project.repoPath, branch, previous, info)
           this.previousStatuses.set(key, clonePrInfo(info))
         }
       }
@@ -69,7 +71,13 @@ export class GithubPollService {
     }
   }
 
-  private emitTransitions(projectId: string, branch: string, previous: PrInfo | undefined, next: PrInfo): void {
+  private emitTransitions(
+    projectId: string,
+    repoPath: string,
+    branch: string,
+    previous: PrInfo | undefined,
+    next: PrInfo,
+  ): void {
     if (!previous) {
       emitAutomationEvent({
         type: 'pr:created',
@@ -83,7 +91,13 @@ export class GithubPollService {
 
     const timestamp = Date.now()
     if (previous.state !== 'merged' && next.state === 'merged') {
-      emitAutomationEvent({ type: 'pr:merged', timestamp, projectId, branch, prInfo: clonePrInfo(next) })
+      const gh = getGithubRepoForRepoPath(repoPath)
+      const dedupeKey = gh
+        ? mergeDedupeKeyForGithubPr(`${gh.owner}/${gh.name}`, next.number)
+        : `pr-merge:${projectId}:${branch}#${next.number}`
+      if (shouldEmitMergeDedupeKey(dedupeKey)) {
+        emitAutomationEvent({ type: 'pr:merged', timestamp, projectId, branch, prInfo: clonePrInfo(next) })
+      }
     }
     if (previous.checkStatus !== 'failing' && next.checkStatus === 'failing') {
       emitAutomationEvent({ type: 'pr:checks-failed', timestamp, projectId, branch, prInfo: clonePrInfo(next) })

@@ -24,6 +24,7 @@ import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 import type { GithubCloneRepoSuggestion } from '../shared/github-clone-suggestions'
+import type { ComposioAutomationDefinition, ComposioNgrokStatus, ComposioWebhookSettings } from '../shared/composio-types'
 
 /** Linear GraphQL via main process (renderer fetch hits CORS). Exposed on `api` and `api.app`. */
 function linearGraphql(
@@ -390,6 +391,39 @@ const api = {
         ipcRenderer.removeListener(IPC.AUTOMATION_STATUS_UPDATED, listener)
       }
     },
+  },
+
+  composio: {
+    getWebhookStatus: () => ipcRenderer.invoke(IPC.COMPOSIO_WEBHOOK_STATUS),
+    applyWebhookSettings: (settings: ComposioWebhookSettings) =>
+      ipcRenderer.invoke(IPC.COMPOSIO_WEBHOOK_APPLY_SETTINGS, settings),
+    subscribeWebhook: (input?: { publicBaseUrl?: string }) =>
+      ipcRenderer.invoke(IPC.COMPOSIO_SUBSCRIBE_WEBHOOK, input) as Promise<{
+        id?: string
+        secret?: string
+        reusedExisting?: boolean
+      }>,
+    getNgrokStatus: () => ipcRenderer.invoke(IPC.COMPOSIO_NGROK_STATUS) as Promise<ComposioNgrokStatus>,
+    startNgrok: (localPort: number) =>
+      ipcRenderer.invoke(IPC.COMPOSIO_NGROK_START, localPort) as Promise<ComposioNgrokStatus>,
+    stopNgrok: () => ipcRenderer.invoke(IPC.COMPOSIO_NGROK_STOP) as Promise<ComposioNgrokStatus>,
+    suggestGithubConnectedAccountId: () =>
+      ipcRenderer.invoke(IPC.COMPOSIO_SUGGEST_GITHUB_CONNECTED_ACCOUNT) as Promise<{
+        connectedAccountId: string | null
+      }>,
+    upsertTrigger: (input: {
+      slug: string
+      connectedAccountId: string
+      triggerConfig: Record<string, unknown>
+      apiKey?: string
+    }) => ipcRenderer.invoke(IPC.COMPOSIO_UPSERT_TRIGGER, input),
+    parsePiDraft: (jsonText: string) => ipcRenderer.invoke(IPC.COMPOSIO_PARSE_PI_DRAFT, jsonText),
+    listAutomationDefinitions: (repoPaths?: string[]) =>
+      ipcRenderer.invoke(IPC.COMPOSIO_LIST_AUTOMATION_DEFINITIONS, repoPaths) as Promise<ComposioAutomationDefinition[]>,
+    setAutomationDefinitionEnabled: (input: { repoPath: string; id: string; enabled: boolean }) =>
+      ipcRenderer.invoke(IPC.COMPOSIO_SET_AUTOMATION_DEFINITION_ENABLED, input) as Promise<ComposioAutomationDefinition>,
+    setAutomationDefinitionInstructions: (input: { repoPath: string; id: string; instructions: string }) =>
+      ipcRenderer.invoke(IPC.COMPOSIO_SET_AUTOMATION_DEFINITION_INSTRUCTIONS, input) as Promise<ComposioAutomationDefinition>,
   },
 
   github: {

@@ -2,12 +2,14 @@ import { createHash } from 'crypto'
 import { app, BrowserWindow, Menu, shell } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
 import { join, resolve } from 'path'
+import { existsSync, readFileSync } from 'fs'
 import { symlink, unlink, stat, readlink } from 'fs/promises'
 import { execFile, execFileSync } from 'child_process'
 import { promisify } from 'util'
 import { registerIpcHandlers, cleanupAll, getGithubPollService } from './ipc'
 import { NotificationWatcher } from './notification-watcher'
 import { emitAutomationEvent } from './automation-event-bus'
+import { composioWebhookService } from './composio-webhook-service'
 
 const execFileAsync = promisify(execFile)
 
@@ -208,6 +210,14 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(menu)
 
   registerIpcHandlers()
+  try {
+    const fp = join(app.getPath('userData'), 'constellagent-state.json')
+    if (existsSync(fp)) {
+      composioWebhookService.applyFromPersistedState(JSON.parse(readFileSync(fp, 'utf-8')))
+    }
+  } catch (err) {
+    console.warn('[composio] initial webhook settings not applied', err)
+  }
   notificationWatcher = new NotificationWatcher()
   notificationWatcher.onAgentLifecycleEvent = (event) => {
     emitAutomationEvent(event)

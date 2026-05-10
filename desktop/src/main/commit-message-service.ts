@@ -110,11 +110,16 @@ function normalizeCommitMessage(stdout: string): string {
 }
 
 export class CommitMessageService {
-  static async generateWithPi(worktreePath: string): Promise<string> {
+  static async generateWithPi(
+    worktreePath: string,
+    options?: { model?: string },
+  ): Promise<string> {
     const snapshot = await buildCommitMessageSnapshot(worktreePath)
 
     try {
-      const stdout = await runPiPrompt(buildPrompt(snapshot))
+      const stdout = await runPiPrompt(buildPrompt(snapshot), {
+        model: options?.model,
+      })
       const message = normalizeCommitMessage(stdout)
       if (!message) {
         throw new Error('Pi did not return a commit message.')
