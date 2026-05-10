@@ -39,8 +39,8 @@ function uniqueKeyOrder(...candidates: Array<string | undefined | null>): string
 
 /**
  * Composio REST calls (webhooks, triggers) need a valid `uak_…` user API key.
- * Prefer explicit env and the same CLI session file `composio login` writes before any legacy
- * value persisted in app settings — those are often stale and still produce confusing 401s.
+ * Order: `COMPOSIO_API_KEY` → `~/.composio/user_data.json` (`composio login`) → legacy persisted settings field.
+ * Prefer explicit env and the CLI session file before legacy values — those are often stale and still produce confusing 401s.
  */
 export function composioApiKeyCandidates(settingsApiKey: string): string[] {
   return uniqueKeyOrder(process.env.COMPOSIO_API_KEY, readComposioCliUserApiKey(), settingsApiKey)
@@ -93,8 +93,8 @@ export async function composioTriggerUpsert(input: ComposioTriggerUpsertInput): 
 }
 
 /**
- * Try each candidate from {@link composioApiKeyCandidates} (env → CLI session file → legacy settings field).
- * On 401, retry with the next key so a stale saved key does not block a working `composio login`.
+ * Try each candidate from {@link composioApiKeyCandidates}; on 401 use the next key so a stale saved key
+ * does not block `composio login` or `COMPOSIO_API_KEY`.
  */
 export async function composioTriggerUpsertWithCliFallback(input: ComposioTriggerUpsertInput): Promise<ComposioTriggerUpsertResult> {
   const keys = composioApiKeyCandidates(input.apiKey)

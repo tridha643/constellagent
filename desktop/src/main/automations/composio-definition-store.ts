@@ -1,6 +1,7 @@
 import { existsSync } from 'fs'
 import { mkdir, readFile, rename, writeFile } from 'fs/promises'
-import { dirname, join, resolve } from 'path'
+import { homedir } from 'os'
+import { basename, dirname, join, resolve } from 'path'
 import type {
   ComposioAutomationAgent,
   ComposioAutomationDefinition,
@@ -9,8 +10,70 @@ import type {
 import { isComposioAutomationAgent } from '../../shared/composio-types'
 import { listPersistedProjectsWithBranches } from '../persisted-state'
 
-const AUTOMATIONS_RELATIVE_PATH = join('.composio', 'automations.json')
 const DEFAULT_AGENT: ComposioAutomationAgent = 'claude-code'
+
+/**
+ * Pi CLI / extension shared store: `~/.config/pi/composio-automations.json` (e.g. `/Users/…/.config/pi/…`).
+ * Override with `PI_COMPOSIO_AUTOMATIONS_JSON` if needed.
+ */
+export function globalComposioAutomationsPath(): string {
+  const fromEnv = process.env.PI_COMPOSIO_AUTOMATIONS_JSON?.trim()
+  if (fromEnv) return resolve(fromEnv)
+  return join(homedir(), '.config', 'pi', 'composio-automations.json')
+}
+
+function repoPathHintFromRaw(raw: unknown): string | null {
+  if (!isRecord(raw)) return null
+  const metadata = isRecord(raw.metadata) ? raw.metadata : {}
+  const workspaceFromTopLevel = typeof raw.workspace === 'string' ? raw.workspace.trim() : ''
+  const workspaceFromMetadata = typeof metadata.workspace === 'string' ? metadata.workspace.trim() : ''
+  const w = workspaceFromTopLevel || workspaceFromMetadata
+  return w.length > 0 ? w : null
+}
+
+/** Pi saves `metadata.repo` as `owner/repo` without a filesystem `workspace`. */
+function piMetadataRepoSlug(raw: unknown): string | null {
+  if (!isRecord(raw)) return null
+  const metadata = isRecord(raw.metadata) ? raw.metadata : {}
+  const r = typeof metadata.repo === 'string' ? metadata.repo.trim() : ''
+  if (!r) return null
+  return r.toLowerCase()
+}
+
+function repoNameFromPiSlug(piSlug: string): string {
+  const idx = piSlug.lastIndexOf('/')
+  return (idx >= 0 ? piSlug.slice(idx + 1) : piSlug).toLowerCase()
+}
+
+/**
+ * Resolve a on-disk repo path for an automation row: explicit workspace first, then match
+ * `metadata.repo` (`owner/repo`) against folder name(s) in the path pool.
+ *
+ * @param repoPathsFilter `null` → all persisted projects; otherwise only these paths (e.g. open tabs).
+ */
+function resolveNormRepoForEntry(entry: unknown, repoPathsFilter: readonly string[] | null): string | null {
+  const hint = repoPathHintFromRaw(entry)
+  if (hint) return resolve(hint)
+
+  const piSlug = piMetadataRepoSlug(entry)
+  if (!piSlug) return null
+
+  const wantDir = repoNameFromPiSlug(piSlug)
+  const pool: string[] =
+    repoPathsFilter === null
+      ? listPersistedProjectsWithBranches().map((p) => resolve(p.repoPath))
+      : Array.from(new Set(repoPathsFilter.map((p) => resolve(p))))
+  const matches = pool.filter((p) => basename(p).toLowerCase() === wantDir)
+  if (matches.length === 0) return null
+  if (matches.length === 1) return matches[0]!
+
+  const owner = piSlug.includes('/') ? piSlug.slice(0, piSlug.indexOf('/')) : ''
+  if (owner) {
+    const narrowed = matches.filter((p) => p.toLowerCase().includes(owner))
+    if (narrowed.length === 1) return narrowed[0]!
+  }
+  return matches[0]!
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -88,32 +151,61 @@ async function writeRawEntries(filePath: string, entries: ComposioAutomationFile
   await rename(tmpPath, filePath)
 }
 
-export function composioAutomationsPath(repoPath: string): string {
-  return join(resolve(repoPath), AUTOMATIONS_RELATIVE_PATH)
+async function resolveMutationTarget(input: {
+  repoPath: string
+  id: string
+}): Promise<{
+  filePath: string
+  entries: ComposioAutomationFileEntry[]
+  normalizeRepoPath: string
+} | null> {
+  const globalPath = globalComposioAutomationsPath()
+  let globalEntries: ComposioAutomationFileEntry[]
+  try {
+    globalEntries = await readRawEntries(globalPath)
+  } catch {
+    return null
+  }
+  for (const entry of globalEntries) {
+    const normRepo =
+      resolveNormRepoForEntry(entry, [input.repoPath]) ?? resolveNormRepoForEntry(entry, null)
+    if (!normRepo) continue
+    const normalized = normalizeEntry(entry, normRepo, globalPath)
+    if (normalized && (normalized.id === input.id || entryIdentity(entry) === input.id)) {
+      return { filePath: globalPath, entries: globalEntries, normalizeRepoPath: normRepo }
+    }
+  }
+  return null
 }
 
 export async function listComposioAutomationDefinitions(
   repoPaths?: readonly string[],
 ): Promise<ComposioAutomationDefinition[]> {
-  const candidates = repoPaths?.length
-    ? repoPaths
-    : listPersistedProjectsWithBranches().map((project) => project.repoPath)
-  const uniqueRepoPaths = Array.from(new Set(candidates.map((repoPath) => resolve(repoPath))))
+  const globalPath = globalComposioAutomationsPath()
   const definitions: ComposioAutomationDefinition[] = []
+  const allowedRepos =
+    repoPaths === undefined
+      ? null
+      : new Set(Array.from(new Set(repoPaths.map((p) => resolve(p)))))
+  const poolFilter = repoPaths === undefined ? null : repoPaths
 
-  for (const repoPath of uniqueRepoPaths) {
-    const filePath = composioAutomationsPath(repoPath)
-    let entries: ComposioAutomationFileEntry[]
-    try {
-      entries = await readRawEntries(filePath)
-    } catch (err) {
-      console.warn('[composio-automations] failed to read definitions', { filePath, err })
-      continue
-    }
+  try {
+    const entries = await readRawEntries(globalPath)
     for (const entry of entries) {
-      const normalized = normalizeEntry(entry, repoPath, filePath)
+      const normRepo = resolveNormRepoForEntry(entry, poolFilter)
+      if (!normRepo) {
+        console.warn('[composio-automations] skipping entry: add workspace or metadata.repo matching a project folder', {
+          globalPath,
+          name: isRecord(entry) && typeof entry.name === 'string' ? entry.name : undefined,
+        })
+        continue
+      }
+      if (allowedRepos && !allowedRepos.has(normRepo)) continue
+      const normalized = normalizeEntry(entry, normRepo, globalPath)
       if (normalized) definitions.push(normalized)
     }
+  } catch (err) {
+    console.warn('[composio-automations] failed to read definitions', { globalPath, err })
   }
 
   return definitions.sort((a, b) => a.name.localeCompare(b.name))
@@ -124,13 +216,15 @@ export async function setComposioAutomationDefinitionEnabled(input: {
   id: string
   enabled: boolean
 }): Promise<ComposioAutomationDefinition> {
-  const repoPath = resolve(input.repoPath)
-  const filePath = composioAutomationsPath(repoPath)
-  const entries = await readRawEntries(filePath)
+  const resolved = await resolveMutationTarget({ repoPath: input.repoPath, id: input.id })
+  if (!resolved) {
+    throw new Error(`Composio automation not found: ${input.id}`)
+  }
+  const { filePath, entries, normalizeRepoPath } = resolved
   let updated: ComposioAutomationDefinition | null = null
 
   const next = entries.map((entry) => {
-    const normalized = normalizeEntry(entry, repoPath, filePath)
+    const normalized = normalizeEntry(entry, normalizeRepoPath, filePath)
     const matches = normalized?.id === input.id || entryIdentity(entry) === input.id
     if (!matches) return entry
     const changed = {
@@ -138,7 +232,7 @@ export async function setComposioAutomationDefinitionEnabled(input: {
       enabled: input.enabled,
       updatedAt: new Date().toISOString(),
     }
-    updated = normalizeEntry(changed, repoPath, filePath)
+    updated = normalizeEntry(changed, normalizeRepoPath, filePath)
     return changed
   })
 
@@ -155,13 +249,15 @@ export async function setComposioAutomationDefinitionInstructions(input: {
   id: string
   instructions: string
 }): Promise<ComposioAutomationDefinition> {
-  const repoPath = resolve(input.repoPath)
-  const filePath = composioAutomationsPath(repoPath)
-  const entries = await readRawEntries(filePath)
+  const resolved = await resolveMutationTarget({ repoPath: input.repoPath, id: input.id })
+  if (!resolved) {
+    throw new Error(`Composio automation not found: ${input.id}`)
+  }
+  const { filePath, entries, normalizeRepoPath } = resolved
   let updated: ComposioAutomationDefinition | null = null
 
   const next = entries.map((entry) => {
-    const normalized = normalizeEntry(entry, repoPath, filePath)
+    const normalized = normalizeEntry(entry, normalizeRepoPath, filePath)
     const matches = normalized?.id === input.id || entryIdentity(entry) === input.id
     if (!matches) return entry
     const changed = {
@@ -169,7 +265,7 @@ export async function setComposioAutomationDefinitionInstructions(input: {
       instructions: input.instructions,
       updatedAt: new Date().toISOString(),
     }
-    updated = normalizeEntry(changed, repoPath, filePath)
+    updated = normalizeEntry(changed, normalizeRepoPath, filePath)
     return changed
   })
 
@@ -186,13 +282,15 @@ export async function setComposioAutomationDefinitionAgent(input: {
   id: string
   agent: ComposioAutomationAgent
 }): Promise<ComposioAutomationDefinition> {
-  const repoPath = resolve(input.repoPath)
-  const filePath = composioAutomationsPath(repoPath)
-  const entries = await readRawEntries(filePath)
+  const resolved = await resolveMutationTarget({ repoPath: input.repoPath, id: input.id })
+  if (!resolved) {
+    throw new Error(`Composio automation not found: ${input.id}`)
+  }
+  const { filePath, entries, normalizeRepoPath } = resolved
   let updated: ComposioAutomationDefinition | null = null
 
   const next = entries.map((entry) => {
-    const normalized = normalizeEntry(entry, repoPath, filePath)
+    const normalized = normalizeEntry(entry, normalizeRepoPath, filePath)
     const matches = normalized?.id === input.id || entryIdentity(entry) === input.id
     if (!matches) return entry
     const changed: ComposioAutomationFileEntry = {
@@ -200,7 +298,7 @@ export async function setComposioAutomationDefinitionAgent(input: {
       agent: input.agent,
       updatedAt: new Date().toISOString(),
     }
-    updated = normalizeEntry(changed, repoPath, filePath)
+    updated = normalizeEntry(changed, normalizeRepoPath, filePath)
     return changed
   })
 
