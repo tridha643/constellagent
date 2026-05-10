@@ -102,11 +102,11 @@ export function isComposioAutomationAgent(value: unknown): value is ComposioAuto
 }
 
 /**
- * Appended after the file-backed `instructions` field when spawning the agent.
+ * Appended after the file-backed `instructions` field and optional event summary when spawning the agent.
  * Kept in one place so the Automations UI can show the same text.
  */
 export const COMPOSIO_AUTOMATION_AGENT_GUARDRAILS =
-  'Implement the task described in the prompt above.\nDo not change code or project files unless the user explicitly asks you to.'
+  'Implement the task described in the prompt above.\nThe section between the horizontal rules is a filtered Composio event summary (not the raw webhook); use it for context.\nDo not change code or project files unless the user explicitly asks you to.'
 
 /** Raw file-backed automation entry written by the Composio x Pi extension. */
 export interface ComposioAutomationFileEntry {

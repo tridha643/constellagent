@@ -216,7 +216,7 @@ function ComposioAutomationPromptField({
         rows={4}
         spellCheck={false}
         disabled={saveDisabled || saving}
-        placeholder="What should the agent do when this trigger fires? (Webhook JSON is not sent to the agent.)"
+        placeholder="What should the agent do when this trigger fires? A filtered event summary is added automatically."
       />
       <p className={styles.composioGuardrailHint}>
         <span className={styles.composioGuardrailLead}>Always appended to the agent:</span>
@@ -311,9 +311,9 @@ function ComposioAutomationsSection() {
             Settings → Composio.
           </p>
           <p className={styles.composioHint}>
-            Edits save back to the file shown on each row: Pi uses <code>~/.config/pi/composio-automations.json</code>;
+            Edits save back to the file shown on each row:             Pi uses <code>~/.config/pi/composio-automations.json</code>;
             the Composio CLI also uses <code>~/.composio/automations.json</code> (both are loaded; Pi wins if the same
-            trigger is listed twice). The raw Composio payload is not sent to the agent.
+            trigger is listed twice). A <strong>filtered</strong> webhook summary is appended when an automation runs (not the full raw payload).
           </p>
         </div>
         <button type="button" className={styles.smallBtn} onClick={() => void refreshDefinitions()} disabled={loading}>
