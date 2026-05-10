@@ -22,6 +22,7 @@ import {
   DEFAULT_SIDE_PANEL_LAYOUT,
   normalizeLinearIssueCodingAgent,
   normalizeLinearIssueCodingModel,
+  normalizePiCommitMessageModel,
   normalizeLinearIssueDensity,
   normalizeLinearIssueFilters,
   normalizeLinearIssueScope,
@@ -61,6 +62,25 @@ import { wrapBracketedPaste } from '../utils/bracketed-paste'
 
 /** Dedupe concurrent “open Linear issue in agent” runs per issue id. */
 const linearIssueAgentLaunchInFlight = new Set<string>()
+
+function normalizeRepoPathCompareKey(path: string): string {
+  return path.trim().replace(/\/+$/, '')
+}
+
+function resolveProjectForAutomationRun(
+  projects: Project[],
+  projectId: string,
+  repoPathHint?: string,
+): Project | null {
+  if (projectId) {
+    const byId = projects.find((p) => p.id === projectId)
+    if (byId) return byId
+  }
+  const hint = repoPathHint?.trim()
+  if (!hint) return null
+  const key = normalizeRepoPathCompareKey(hint)
+  return projects.find((p) => normalizeRepoPathCompareKey(p.repoPath) === key) ?? null
+}
 
 function linearIssueWorktreeDirectoryName(issue: LinearIssueNode): string {
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -109,6 +129,10 @@ import {
   type AutomationConfigLike,
   type AutomationTrigger,
 } from '../../shared/automation-types'
+import {
+  DEFAULT_COMPOSIO_WEBHOOK_SETTINGS,
+  type ComposioWebhookSettings,
+} from '../../shared/composio-types'
 import { normalizeWorktreeCredentialRules } from '../../shared/worktree-credentials'
 
 const DEFAULT_PR_LINK_PROVIDER = 'github' as const
@@ -309,6 +333,28 @@ function legacyCronForTrigger(trigger: AutomationTrigger | undefined): string {
   return trigger?.type === 'cron' ? trigger.cronExpression : ''
 }
 
+function isUnknownRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === 'object' && x !== null
+}
+
+function normalizeComposioWebhook(raw: unknown): ComposioWebhookSettings {
+  const d = DEFAULT_COMPOSIO_WEBHOOK_SETTINGS
+  if (!isUnknownRecord(raw)) return { ...d }
+  return {
+    enabled: Boolean(raw.enabled),
+    port:
+      typeof raw.port === 'number' && Number.isFinite(raw.port) && raw.port > 0 && raw.port < 65536
+        ? Math.floor(raw.port)
+        : d.port,
+    path: typeof raw.path === 'string' && raw.path.startsWith('/') ? raw.path : d.path,
+    sharedSecret: typeof raw.sharedSecret === 'string' ? raw.sharedSecret : '',
+    bindAllInterfaces: Boolean(raw.bindAllInterfaces),
+    publicBaseUrl:
+      typeof raw.publicBaseUrl === 'string' ? raw.publicBaseUrl.trim().replace(/\/+$/, '') : '',
+    apiKey: typeof raw.apiKey === 'string' ? raw.apiKey : '',
+  }
+}
+
 function normalizeRendererAutomation(raw: Partial<Automation> & { id: string; name: string; projectId: string }): Automation {
   const trigger: AutomationTrigger = raw.trigger ?? {
     type: 'cron',
@@ -332,6 +378,7 @@ function normalizeRendererAutomation(raw: Partial<Automation> & { id: string; na
     cooldownMs: raw.cooldownMs ?? DEFAULT_AUTOMATION_COOLDOWN_MS,
     lastRunAt: raw.lastRunAt,
     lastRunStatus: raw.lastRunStatus,
+    composio: raw.composio,
   }
 }
 
@@ -345,6 +392,7 @@ function toAutomationIpcConfig(automation: Automation, repoPath: string): Automa
     enabled: automation.enabled,
     repoPath,
     cooldownMs: automation.cooldownMs ?? DEFAULT_AUTOMATION_COOLDOWN_MS,
+    ...(automation.composio ? { composio: automation.composio } : {}),
   }
 }
 
@@ -495,6 +543,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastSavedTabId: null,
   workspaceDialogProjectId: null,
   settings: { ...DEFAULT_SETTINGS },
+  composioWebhook: { ...DEFAULT_COMPOSIO_WEBHOOK_SETTINGS },
   settingsOpen: false,
   automationsOpen: false,
   linearPanelOpen: false,
@@ -1952,6 +2001,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSettings: (partial) =>
     set((s) => ({ settings: { ...s.settings, ...partial } })),
 
+  updateComposioWebhook: (partial) =>
+    set((s) => ({
+      composioWebhook: { ...s.composioWebhook, ...partial },
+    })),
+
   toggleSettings: () =>
     set((s) => ({
       settingsOpen: !s.settingsOpen,
@@ -2558,6 +2612,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         settingsMerged.linearIssueCodingAgent,
       ),
       linearIssueCodingModel: normalizeLinearIssueCodingModel(settingsMerged.linearIssueCodingModel),
+      piCommitMessageModel: normalizePiCommitMessageModel(settingsMerged.piCommitMessageModel),
       worktreeCredentialRules: normalizeWorktreeCredentialRules(settingsMerged.worktreeCredentialRules),
       skills: normalizeSkillEntries(settingsMerged.skills),
       subagents: normalizeSubagentEntries(settingsMerged.subagents),
@@ -2607,6 +2662,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           )
         : {},
       settings,
+      composioWebhook: normalizeComposioWebhook(data.composioWebhook),
       worktreeSyncStatus: new Map(),
       graphiteStacks: new Map(),
       graphiteStackExpanded: false,
@@ -2829,6 +2885,7 @@ function getPersistedSlice(state: AppState): PersistedState {
     workspaces: state.workspaces,
     tabs: state.tabs,
     automations: state.automations,
+    composioWebhook: state.composioWebhook,
     activeWorkspaceId: state.activeWorkspaceId,
     activeTabId: state.activeTabId,
     lastActiveTabByWorkspace: state.lastActiveTabByWorkspace,
@@ -2860,6 +2917,7 @@ useAppStore.subscribe((state, prevState) => {
     state.tabs !== prevState.tabs ||
     state.activeTabId !== prevState.activeTabId ||
     state.automations !== prevState.automations ||
+    state.composioWebhook !== prevState.composioWebhook ||
     state.activeWorkspaceId !== prevState.activeWorkspaceId ||
     state.settings !== prevState.settings ||
     state.sidePanels !== prevState.sidePanels ||
@@ -3051,37 +3109,52 @@ export async function hydrateFromDisk(): Promise<void> {
   // Listen for automation run-started events from main process
   window.api.automations.onRunStarted((data) => {
     const store = useAppStore.getState()
-    const { automationId, automationName, projectId, ptyId, worktreePath, branch } = data
-    const project = store.projects.find((p) => p.id === projectId)
-    if (!project) return
+    const { automationId, automationName, projectId, repoPath: repoPathHint, ptyId, worktreePath, branch, agentType } = data
+    const project = resolveProjectForAutomationRun(store.projects, projectId, repoPathHint)
+    if (!project) {
+      store.addToast({
+        id: crypto.randomUUID(),
+        type: 'error',
+        message: `Could not attach automation “${automationName}” to a project. Open that repository in Constellagent first.`,
+      })
+      return
+    }
 
-    // Create workspace for the run
-    const now = new Date()
-    const timestamp = now.toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric',
-    }) + ' ' + now.toLocaleTimeString('en-US', {
-      hour: 'numeric', minute: '2-digit',
+    // Same as Linear agent flow: exit overlay panels so the new workspace + terminal are visible.
+    useAppStore.setState({
+      automationsOpen: false,
+      settingsOpen: false,
+      linearPanelOpen: false,
+      linearQuickOpenVisible: false,
     })
+
     const wsId = crypto.randomUUID()
+    const wsTitle = automationName.slice(0, 120)
     store.addWorkspace({
       id: wsId,
-      name: `${automationName} · ${timestamp}`,
+      name: wsTitle,
       branch: branch || '',
       worktreePath: worktreePath || project.repoPath,
-      projectId,
+      projectId: project.id,
       automationId,
     })
 
-    // Create terminal tab for the run
+    const terminalTitle = `${automationName.slice(0, 80)} · agent`
     store.addTab({
       id: crypto.randomUUID(),
       workspaceId: wsId,
       type: 'terminal',
-      title: automationName,
+      title: terminalTitle,
       ptyId,
+      ...(agentType ? { agentType } : {}),
     })
 
-    // Update automation lastRunAt
+    store.addToast({
+      id: crypto.randomUUID(),
+      type: 'info',
+      message: `Agent running in new workspace for ${automationName.slice(0, 72)}${automationName.length > 72 ? '…' : ''}`,
+    })
+
     store.updateAutomation(automationId, { lastRunAt: Date.now(), lastRunStatus: 'success' })
   })
 

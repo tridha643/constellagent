@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type {
   Settings,
@@ -15,9 +15,13 @@ import {
   normalizeLinearIssueCodingModel,
   normalizeLinearIssueScope,
   normalizeLinearIssuesPriorityPreset,
+  normalizePiCommitMessageModel,
 } from '../../store/types'
 import type { PlanAgent } from '../../../shared/agent-plan-path'
 import { BUILD_HARNESS_OPTIONS, PLAN_MODEL_PRESETS } from '../../../shared/plan-build-command'
+import type { PiModelOption } from '../../../shared/plan-build-command'
+import { formatPiModelOptionLabel } from '../../../shared/pi-models'
+import type { ComposioNgrokStatus, ComposioWebhookSettings } from '../../../shared/composio-types'
 import {
   getDefaultWorktreeCredentialRules,
   normalizeWorktreeCredentialPattern,
@@ -74,6 +78,7 @@ type SettingsSectionId =
   | 'linear'
   | 'mcp'
   | 'integrations'
+  | 'composio'
   | 'worktree'
   | 'skills'
   | 'shortcuts'
@@ -112,6 +117,11 @@ const SETTINGS_SIDEBAR: readonly {
     id: 'integrations',
     label: 'Agents',
     blurb: 'Claude + Codex hooks and session resumes.',
+  },
+  {
+    id: 'composio',
+    label: 'Composio',
+    blurb: 'Webhook receiver and public callback URL.',
   },
   {
     id: 'worktree',
@@ -236,6 +246,286 @@ function SelectRow({ label, description, value, onChange, options }: {
         ))}
       </select>
     </div>
+  )
+}
+
+function ComposioSettingsSection() {
+  const composioWebhook = useAppStore((s) => s.composioWebhook)
+  const updateComposioWebhook = useAppStore((s) => s.updateComposioWebhook)
+  const addToast = useAppStore((s) => s.addToast)
+  const [status, setStatus] = useState<{
+    callbackUrl?: string
+    listening?: boolean
+    port?: number
+    lastError?: string
+  }>({})
+  const [ngrokStatus, setNgrokStatus] = useState<ComposioNgrokStatus>({ running: false })
+  const [subscribeBusy, setSubscribeBusy] = useState(false)
+  const [ngrokBusy, setNgrokBusy] = useState<'start' | 'stop' | null>(null)
+
+  const refreshStatus = useCallback(() => {
+    void Promise.all([
+      window.api.composio.getWebhookStatus(),
+      window.api.composio.getNgrokStatus(),
+    ])
+      .then(([webhook, ngrok]) => {
+        setStatus(webhook)
+        setNgrokStatus(ngrok)
+      })
+      .catch(() => {})
+  }, [])
+
+  const applyWebhookSettings = useCallback(async (settings: ComposioWebhookSettings) => {
+    const webhook = await window.api.composio.applyWebhookSettings(settings)
+    setStatus(webhook)
+    return webhook
+  }, [])
+
+  useEffect(() => {
+    refreshStatus()
+  }, [refreshStatus])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void applyWebhookSettings(composioWebhook).catch(() => {})
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [applyWebhookSettings, composioWebhook])
+
+  useEffect(() => {
+    if (!ngrokStatus.running && !ngrokBusy) return undefined
+    const timer = window.setInterval(refreshStatus, 3000)
+    return () => window.clearInterval(timer)
+  }, [ngrokBusy, ngrokStatus.running, refreshStatus])
+
+  const startNgrok = useCallback(async () => {
+    setNgrokBusy('start')
+    try {
+      const next = await window.api.composio.startNgrok(composioWebhook.port)
+      setNgrokStatus(next)
+      if (next.publicUrl) {
+        const updatedSettings = { ...composioWebhook, enabled: true, publicBaseUrl: next.publicUrl }
+        updateComposioWebhook({ enabled: true, publicBaseUrl: next.publicUrl })
+        await applyWebhookSettings(updatedSettings)
+        addToast({
+          id: crypto.randomUUID(),
+          message: `ngrok tunnel ready: ${next.publicUrl}`,
+          type: 'info',
+        })
+      } else {
+        addToast({
+          id: crypto.randomUUID(),
+          message: 'ngrok started, but no public HTTPS URL was reported yet.',
+          type: 'info',
+        })
+        refreshStatus()
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start ngrok tunnel'
+      addToast({ id: crypto.randomUUID(), message, type: 'error' })
+      refreshStatus()
+    } finally {
+      setNgrokBusy(null)
+    }
+  }, [addToast, applyWebhookSettings, composioWebhook, refreshStatus, updateComposioWebhook])
+
+  const stopNgrok = useCallback(async () => {
+    setNgrokBusy('stop')
+    try {
+      const previousUrl = ngrokStatus.publicUrl
+      const next = await window.api.composio.stopNgrok()
+      setNgrokStatus(next)
+      if (previousUrl && composioWebhook.publicBaseUrl === previousUrl) {
+        const updatedSettings = { ...composioWebhook, publicBaseUrl: '' }
+        updateComposioWebhook({ publicBaseUrl: '' })
+        await applyWebhookSettings(updatedSettings)
+      } else {
+        refreshStatus()
+      }
+      addToast({ id: crypto.randomUUID(), message: 'ngrok tunnel stopped.', type: 'info' })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to stop ngrok tunnel'
+      addToast({ id: crypto.randomUUID(), message, type: 'error' })
+    } finally {
+      setNgrokBusy(null)
+    }
+  }, [addToast, applyWebhookSettings, composioWebhook, ngrokStatus.publicUrl, refreshStatus, updateComposioWebhook])
+
+  const registerComposioWebhook = useCallback(async () => {
+    setSubscribeBusy(true)
+    try {
+      await applyWebhookSettings(composioWebhook)
+      const res = await window.api.composio.subscribeWebhook({ publicBaseUrl: composioWebhook.publicBaseUrl })
+      const extra = [res.id && `id ${res.id}`, res.secret && 'secret returned']
+        .filter(Boolean)
+        .join(' · ')
+      const registeredMsg = extra ? `Composio webhook registered. ${extra}` : 'Composio webhook registered.'
+      const reusedMsg = extra
+        ? `This webhook URL is already registered with Composio. ${extra}`
+        : 'This webhook URL is already registered with Composio.'
+      addToast({
+        id: crypto.randomUUID(),
+        message: res.reusedExisting ? reusedMsg : registeredMsg,
+        type: 'info',
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Register webhook failed'
+      addToast({ id: crypto.randomUUID(), message, type: 'error' })
+    } finally {
+      setSubscribeBusy(false)
+    }
+  }, [addToast, applyWebhookSettings, composioWebhook])
+
+  const ngrokActive = Boolean(ngrokStatus.running || ngrokStatus.publicUrl)
+  const ngrokStatusLabel = ngrokBusy === 'start'
+    ? 'Starting…'
+    : ngrokBusy === 'stop'
+      ? 'Stopping…'
+      : ngrokActive
+        ? 'Tunnel ready'
+        : 'Not running'
+  const ngrokDescription = ngrokStatus.publicUrl
+    ? `Forwarding to local port ${ngrokStatus.localPort ?? composioWebhook.port}.`
+    : 'Launches the ngrok CLI and fills Public base URL automatically.'
+
+  return (
+    <>
+      <div className={styles.section}>
+        <div className={styles.sectionTitle}>Composio Webhook Receiver</div>
+        <p className={styles.sectionHint}>
+          Configure the local endpoint that receives Composio trigger deliveries. Authentication is handled by the Pi extension, environment, or Composio CLI login — no API key is stored here.
+        </p>
+
+        <ToggleRow
+          label="Enable local webhook receiver"
+          description="Start the local HTTP receiver for Composio trigger payloads."
+          value={composioWebhook.enabled}
+          onChange={(v) => updateComposioWebhook({ enabled: v })}
+        />
+
+        <NumberRow
+          label="Port"
+          description="Local TCP port for the receiver."
+          value={composioWebhook.port}
+          min={1}
+          max={65535}
+          onChange={(v) => updateComposioWebhook({ port: v })}
+        />
+
+        <TextRow
+          label="Path"
+          description="HTTP path that Composio should POST to."
+          value={composioWebhook.path}
+          onChange={(value) => {
+            const trimmed = value.trim()
+            updateComposioWebhook({ path: trimmed.startsWith('/') ? trimmed : `/${trimmed}` })
+          }}
+          placeholder="/webhooks/composio"
+        />
+
+        <TextRow
+          label="Shared secret"
+          description="Optional secret accepted via x-constellagent-webhook-secret or ?secret=."
+          value={composioWebhook.sharedSecret}
+          onChange={(v) => updateComposioWebhook({ sharedSecret: v })}
+          placeholder="Recommended for public tunnels"
+          password
+        />
+
+        <ToggleRow
+          label="Listen on all interfaces"
+          description="Bind to 0.0.0.0 for LAN/tunnel access. Keep a shared secret when exposing this."
+          value={composioWebhook.bindAllInterfaces}
+          onChange={(v) => updateComposioWebhook({ bindAllInterfaces: v })}
+        />
+      </div>
+
+      <div className={styles.section}>
+        <div className={styles.sectionTitle}>Public Callback</div>
+        <p className={styles.sectionHint}>
+          Use an HTTPS tunnel URL when Composio needs to reach this machine. The callback URL combines the public base URL with the receiver path.
+        </p>
+
+        <TextRow
+          label="Public base URL"
+          description="Tunnel origin such as https://abc.ngrok-free.app."
+          value={composioWebhook.publicBaseUrl}
+          onChange={(value) => updateComposioWebhook({ publicBaseUrl: value.trim().replace(/\/+$/, '') })}
+          placeholder="https://…"
+        />
+
+        <div className={styles.row}>
+          <div className={styles.rowText}>
+            <div className={styles.rowLabel}>ngrok tunnel</div>
+            <div className={styles.rowDescription}>{ngrokDescription}</div>
+          </div>
+          <div className={styles.statusStack}>
+            <span className={ngrokActive ? styles.statusPillOn : styles.statusPill}>{ngrokStatusLabel}</span>
+            {ngrokStatus.publicUrl ? (
+              <code className={styles.inlineCode}>{ngrokStatus.publicUrl}</code>
+            ) : null}
+          </div>
+        </div>
+
+        {ngrokStatus.lastError ? (
+          <p className={styles.errorHint}>ngrok error: {ngrokStatus.lastError}</p>
+        ) : null}
+
+        <div className={styles.actionRow}>
+          <button
+            type="button"
+            className={styles.actionBtn}
+            disabled={Boolean(ngrokBusy)}
+            onClick={() => void startNgrok()}
+          >
+            {ngrokBusy === 'start' ? 'Starting ngrok…' : 'Start ngrok'}
+          </button>
+          <button
+            type="button"
+            className={styles.actionBtnDanger}
+            disabled={Boolean(ngrokBusy) || !ngrokActive}
+            onClick={() => void stopNgrok()}
+          >
+            {ngrokBusy === 'stop' ? 'Stopping…' : 'Stop ngrok'}
+          </button>
+        </div>
+
+        <div className={styles.row}>
+          <div className={styles.rowText}>
+            <div className={styles.rowLabel}>Callback URL</div>
+            <div className={styles.rowDescription}>
+              {status.listening ? 'Receiver is listening.' : 'Receiver is not listening yet.'}
+            </div>
+          </div>
+          <code className={styles.callbackUrl}>{status.callbackUrl ?? '…'}</code>
+        </div>
+
+        {status.lastError ? (
+          <p className={styles.errorHint}>Listen error: {status.lastError}</p>
+        ) : null}
+
+        <div className={styles.actionRow}>
+          <button type="button" className={styles.actionBtn} onClick={refreshStatus}>Refresh</button>
+          <button
+            type="button"
+            className={styles.actionBtn}
+            onClick={() => status.callbackUrl && void navigator.clipboard.writeText(status.callbackUrl)}
+            disabled={!status.callbackUrl}
+          >
+            Copy URL
+          </button>
+          <button
+            type="button"
+            className={styles.actionBtn}
+            title="Registers this callback URL with Composio webhook_subscriptions."
+            disabled={subscribeBusy || !status.callbackUrl || !composioWebhook.publicBaseUrl.trim()}
+            onClick={() => void registerComposioWebhook()}
+          >
+            {subscribeBusy ? 'Registering…' : 'Register in Composio'}
+          </button>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -838,6 +1128,56 @@ function McpServerCard({ server, onDelete, onOpenConfig }: {
   )
 }
 
+function PiCommitMessageModelSettingsRow({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  const [piModels, setPiModels] = useState<PiModelOption[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    void window.api.app.listPiModels().then((models) => {
+      if (cancelled) return
+      setPiModels(models)
+    }).catch(() => {
+      if (cancelled) return
+      setPiModels([])
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  const normalized = normalizePiCommitMessageModel(value)
+  const selectValue = normalized === '' ? '__default' : normalized
+
+  const modelSelectOptions = useMemo(() => {
+    const ids = new Set(piModels.map((m) => m.id))
+    const opts: { value: string; label: string }[] = [
+      { value: '__default', label: 'App default (composer-2-fast)' },
+      ...piModels.map((m) => ({
+        value: m.id,
+        label: formatPiModelOptionLabel(m),
+      })),
+    ]
+    if (normalized && !ids.has(normalized)) {
+      opts.push({ value: normalized, label: `${normalized} (custom)` })
+    }
+    return opts
+  }, [piModels, normalized])
+
+  return (
+    <SelectRow
+      label="Commit & PR summary model (Pi)"
+      description="Pi model for AI-generated commit messages (Changes panel and branch + PR flow). PRs created with gh --fill use those commits as title/body. Empty = composer-2-fast."
+      value={selectValue}
+      onChange={(v) => onChange(v === '__default' ? '' : v)}
+      options={modelSelectOptions}
+    />
+  )
+}
+
 function LinearSettingsSection({
   apiKey,
   onKeyChange,
@@ -1197,6 +1537,11 @@ function SettingsSectionBody({
             onChange={(v) => update('quickOpenCodeSearchEnabled', v)}
           />
 
+          <PiCommitMessageModelSettingsRow
+            value={settings.piCommitMessageModel}
+            onChange={(v) => update('piCommitMessageModel', v)}
+          />
+
           <TextRow
             label="Default shell"
             description="Path to shell executable (leave empty for system default)"
@@ -1292,6 +1637,9 @@ function SettingsSectionBody({
           />
         </div>
       )
+
+    case 'composio':
+      return <ComposioSettingsSection />
 
     case 'worktree':
       return <WorktreeCredentialsSection />

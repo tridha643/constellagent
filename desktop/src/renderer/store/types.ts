@@ -6,6 +6,7 @@ import type { ContextWindowData } from '@shared/context-window-types'
 import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '../../shared/automation-types'
 import type { WorktreeCredentialRule } from '../../shared/worktree-credentials'
 import type { GraphiteStackInfo } from '../../shared/graphite-types'
+import type { ComposioAutomationLink, ComposioWebhookSettings } from '../../shared/composio-types'
 import type { AppearanceThemeId } from '../theme/appearance'
 import type { EditorLanguageOverride } from '../utils/language-map'
 import type { GitStatusSnapshot, WorkingTreeDiffSnapshot, WorkingTreeFileStatus } from '../types/working-tree-diff'
@@ -36,6 +37,8 @@ export interface Automation {
   cooldownMs?: number
   lastRunAt?: number
   lastRunStatus?: AutomationRunStatus
+  /** Optional Composio trigger instance linkage (API upsert). */
+  composio?: ComposioAutomationLink
 }
 
 export interface SkillEntry {
@@ -395,6 +398,12 @@ export function normalizeLinearIssueCodingModel(v: unknown): string {
   return typeof v === 'string' ? v : ''
 }
 
+/** Pi model id for commit/PR-adjacent generation; empty means app default (composer-2-fast). */
+export function normalizePiCommitMessageModel(v: unknown): string {
+  if (typeof v !== 'string') return ''
+  return v.trim()
+}
+
 export interface Settings {
   appearanceThemeId: AppearanceThemeId
   confirmOnClose: boolean
@@ -455,6 +464,11 @@ export interface Settings {
    * Value can be a preset id or custom string (same as plan build).
    */
   linearIssueCodingModel: string
+  /**
+   * Pi CLI `--model` for AI-generated commit summaries (Changes panel, branch+PR popover).
+   * GitHub `gh pr create --fill` uses commit messages as PR title/body. Empty = composer-2-fast.
+   */
+  piCommitMessageModel: string
   /** Last-used parent directory in the Add Project → Clone from GitHub flow. Pre-fills the picker on next use. */
   lastClonedParentDir?: string
 }
@@ -496,6 +510,7 @@ export const DEFAULT_SETTINGS: Settings = {
   linearCopyCreatedIssueToClipboard: true,
   linearIssueCodingAgent: 'claude-code',
   linearIssueCodingModel: '',
+  piCommitMessageModel: '',
 }
 
 export interface Toast {
@@ -565,6 +580,8 @@ export interface AppState {
   lastSavedTabId: string | null
   workspaceDialogProjectId: string | null
   settings: Settings
+  /** Composio webhook receiver settings (persisted alongside app state). */
+  composioWebhook: ComposioWebhookSettings
   settingsOpen: boolean
   automationsOpen: boolean
   linearPanelOpen: boolean
@@ -710,6 +727,7 @@ export interface AppState {
   updateProject: (id: string, partial: Partial<Omit<Project, 'id'>>) => void
   deleteProject: (projectId: string) => Promise<void>
   updateSettings: (partial: Partial<Settings>) => void
+  updateComposioWebhook: (partial: Partial<ComposioWebhookSettings>) => void
   toggleSettings: () => void
   toggleAutomations: () => void
   toggleLinear: () => void
@@ -830,4 +848,5 @@ export interface PersistedState {
   reviewPanelStateByWorkspace?: Record<string, ReviewPanelPersistedState>
   stagedSelectionByWorkspace?: Record<string, string[]>
   sidebarActionOrder?: SidebarActionId[]
+  composioWebhook?: ComposioWebhookSettings
 }

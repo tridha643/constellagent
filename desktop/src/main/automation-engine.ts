@@ -118,6 +118,7 @@ export class AutomationEngine {
       if (config.trigger.type !== 'event') continue
       if (config.trigger.eventType !== event.type) continue
       if (event.meta?.automationOrigin === config.id) continue
+      if (event.projectId && config.projectId && event.projectId !== config.projectId) continue
       if (!this.matchesFilters(config.trigger.filters ?? [], event)) continue
       await this.executeAutomation(config, { triggerEvent: event })
     }
@@ -260,9 +261,11 @@ export class AutomationEngine {
       automationId: config.id,
       automationName: config.name,
       projectId: config.projectId,
+      repoPath: config.repoPath,
       ptyId,
       worktreePath,
       branch,
+      agentType: 'claude-code',
     }
     if (!win.isDestroyed()) {
       win.webContents.send(IPC.AUTOMATION_RUN_STARTED, event)

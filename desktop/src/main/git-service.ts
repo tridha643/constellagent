@@ -854,12 +854,16 @@ export class GitService {
       args.push(worktreePath, branch)
     }
 
-    try {
+    const runWorktreeAdd = async (): Promise<void> => {
       reportCreateWorktreeProgress(onProgress, {
         stage: 'create-worktree',
         message: 'Creating worktree...',
       })
       await git(args, repoPath)
+    }
+
+    try {
+      await runWorktreeAdd()
     } catch (err) {
       const msg = friendlyGitError(err, 'Failed to create worktree')
       if (msg === 'BRANCH_CHECKED_OUT' && !force) {
@@ -867,7 +871,19 @@ export class GitService {
           'That branch is already checked out in another work folder. Close the other workspace or switch branches there, then try again.',
         )
       }
-      throw new Error(msg)
+      if (msg === 'WORKTREE_PATH_EXISTS' && force) {
+        await GitService.pruneWorktrees(repoPath)
+        if (existsSync(worktreePath)) {
+          await GitService.removeExistingWorkspacePath(repoPath, worktreePath)
+        }
+        try {
+          await runWorktreeAdd()
+        } catch (err2) {
+          throw new Error(friendlyGitError(err2, 'Failed to create worktree'))
+        }
+      } else {
+        throw new Error(msg)
+      }
     }
 
     // Fast-forward existing branches to match upstream
