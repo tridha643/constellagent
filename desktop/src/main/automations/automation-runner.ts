@@ -10,6 +10,7 @@ import { buildAdHocAgentCommand } from '../../shared/plan-build-command'
 import { PtyManager } from '../pty-manager'
 import { GitService } from '../git-service'
 import { trustPathForClaude } from '../claude-config'
+import { summarizeComposioPayloadForAgent } from '../composio-payload'
 import { lookupPersistedProjectByRepoPath } from '../persisted-state'
 
 interface AutomationWindow extends Pick<BrowserWindow, 'isDestroyed' | 'webContents'> {}
@@ -37,14 +38,18 @@ function timestampSlug(): string {
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
 }
 
-function buildAgentPrompt(definition: ComposioAutomationDefinition): string {
+function buildAgentPrompt(definition: ComposioAutomationDefinition, composioPayload: unknown): string {
   const body = definition.instructions.trim()
   if (!body) {
     throw new Error(
       'This Composio automation has an empty prompt. Set it under Automations → Composio, then try again.',
     )
   }
-  return `${body}\n\n${COMPOSIO_AUTOMATION_AGENT_GUARDRAILS}`
+  const eventBrief = summarizeComposioPayloadForAgent(composioPayload)
+  const briefBlock = eventBrief.trim()
+    ? `\n\n---\n\n${eventBrief}\n\n---\n`
+    : ''
+  return `${body}${briefBlock}\n\n${COMPOSIO_AUTOMATION_AGENT_GUARDRAILS}`
 }
 
 export class AutomationRunner {
@@ -57,7 +62,7 @@ export class AutomationRunner {
     this.getWindows = deps.getWindows ?? getElectronWindows
   }
 
-  async runComposioDefinition(definition: ComposioAutomationDefinition, _payload: unknown): Promise<void> {
+  async runComposioDefinition(definition: ComposioAutomationDefinition, payload: unknown): Promise<void> {
     const win = this.getWindows()[0]
     if (!win) throw new Error('No browser window available')
 
@@ -81,7 +86,7 @@ export class AutomationRunner {
     }
 
     const shell = process.env.SHELL || '/bin/zsh'
-    const prompt = buildAgentPrompt(definition)
+    const prompt = buildAgentPrompt(definition, payload)
     const command = buildAdHocAgentCommand(definition.agent, null, prompt).command
     const ptyId = this.ptyManager.create(
       worktreePath,

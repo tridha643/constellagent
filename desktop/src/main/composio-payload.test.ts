@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   prInfoFromExtracted,
+  summarizeComposioPayloadForAgent,
   tryExtractGithubPrMergeFromComposioBody,
 } from './composio-payload'
 import { mergeDedupeKeyForGithubPr, shouldEmitMergeDedupeKey } from './automation-merge-dedupe'
@@ -105,6 +106,44 @@ describe('composio-payload', () => {
         pull_request: { number: 1, state: 'open', head: { ref: 'a', repo: { full_name: 'o/r' } } },
       }),
     ).toBeNull()
+  })
+
+  test('summarize includes Gmail-like fields and redacts secrets', () => {
+    const s = summarizeComposioPayloadForAgent({
+      type: 'composio.trigger.message',
+      data: {
+        subject: 'Please fix the bug',
+        sender: 'you@example.com',
+        message_text: 'Hello\nWorld',
+        access_token: 'SECRET',
+        message_id: 'abc123',
+      },
+    })
+    expect(s).toContain('subject')
+    expect(s).toContain('Please fix the bug')
+    expect(s).toContain('abc123')
+    expect(s).not.toContain('SECRET')
+  })
+
+  test('summarize formats merged PR', () => {
+    const s = summarizeComposioPayloadForAgent({
+      type: 'composio.trigger.message',
+      data: {
+        action: 'closed',
+        merged: true,
+        number: 147,
+        title: 'Smoke',
+        url: 'https://github.com/tridha643/constellagent/pull/147',
+        head_ref: 'verify/composio-merge-smoke',
+      },
+    })
+    expect(s).toContain('PR merged')
+    expect(s).toContain('#147')
+    expect(s).toContain('verify/composio-merge-smoke')
+  })
+
+  test('returns null-safe empty for undefined', () => {
+    expect(summarizeComposioPayloadForAgent(undefined)).toBe('')
   })
 })
 
