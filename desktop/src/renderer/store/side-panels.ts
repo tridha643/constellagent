@@ -8,6 +8,7 @@ const DEFAULT_PANEL_SIDE: Record<PanelType, Side> = {
   files: 'right',
   changes: 'right',
   graph: 'right',
+  browser: 'right',
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -132,6 +133,7 @@ export function panelLabel(panel: PanelType): string {
   if (panel === 'project') return 'Projects'
   if (panel === 'files') return 'Files'
   if (panel === 'changes') return 'Changes'
+  if (panel === 'browser') return 'Browser'
   return 'Git'
 }
 
