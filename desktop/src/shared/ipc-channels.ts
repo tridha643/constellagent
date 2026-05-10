@@ -259,4 +259,5 @@ export const IPC = {
   COMPOSIO_LIST_AUTOMATION_DEFINITIONS: 'composio:list-automation-definitions',
   COMPOSIO_SET_AUTOMATION_DEFINITION_ENABLED: 'composio:set-automation-definition-enabled',
   COMPOSIO_SET_AUTOMATION_DEFINITION_INSTRUCTIONS: 'composio:set-automation-definition-instructions',
+  COMPOSIO_SET_AUTOMATION_DEFINITION_AGENT: 'composio:set-automation-definition-agent',
 } as const

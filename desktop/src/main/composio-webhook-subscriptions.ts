@@ -3,7 +3,7 @@
  * Delivers trigger payloads as type composio.trigger.message — composio-payload unwraps that envelope.
  */
 
-import { readComposioCliUserApiKey } from './composio-trigger-client'
+import { composioApiKeyCandidates } from './composio-trigger-client'
 
 const COMPOSIO_API_BASE = 'https://backend.composio.dev/api/v3.1'
 
@@ -214,7 +214,7 @@ export async function composioSubscribeTriggerWebhookWithKeyFallback(
   settingsApiKey: string,
   webhookUrl: string,
 ): Promise<ComposioWebhookSubscriptionResult> {
-  const keys = uniqueKeyOrder(settingsApiKey, process.env.COMPOSIO_API_KEY, readComposioCliUserApiKey())
+  const keys = composioApiKeyCandidates(settingsApiKey)
   if (keys.length === 0) {
     throw new Error('No Composio API key: connect Composio in the Pi extension, run `composio login`, or set COMPOSIO_API_KEY.')
   }

@@ -37,6 +37,15 @@ function uniqueKeyOrder(...candidates: Array<string | undefined | null>): string
   return out
 }
 
+/**
+ * Composio REST calls (webhooks, triggers) need a valid `uak_…` user API key.
+ * Prefer explicit env and the same CLI session file `composio login` writes before any legacy
+ * value persisted in app settings — those are often stale and still produce confusing 401s.
+ */
+export function composioApiKeyCandidates(settingsApiKey: string): string[] {
+  return uniqueKeyOrder(process.env.COMPOSIO_API_KEY, readComposioCliUserApiKey(), settingsApiKey)
+}
+
 export interface ComposioTriggerUpsertInput {
   apiKey: string
   slug: string
@@ -84,12 +93,11 @@ export async function composioTriggerUpsert(input: ComposioTriggerUpsertInput): 
 }
 
 /**
- * Try UI/env API keys first; on 401 retry with the same key file the Composio CLI uses
- * (`~/.composio/user_data.json`), since `composio dev` / `composio triggers` does not use the
- * Automations text field.
+ * Try each candidate from {@link composioApiKeyCandidates} (env → CLI session file → legacy settings field).
+ * On 401, retry with the next key so a stale saved key does not block a working `composio login`.
  */
 export async function composioTriggerUpsertWithCliFallback(input: ComposioTriggerUpsertInput): Promise<ComposioTriggerUpsertResult> {
-  const keys = uniqueKeyOrder(input.apiKey, process.env.COMPOSIO_API_KEY, readComposioCliUserApiKey())
+  const keys = composioApiKeyCandidates(input.apiKey)
   if (keys.length === 0) {
     throw new Error('No Composio API key: connect Composio in the Pi extension, run `composio login`, or set COMPOSIO_API_KEY')
   }
@@ -164,7 +172,7 @@ export function pickPreferredGithubConnectedAccountId(
 }
 
 export async function composioSuggestGithubConnectedAccountId(settingsApiKeyField: string): Promise<string | null> {
-  const keys = uniqueKeyOrder(settingsApiKeyField, process.env.COMPOSIO_API_KEY, readComposioCliUserApiKey())
+  const keys = composioApiKeyCandidates(settingsApiKeyField)
   for (const apiKey of keys) {
     try {
       const rows = await composioListActiveGithubConnectedAccounts(apiKey)

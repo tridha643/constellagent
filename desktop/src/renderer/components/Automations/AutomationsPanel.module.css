@@ -851,6 +851,36 @@
   overflow: hidden;
 }
 
+.composioAgentRow {
+  margin-top: var(--space-2);
+  width: 100%;
+}
+
+.composioAgentSelect {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  box-sizing: border-box;
+  padding: 6px var(--space-3);
+  border: 1px solid var(--panel-border-inner);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.composioAgentSelect:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--text-secondary) 45%, var(--panel-border-inner));
+}
+
+.composioAgentSelect:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .composioPromptBlock {
   margin-top: var(--space-2);
   width: 100%;

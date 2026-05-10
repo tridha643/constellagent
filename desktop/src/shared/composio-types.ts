@@ -78,6 +78,29 @@ export type ComposioAutomationAgent =
   | 'opencode'
   | 'pi-constell'
 
+/** Canonical hook order for UIs and validation. */
+export const COMPOSIO_AUTOMATION_AGENTS: readonly ComposioAutomationAgent[] = [
+  'claude-code',
+  'codex',
+  'gemini',
+  'cursor',
+  'opencode',
+  'pi-constell',
+]
+
+export const COMPOSIO_AUTOMATION_AGENT_LABELS: Record<ComposioAutomationAgent, string> = {
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  gemini: 'Gemini',
+  cursor: 'Cursor',
+  opencode: 'OpenCode',
+  'pi-constell': 'Pi (Constell)',
+}
+
+export function isComposioAutomationAgent(value: unknown): value is ComposioAutomationAgent {
+  return typeof value === 'string' && (COMPOSIO_AUTOMATION_AGENTS as readonly string[]).includes(value)
+}
+
 /**
  * Appended after the file-backed `instructions` field when spawning the agent.
  * Kept in one place so the Automations UI can show the same text.
