@@ -27,7 +27,9 @@ function repoPathHintFromRaw(raw: unknown): string | null {
   const metadata = isRecord(raw.metadata) ? raw.metadata : {}
   const workspaceFromTopLevel = typeof raw.workspace === 'string' ? raw.workspace.trim() : ''
   const workspaceFromMetadata = typeof metadata.workspace === 'string' ? metadata.workspace.trim() : ''
-  const w = workspaceFromTopLevel || workspaceFromMetadata
+  /** Composio CLI `~/.composio/automations.json` often sets this to an absolute clone path. */
+  const repoPathFromMetadata = typeof metadata.repoPath === 'string' ? metadata.repoPath.trim() : ''
+  const w = workspaceFromTopLevel || workspaceFromMetadata || repoPathFromMetadata
   return w.length > 0 ? w : null
 }
 
@@ -46,8 +48,8 @@ function repoNameFromPiSlug(piSlug: string): string {
 }
 
 /**
- * Resolve a on-disk repo path for an automation row: explicit workspace first, then match
- * `metadata.repo` (`owner/repo`) against folder name(s) in the path pool.
+ * Resolve a on-disk repo path for an automation row: `workspace` / `metadata.workspace` / `metadata.repoPath`,
+ * else match `metadata.repo` (`owner/repo` or bare repo name) against folder name(s) in the path pool.
  *
  * @param repoPathsFilter `null` → all persisted projects; otherwise only these paths (e.g. open tabs).
  */
