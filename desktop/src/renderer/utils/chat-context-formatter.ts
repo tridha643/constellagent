@@ -54,6 +54,7 @@ function formatBrowserContext(s: ChatSnippet): string {
   if (b.classes.length > 0) lines.push(`Classes: ${b.classes.join(' ')}`)
   if (b.textPreview) lines.push(`Text: "${b.textPreview}"`)
   if (b.url) lines.push(`URL: ${b.url}`)
+  if (b.userNote?.trim()) lines.push(`User note: ${b.userNote.trim()}`)
   if (s.text && s.text !== b.textPreview) lines.push(s.text)
   return lines.join('\n')
 }

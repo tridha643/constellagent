@@ -36,6 +36,13 @@ import type { Side } from './store/types'
 import { readPanelDockDrag } from './utils/panel-dnd'
 import styles from './App.module.css'
 
+/** Hard caps were 400/500px and felt locked on wide layouts; still reserve space for the center pane. */
+function sidePanelMaxSizePx(projectOnly: boolean, viewportWidth: number): number {
+  const absCap = projectOnly ? 1200 : 2400
+  const viewportCap = Math.max(320, viewportWidth - 280)
+  return Math.min(absCap, viewportCap)
+}
+
 function DockEdgeTarget({
   side,
   active,
@@ -173,6 +180,13 @@ export function App() {
   const switchStartedAtRef = useRef<number | null>(null)
   const prevWorkspaceIdRef = useRef<string | null>(null)
   const [dockEdgeHover, setDockEdgeHover] = useState<Side | null>(null)
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth)
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     applyAppearanceTheme(appearanceThemeId)
@@ -246,19 +260,19 @@ export function App() {
     const projectOnly = sidePanels.left.panelOrder.includes('project') && sidePanels.left.panelOrder.length === 1
     return {
       minSize: 160,
-      maxSize: projectOnly ? 400 : 500,
+      maxSize: sidePanelMaxSizePx(projectOnly, viewportWidth),
       preferredSize: projectOnly ? 220 : 280,
     }
-  }, [sidePanels.left.panelOrder])
+  }, [sidePanels.left.panelOrder, viewportWidth])
 
   const rightSplitPaneSizes = useMemo(() => {
     const projectOnly = sidePanels.right.panelOrder.includes('project') && sidePanels.right.panelOrder.length === 1
     return {
       minSize: projectOnly ? 160 : 240,
-      maxSize: projectOnly ? 400 : 500,
+      maxSize: sidePanelMaxSizePx(projectOnly, viewportWidth),
       preferredSize: projectOnly ? 220 : 280,
     }
-  }, [sidePanels.right.panelOrder])
+  }, [sidePanels.right.panelOrder, viewportWidth])
 
   /** Allotment pane order is fixed: [left, center, right]. Snap-drag collapses side panes to match store `open`. */
   const onAllotmentVisibleChange = useCallback(
