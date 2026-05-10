@@ -1,3 +1,4 @@
+import './load-env-local'
 import { createHash } from 'crypto'
 import { app, BrowserWindow, Menu, shell } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'

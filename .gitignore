@@ -6,6 +6,10 @@ packages/pi-gui-pi-sdk-driver/dist/
 pnpm-lock.yaml
 .constellagent/
 context.md
+.env
+.env.local
+desktop/.env
+desktop/.env.local
 # Upstream hunk-review skill (installed by scripts/install-hunk-skill.sh / bun run setup)
 desktop/.claude/skills/hunk-review/
 .cursor/skills/hunk-review

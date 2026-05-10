@@ -299,7 +299,8 @@ function ComposioAutomationsSection() {
           <h3 className={styles.composioHeading}>Composio automations</h3>
           <p className={styles.composioHint}>
             File-backed definitions from the Composio × Pi flow. Configure the webhook in Settings → Composio.
-            Edit the coding agent and prompt for each automation below (saved to the repo’s <code>.composio/automations.json</code>).
+            Edit the coding agent and prompt for each automation below (saved to{' '}
+            <code>~/.config/pi/composio-automations.json</code>).
             The raw Composio payload is not sent to the agent.
           </p>
         </div>
@@ -318,7 +319,7 @@ function ComposioAutomationsSection() {
           <span className={styles.emptyCopy}>
             {projects.length === 0
               ? 'Open a repository first, then create a Composio automation.'
-              : 'Create definitions from the Composio extension or save them to .composio/automations.json in one of your open repositories.'}
+              : 'Create definitions from the Composio extension or save them to ~/.config/pi/composio-automations.json.'}
           </span>
         </div>
       ) : (
