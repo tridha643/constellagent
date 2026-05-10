@@ -22,6 +22,25 @@ export function globalComposioAutomationsPath(): string {
   return join(homedir(), '.config', 'pi', 'composio-automations.json')
 }
 
+/**
+ * Composio CLI user store: `~/.composio/automations.json` (alongside `~/.composio/user_data.json`).
+ * Override with `COMPOSIO_HOME_AUTOMATIONS_JSON` if needed.
+ */
+export function userComposioAutomationsPath(): string {
+  const fromEnv = process.env.COMPOSIO_HOME_AUTOMATIONS_JSON?.trim()
+  if (fromEnv) return resolve(fromEnv)
+  return join(homedir(), '.composio', 'automations.json')
+}
+
+/** Read order for listing; earlier files win on duplicate (repoPath+id+trigger). */
+function composioAutomationDefinitionFiles(): string[] {
+  return [globalComposioAutomationsPath(), userComposioAutomationsPath()]
+}
+
+function composioDefinitionDedupeKey(d: ComposioAutomationDefinition): string {
+  return `${d.repoPath}\0${d.id}\0${d.triggerSlug}\0${d.triggerId}`
+}
+
 function repoPathHintFromRaw(raw: unknown): string | null {
   if (!isRecord(raw)) return null
   const metadata = isRecord(raw.metadata) ? raw.metadata : {}
@@ -151,6 +170,32 @@ async function writeRawEntries(filePath: string, entries: ComposioAutomationFile
   await rename(tmpPath, filePath)
 }
 
+async function tryResolveMutationInFile(
+  filePath: string,
+  input: { repoPath: string; id: string },
+): Promise<{
+  filePath: string
+  entries: ComposioAutomationFileEntry[]
+  normalizeRepoPath: string
+} | null> {
+  let stored: ComposioAutomationFileEntry[]
+  try {
+    stored = await readRawEntries(filePath)
+  } catch {
+    return null
+  }
+  for (const entry of stored) {
+    const normRepo =
+      resolveNormRepoForEntry(entry, [input.repoPath]) ?? resolveNormRepoForEntry(entry, null)
+    if (!normRepo) continue
+    const normalized = normalizeEntry(entry, normRepo, filePath)
+    if (normalized && (normalized.id === input.id || entryIdentity(entry) === input.id)) {
+      return { filePath, entries: stored, normalizeRepoPath: normRepo }
+    }
+  }
+  return null
+}
+
 async function resolveMutationTarget(input: {
   repoPath: string
   id: string
@@ -159,21 +204,9 @@ async function resolveMutationTarget(input: {
   entries: ComposioAutomationFileEntry[]
   normalizeRepoPath: string
 } | null> {
-  const globalPath = globalComposioAutomationsPath()
-  let globalEntries: ComposioAutomationFileEntry[]
-  try {
-    globalEntries = await readRawEntries(globalPath)
-  } catch {
-    return null
-  }
-  for (const entry of globalEntries) {
-    const normRepo =
-      resolveNormRepoForEntry(entry, [input.repoPath]) ?? resolveNormRepoForEntry(entry, null)
-    if (!normRepo) continue
-    const normalized = normalizeEntry(entry, normRepo, globalPath)
-    if (normalized && (normalized.id === input.id || entryIdentity(entry) === input.id)) {
-      return { filePath: globalPath, entries: globalEntries, normalizeRepoPath: normRepo }
-    }
+  for (const filePath of composioAutomationDefinitionFiles()) {
+    const hit = await tryResolveMutationInFile(filePath, input)
+    if (hit) return hit
   }
   return null
 }
@@ -181,31 +214,40 @@ async function resolveMutationTarget(input: {
 export async function listComposioAutomationDefinitions(
   repoPaths?: readonly string[],
 ): Promise<ComposioAutomationDefinition[]> {
-  const globalPath = globalComposioAutomationsPath()
   const definitions: ComposioAutomationDefinition[] = []
+  const seen = new Set<string>()
   const allowedRepos =
     repoPaths === undefined
       ? null
       : new Set(Array.from(new Set(repoPaths.map((p) => resolve(p)))))
   const poolFilter = repoPaths === undefined ? null : repoPaths
 
-  try {
-    const entries = await readRawEntries(globalPath)
-    for (const entry of entries) {
-      const normRepo = resolveNormRepoForEntry(entry, poolFilter)
-      if (!normRepo) {
-        console.warn('[composio-automations] skipping entry: add workspace or metadata.repo matching a project folder', {
-          globalPath,
-          name: isRecord(entry) && typeof entry.name === 'string' ? entry.name : undefined,
-        })
-        continue
+  for (const filePath of composioAutomationDefinitionFiles()) {
+    try {
+      const entries = await readRawEntries(filePath)
+      for (const entry of entries) {
+        const normRepo = resolveNormRepoForEntry(entry, poolFilter)
+        if (!normRepo) {
+          console.warn(
+            '[composio-automations] skipping entry: add workspace or metadata.repo matching a project folder',
+            {
+              filePath,
+              name: isRecord(entry) && typeof entry.name === 'string' ? entry.name : undefined,
+            },
+          )
+          continue
+        }
+        if (allowedRepos && !allowedRepos.has(normRepo)) continue
+        const normalized = normalizeEntry(entry, normRepo, filePath)
+        if (!normalized) continue
+        const k = composioDefinitionDedupeKey(normalized)
+        if (seen.has(k)) continue
+        seen.add(k)
+        definitions.push(normalized)
       }
-      if (allowedRepos && !allowedRepos.has(normRepo)) continue
-      const normalized = normalizeEntry(entry, normRepo, globalPath)
-      if (normalized) definitions.push(normalized)
+    } catch (err) {
+      console.warn('[composio-automations] failed to read definitions', { filePath, err })
     }
-  } catch (err) {
-    console.warn('[composio-automations] failed to read definitions', { globalPath, err })
   }
 
   return definitions.sort((a, b) => a.name.localeCompare(b.name))

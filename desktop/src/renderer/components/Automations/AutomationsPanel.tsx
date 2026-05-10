@@ -99,6 +99,11 @@ function formatComposioUpdatedAt(value?: string): string {
   return formatLastRun(ms)
 }
 
+/** Stable row identity when multiple file automations share a repo (distinct triggers). */
+function composioDefinitionRowKey(d: ComposioAutomationDefinition): string {
+  return `${d.repoPath}\0${d.id}\0${d.triggerSlug ?? ''}\0${d.triggerId ?? ''}`
+}
+
 function ComposioAutomationAgentField({
   definition,
   saveDisabled,
@@ -239,7 +244,7 @@ function ComposioAutomationsSection() {
     setLoading(true)
     setError(null)
     try {
-      const next = await window.api.composio.listAutomationDefinitions(repoPaths)
+      const next = await window.api.composio.listAutomationDefinitions(undefined)
       setDefinitions(next)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load Composio automations'
@@ -247,11 +252,14 @@ function ComposioAutomationsSection() {
     } finally {
       setLoading(false)
     }
-  }, [repoPaths])
+  }, [])
+
+  /** Refresh when projects change so `metadata.repo` resolution can pick up new folders. */
+  const projectIds = useMemo(() => projects.map((p) => p.id).sort().join(','), [projects])
 
   useEffect(() => {
     void refreshDefinitions()
-  }, [refreshDefinitions])
+  }, [refreshDefinitions, projectIds])
 
   const patchDefinition = useCallback((updated: ComposioAutomationDefinition) => {
     setDefinitions((prev) => prev.map((entry) => (
@@ -260,7 +268,7 @@ function ComposioAutomationsSection() {
   }, [])
 
   const toggleDefinition = useCallback(async (definition: ComposioAutomationDefinition) => {
-    const key = `${definition.repoPath}:${definition.id}`
+    const key = composioDefinitionRowKey(definition)
     const enabled = !definition.enabled
     setTogglingKey(key)
     setDefinitions((prev) => prev.map((entry) => (
@@ -298,10 +306,14 @@ function ComposioAutomationsSection() {
         <div>
           <h3 className={styles.composioHeading}>Composio automations</h3>
           <p className={styles.composioHint}>
-            File-backed definitions from the Composio × Pi flow. Configure the webhook in Settings → Composio.
-            Edit the coding agent and prompt for each automation below (saved to{' '}
-            <code>~/.config/pi/composio-automations.json</code>).
-            The raw Composio payload is not sent to the agent.
+            File-backed definitions from the Composio × Pi flow (see JSON path below). This block is separate
+            from <strong>App automations</strong> underneath (scheduler / GitHub polling). Configure the webhook in
+            Settings → Composio.
+          </p>
+          <p className={styles.composioHint}>
+            Edits save back to the file shown on each row: Pi uses <code>~/.config/pi/composio-automations.json</code>;
+            the Composio CLI also uses <code>~/.composio/automations.json</code> (both are loaded; Pi wins if the same
+            trigger is listed twice). The raw Composio payload is not sent to the agent.
           </p>
         </div>
         <button type="button" className={styles.smallBtn} onClick={() => void refreshDefinitions()} disabled={loading}>
@@ -319,14 +331,14 @@ function ComposioAutomationsSection() {
           <span className={styles.emptyCopy}>
             {projects.length === 0
               ? 'Open a repository first, then create a Composio automation.'
-              : 'Create definitions from the Composio extension or save them to ~/.config/pi/composio-automations.json.'}
+              : 'Add definitions under ~/.config/pi/composio-automations.json or ~/.composio/automations.json, or create them from the Composio / Pi tools.'}
           </span>
         </div>
       ) : (
         <div className={styles.composioDefinitionList}>
           {definitions.map((definition) => {
             const project = projectForRepo(definition.repoPath)
-            const key = `${definition.repoPath}:${definition.id}`
+            const key = composioDefinitionRowKey(definition)
             const triggerLabel = definition.triggerSlug || definition.triggerId || 'Composio trigger'
             return (
               <div
@@ -964,6 +976,13 @@ export function AutomationsPanel() {
           {view === 'list' ? (
             <>
               <ComposioAutomationsSection />
+              <div className={styles.appAutomationsIntro} role="region" aria-label="App automations">
+                <h3 className={styles.appAutomationsHeading}>App automations</h3>
+                <p className={styles.appAutomationsHint}>
+                  Cron, <strong>GitHub PR events</strong> (poll-based), manual runs, and workspace hooks. These live in
+                  Constellagent state, not in <code>~/.config/pi/composio-automations.json</code>.
+                </p>
+              </div>
               <AutomationList onNew={handleNew} onEdit={handleEdit} />
             </>
           ) : (
