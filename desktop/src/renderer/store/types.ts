@@ -539,6 +539,8 @@ export interface BrowserDomContext {
   displayName: string | null
   source: { file: string; line: number; column?: number } | null
   url?: string
+  /** Optional note from the Browser panel; sent to the agent with this capture. */
+  userNote?: string
 }
 
 export interface ChatSnippet {

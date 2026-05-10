@@ -1,6 +1,6 @@
 /**
  * In-page DOM picker injected into the BrowserPanel webview via `executeJavaScript`.
- * The script installs a hover overlay, captures one click, and emits the picked
+ * The script installs a hover overlay, captures clicks, and emits the picked
  * element's React-aware DOM context back to the host renderer through `console.log`
  * with a `__SPIDEY__:<json>` sentinel — picked up by the webview `console-message`
  * event in BrowserPanel.tsx.
@@ -152,7 +152,8 @@ export const SPIDEY_CLIENT_SOURCE = String.raw`
     e.stopPropagation();
     const el = elementUnder(e.clientX, e.clientY);
     if (el) emit({ __spideySense: 'pick', payload: readDomContext(el) });
-    stop();
+    lastTarget = null;
+    clearPaint();
   }
 
   function onKey(e) {

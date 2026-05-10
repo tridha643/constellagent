@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+const IS_MAC_LIKE =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent)
 import { useAppStore } from '../../store/app-store'
 import type { BrowserDomContext, ChatSnippet } from '../../store/types'
 import { SPIDEY_CLIENT_SOURCE } from './spidey-client'
@@ -19,6 +22,7 @@ function defaultState(): WorkspaceState {
 }
 
 function snippetForItem(item: BrowserCapturedItem): ChatSnippet {
+  const note = item.userNote?.trim()
   const ctx: BrowserDomContext = {
     tagName: item.tagName,
     classes: item.classes,
@@ -26,6 +30,7 @@ function snippetForItem(item: BrowserCapturedItem): ChatSnippet {
     displayName: item.displayName,
     source: item.source,
     url: item.url,
+    ...(note ? { userNote: note } : {}),
   }
   return { text: item.textPreview, browser: ctx }
 }
@@ -60,9 +65,11 @@ export function BrowserPanel({ workspaceId }: { workspaceId: string }) {
           capturedAt: Date.now(),
         }
         setItems((prev) => [...prev, item])
+        return
       }
-      // 'cancel' or 'pick' both end picking mode.
-      setPicking(false)
+      if (parsed.__spideySense === 'cancel') {
+        setPicking(false)
+      }
     } catch {
       // ignore malformed sentinel payloads
     }
@@ -110,28 +117,47 @@ export function BrowserPanel({ workspaceId }: { workspaceId: string }) {
 
   const clearItems = useCallback(() => setItems([]), [])
 
+  const setItemNote = useCallback((id: string, userNote: string) => {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, userNote } : it)))
+  }, [])
+
   const sendAll = useCallback(() => {
     if (items.length === 0) return
     sendContextToAgent(items.map(snippetForItem))
     setItems([])
   }, [items, sendContextToAgent])
 
-  const summary = useMemo(() => {
-    if (!url) return 'Enter a URL to load a page.'
-    return picking ? 'Pick mode — click an element. Esc to cancel.' : `${items.length} captured`
+  const status = useMemo(() => {
+    if (!url) {
+      return { lead: 'Load a URL to open the embedded browser.', picking: false as const }
+    }
+    if (picking) {
+      return {
+        lead: 'Click elements to capture; highlight clears after each pick.',
+        picking: true as const,
+      }
+    }
+    return {
+      lead: items.length === 0 ? 'No elements captured yet.' : `${items.length} in queue`,
+      picking: false as const,
+    }
   }, [url, picking, items.length])
 
   return (
     <div className={styles.wrap}>
       <div className={styles.urlBar}>
         <input
+          className={styles.urlInput}
           value={pendingUrl}
           onChange={(e) => setPendingUrl(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') submitUrl() }}
-          placeholder="http://localhost:5173"
+          placeholder="https://localhost:5173"
           spellCheck={false}
+          aria-label="Page URL"
         />
-        <button type="button" className={styles.btn} onClick={submitUrl}>Go</button>
+        <button type="button" className={styles.btn} onClick={submitUrl}>
+          Go
+        </button>
       </div>
 
       <div className={styles.toolbar}>
@@ -140,11 +166,20 @@ export function BrowserPanel({ workspaceId }: { workspaceId: string }) {
           className={`${styles.btn} ${picking ? styles.btnActive : ''}`}
           onClick={picking ? stopPick : startPick}
           disabled={!url}
-          title={picking ? 'Stop picking (Esc)' : 'Pick a DOM element'}
+          title={picking ? 'Stop picking (Esc in page)' : 'Pick a DOM element'}
         >
-          {picking ? 'Cancel pick' : 'Pick'}
+          {picking ? 'Stop picking' : 'Pick element'}
         </button>
-        <span className={styles.meta}>{summary}</span>
+        <span className={styles.meta}>
+          {status.picking && <span className={styles.pickingPulse} aria-hidden />}
+          <span className={styles.metaStrong}>{status.lead}</span>
+          {status.picking && (
+            <>
+              <kbd className={styles.kbd}>Esc</kbd>
+              <span className={styles.noteHint}>in page</span>
+            </>
+          )}
+        </span>
       </div>
 
       <div className={styles.frameWrap}>
@@ -157,28 +192,71 @@ export function BrowserPanel({ workspaceId }: { workspaceId: string }) {
             allowpopups
           />
         ) : (
-          <div className={styles.empty}>Enter a URL above (typically your local dev server) and press Go.</div>
+          <div className={styles.empty}>
+            Enter a URL above (for example your local dev server), then press Go to load it here.
+          </div>
         )}
       </div>
 
       {items.length > 0 && (
-        <div className={styles.list}>
-          {items.map((it) => (
-            <div key={it.id} className={styles.item}>
-              <div className={styles.itemHead}>
-                {it.displayName && <span className={styles.name}>{`<${it.displayName}>`}</span>}
-                <code>{it.tagName.toLowerCase()}{it.classes.length ? '.' + it.classes.slice(0, 2).join('.') : ''}</code>
-                <button type="button" className={styles.remove} onClick={() => removeItem(it.id)} aria-label="Remove">×</button>
-              </div>
-              {it.textPreview && <div className={styles.itemSub}>“{it.textPreview}”</div>}
-              {it.source && (
-                <div className={styles.itemSub}>
-                  {it.source.file}:{it.source.line}
+        <>
+          <div className={styles.listHeader}>
+            <span className={styles.listTitle}>Captured</span>
+            <span className={styles.listCount}>{items.length}</span>
+          </div>
+          <div className={styles.list}>
+            {items.map((it) => (
+              <div key={it.id} className={styles.item}>
+                <div className={styles.itemHead}>
+                  {it.displayName && <span className={styles.name}>{`<${it.displayName}>`}</span>}
+                  <code>{it.tagName.toLowerCase()}{it.classes.length ? '.' + it.classes.slice(0, 2).join('.') : ''}</code>
+                  <button
+                    type="button"
+                    className={styles.remove}
+                    onClick={() => removeItem(it.id)}
+                    aria-label={`Remove ${it.tagName.toLowerCase()} capture`}
+                  >
+                    ×
+                  </button>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+                {it.textPreview && <div className={styles.itemSub}>“{it.textPreview}”</div>}
+                {it.source && (
+                  <div className={styles.itemSub}>
+                    {it.source.file}:{it.source.line}
+                  </div>
+                )}
+                <div className={styles.noteBlock}>
+                  <label className={styles.noteLabel}>
+                    <span className={styles.noteLabelText}>
+                      Context note
+                      <span className={styles.noteHint}>
+                        <kbd className={styles.kbd}>{IS_MAC_LIKE ? '⌘' : 'Ctrl'}</kbd>
+                        {' + '}
+                        <kbd className={styles.kbd}>↵</kbd>
+                        {' done'}
+                      </span>
+                    </span>
+                    <input
+                      type="text"
+                      className={styles.noteInput}
+                      value={it.userNote ?? ''}
+                      onChange={(e) => setItemNote(it.id, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault()
+                          ;(e.target as HTMLInputElement).blur()
+                        }
+                      }}
+                      placeholder="Optional hint for the agent…"
+                      spellCheck
+                      aria-label={`Context note for ${it.tagName.toLowerCase()}`}
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       <div className={styles.sendRow}>
