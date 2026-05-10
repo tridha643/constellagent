@@ -6,6 +6,7 @@ import type {
   ComposioAutomationDefinition,
   ComposioAutomationFileEntry,
 } from '../../shared/composio-types'
+import { isComposioAutomationAgent } from '../../shared/composio-types'
 import { listPersistedProjectsWithBranches } from '../persisted-state'
 
 const AUTOMATIONS_RELATIVE_PATH = join('.composio', 'automations.json')
@@ -25,17 +26,7 @@ function stableId(value: string): string {
 }
 
 function normalizeAgent(value: unknown): ComposioAutomationAgent {
-  switch (value) {
-    case 'claude-code':
-    case 'codex':
-    case 'gemini':
-    case 'cursor':
-    case 'opencode':
-    case 'pi-constell':
-      return value
-    default:
-      return DEFAULT_AGENT
-  }
+  return isComposioAutomationAgent(value) ? value : DEFAULT_AGENT
 }
 
 function entryIdentity(entry: ComposioAutomationFileEntry): string {
@@ -176,6 +167,37 @@ export async function setComposioAutomationDefinitionInstructions(input: {
     const changed = {
       ...entry,
       instructions: input.instructions,
+      updatedAt: new Date().toISOString(),
+    }
+    updated = normalizeEntry(changed, repoPath, filePath)
+    return changed
+  })
+
+  if (!updated) {
+    throw new Error(`Composio automation not found: ${input.id}`)
+  }
+
+  await writeRawEntries(filePath, next)
+  return updated
+}
+
+export async function setComposioAutomationDefinitionAgent(input: {
+  repoPath: string
+  id: string
+  agent: ComposioAutomationAgent
+}): Promise<ComposioAutomationDefinition> {
+  const repoPath = resolve(input.repoPath)
+  const filePath = composioAutomationsPath(repoPath)
+  const entries = await readRawEntries(filePath)
+  let updated: ComposioAutomationDefinition | null = null
+
+  const next = entries.map((entry) => {
+    const normalized = normalizeEntry(entry, repoPath, filePath)
+    const matches = normalized?.id === input.id || entryIdentity(entry) === input.id
+    if (!matches) return entry
+    const changed: ComposioAutomationFileEntry = {
+      ...entry,
+      agent: input.agent,
       updatedAt: new Date().toISOString(),
     }
     updated = normalizeEntry(changed, repoPath, filePath)

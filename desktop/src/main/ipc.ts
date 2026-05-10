@@ -54,7 +54,7 @@ import {
 } from './project-startup-settings'
 import { getConstellPiHost } from './pi-host-service'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
-import type { ComposioWebhookSettings } from '../shared/composio-types'
+import { type ComposioWebhookSettings, isComposioAutomationAgent } from '../shared/composio-types'
 import { composioWebhookService } from './composio-webhook-service'
 import { composioNgrokService } from './composio-ngrok-service'
 import { composioSubscribeTriggerWebhookWithKeyFallback } from './composio-webhook-subscriptions'
@@ -64,6 +64,7 @@ import { AutomationRunner } from './automations/automation-runner'
 import { AutomationDeliveryRouter } from './automations/delivery-router'
 import {
   listComposioAutomationDefinitions,
+  setComposioAutomationDefinitionAgent,
   setComposioAutomationDefinitionEnabled,
   setComposioAutomationDefinitionInstructions,
 } from './automations/composio-definition-store'
@@ -1589,7 +1590,7 @@ export function registerIpcHandlers(): void {
       if (msg.includes('401') || msg.includes('Unauthorized') || msg.includes('10401')) {
         throw new Error(
           `${msg}\n\n` +
-            `Composio auth is provided by the Pi extension, COMPOSIO_API_KEY, or the CLI login at ~/.composio/user_data.json. Reconnect Composio there and try again.`,
+            `Connected toolkits (Gmail, GitHub, etc.) use OAuth; registering a webhook uses your Composio User API key (\`uak_…\`). A 401 means that key was rejected (expired, revoked, or wrong account). Run \`composio login\` so ~/.composio/user_data.json is fresh, or set COMPOSIO_API_KEY, then try Register again.`,
         )
       }
       throw e
@@ -1628,8 +1629,8 @@ export function registerIpcHandlers(): void {
         if (msg.includes('401') || msg.includes('Unauthorized') || msg.includes('10401')) {
           throw new Error(
             `${msg}\n\n` +
-              `Composio auth is provided by the Pi extension, COMPOSIO_API_KEY, or the CLI login at ~/.composio/user_data.json. Reconnect Composio there and try again. ` +
-              `Dashboard "project" keys are different from CLI login unless you copy the same value.`,
+              `Connected toolkits use OAuth; trigger upsert needs a valid Composio User API key (\`uak_…\`). A 401 means that key was rejected. Run \`composio login\` or set COMPOSIO_API_KEY. ` +
+              `Dashboard "project" keys differ from CLI login unless you use the same \`uak_…\` value.`,
           )
         }
         if (
@@ -1689,6 +1690,23 @@ export function registerIpcHandlers(): void {
         repoPath: input.repoPath,
         id: input.id,
         instructions: input.instructions,
+      })
+    },
+  )
+
+  ipcMain.handle(
+    IPC.COMPOSIO_SET_AUTOMATION_DEFINITION_AGENT,
+    async (_e, input: { repoPath: string; id: string; agent: unknown }) => {
+      if (!input || typeof input.repoPath !== 'string' || typeof input.id !== 'string') {
+        throw new Error('Invalid Composio automation agent update request')
+      }
+      if (!isComposioAutomationAgent(input.agent)) {
+        throw new Error('Invalid agent value')
+      }
+      return setComposioAutomationDefinitionAgent({
+        repoPath: input.repoPath,
+        id: input.id,
+        agent: input.agent,
       })
     },
   )

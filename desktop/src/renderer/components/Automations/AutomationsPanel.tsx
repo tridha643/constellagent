@@ -11,7 +11,10 @@ import { ChevronLeft } from 'lucide-react'
 import { useAppStore } from '../../store/app-store'
 import type { Automation } from '../../store/types'
 import {
+  COMPOSIO_AUTOMATION_AGENT_LABELS,
+  COMPOSIO_AUTOMATION_AGENTS,
   COMPOSIO_AUTOMATION_AGENT_GUARDRAILS,
+  type ComposioAutomationAgent,
   type ComposioAutomationDefinition,
 } from '../../../shared/composio-types'
 import { FloatingPanel } from '../FloatingPanel/FloatingPanel'
@@ -94,6 +97,63 @@ function formatComposioUpdatedAt(value?: string): string {
   const ms = Date.parse(value)
   if (!Number.isFinite(ms)) return value
   return formatLastRun(ms)
+}
+
+function ComposioAutomationAgentField({
+  definition,
+  saveDisabled,
+  onUpdated,
+}: {
+  definition: ComposioAutomationDefinition
+  saveDisabled?: boolean
+  onUpdated: (d: ComposioAutomationDefinition) => void
+}) {
+  const addToast = useAppStore((s) => s.addToast)
+  const [pending, setPending] = useState(false)
+
+  const onChange = useCallback(async (agent: ComposioAutomationAgent) => {
+    if (agent === definition.agent) return
+    setPending(true)
+    try {
+      const updated = await window.api.composio.setAutomationDefinitionAgent({
+        repoPath: definition.repoPath,
+        id: definition.id,
+        agent,
+      })
+      onUpdated(updated)
+      addToast({
+        id: crypto.randomUUID(),
+        type: 'info',
+        message: `Using ${COMPOSIO_AUTOMATION_AGENT_LABELS[agent]} for “${definition.name}”`,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save agent'
+      addToast({ id: crypto.randomUUID(), type: 'error', message })
+    } finally {
+      setPending(false)
+    }
+  }, [addToast, definition.agent, definition.id, definition.name, definition.repoPath, onUpdated])
+
+  return (
+    <div className={styles.composioAgentRow}>
+      <label className={styles.composioPromptLabel} htmlFor={`composio-agent-${definition.id}`}>
+        Agent
+      </label>
+      <select
+        id={`composio-agent-${definition.id}`}
+        className={styles.composioAgentSelect}
+        value={definition.agent}
+        onChange={(event) => void onChange(event.target.value as ComposioAutomationAgent)}
+        disabled={saveDisabled || pending}
+      >
+        {COMPOSIO_AUTOMATION_AGENTS.map((value) => (
+          <option key={value} value={value}>
+            {COMPOSIO_AUTOMATION_AGENT_LABELS[value]}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
 }
 
 function ComposioAutomationPromptField({
@@ -239,7 +299,7 @@ function ComposioAutomationsSection() {
           <h3 className={styles.composioHeading}>Composio automations</h3>
           <p className={styles.composioHint}>
             File-backed definitions from the Composio × Pi flow. Configure the webhook in Settings → Composio.
-            Edit the agent prompt for each automation below (saved to the repo’s <code>.composio/automations.json</code>).
+            Edit the coding agent and prompt for each automation below (saved to the repo’s <code>.composio/automations.json</code>).
             The raw Composio payload is not sent to the agent.
           </p>
         </div>
@@ -277,9 +337,14 @@ function ComposioAutomationsSection() {
                   <div className={styles.rowMeta}>
                     <span>{project?.name ?? 'Unknown repo'}</span>
                     <span>{triggerLabel}</span>
-                    <span>{definition.agent}</span>
+                    <span>{COMPOSIO_AUTOMATION_AGENT_LABELS[definition.agent]}</span>
                     <span>{formatComposioUpdatedAt(definition.updatedAt)}</span>
                   </div>
+                  <ComposioAutomationAgentField
+                    definition={definition}
+                    saveDisabled={togglingKey === key}
+                    onUpdated={patchDefinition}
+                  />
                   <ComposioAutomationPromptField
                     definition={definition}
                     saveDisabled={togglingKey === key}

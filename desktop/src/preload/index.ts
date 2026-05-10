@@ -24,7 +24,7 @@ import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 import type { GithubCloneRepoSuggestion } from '../shared/github-clone-suggestions'
-import type { ComposioAutomationDefinition, ComposioNgrokStatus, ComposioWebhookSettings } from '../shared/composio-types'
+import type { ComposioAutomationDefinition, ComposioAutomationAgent, ComposioNgrokStatus, ComposioWebhookSettings } from '../shared/composio-types'
 
 /** Linear GraphQL via main process (renderer fetch hits CORS). Exposed on `api` and `api.app`. */
 function linearGraphql(
@@ -424,6 +424,8 @@ const api = {
       ipcRenderer.invoke(IPC.COMPOSIO_SET_AUTOMATION_DEFINITION_ENABLED, input) as Promise<ComposioAutomationDefinition>,
     setAutomationDefinitionInstructions: (input: { repoPath: string; id: string; instructions: string }) =>
       ipcRenderer.invoke(IPC.COMPOSIO_SET_AUTOMATION_DEFINITION_INSTRUCTIONS, input) as Promise<ComposioAutomationDefinition>,
+    setAutomationDefinitionAgent: (input: { repoPath: string; id: string; agent: ComposioAutomationAgent }) =>
+      ipcRenderer.invoke(IPC.COMPOSIO_SET_AUTOMATION_DEFINITION_AGENT, input) as Promise<ComposioAutomationDefinition>,
   },
 
   github: {
