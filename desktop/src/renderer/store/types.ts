@@ -104,7 +104,7 @@ export type Tab = {
 
 export type Side = 'left' | 'right'
 
-export type PanelType = 'project' | 'files' | 'changes' | 'graph'
+export type PanelType = 'project' | 'files' | 'changes' | 'graph' | 'browser'
 
 export interface SidePanelState {
   open: boolean
@@ -122,9 +122,9 @@ export interface PanelDockDrag {
   side: Side
 }
 
-export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'graph']
+export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'graph', 'browser']
 
-export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes', 'graph']
+export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes', 'graph', 'browser']
 
 export const DEFAULT_SIDE_PANEL_LAYOUT: SidePanelLayout = {
   left: {
@@ -135,7 +135,7 @@ export const DEFAULT_SIDE_PANEL_LAYOUT: SidePanelLayout = {
   right: {
     open: true,
     activePanel: 'files',
-    panelOrder: ['files', 'changes', 'graph'],
+    panelOrder: ['files', 'changes', 'graph', 'browser'],
   },
 }
 
@@ -517,11 +517,22 @@ export interface ConfirmDialogState {
   onSecondaryConfirm?: () => void
 }
 
+export interface BrowserDomContext {
+  tagName: string
+  classes: string[]
+  textPreview: string
+  displayName: string | null
+  source: { file: string; line: number; column?: number } | null
+  url?: string
+}
+
 export interface ChatSnippet {
   text: string
   filePath?: string
   startLine?: number
   endLine?: number
+  /** Set when this snippet was captured via the in-app Browser panel DOM picker. */
+  browser?: BrowserDomContext
 }
 
 export interface ReviewPanelPersistedState {

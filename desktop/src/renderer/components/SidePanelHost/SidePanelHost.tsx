@@ -4,9 +4,11 @@ import {
   FilePlus,
   FolderTree,
   GitBranch,
+  Globe,
   LayoutList,
   Search,
 } from 'lucide-react'
+import { BrowserPanel } from '../BrowserPanel/BrowserPanel'
 import { useCallback, useMemo, useState, type ComponentType, type DragEvent } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type { PanelType, Side } from '../../store/types'
@@ -32,6 +34,7 @@ const PANEL_ICONS: Record<PanelType, ComponentType<{ size?: number; strokeWidth?
   changes: FileDiff,
   graph: GitBranch,
   project: LayoutList,
+  browser: Globe,
 }
 
 function SidePanelEmptyState({
@@ -70,6 +73,9 @@ function renderPanel(panel: PanelType, workspace: { id: string; worktreePath: st
   }
   if (panel === 'changes') {
     return <ChangedFiles worktreePath={workspace.worktreePath} workspaceId={workspace.id} isActive />
+  }
+  if (panel === 'browser') {
+    return <BrowserPanel workspaceId={workspace.id} />
   }
   return <GitGraph worktreePath={workspace.worktreePath} workspaceId={workspace.id} isActive />
 }
