@@ -1,4 +1,5 @@
 import { RocketLaunch } from '@phosphor-icons/react'
+import { useDraggable, useDroppable } from '@dnd-kit/core'
 import type { LinearIssueNode } from '../../linear/linear-api'
 import type { Workspace } from '../../store/types'
 import { Tooltip } from '../Tooltip/Tooltip'
@@ -14,7 +15,11 @@ interface IssueRowProps {
   onActivate: (issue: LinearIssueNode) => void
   /** Rocket action — open new worktree + agent for this issue. */
   onLaunchAgent: (issue: LinearIssueNode) => void
+  /** 0 = top-level row, 1 = sub-issue rendered indented under its parent. */
+  depth?: 0 | 1
 }
+
+export const ISSUE_DROPPABLE_PREFIX = 'issue:'
 
 function initialsFor(name: string | undefined): string {
   if (!name) return ''
@@ -46,7 +51,8 @@ function formatRelative(iso: string | undefined): string {
 /**
  * Single Linear issue row. Density + linked-workspace styling is driven via
  * data attributes so the parent scroll container can swap density cheaply
- * without remounting rows.
+ * without remounting rows. The row is simultaneously a drag source (move to
+ * another lane / row) and a drop target (become its parent).
  */
 export function IssueRow({
   issue,
@@ -54,7 +60,27 @@ export function IssueRow({
   isLinkedActive,
   onActivate,
   onLaunchAgent,
+  depth = 0,
 }: IssueRowProps) {
+  const dragId = `${ISSUE_DROPPABLE_PREFIX}${issue.id}`
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDragRef,
+    isDragging,
+  } = useDraggable({ id: dragId, data: { type: 'issue', issue } })
+  const { setNodeRef: setDropRef, isOver, active } = useDroppable({
+    id: dragId,
+    data: { type: 'issue', issue },
+  })
+
+  // Combine the drag & drop refs onto the same DOM node so a row can be both
+  // grabbed and used as a parent target.
+  const setRef = (el: HTMLDivElement | null) => {
+    setDragRef(el)
+    setDropRef(el)
+  }
+
   const linkState: 'active' | 'linked' | 'none' = isLinkedActive
     ? 'active'
     : linkedWorkspace
@@ -69,11 +95,26 @@ export function IssueRow({
   const assigneeInitials = initialsFor(issue.assignee?.name)
   const relative = formatRelative(issue.updatedAt ?? issue.createdAt)
 
+  // Highlight as parent target only when another row is being dragged onto this one.
+  const activeIsAnotherRow =
+    active &&
+    typeof active.id === 'string' &&
+    active.id !== dragId &&
+    String(active.id).startsWith(ISSUE_DROPPABLE_PREFIX)
+  const dropActive = isOver && activeIsAnotherRow
+
   return (
     <div
+      ref={setRef}
       className={styles.row}
       data-link-state={linkState}
       data-testid="linear-issue-row"
+      data-depth={depth}
+      data-is-subissue={depth === 1 ? 'true' : 'false'}
+      data-dragging={isDragging ? 'true' : 'false'}
+      data-drop-active={dropActive ? 'true' : 'false'}
+      {...attributes}
+      {...listeners}
     >
       <span className={styles.accent} aria-hidden />
       <span className={styles.stateCell}>
@@ -123,7 +164,13 @@ export function IssueRow({
         <button
           type="button"
           className={styles.launchBtn}
-          onClick={() => onLaunchAgent(issue)}
+          onClick={(e) => {
+            // dnd-kit pointer activation distance prevents drag from firing on a
+            // simple click, but stop propagation so the row's drag listener does
+            // not consume the click event.
+            e.stopPropagation()
+            onLaunchAgent(issue)
+          }}
           aria-label={`Open ${issue.identifier} in coding agent`}
         >
           <RocketLaunch size={14} aria-hidden weight="duotone" />

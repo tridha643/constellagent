@@ -3,11 +3,7 @@
   "private": true,
   "workspaces": ["packages/*", "desktop"],
   "dependencies": {
-    "and": "^0.0.3",
-    "bun": "^1.3.13",
-    "dev": "^0.1.3",
-    "katex": "^0.16.45",
-    "run": "^1.5.0"
+    "katex": "^0.16.45"
   },
   "scripts": {
     "build:pi-gui-packages": "bun run --cwd packages/pi-gui-session-driver build && bun run --cwd packages/pi-gui-catalogs build && bun run --cwd packages/pi-gui-pi-sdk-driver build",
