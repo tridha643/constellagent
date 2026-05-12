@@ -1510,6 +1510,13 @@ function SettingsSectionBody({
           />
 
           <ToggleRow
+            label="Play chime when agent finishes"
+            description="Play a short tone when an agent in a background workspace completes or fails"
+            value={settings.playAgentDoneChime}
+            onChange={(v) => update('playAgentDoneChime', v)}
+          />
+
+          <ToggleRow
             label="Inline diffs"
             description="Show diffs inline instead of side-by-side"
             value={settings.diffInline}
