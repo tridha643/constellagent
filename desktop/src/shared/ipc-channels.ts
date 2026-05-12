@@ -63,6 +63,7 @@ export const IPC = {
   PTY_DESTROY: 'pty:destroy',
   PTY_LIST: 'pty:list',
   PTY_REATTACH: 'pty:reattach',
+  PTY_SNAPSHOT: 'pty:snapshot',
   PTY_DATA: 'pty:data', // prefix for events: `pty:data:{id}`
   PTY_TITLE_CHANGED: 'pty:title-changed',
   PTY_AGENT_DETECTED: 'pty:agent-detected',

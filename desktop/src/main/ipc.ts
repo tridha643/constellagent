@@ -649,6 +649,10 @@ export function registerIpcHandlers(): void {
     return ptyManager.reattach(ptyId, win.webContents)
   })
 
+  ipcMain.handle(IPC.PTY_SNAPSHOT, async (_e, ptyId: string) => {
+    return ptyManager.snapshot(ptyId)
+  })
+
   // ── File handlers ──
   ipcMain.handle(IPC.FS_GET_TREE, async (_e, dirPath: string) => {
     return FileService.getTree(dirPath)

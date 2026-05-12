@@ -34,6 +34,8 @@ interface Props {
 
 /** Cap on the in-memory scrollback ring per terminal (matches main-side cap). */
 const SCROLLBACK_RING_MAX_BYTES = 2 * 1024 * 1024
+const TERMINAL_ATTACH_MAX_ATTEMPTS = 4
+const TERMINAL_ATTACH_RETRY_BASE_MS = 150
 
 export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocusedPane, scrollbackKey }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -115,9 +117,29 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
 
     let disposed = false
     let cleanup: (() => void) | null = null
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
 
-    const setup = () => {
+    const scheduleRetry = (attempt: number, reason: string, err?: unknown) => {
+      if (disposed || attempt >= TERMINAL_ATTACH_MAX_ATTEMPTS) {
+        console.error('Failed to initialize terminal:', { ptyId, reason, err })
+        return
+      }
+      cleanup?.()
+      cleanup = null
+      termRef.current = null
+      fitFnRef.current = null
+      termDiv.innerHTML = ''
+      const delay = TERMINAL_ATTACH_RETRY_BASE_MS * 2 ** attempt
+      console.warn('Retrying terminal attach:', { ptyId, attempt: attempt + 1, reason, delay, err })
+      retryTimer = setTimeout(() => setup(attempt + 1), delay)
+    }
+
+    const setup = (attempt = 0) => {
       try {
+        if (retryTimer) {
+          clearTimeout(retryTimer)
+          retryTimer = null
+        }
         termDiv.innerHTML = ''
 
         const term = new Terminal({
@@ -137,6 +159,9 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
         term.loadAddon(fitAddon)
         term.loadAddon(webLinksAddon)
         term.open(termDiv)
+        void window.api.pty.reattach(ptyId).catch((err) => {
+          console.warn('PTY reattach probe failed during terminal setup:', { ptyId, err })
+        })
 
         // ⌘1–9: xterm can see the keydown before/without the same capture path as `useShortcuts`
         // in some Electron focus cases — handle here so project switching always works from PTY focus.
@@ -163,7 +188,11 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
         const fitTerminal = () => {
           if (disposed) return
           if (termDiv.clientWidth <= 0 || termDiv.clientHeight <= 0) return
-          fitAddon.fit()
+          try {
+            fitAddon.fit()
+          } catch (err) {
+            scheduleRetry(attempt, 'fit-failed', err)
+          }
         }
         fitFnRef.current = fitTerminal
 
@@ -175,6 +204,7 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
         // first non-zero size, also force a refresh so xterm re-paints from
         // its (now-correct) buffer geometry.
         let didFirstFit = false
+        let zeroSizeStartedAt = performance.now()
         const tryFit = () => {
           if (disposed) return
           if (termDiv.clientWidth > 0 && termDiv.clientHeight > 0) {
@@ -187,6 +217,12 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
                 /* refresh is best-effort — xterm versions vary */
               }
             }
+            return
+          }
+          if (active && performance.now() - zeroSizeStartedAt > 1200) {
+            zeroSizeStartedAt = performance.now()
+            void window.api.pty.reattach(ptyId).catch(() => {})
+            scheduleRetry(attempt, 'active-terminal-still-zero-sized')
             return
           }
           requestAnimationFrame(tryFit)
@@ -240,18 +276,23 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
           if (scrollbackKey) appendToScrollbackRing(data)
         })
 
-        // Track 6: replay any saved scrollback before live data flows so the
-        // user sees their old terminal state on reopen. Bytes appended after
-        // load are guaranteed to come from the live stream above.
-        if (scrollbackKey) {
-          void window.api.pty.loadScrollback(scrollbackKey).then((saved) => {
-            if (disposed || !saved) return
-            // Prepend a soft visual divider so it's clear what's restored
-            // history vs. live output. Plain ANSI dim — survives any theme.
-            term.write(saved)
-            scrollbackRingRef.current = saved
-          }).catch(() => {})
-        }
+        // Prefer the live main-process ring when remounting after a tab switch.
+        // Fall back to disk scrollback only for fresh app starts where the PTY
+        // ring is empty; otherwise remounting an inactive tab would duplicate
+        // its history every time it becomes active again.
+        void window.api.pty.snapshot(ptyId).then(async (snapshot) => {
+          if (disposed) return
+          if (snapshot) {
+            term.write(snapshot)
+            scrollbackRingRef.current = snapshot
+            return
+          }
+          if (!scrollbackKey) return
+          const saved = await window.api.pty.loadScrollback(scrollbackKey)
+          if (disposed || !saved) return
+          term.write(saved)
+          scrollbackRingRef.current = saved
+        }).catch(() => {})
 
         termRef.current = term
 
@@ -269,7 +310,7 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
           if (!disposed && active) term.focus()
         }, 50)
       } catch (err) {
-        console.error('Failed to initialize terminal:', err)
+        scheduleRetry(attempt, 'setup-threw', err)
       }
     }
 
@@ -277,6 +318,7 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
 
     return () => {
       disposed = true
+      if (retryTimer) clearTimeout(retryTimer)
       cleanup?.()
       cleanup = null
       termRef.current = null

@@ -283,8 +283,12 @@ export function App() {
     [setSidePanelOpen],
   )
 
-  // All terminal tabs across every workspace — kept alive to preserve PTY state
-  const allTerminals = allTabs.filter((t): t is Extract<typeof t, { type: 'terminal' }> => t.type === 'terminal')
+  // Keep PTY processes alive in main, but only mount the active terminal UI.
+  // Inactive xterm DOM trees are expensive and can starve new terminal setup
+  // under heavy mixed-tab load; TerminalPanel rehydrates from the main PTY ring.
+  const mountedTerminals = allTabs.filter((t): t is Extract<typeof t, { type: 'terminal' }> => (
+    t.type === 'terminal' && t.id === activeTabId
+  ))
   // All file tabs — kept mounted so unsaved edits, scroll position, cursor,
   // selection, and undo stack survive tab switches (mirrors terminal pattern).
   const allFileTabs = allTabs.filter((t): t is Extract<typeof t, { type: 'file' }> => t.type === 'file')
@@ -325,9 +329,8 @@ export function App() {
               <div className={styles.centerPanel}>
                 <TabBar />
                 <div className={styles.contentArea}>
-                  {/* Keep ALL terminal panels alive across workspaces so PTY
-                      state (scrollback, TUI layout) is never lost */}
-                  {allTerminals.map((t) => {
+                  {/* Mount only active terminal UI; PTYs and recent output stay alive in main. */}
+                  {mountedTerminals.map((t) => {
                     const ws = workspaces.find((w) => w.id === t.workspaceId)
                     return (
                       <TerminalSplitContainer
