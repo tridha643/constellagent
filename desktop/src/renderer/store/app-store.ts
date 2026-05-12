@@ -1000,13 +1000,30 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!ws) return
 
     const shell = s.settings.defaultShell || undefined
+    const tabId = crypto.randomUUID()
+    console.info('[terminal:create]', 'creating PTY for active workspace', {
+      workspaceId: ws.id,
+      worktreePath: ws.worktreePath,
+      tabId,
+    })
     const ptyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
-    const wsTabs = s.tabs.filter((t) => t.workspaceId === s.activeWorkspaceId)
+    const livePtys = new Set(await window.api.pty.list().catch(() => [] as string[]))
+    if (!livePtys.has(ptyId)) {
+      console.warn('[terminal:create]', 'created PTY was not present in live list', {
+        workspaceId: ws.id,
+        ptyId,
+        tabId,
+        livePtyCount: livePtys.size,
+      })
+    }
+    const latest = get()
+    const workspaceId = ws.id
+    const wsTabs = latest.tabs.filter((t) => t.workspaceId === workspaceId)
     const termCount = wsTabs.filter((t) => t.type === 'terminal').length
 
     get().addTab({
-      id: crypto.randomUUID(),
-      workspaceId: s.activeWorkspaceId,
+      id: tabId,
+      workspaceId,
       type: 'terminal',
       title: `Terminal ${termCount + 1}`,
       ptyId,

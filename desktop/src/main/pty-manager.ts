@@ -34,6 +34,8 @@ interface PtyInstance {
   oscTitleTimer: ReturnType<typeof setTimeout> | null
   /** Unterminated OSC chunks (Codex / crossterm often use ST + split writes) */
   oscTitleCarry: string
+  /** Recent PTY output for renderer remounts; PTY stays alive while xterm UI is unmounted. */
+  outputRing: string
 }
 
 interface ProcessEntry {
@@ -92,6 +94,8 @@ function detectAgentFromCommand(command: string): string | null {
   }
   return null
 }
+
+const MAIN_OUTPUT_RING_MAX_BYTES = 2 * 1024 * 1024
 
 const CODEX_PROMPT_BUFFER_MAX = 4096
 const CODEX_QUESTION_HEADER_RE = /Question\s+\d+\s*\/\s*\d+\s*\(\s*\d+\s+unanswered\s*\)/i
@@ -227,6 +231,13 @@ export class PtyManager {
   onAgentDetected?: (ptyId: string, agentType: string) => void
   onPtyData?: (ptyId: string, data: string) => void
 
+  private appendOutputRing(instance: PtyInstance, data: string): void {
+    const next = instance.outputRing + data
+    instance.outputRing = next.length > MAIN_OUTPUT_RING_MAX_BYTES
+      ? next.slice(next.length - MAIN_OUTPUT_RING_MAX_BYTES)
+      : next
+  }
+
   create(workingDir: string, webContents: WebContents, shell?: string, command?: string[], initialWrite?: string, extraEnv?: Record<string, string>): string {
     const id = `pty-${++this.nextId}`
 
@@ -254,20 +265,6 @@ export class PtyManager {
     })
 
     let pendingWrite = initialWrite
-    proc.onData((data) => {
-      if (!instance.webContents.isDestroyed()) {
-        instance.webContents.send(`${IPC.PTY_DATA}:${id}`, data)
-      }
-      this.onPtyData?.(id, data)
-      this.handleCodexQuestionPrompt(instance, data)
-      this.handleOscTitle(id, instance, data)
-      // Write initial command on first output (shell is ready)
-      if (pendingWrite) {
-        const toWrite = pendingWrite
-        pendingWrite = undefined
-        proc.write(toWrite)
-      }
-    })
 
     const instance: PtyInstance = {
       process: proc,
@@ -284,7 +281,24 @@ export class PtyManager {
       pendingOscTitle: null,
       oscTitleTimer: null,
       oscTitleCarry: '',
+      outputRing: '',
     }
+
+    proc.onData((data) => {
+      this.appendOutputRing(instance, data)
+      if (!instance.webContents.isDestroyed()) {
+        instance.webContents.send(`${IPC.PTY_DATA}:${id}`, data)
+      }
+      this.onPtyData?.(id, data)
+      this.handleCodexQuestionPrompt(instance, data)
+      this.handleOscTitle(id, instance, data)
+      // Write initial command on first output (shell is ready)
+      if (pendingWrite) {
+        const toWrite = pendingWrite
+        pendingWrite = undefined
+        proc.write(toWrite)
+      }
+    })
 
     proc.onExit(({ exitCode }) => {
       this.clearCodexWorkspaceActivity(instance.workspaceId, instance.process.pid)
@@ -458,6 +472,11 @@ export class PtyManager {
   /** Return IDs of all live PTY processes */
   list(): string[] {
     return Array.from(this.ptys.keys())
+  }
+
+  /** Recent output for rehydrating xterm after inactive terminal UIs unmount. */
+  snapshot(ptyId: string): string {
+    return this.ptys.get(ptyId)?.outputRing ?? ''
   }
 
   getPtyIdsForWorkspace(workspaceId: string): string[] {

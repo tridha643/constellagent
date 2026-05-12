@@ -178,6 +178,8 @@ const api = {
       ipcRenderer.invoke(IPC.PTY_LIST) as Promise<string[]>,
     reattach: (ptyId: string) =>
       ipcRenderer.invoke(IPC.PTY_REATTACH, ptyId) as Promise<boolean>,
+    snapshot: (ptyId: string) =>
+      ipcRenderer.invoke(IPC.PTY_SNAPSHOT, ptyId) as Promise<string>,
     onData: (ptyId: string, callback: (data: string) => void) => {
       const channel = `${IPC.PTY_DATA}:${ptyId}`
       const listener = (_event: Electron.IpcRendererEvent, data: string) => callback(data)

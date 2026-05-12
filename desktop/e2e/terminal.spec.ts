@@ -155,6 +155,68 @@ test.describe('Terminal functionality', () => {
       await app.close()
     }
   })
+
+  test('Cmd+T after many mixed tabs loads a usable terminal', async () => {
+    test.setTimeout(90_000)
+    const repoPath = createTestRepo('term-stress')
+    const { app, window } = await launchApp()
+
+    try {
+      const { worktreePath } = await setupWorkspaceWithTerminal(window, repoPath)
+      await window.evaluate(async ({ worktreePath: wt }) => {
+        const store = (window as any).__store.getState()
+        for (let i = 0; i < 10; i += 1) {
+          await store.createTerminalForActiveWorkspace()
+          const filePath = `${wt}/stress-${i}.txt`
+          await (window as any).api.fs.writeFile(filePath, `stress ${i}\n`)
+          store.openFileTab(filePath)
+        }
+      }, { worktreePath })
+
+      await window.keyboard.press(process.platform === 'darwin' ? 'Meta+t' : 'Control+t')
+      await window.waitForTimeout(2500)
+
+      const activeTerminal = await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        const tab = store.tabs.find((t: any) => t.id === store.activeTabId)
+        return tab?.type === 'terminal' ? { tabId: tab.id, ptyId: tab.ptyId } : null
+      })
+      expect(activeTerminal?.ptyId).toMatch(/^pty-/)
+
+      const terminalInner = window.locator('[class*="terminalInner"]').first()
+      await expect(terminalInner).toBeVisible()
+      const dims = await terminalInner.evaluate((el) => ({
+        width: (el as HTMLElement).clientWidth,
+        height: (el as HTMLElement).clientHeight,
+        xterm: Boolean(el.querySelector('.xterm')),
+      }))
+      expect(dims.width).toBeGreaterThan(100)
+      expect(dims.height).toBeGreaterThan(100)
+      expect(dims.xterm).toBe(true)
+
+      const marker = `STRESS_${Date.now()}`
+      const received = await window.evaluate(({ ptyId, marker }) => {
+        return new Promise<boolean>((resolve) => {
+          let acc = ''
+          const unsub = (window as any).api.pty.onData(ptyId, (data: string) => {
+            acc += data
+            if (acc.includes(marker)) {
+              unsub()
+              resolve(true)
+            }
+          })
+          ;(window as any).api.pty.write(ptyId, `echo ${marker}\n`)
+          setTimeout(() => {
+            unsub()
+            resolve(false)
+          }, 5000)
+        })
+      }, { ptyId: activeTerminal.ptyId, marker })
+      expect(received).toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
 })
 
 test.describe('Terminal clipboard (macOS)', () => {
