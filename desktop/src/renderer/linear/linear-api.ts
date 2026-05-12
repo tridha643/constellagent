@@ -60,6 +60,7 @@ export const Q_ASSIGNED_ISSUES = `query LinearAssignedIssues {
         project { id name }
         assignee { id name }
         creator { id name }
+        parent { id }
       }
     }
   }
@@ -81,6 +82,7 @@ export const Q_CREATED_ISSUES = `query LinearCreatedIssues {
       project { id name }
       assignee { id name }
       creator { id name }
+      parent { id }
     }
   }
 }`
@@ -213,6 +215,7 @@ export const Q_ISSUES_FOR_PROJECT_IDS = `query LinearIssuesForProjectIds($ids: [
       project { id name }
       assignee { id name }
       creator { id name }
+      parent { id }
     }
   }
 }`
@@ -380,6 +383,7 @@ export type LinearIssueNode = {
   project?: { id: string; name: string } | null
   assignee?: { id: string; name: string } | null
   creator?: { id: string; name: string } | null
+  parent?: { id: string } | null
 }
 
 export type LinearProjectTeamSummary = {
@@ -780,21 +784,50 @@ export async function linearCreateIssue(
   return { issue: payload.issue }
 }
 
-/** Pick a workflow state UUID that represents active / in-progress work. */
-export function pickInProgressWorkflowStateId(
+/** Linear workflow state buckets — keep aligned with `LinearIssueStateType` in store/types. */
+export type LinearWorkflowStateType =
+  | 'triage'
+  | 'backlog'
+  | 'unstarted'
+  | 'started'
+  | 'completed'
+  | 'canceled'
+
+const NAME_HINTS_BY_TYPE: Record<LinearWorkflowStateType, string[]> = {
+  triage: ['triage'],
+  backlog: ['backlog'],
+  unstarted: ['todo', 'to do', 'planned', 'unstarted', 'ready'],
+  started: ['in progress', 'in development', 'doing', 'active', 'working'],
+  completed: ['done', 'completed', 'shipped', 'merged', 'released'],
+  canceled: ['cancel', 'canceled', 'cancelled', 'duplicate', 'wont do', "won't do"],
+}
+
+/**
+ * Pick a workflow state UUID matching `targetType`. Prefers an exact `type` match;
+ * falls back to a name-hint heuristic so workspaces with non-standard state names
+ * (or only-name workflows) still resolve.
+ */
+export function pickWorkflowStateIdForType(
   states: Array<{ id: string; name: string; type?: string | null }>,
+  targetType: LinearWorkflowStateType,
 ): string | null {
   if (!states.length) return null
   const normType = (t: string | null | undefined) => String(t ?? '').toLowerCase()
   const normName = (n: string) => n.toLowerCase().trim()
-  const started = states.find((s) => normType(s.type) === 'started')
-  if (started) return started.id
-  const nameHints = ['in progress', 'in development', 'doing', 'active', 'working']
-  for (const hint of nameHints) {
+  const byType = states.find((s) => normType(s.type) === targetType)
+  if (byType) return byType.id
+  for (const hint of NAME_HINTS_BY_TYPE[targetType]) {
     const m = states.find((s) => normName(s.name).includes(hint))
     if (m) return m.id
   }
   return null
+}
+
+/** Back-compat wrapper — kept so `linearIssueMoveToInProgress` stays untouched. */
+export function pickInProgressWorkflowStateId(
+  states: Array<{ id: string; name: string; type?: string | null }>,
+): string | null {
+  return pickWorkflowStateIdForType(states, 'started')
 }
 
 export async function linearFetchTeamWorkflowStates(
@@ -814,6 +847,109 @@ export async function linearFetchTeamWorkflowStates(
   }
   const nodes = res.data?.workflowStates?.nodes?.filter(Boolean) ?? []
   return { nodes }
+}
+
+type WorkflowStateNode = { id: string; name: string; type?: string | null }
+const workflowStateCache = new Map<string, WorkflowStateNode[]>()
+
+/**
+ * Cached lookup for a team's workflow states. Teams rarely change states, so
+ * dragging issues across lanes would otherwise refetch on every drop.
+ */
+export async function getCachedTeamWorkflowStates(
+  apiKey: string,
+  teamId: string,
+): Promise<{ nodes: WorkflowStateNode[]; errors?: LinearGraphQLError[] }> {
+  const cached = workflowStateCache.get(teamId)
+  if (cached) return { nodes: cached }
+  const { nodes, errors } = await linearFetchTeamWorkflowStates(apiKey, teamId)
+  if (!errors?.length && nodes.length > 0) {
+    workflowStateCache.set(teamId, nodes)
+  }
+  return errors?.length ? { nodes, errors } : { nodes }
+}
+
+/** Test-only — invalidate the workflow-state cache (call between cases). */
+export function __resetWorkflowStateCache(): void {
+  workflowStateCache.clear()
+}
+
+/**
+ * Single-mutation issue move: change `stateId` (and optionally clear `parentId`)
+ * in one `IssueUpdateInput`. Used by the drag-to-state-group flow.
+ *
+ * If `opts.clearParent` is true and `targetType` equals the issue's current
+ * state type, only `parentId: null` is sent (no redundant stateId).
+ */
+export async function linearIssueSetState(
+  apiKey: string,
+  issue: LinearIssueNode,
+  targetType: LinearWorkflowStateType,
+  opts?: { clearParent?: boolean },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const key = apiKey.trim()
+  if (!key) return { ok: false, error: 'missing_api_key' }
+  const teamId = issue.team?.id?.trim()
+  const clearParent = !!opts?.clearParent
+  const currentType = (issue.state?.type ?? '').toLowerCase()
+  const sameType = currentType === targetType
+  const input: Record<string, unknown> = {}
+
+  if (!sameType) {
+    if (!teamId) return { ok: false, error: 'missing_team_id' }
+    const { nodes, errors } = await getCachedTeamWorkflowStates(key, teamId)
+    if (errors?.length) {
+      return { ok: false, error: errors.map((e) => e.message).join('; ') }
+    }
+    const stateId = pickWorkflowStateIdForType(nodes, targetType)
+    if (!stateId) return { ok: false, error: `no_${targetType}_state` }
+    input.stateId = stateId
+  }
+  if (clearParent) {
+    input.parentId = null
+  }
+  if (Object.keys(input).length === 0) {
+    return { ok: true }
+  }
+
+  type UpdatePayload = {
+    issueUpdate: { success: boolean; issue: { id: string } | null } | null
+  }
+  const upd = await linearGraphQL<UpdatePayload>(key, M_ISSUE_UPDATE, {
+    id: issue.id,
+    input,
+  })
+  if (upd.errors?.length) {
+    return { ok: false, error: upd.errors.map((e) => e.message).join('; ') }
+  }
+  if (!upd.data?.issueUpdate?.success) {
+    return { ok: false, error: 'issue_update_failed' }
+  }
+  return { ok: true }
+}
+
+/** Set or clear an issue's parent (drag onto another row, or `null` to detach). */
+export async function linearIssueSetParent(
+  apiKey: string,
+  issueId: string,
+  parentId: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const key = apiKey.trim()
+  if (!key) return { ok: false, error: 'missing_api_key' }
+  type UpdatePayload = {
+    issueUpdate: { success: boolean; issue: { id: string } | null } | null
+  }
+  const upd = await linearGraphQL<UpdatePayload>(key, M_ISSUE_UPDATE, {
+    id: issueId,
+    input: { parentId },
+  })
+  if (upd.errors?.length) {
+    return { ok: false, error: upd.errors.map((e) => e.message).join('; ') }
+  }
+  if (!upd.data?.issueUpdate?.success) {
+    return { ok: false, error: 'issue_update_failed' }
+  }
+  return { ok: true }
 }
 
 export type LinearIssueMoveToProgressResult =

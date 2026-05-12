@@ -180,4 +180,89 @@ describe('groupIssuesByState', () => {
     })
     expect(titleMatch[0]!.issues.map((i) => i.identifier)).toEqual(['ENG-10'])
   })
+
+  describe('sub-issue hierarchy', () => {
+    it('renders a top-level issue at depth 0', () => {
+      const issues: LinearIssueNode[] = [
+        issue({ id: 'a', identifier: 'ENG-1' }),
+      ]
+      const [group] = groupIssuesByState(issues, EMPTY_LINEAR_ISSUE_FILTERS)
+      expect(group!.rows).toEqual([
+        { issue: expect.objectContaining({ id: 'a' }), depth: 0, isSubIssue: false },
+      ])
+    })
+
+    it('renders a sub-issue at depth 1 immediately after its in-bucket parent', () => {
+      const issues: LinearIssueNode[] = [
+        issue({ id: 'parent', identifier: 'ENG-P', priority: 2 }),
+        issue({
+          id: 'child',
+          identifier: 'ENG-C',
+          priority: 3,
+          parent: { id: 'parent' },
+        }),
+        issue({ id: 'other', identifier: 'ENG-O', priority: 4 }),
+      ]
+      const [group] = groupIssuesByState(issues, EMPTY_LINEAR_ISSUE_FILTERS)
+      expect(group!.rows.map((r) => [r.issue.identifier, r.depth])).toEqual([
+        ['ENG-P', 0],
+        ['ENG-C', 1],
+        ['ENG-O', 0],
+      ])
+    })
+
+    it('promotes a sub-issue to depth 0 when its parent is in a different bucket', () => {
+      const issues: LinearIssueNode[] = [
+        issue({
+          id: 'parent',
+          identifier: 'ENG-P',
+          state: { name: 'Backlog', type: 'backlog' },
+        }),
+        issue({
+          id: 'child',
+          identifier: 'ENG-C',
+          parent: { id: 'parent' },
+          state: { name: 'In Progress', type: 'started' },
+        }),
+      ]
+      const groups = groupIssuesByState(issues, EMPTY_LINEAR_ISSUE_FILTERS)
+      const started = groups.find((g) => g.stateType === 'started')!
+      expect(started.rows.map((r) => [r.issue.identifier, r.depth])).toEqual([
+        ['ENG-C', 0],
+      ])
+    })
+
+    it('promotes a sub-issue to depth 0 when its parent is filtered out', () => {
+      const issues: LinearIssueNode[] = [
+        issue({ id: 'parent', identifier: 'ENG-P', priority: 1 }),
+        issue({
+          id: 'child',
+          identifier: 'ENG-C',
+          priority: 3,
+          parent: { id: 'parent' },
+        }),
+      ]
+      const [group] = groupIssuesByState(issues, {
+        ...EMPTY_LINEAR_ISSUE_FILTERS,
+        priorities: [3],
+      })
+      expect(group!.rows.map((r) => [r.issue.identifier, r.depth])).toEqual([
+        ['ENG-C', 0],
+      ])
+    })
+
+    it('preserves sort order within a bucket when no sub-issues are present', () => {
+      const issues: LinearIssueNode[] = [
+        issue({ id: 'a', identifier: 'ENG-A', priority: 1 }),
+        issue({ id: 'b', identifier: 'ENG-B', priority: 2 }),
+        issue({ id: 'c', identifier: 'ENG-C', priority: 4 }),
+      ]
+      const [group] = groupIssuesByState(issues, EMPTY_LINEAR_ISSUE_FILTERS)
+      expect(group!.rows.map((r) => r.issue.identifier)).toEqual([
+        'ENG-A',
+        'ENG-B',
+        'ENG-C',
+      ])
+    })
+  })
 })

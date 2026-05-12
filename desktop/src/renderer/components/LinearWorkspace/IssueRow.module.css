@@ -263,3 +263,56 @@
     transform: none;
   }
 }
+
+/* --- drag-and-drop --------------------------------------------------------- */
+
+@media (hover: hover) and (pointer: fine) {
+  .row .accent {
+    cursor: grab;
+  }
+}
+
+.row[data-dragging='true'] {
+  cursor: grabbing;
+  opacity: 0.4;
+  filter: blur(1px);
+}
+
+/* Highlight the row when another row is being dragged onto it (parent target). */
+.row[data-drop-active='true'] {
+  box-shadow: inset 2px 0 0 var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 6%, transparent);
+  transform: scale(1.005);
+}
+
+/* Sub-issue indent. The grid template column stays the same; we just push the
+   whole row inwards so the parent's accent stripe remains visually anchored. */
+.row[data-depth='1'] {
+  padding-left: var(--space-5, 20px);
+  transition:
+    padding 200ms cubic-bezier(0.77, 0, 0.175, 1),
+    background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.row[data-depth='1']::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--space-3, 12px) - 6px);
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row[data-dragging='true'] {
+    filter: none;
+  }
+  .row[data-drop-active='true'] {
+    transform: none;
+  }
+  .row[data-depth='1'] {
+    transition: background-color 140ms ease;
+  }
+}

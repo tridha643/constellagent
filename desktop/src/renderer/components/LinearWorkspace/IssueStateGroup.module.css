@@ -98,3 +98,21 @@
   flex-direction: column;
   padding: 2px 0;
 }
+
+/* --- drag-and-drop --------------------------------------------------------- */
+
+.group[data-drop-active='true'] {
+  background: color-mix(in srgb, var(--accent-blue) 6%, transparent);
+  border-radius: var(--radius-md);
+  transition: background-color 150ms ease;
+}
+
+.group[data-drop-active='true'] .header {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 45%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .group[data-drop-active='true'] {
+    transition: none;
+  }
+}

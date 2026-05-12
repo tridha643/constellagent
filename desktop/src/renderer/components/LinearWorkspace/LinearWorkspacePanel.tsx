@@ -402,6 +402,18 @@ export function LinearWorkspacePanel() {
     return settings.linearIssueScope === "assigned" ? assigned : created;
   }, [e2eLinearIssues, settings.linearIssueScope, assigned, created]);
 
+  const patchLocalIssue = useCallback(
+    (id: string, patch: Partial<LinearIssueNode>) => {
+      setAssigned((prev) =>
+        prev.map((i) => (i.id === id ? { ...i, ...patch } : i)),
+      );
+      setCreated((prev) =>
+        prev.map((i) => (i.id === id ? { ...i, ...patch } : i)),
+      );
+    },
+    [],
+  );
+
   const workspaceView = settings.linearWorkspaceView;
 
   const openLinearTarget = useMemo<{
@@ -1007,6 +1019,7 @@ export function LinearWorkspacePanel() {
               onLaunchAgent={(issue) =>
                 void startLinearIssueAgentSession(issue)
               }
+              onLocalIssueUpdate={patchLocalIssue}
             />
           ) : null}
           {workspaceView === "projects" ? (
