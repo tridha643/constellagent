@@ -34,6 +34,7 @@ import { markPaint } from './utils/perf'
 import { panelLabel } from './store/side-panels'
 import type { Side } from './store/types'
 import { readPanelDockDrag } from './utils/panel-dnd'
+import { playAgentDoneChime } from './lib/play-chime'
 import styles from './App.module.css'
 
 /** Hard caps were 400/500px and felt locked on wide layouts; still reserve space for the center pane. */
@@ -89,6 +90,7 @@ export function App() {
       const state = useAppStore.getState()
       if (workspaceId !== state.activeWorkspaceId) {
         state.markWorkspaceUnread(workspaceId)
+        if (state.settings.playAgentDoneChime) playAgentDoneChime()
       }
     })
     return unsub
@@ -104,6 +106,7 @@ export function App() {
       for (const wsId of prevActive) {
         if (!nextActive.has(wsId) && wsId !== state.activeWorkspaceId && state.workspaces.some((w) => w.id === wsId)) {
           state.markWorkspaceUnread(wsId)
+          if (state.settings.playAgentDoneChime) playAgentDoneChime()
         }
       }
 

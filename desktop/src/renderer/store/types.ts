@@ -410,6 +410,8 @@ export interface Settings {
   autoSaveOnBlur: boolean
   defaultShell: string
   restoreWorkspace: boolean
+  /** Play a short chime when an agent in a background workspace completes or fails. */
+  playAgentDoneChime: boolean
   diffInline: boolean
   diffShowFullContextByDefault: boolean
   hunkReviewWidthPx?: number
@@ -479,6 +481,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoSaveOnBlur: false,
   defaultShell: '',
   restoreWorkspace: true,
+  playAgentDoneChime: true,
   diffInline: false,
   diffShowFullContextByDefault: false,
   hunkReviewWidthPx: undefined,
