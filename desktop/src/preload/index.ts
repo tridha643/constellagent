@@ -66,8 +66,8 @@ const api = {
     },
     createWorktree: (repoPath: string, name: string, branch: string, newBranch: boolean, baseBranch?: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[]) =>
       ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE, repoPath, name, branch, newBranch, baseBranch, force, requestId, credentialRules),
-    createWorktreeFromPr: (repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[]) =>
-      ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE_FROM_PR, repoPath, name, prNumber, localBranch, force, requestId, credentialRules) as Promise<{ worktreePath: string; branch: string }>,
+    createWorktreeFromPr: (repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[], options?: import('../main/git-service').CreatePrWorktreeOptions) =>
+      ipcRenderer.invoke(IPC.GIT_CREATE_WORKTREE_FROM_PR, repoPath, name, prNumber, localBranch, force, requestId, credentialRules, options) as Promise<import('../main/git-service').PrWorktreeResult>,
     onCreateWorktreeProgress: (callback: (progress: CreateWorktreeProgressEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, progress: CreateWorktreeProgressEvent) => callback(progress)
       ipcRenderer.on(IPC.GIT_CREATE_WORKTREE_PROGRESS, listener)
@@ -101,6 +101,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_COMMIT, worktreePath, message),
     pushCurrentBranch: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.GIT_PUSH_CURRENT_BRANCH, worktreePath) as Promise<void>,
+    pushToPrHead: (worktreePath: string, remote: string, headRefName: string) =>
+      ipcRenderer.invoke(IPC.GIT_PUSH_TO_PR_HEAD, worktreePath, remote, headRefName) as Promise<void>,
     checkoutBranch: (worktreePath: string, branch: string, createNew?: boolean) =>
       ipcRenderer.invoke(IPC.GIT_CHECKOUT_BRANCH, worktreePath, branch, createNew === true) as Promise<void>,
     getCurrentBranch: (worktreePath: string) =>
@@ -433,10 +435,12 @@ const api = {
   github: {
     getPrStatuses: (repoPath: string, branches: string[]) =>
       ipcRenderer.invoke(IPC.GITHUB_GET_PR_STATUSES, repoPath, branches),
+    getPrStatusesByNumber: (repoPath: string, numbers: number[]) =>
+      ipcRenderer.invoke(IPC.GITHUB_GET_PR_STATUSES_BY_NUMBER, repoPath, numbers),
     listOpenPrs: (repoPath: string) =>
       ipcRenderer.invoke(IPC.GITHUB_LIST_OPEN_PRS, repoPath),
     resolvePr: (repoPath: string, prNumber: number, repoSlug?: string) =>
-      ipcRenderer.invoke(IPC.GITHUB_RESOLVE_PR, repoPath, prNumber, repoSlug) as Promise<{ branch: string; title: string; number: number }>,
+      ipcRenderer.invoke(IPC.GITHUB_RESOLVE_PR, repoPath, prNumber, repoSlug) as Promise<import('../shared/github-types').ResolvedPrInfo>,
     createPr: (repoPath: string, headBranch: string, baseBranch: string) =>
       ipcRenderer.invoke(IPC.GITHUB_CREATE_PR, repoPath, headBranch, baseBranch) as Promise<{ number: number; url: string }>,
     reopenPr: (repoPath: string, prNumber: number) =>

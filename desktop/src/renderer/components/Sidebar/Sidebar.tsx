@@ -10,7 +10,7 @@ import {
 } from "../../store/types";
 import { getRenderableProjectWorkspaces } from "../../store/sidebar-navigation";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
-import type { OpenPrInfo, GithubLookupError } from "../../../shared/github-types";
+import type { GithubLookupError, LinkedPullRequest, OpenPrInfo, ResolvedPrInfo } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { GraphiteStack } from "./GraphiteStack";
@@ -22,6 +22,7 @@ import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME, CONSTELLAGENT_
 import { ContextWindowIndicator } from "./ContextWindowIndicator";
 import styles from "./Sidebar.module.css";
 import { maybeShowStaleMainToast } from "../../utils/ipc-stale-main";
+import { buildGithubHttpsCloneUrl } from "../../../shared/github-url";
 
 const PR_ICON_SIZE = 10;
 const PR_REVIEW_ICON_SIZE = 10;
@@ -71,9 +72,61 @@ function buildPrWorkspaceName(pr: OpenPrInfo): string {
 }
 
 function buildPrLocalBranch(pr: OpenPrInfo): string {
+  if (!pr.isCrossRepository) {
+    const head = sanitizeBranchName(pr.headRefName);
+    if (head) return head;
+  }
   const head = sanitizeBranchName(pr.headRefName) || `pr-${pr.number}`;
   const branch = sanitizeBranchName(`pr/${pr.number}-${head}`);
   return branch || `pr/${pr.number}`;
+}
+
+function buildResolvedPrLocalBranch(pr: ResolvedPrInfo): string {
+  if (!pr.isCrossRepository) {
+    const head = sanitizeBranchName(pr.headRefName);
+    if (head) return head;
+  }
+  const head = sanitizeBranchName(pr.headRefName) || `pr-${pr.number}`;
+  const branch = sanitizeBranchName(`pr/${pr.number}-${head}`);
+  return branch || `pr/${pr.number}`;
+}
+
+function prHeadRemoteName(prNumber: number): string {
+  return `pr-${prNumber}-head`;
+}
+
+function linkedPullRequestFromOpenPr(
+  pr: OpenPrInfo,
+  pushRemote: string,
+  pushRef: string,
+): LinkedPullRequest {
+  return {
+    number: pr.number,
+    url: pr.url,
+    title: pr.title,
+    baseRefName: pr.baseRefName,
+    headRefName: pr.headRefName,
+    headRepository: pr.headRepository,
+    pushRemote,
+    pushRef,
+  };
+}
+
+function linkedPullRequestFromResolvedPr(
+  pr: ResolvedPrInfo,
+  pushRemote: string,
+  pushRef: string,
+): LinkedPullRequest {
+  return {
+    number: pr.number,
+    url: pr.url,
+    title: pr.title,
+    baseRefName: pr.baseRefName,
+    headRefName: pr.headRefName,
+    headRepository: pr.headRepository,
+    pushRemote,
+    pushRef,
+  };
 }
 
 function uniqueWorkspaceName(
@@ -509,6 +562,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       name: string,
       branch: string,
       worktreePath: string,
+      linkedPullRequest?: LinkedPullRequest,
     ) => {
       const wsId = crypto.randomUUID();
       addWorkspace({
@@ -517,6 +571,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
         branch,
         worktreePath,
         projectId: project.id,
+        ...(linkedPullRequest ? { linkedPullRequest } : {}),
       });
 
       let startupSettings =
@@ -819,7 +874,9 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
     async (project: Project, pr: OpenPrInfo, force = false) => {
       const localBranch = buildPrLocalBranch(pr);
       const existing = workspaces.find(
-        (ws) => ws.projectId === project.id && ws.branch === localBranch,
+        (ws) => ws.projectId === project.id && (
+          ws.linkedPullRequest?.number === pr.number || ws.branch === localBranch
+        ),
       );
       if (existing) {
         setActiveWorkspace(existing.id);
@@ -842,7 +899,10 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       });
 
       try {
-        const { worktreePath, branch } =
+        const headRemoteUrl = pr.isCrossRepository && pr.headRepository
+          ? buildGithubHttpsCloneUrl(pr.headRepository.owner, pr.headRepository.name)
+          : undefined;
+        const { worktreePath, branch, pushRemote, pushRef } =
           await window.api.git.createWorktreeFromPr(
             project.repoPath,
             workspaceName,
@@ -851,12 +911,24 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
             force,
             requestId,
             settings.worktreeCredentialRules,
+            {
+              headRefName: pr.headRefName,
+              headRemoteName: pr.isCrossRepository ? prHeadRemoteName(pr.number) : 'origin',
+              headRemoteUrl,
+            },
           );
         setWorkspaceCreation((prev) => {
           if (!prev || prev.requestId !== requestId) return prev;
           return { ...prev, message: START_TERMINAL_MESSAGE };
         });
-        await finishCreateWorkspace(project, workspaceName, branch, worktreePath);
+        await finishCreateWorkspace(
+          project,
+          workspaceName,
+          branch,
+          worktreePath,
+          linkedPullRequestFromOpenPr(pr, pushRemote, pushRef),
+        );
+        setPrStatuses(project.id, { [branch]: pr });
         closeProjectPrModal();
       } catch (err) {
         const msg =
@@ -895,6 +967,103 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       dismissConfirmDialog,
       addToast,
       settings.worktreeCredentialRules,
+      setPrStatuses,
+    ],
+  );
+
+  const handleCreateResolvedPrWorkspace = useCallback(
+    async (project: Project, name: string, pr: ResolvedPrInfo, force = false) => {
+      const localBranch = buildResolvedPrLocalBranch(pr);
+      const existing = workspaces.find(
+        (ws) => ws.projectId === project.id && (
+          ws.linkedPullRequest?.number === pr.number || ws.branch === localBranch
+        ),
+      );
+      if (existing) {
+        setActiveWorkspace(existing.id);
+        openWorkspaceDialog(null);
+        return;
+      }
+      if (workspaceCreation) return;
+
+      const workspaceName = uniqueWorkspaceName(
+        name || `pr-${pr.number}`,
+        project.id,
+        workspaces,
+      );
+      const requestId = crypto.randomUUID();
+      setWorkspaceCreation({
+        requestId,
+        message: `Fetching PR #${pr.number}...`,
+      });
+
+      try {
+        const headRemoteUrl = pr.isCrossRepository && pr.headRepository
+          ? buildGithubHttpsCloneUrl(pr.headRepository.owner, pr.headRepository.name)
+          : undefined;
+        const { worktreePath, branch, pushRemote, pushRef } =
+          await window.api.git.createWorktreeFromPr(
+            project.repoPath,
+            workspaceName,
+            pr.number,
+            localBranch,
+            force,
+            requestId,
+            settings.worktreeCredentialRules,
+            {
+              headRefName: pr.headRefName,
+              headRemoteName: pr.isCrossRepository ? prHeadRemoteName(pr.number) : 'origin',
+              headRemoteUrl,
+            },
+          );
+        setWorkspaceCreation((prev) => {
+          if (!prev || prev.requestId !== requestId) return prev;
+          return { ...prev, message: START_TERMINAL_MESSAGE };
+        });
+        await finishCreateWorkspace(
+          project,
+          workspaceName,
+          branch,
+          worktreePath,
+          linkedPullRequestFromResolvedPr(pr, pushRemote, pushRef),
+        );
+        openWorkspaceDialog(null);
+      } catch (err) {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : `Failed to pull PR #${pr.number} locally`;
+        if (msg.includes("WORKTREE_PATH_EXISTS") && !force) {
+          showConfirmDialog({
+            title: "Workspace path exists",
+            message: `A workspace directory for "${workspaceName}" already exists. Replace it?`,
+            confirmLabel: "Replace",
+            destructive: true,
+            onConfirm: () => {
+              dismissConfirmDialog();
+              void handleCreateResolvedPrWorkspace(project, name, pr, true);
+            },
+          });
+          return;
+        }
+        addToast({ id: crypto.randomUUID(), message: msg, type: "error" });
+      } finally {
+        setWorkspaceCreation((prev) => {
+          if (!prev || prev.requestId !== requestId) return prev;
+          return null;
+        });
+      }
+    },
+    [
+      addToast,
+      dismissConfirmDialog,
+      finishCreateWorkspace,
+      openWorkspaceDialog,
+      setActiveWorkspace,
+      settings.worktreeCredentialRules,
+      showConfirmDialog,
+      workspaceCreation,
+      workspaces,
     ],
   );
 
@@ -1630,6 +1799,9 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
               false,
               baseBranch,
             );
+          }}
+          onConfirmPr={(name, pr) => {
+            void handleCreateResolvedPrWorkspace(dialogProject, name, pr);
           }}
           onCancel={() => {
             if (!isCreatingWorkspace) openWorkspaceDialog(null);

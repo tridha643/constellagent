@@ -37,6 +37,14 @@ export interface FileDiff {
 export interface PrWorktreeResult {
   worktreePath: string
   branch: string
+  pushRemote: string
+  pushRef: string
+}
+
+export interface CreatePrWorktreeOptions {
+  headRefName?: string
+  headRemoteName?: string
+  headRemoteUrl?: string
 }
 
 async function git(args: string[], cwd: string): Promise<string> {
@@ -690,6 +698,14 @@ export class GitService {
       .replace(/[.\-/]+$/, '')    // no trailing dot, dash, or slash
   }
 
+  private static sanitizeRemoteName(name: string): string {
+    return name
+      .trim()
+      .replace(/[^A-Za-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80)
+  }
+
   /**
    * Picks a local branch name under `preferred` that does not yet exist in `repoPath`.
    */
@@ -913,6 +929,7 @@ export class GitService {
     force = false,
     onProgress?: CreateWorktreeProgressReporter,
     credentialRules?: WorktreeCredentialRule[],
+    options: CreatePrWorktreeOptions = {},
   ): Promise<PrWorktreeResult> {
     const parsedPrNumber = Number(prNumber)
     if (!Number.isInteger(parsedPrNumber) || parsedPrNumber <= 0) {
@@ -938,6 +955,20 @@ export class GitService {
     const hasOrigin = await GitService.hasRemote(repoPath, 'origin')
     if (!hasOrigin) {
       throw new Error('No origin remote found')
+    }
+
+    const headRefName = GitService.sanitizeBranchName((options.headRefName ?? '').trim())
+    const pushRef = `refs/heads/${headRefName || branch}`
+    let pushRemote = 'origin'
+    const requestedHeadRemoteName = GitService.sanitizeRemoteName((options.headRemoteName ?? '').trim())
+    const headRemoteUrl = (options.headRemoteUrl ?? '').trim()
+    if (headRemoteUrl && requestedHeadRemoteName && requestedHeadRemoteName !== 'origin') {
+      pushRemote = requestedHeadRemoteName
+      if (await GitService.hasRemote(repoPath, pushRemote)) {
+        await git(['remote', 'set-url', pushRemote, headRemoteUrl], repoPath)
+      } else {
+        await git(['remote', 'add', pushRemote, headRemoteUrl], repoPath)
+      }
     }
 
     reportCreateWorktreeProgress(onProgress, {
@@ -1020,7 +1051,7 @@ export class GitService {
     })
     await copyWorktreeCredentialArtifacts(repoPath, worktreePath, credentialRules)
 
-    return { worktreePath, branch: checkoutBranch }
+    return { worktreePath, branch: checkoutBranch, pushRemote, pushRef }
   }
 
   static async removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
@@ -1256,6 +1287,17 @@ export class GitService {
       await git(['push', '--set-upstream', 'origin', 'HEAD'], worktreePath)
     } catch (err) {
       throw new Error(friendlyGitError(err, 'Failed to push current branch'))
+    }
+  }
+
+  static async pushToPrHead(worktreePath: string, remote: string, headRefName: string): Promise<void> {
+    const cleanRemote = GitService.sanitizeRemoteName(remote || 'origin') || 'origin'
+    const cleanHead = GitService.sanitizeBranchName(headRefName)
+    if (!cleanHead) throw new Error('PR head branch is required')
+    try {
+      await git(['push', cleanRemote, `HEAD:refs/heads/${cleanHead}`], worktreePath)
+    } catch (err) {
+      throw new Error(friendlyGitError(err, 'Failed to push PR head branch'))
     }
   }
 

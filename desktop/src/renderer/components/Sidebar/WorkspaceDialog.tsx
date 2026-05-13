@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Project } from '../../store/types'
 import { parsePrUrl, parsePrNumber } from '../../../shared/pr-url'
+import type { ResolvedPrInfo } from '../../../shared/github-types'
 import { useExitAnimation } from '../../hooks/useExitAnimation'
 import styles from './WorkspaceDialog.module.css'
 
@@ -24,6 +25,7 @@ interface Props {
     newBranch: boolean,
     baseBranch?: string,
   ) => void
+  onConfirmPr?: (name: string, pr: ResolvedPrInfo) => void
   onCancel: () => void
   isCreating?: boolean
   createProgressMessage?: string
@@ -47,6 +49,7 @@ function extractPrInfo(value: string): { number: number; repoSlug?: string } | n
 export function WorkspaceDialog({
   project,
   onConfirm,
+  onConfirmPr,
   onCancel,
   isCreating = false,
   createProgressMessage = '',
@@ -61,6 +64,7 @@ export function WorkspaceDialog({
   const [loading, setLoading] = useState(true)
   const [prResolving, setPrResolving] = useState(false)
   const [prError, setPrError] = useState('')
+  const [resolvedPullRequest, setResolvedPullRequest] = useState<ResolvedPrInfo | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [basePickerOpen, setBasePickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -116,6 +120,7 @@ export function WorkspaceDialog({
       if (target === 'branch') {
         setSelectedBranch(result.branch)
         setName(`pr-${result.number}`)
+        setResolvedPullRequest(result)
       } else {
         setBaseBranch(result.branch)
       }
@@ -149,6 +154,11 @@ export function WorkspaceDialog({
       return
     }
 
+    if (!isNewBranch && resolvedPullRequest && branch === resolvedPullRequest.branch && onConfirmPr) {
+      onConfirmPr(name, resolvedPullRequest)
+      return
+    }
+
     onConfirm(name, branch, isNewBranch, base)
   }, [
     name,
@@ -157,9 +167,11 @@ export function WorkspaceDialog({
     selectedBranch,
     baseBranch,
     onConfirm,
+    onConfirmPr,
     isCreating,
     prResolving,
     resolvePr,
+    resolvedPullRequest,
   ])
 
   // Close pickers on click outside

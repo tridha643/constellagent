@@ -1,6 +1,6 @@
 import type { editor } from 'monaco-editor'
 import type { LinearIssueNode } from '../linear/linear-api'
-import type { PrInfo } from '@shared/github-types'
+import type { LinkedPullRequest, PrInfo } from '@shared/github-types'
 import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
 import type { ContextWindowData } from '@shared/context-window-types'
 import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '../../shared/automation-types'
@@ -82,6 +82,7 @@ export interface Workspace {
    * Used as Graphite "UI trunk" so Start vs Add / Submit matches the worktree’s home branch.
    */
   graphiteUiTrunkBranch?: string | null
+  linkedPullRequest?: LinkedPullRequest
 }
 
 export type SplitLeaf =

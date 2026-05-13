@@ -157,15 +157,22 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     const effectiveBranch = (targetBranch ?? branch).trim()
     if (!project || !effectiveBranch) return
     try {
-      const result = await window.api.github.getPrStatuses(project.repoPath, [effectiveBranch])
+      const linkedPrNumber = workspace?.linkedPullRequest?.number
+      const result = typeof linkedPrNumber === 'number' && linkedPrNumber > 0
+        ? await window.api.github.getPrStatusesByNumber(project.repoPath, [linkedPrNumber])
+        : await window.api.github.getPrStatuses(project.repoPath, [effectiveBranch])
       setGhAvailability(project.id, result.available)
       if (result.available) {
-        setPrStatuses(project.id, result.data)
+        if (typeof linkedPrNumber === 'number' && linkedPrNumber > 0) {
+          setPrStatuses(project.id, { [effectiveBranch]: result.data[String(linkedPrNumber)] ?? null })
+        } else {
+          setPrStatuses(project.id, result.data)
+        }
       }
     } catch {
       // PR status is best-effort here; the global poller will keep things fresh.
     }
-  }, [branch, project, setGhAvailability, setPrStatuses])
+  }, [branch, project, setGhAvailability, setPrStatuses, workspace])
 
   useEffect(() => {
     if (!isActive || !project || !branch) return
@@ -371,7 +378,15 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
       if (prActionMode === 'create') {
         setBusyLabel('Pushing…')
-        await window.api.git.pushCurrentBranch(worktreePath)
+        if (workspace?.linkedPullRequest) {
+          await window.api.git.pushToPrHead(
+            worktreePath,
+            workspace.linkedPullRequest.pushRemote,
+            workspace.linkedPullRequest.headRefName,
+          )
+        } else {
+          await window.api.git.pushCurrentBranch(worktreePath)
+        }
         setBusyLabel('Creating PR…')
         const created = await window.api.github.createPr(worktreePath, branch, baseBranch)
         prUrl = created.url
