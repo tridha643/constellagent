@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { formatLinearIssueAgentPrompt, type LinearIssueNode } from './linear-api'
 
 describe('formatLinearIssueAgentPrompt', () => {
-  it('hardens the prompt around implementing the ticket', () => {
+  it('hardens the prompt around read-only planning for the ticket', () => {
     const issue: LinearIssueNode = {
       id: 'issue-1',
       identifier: 'AGI-107',
@@ -17,12 +17,19 @@ describe('formatLinearIssueAgentPrompt', () => {
     const prompt = formatLinearIssueAgentPrompt(issue)
 
     expect(prompt).toContain('PRIMARY OBJECTIVE:')
-    expect(prompt).toContain('Implement the work requested by this Linear ticket: AGI-107.')
-    expect(prompt).toContain('Do not wander into broad refactors')
-    expect(prompt).toContain('PREFERRED EXECUTION ORDER:')
-    expect(prompt).toContain('Success means the codebase meaningfully advances or completes this exact ticket.')
+    expect(prompt).toContain('Perform a read-only kickoff investigation for Linear ticket AGI-107')
+    expect(prompt).toContain('HARD READ-ONLY RULES:')
+    expect(prompt).toContain('Do not edit files, create files, delete files, rename files, format files, or apply patches.')
+    expect(prompt).toContain('Do not use write-capable tools or commands')
+    expect(prompt).toContain('Do not change dependencies, configuration, generated artifacts')
+    expect(prompt).toContain('Use mandatory specialist subagents for parallel read-only investigation')
+    expect(prompt).toContain('FINAL OUTPUT ONLY:')
+    expect(prompt).toContain('Proposed plan: phased implementation steps')
+    expect(prompt).toContain('ASCII control-flow diagram')
     expect(prompt).toContain('DESCRIPTION:')
     expect(prompt).toContain(issue.description!)
+    expect(prompt).not.toContain('Make the code changes')
+    expect(prompt).not.toContain('Implement the work requested')
   })
 
   it('fills in sensible fallbacks when metadata is missing', () => {
