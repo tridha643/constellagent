@@ -99,6 +99,79 @@ test.describe('PR status indicators', () => {
     }
   })
 
+  test('linked workspace can show PR status when local branch differs from head ref', async () => {
+    const repoPath = createTestRepo('pr-linked-alias')
+    const { app, window } = await launchApp()
+
+    try {
+      await window.evaluate(async (repo: string) => {
+        const store = (window as any).__store.getState()
+        store.hydrateState({ projects: [], workspaces: [] })
+
+        const projectId = 'test-proj-linked-pr'
+        const workspaceId = 'ws-linked-pr'
+        store.addProject({ id: projectId, name: 'linked-pr-project', repoPath: repo })
+        store.addWorkspace({
+          id: workspaceId,
+          name: 'pr-42',
+          branch: 'pr/42-feature-from-fork',
+          worktreePath: repo,
+          projectId,
+          linkedPullRequest: {
+            number: 42,
+            url: 'https://github.com/test/repo/pull/42',
+            title: 'Fork PR',
+            baseRefName: 'main',
+            headRefName: 'feature/from-fork',
+            headRepository: { owner: 'fork-owner', name: 'repo' },
+            pushRemote: 'pr-42-head',
+            pushRef: 'refs/heads/feature/from-fork',
+          },
+        })
+      }, repoPath)
+
+      await window.waitForTimeout(2500)
+
+      const result = await window.evaluate(() => {
+        const store = (window as any).__store.getState()
+        store.setGhAvailability('test-proj-linked-pr', true)
+        store.setPrStatuses('test-proj-linked-pr', {
+          'pr/42-feature-from-fork': {
+            number: 42,
+            state: 'open',
+            title: 'Fork PR',
+            url: 'https://github.com/test/repo/pull/42',
+            checkStatus: 'passing',
+            hasPendingComments: false,
+            pendingCommentCount: 0,
+            isBlockedByCi: false,
+            isApproved: false,
+            isChangesRequested: false,
+            updatedAt: new Date().toISOString(),
+          },
+        })
+
+        return {
+          byAlias: store.prStatusMap.get('test-proj-linked-pr:pr/42-feature-from-fork')?.number ?? null,
+          byHead: store.prStatusMap.get('test-proj-linked-pr:feature/from-fork')?.number ?? null,
+          linkedNumber: store.workspaces.find((w: { id: string }) => w.id === 'ws-linked-pr')?.linkedPullRequest?.number ?? null,
+        }
+      })
+
+      expect(result.byAlias).toBe(42)
+      expect(result.byHead).toBeNull()
+      expect(result.linkedNumber).toBe(42)
+
+      await window.waitForTimeout(500)
+      const prBadge = window.locator('[class*="prInline"]')
+      await expect(prBadge).toBeVisible({ timeout: 3000 })
+      await expect(prBadge).toContainText('#42')
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
   test('store setGhAvailability tracks per-project availability', async () => {
     const { app, window } = await launchApp()
 

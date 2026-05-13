@@ -19,6 +19,7 @@ export const IPC = {
   GIT_APPLY_HUNK_ACTION: 'git:apply-hunk-action',
   GIT_COMMIT: 'git:commit',
   GIT_PUSH_CURRENT_BRANCH: 'git:push-current-branch',
+  GIT_PUSH_TO_PR_HEAD: 'git:push-to-pr-head',
   /** Switch to (or create) a branch inside a worktree, carrying uncommitted changes. */
   GIT_CHECKOUT_BRANCH: 'git:checkout-branch',
   GIT_GET_CURRENT_BRANCH: 'git:get-current-branch',
@@ -136,6 +137,7 @@ export const IPC = {
 
   // GitHub operations
   GITHUB_GET_PR_STATUSES: 'github:get-pr-statuses',
+  GITHUB_GET_PR_STATUSES_BY_NUMBER: 'github:get-pr-statuses-by-number',
   GITHUB_LIST_OPEN_PRS: 'github:list-open-prs',
   GITHUB_RESOLVE_PR: 'github:resolve-pr',
   GITHUB_CREATE_PR: 'github:create-pr',

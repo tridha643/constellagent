@@ -7,6 +7,8 @@ import type {
   PrState,
   OpenPrInfo,
   ListOpenPrsResult,
+  ResolvedPrInfo,
+  PullRequestHeadMetadata,
 } from '../shared/github-types'
 import { parseGithubUrl } from '../shared/github-url'
 import type { GithubRepoInfo } from '../shared/github-url'
@@ -21,6 +23,14 @@ interface GraphqlPullRequestNode {
   url: string
   updatedAt: string
   headRefName?: string | null
+  baseRefName?: string | null
+  headRepository?: {
+    name?: string | null
+    url?: string | null
+    owner?: {
+      login?: string | null
+    } | null
+  } | null
   author?: {
     login?: string | null
   } | null
@@ -44,6 +54,13 @@ interface GraphqlConnection {
 interface GraphqlResponse {
   data?: {
     repository?: Record<string, GraphqlConnection>
+  }
+  errors?: Array<{ message?: string }>
+}
+
+interface GraphqlPrNumberResponse {
+  data?: {
+    repository?: Record<string, GraphqlPullRequestNode | null>
   }
   errors?: Array<{ message?: string }>
 }
@@ -295,6 +312,45 @@ export class GithubService {
     }
   }
 
+  static async getPrStatusesByNumber(repoPath: string, numbers: number[]): Promise<PrLookupResult> {
+    if (!(await this.isGhAvailable())) {
+      return { available: false, error: 'gh_not_installed', data: {} }
+    }
+    const repoInfo = await this.getGithubRepoInfo(repoPath)
+    if (!repoInfo) {
+      return { available: false, error: 'not_github_repo', data: {} }
+    }
+    const token = await this.getAuthToken()
+    if (!token) {
+      return { available: false, error: 'not_authenticated', data: {} }
+    }
+
+    const normalizedNumbers = Array.from(
+      new Set(
+        numbers
+          .map((number) => Number(number))
+          .filter((number) => Number.isInteger(number) && number > 0)
+      )
+    ).sort((a, b) => a - b)
+
+    if (normalizedNumbers.length === 0) {
+      return { available: true, data: {} }
+    }
+
+    try {
+      const result = await this.fetchRepoPrStatusesByNumber(repoInfo, normalizedNumbers, token)
+      return { available: true, data: this.cloneData(result.data) }
+    } catch (err) {
+      if (err instanceof GithubAuthError) {
+        this.clearAuthTokenCache()
+        return { available: false, error: 'not_authenticated', data: {} }
+      }
+      const data: Record<string, PrInfo | null> = {}
+      for (const number of normalizedNumbers) data[String(number)] = null
+      return { available: true, data }
+    }
+  }
+
   static async listOpenPrs(repoPath: string): Promise<ListOpenPrsResult> {
     if (!(await this.isGhAvailable())) {
       return { available: false, error: 'gh_not_installed', data: [] }
@@ -343,26 +399,49 @@ export class GithubService {
     repoPath: string,
     prNumber: number,
     repoSlug?: string,
-  ): Promise<{ branch: string; title: string; number: number }> {
+  ): Promise<ResolvedPrInfo> {
     if (!(await this.isGhAvailable())) {
       throw new Error('GitHub CLI (gh) is not installed')
     }
     try {
-      const args = ['pr', 'view', String(prNumber), '--json', 'headRefName,title,number']
+      const args = [
+        'pr',
+        'view',
+        String(prNumber),
+        '--json',
+        'headRefName,baseRefName,headRepository,title,number,url,isCrossRepository',
+      ]
       if (repoSlug) args.push('--repo', repoSlug)
       const { stdout } = await execFileAsync('gh', args, { cwd: repoPath, timeout: 15_000 })
       const parsed = JSON.parse(stdout.trim()) as {
         headRefName?: string
+        baseRefName?: string
         title?: string
         number?: number
+        url?: string
+        isCrossRepository?: boolean
+        headRepository?: {
+          name?: string
+          nameWithOwner?: string
+          url?: string
+          owner?: {
+            login?: string
+          }
+        } | null
       }
       if (!parsed.headRefName) {
         throw new Error(`PR #${prNumber} has no head branch`)
       }
+      const headRepository = this.mapGhHeadRepository(parsed.headRepository)
       return {
         branch: parsed.headRefName,
         title: parsed.title ?? '',
         number: parsed.number ?? prNumber,
+        url: parsed.url ?? '',
+        baseRefName: parsed.baseRefName ?? '',
+        headRefName: parsed.headRefName,
+        headRepository,
+        isCrossRepository: parsed.isCrossRepository ?? false,
       }
     } catch (err) {
       if (err instanceof SyntaxError) {
@@ -516,6 +595,38 @@ export class GithubService {
     return parsed ? { owner: parsed.owner, name: parsed.name } : null
   }
 
+  private static mapGhHeadRepository(repo: {
+    name?: string | null
+    nameWithOwner?: string | null
+    url?: string | null
+    owner?: { login?: string | null } | null
+  } | null | undefined): PullRequestHeadMetadata['headRepository'] {
+    if (!repo) return undefined
+    const owner = repo.owner?.login || repo.nameWithOwner?.split('/')[0] || ''
+    const name = repo.name || repo.nameWithOwner?.split('/')[1] || ''
+    if (!owner || !name) return undefined
+    return {
+      owner,
+      name,
+      url: repo.url || `https://github.com/${owner}/${name}`,
+    }
+  }
+
+  private static mapGraphqlHeadMetadata(
+    repoInfo: GithubRepoInfo,
+    node: GraphqlPullRequestNode,
+  ): PullRequestHeadMetadata {
+    const headRepository = this.mapGhHeadRepository(node.headRepository)
+    return {
+      baseRefName: node.baseRefName?.trim() || '',
+      headRefName: node.headRefName?.trim() || `pr-${node.number}`,
+      headRepository,
+      isCrossRepository: !!headRepository && (
+        headRepository.owner !== repoInfo.owner || headRepository.name !== repoInfo.name
+      ),
+    }
+  }
+
   private static cacheKey(repoPath: string, branches: string[]): string {
     return `${repoPath}::${branches.join('\u0000')}`
   }
@@ -549,7 +660,10 @@ export class GithubService {
   }
 
   private static cloneOpenPrs(data: OpenPrInfo[]): OpenPrInfo[] {
-    return data.map((pr) => ({ ...pr }))
+    return data.map((pr) => ({
+      ...pr,
+      headRepository: pr.headRepository ? { ...pr.headRepository } : undefined,
+    }))
   }
 
   private static emptyResult(branches: string[]): Record<string, PrInfo | null> {
@@ -595,6 +709,43 @@ export class GithubService {
     return { data }
   }
 
+  private static async fetchRepoPrStatusesByNumber(
+    repoInfo: GithubRepoInfo,
+    numbers: number[],
+    token: string
+  ): Promise<{ data: Record<string, PrInfo | null> }> {
+    const { query, variables } = this.buildPrNumberQuery(repoInfo, numbers)
+    const payload = await this.fetchGraphqlJson<GraphqlPrNumberResponse>(query, variables, token)
+
+    const repository = payload.data?.repository
+    if (!repository) {
+      const empty: Record<string, PrInfo | null> = {}
+      for (const number of numbers) empty[String(number)] = null
+      return { data: empty }
+    }
+
+    const data: Record<string, PrInfo | null> = {}
+    const unresolvedLookups: Promise<void>[] = []
+    for (let i = 0; i < numbers.length; i++) {
+      const number = numbers[i]
+      const node = repository[`pr${i}`]
+      const mapped = node ? this.mapPullRequest(node) : null
+      data[String(number)] = mapped
+
+      if (node && mapped && mapped.state === 'open') {
+        unresolvedLookups.push(
+          this.attachUnresolvedReviewThreads(repoInfo, token, node, mapped)
+        )
+      }
+    }
+
+    if (unresolvedLookups.length > 0) {
+      await Promise.allSettled(unresolvedLookups)
+    }
+
+    return { data }
+  }
+
   private static async fetchOpenPrList(
     repoInfo: GithubRepoInfo,
     token: string
@@ -605,7 +756,7 @@ export class GithubService {
     const data = nodes.map((node) => ({
       ...this.mapPullRequest(node),
       state: 'open' as const,
-      headRefName: node.headRefName?.trim() || `pr-${node.number}`,
+      ...this.mapGraphqlHeadMetadata(repoInfo, node),
       authorLogin: node.author?.login || undefined,
     }))
 
@@ -667,6 +818,72 @@ export class GithubService {
         title
         url
         updatedAt
+        headRefName
+        baseRefName
+        headRepository {
+          name
+          url
+          owner {
+            login
+          }
+        }
+        reviewDecision
+        mergeStateStatus
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                state
+              }
+            }
+          }
+        }
+      }
+    `
+
+    return { query, variables }
+  }
+
+  private static buildPrNumberQuery(
+    repoInfo: GithubRepoInfo,
+    numbers: number[]
+  ): { query: string; variables: Record<string, string | number> } {
+    const variableDefs = ['$owner: String!', '$name: String!']
+    const fields: string[] = []
+    const variables: Record<string, string | number> = {
+      owner: repoInfo.owner,
+      name: repoInfo.name,
+    }
+
+    for (let i = 0; i < numbers.length; i++) {
+      const varName = `n${i}`
+      variableDefs.push(`$${varName}: Int!`)
+      variables[varName] = numbers[i]
+      fields.push(`pr${i}: pullRequest(number: $${varName}) { ...PrFields }`)
+    }
+
+    const query = `
+      query PrStatusesByNumber(${variableDefs.join(', ')}) {
+        repository(owner: $owner, name: $name) {
+          ${fields.join('\n')}
+        }
+      }
+
+      fragment PrFields on PullRequest {
+        number
+        state
+        title
+        url
+        updatedAt
+        headRefName
+        baseRefName
+        headRepository {
+          name
+          url
+          owner {
+            login
+          }
+        }
         reviewDecision
         mergeStateStatus
         commits(last: 1) {
@@ -699,6 +916,14 @@ export class GithubService {
               url
               updatedAt
               headRefName
+              baseRefName
+              headRepository {
+                name
+                url
+                owner {
+                  login
+                }
+              }
               reviewDecision
               mergeStateStatus
               author {

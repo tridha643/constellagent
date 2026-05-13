@@ -398,7 +398,7 @@ export function registerIpcHandlers(): void {
     )
   })
 
-  ipcMain.handle(IPC.GIT_CREATE_WORKTREE_FROM_PR, async (_e, repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[]) => {
+  ipcMain.handle(IPC.GIT_CREATE_WORKTREE_FROM_PR, async (_e, repoPath: string, name: string, prNumber: number, localBranch: string, force?: boolean, requestId?: string, credentialRules?: WorktreeCredentialRule[], options?: import('./git-service').CreatePrWorktreeOptions) => {
     return GitService.createWorktreeFromPr(
       repoPath,
       name,
@@ -410,6 +410,7 @@ export function registerIpcHandlers(): void {
         _e.sender.send(IPC.GIT_CREATE_WORKTREE_PROGRESS, payload)
       },
       credentialRules,
+      options,
     )
   })
 
@@ -472,6 +473,10 @@ export function registerIpcHandlers(): void {
     return GitService.pushCurrentBranch(worktreePath)
   })
 
+  ipcMain.handle(IPC.GIT_PUSH_TO_PR_HEAD, async (_e, worktreePath: string, remote: string, headRefName: string) => {
+    return GitService.pushToPrHead(worktreePath, remote, headRefName)
+  })
+
   ipcMain.handle(IPC.GIT_CHECKOUT_BRANCH, async (_e, worktreePath: string, branch: string, createNew?: boolean) => {
     return GitService.checkoutBranch(worktreePath, branch, createNew === true)
   })
@@ -532,6 +537,13 @@ export function registerIpcHandlers(): void {
     return measureMainAsync('github:get-pr-statuses', () => GithubService.getPrStatuses(repoPath, branches), {
       repoPath,
       branchCount: branches.length,
+    })
+  })
+
+  ipcMain.handle(IPC.GITHUB_GET_PR_STATUSES_BY_NUMBER, async (_e, repoPath: string, numbers: number[]) => {
+    return measureMainAsync('github:get-pr-statuses-by-number', () => GithubService.getPrStatusesByNumber(repoPath, numbers), {
+      repoPath,
+      prCount: numbers.length,
     })
   })
 

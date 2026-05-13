@@ -99,7 +99,12 @@ export function usePrStatusPoller(): void {
         ? freshWorkspaces.find((workspace) => workspace.id === activeWorkspaceId)?.projectId ?? null
         : null
 
-      const projectBranches = new Map<string, { repoPath: string; branches: string[] }>()
+      const projectLookups = new Map<string, {
+        repoPath: string
+        branches: string[]
+        linkedPullRequests: Map<number, string[]>
+      }>()
+      const linkedWorkspaceStatusKeys = new Set<string>()
       for (const ws of buildPolledWorkspaceList(
         freshWorkspaces,
         activeWorkspaceId,
@@ -109,12 +114,18 @@ export function usePrStatusPoller(): void {
         const branch = normalizeWorkspaceBranch(ws.branch)
         if (!project || !isStableWorkspaceBranch(branch)) continue
 
-        let entry = projectBranches.get(project.id)
+        let entry = projectLookups.get(project.id)
         if (!entry) {
-          entry = { repoPath: project.repoPath, branches: [] }
-          projectBranches.set(project.id, entry)
+          entry = { repoPath: project.repoPath, branches: [], linkedPullRequests: new Map() }
+          projectLookups.set(project.id, entry)
         }
-        if (!entry.branches.includes(branch)) {
+        const linkedNumber = ws.linkedPullRequest?.number
+        if (typeof linkedNumber === 'number' && linkedNumber > 0) {
+          const aliases = entry.linkedPullRequests.get(linkedNumber) ?? []
+          if (!aliases.includes(branch)) aliases.push(branch)
+          entry.linkedPullRequests.set(linkedNumber, aliases)
+          linkedWorkspaceStatusKeys.add(`${project.id}:${branch}`)
+        } else if (!entry.branches.includes(branch)) {
           entry.branches.push(branch)
         }
       }
@@ -123,38 +134,70 @@ export function usePrStatusPoller(): void {
         if (!pr || pr.state !== 'open') continue
         const separator = key.indexOf(':')
         if (separator === -1) continue
+        if (linkedWorkspaceStatusKeys.has(key)) continue
         const projectId = key.slice(0, separator)
         const branch = key.slice(separator + 1)
         const project = projects.find((entry) => entry.id === projectId)
         if (!project) continue
         if (activeProjectId && projectId !== activeProjectId && pr.checkStatus !== 'pending') continue
 
-        let entry = projectBranches.get(projectId)
+        let entry = projectLookups.get(projectId)
         if (!entry) {
-          entry = { repoPath: project.repoPath, branches: [] }
-          projectBranches.set(projectId, entry)
+          entry = { repoPath: project.repoPath, branches: [], linkedPullRequests: new Map() }
+          projectLookups.set(projectId, entry)
         }
         if (!entry.branches.includes(branch)) {
           entry.branches.push(branch)
         }
       }
 
-      const fetches = Array.from(projectBranches.entries()).map(
-        async ([projectId, { repoPath, branches }]) => {
+      const fetches = Array.from(projectLookups.entries()).map(
+        async ([projectId, { repoPath, branches, linkedPullRequests }]) => {
           try {
-            const result = (await window.api.github.getPrStatuses(
-              repoPath,
-              branches,
-            )) as PrLookupResult
-            setGhAvailability(projectId, result.available)
-            if (result.available) {
-              setPrStatuses(projectId, result.data)
-              return Object.values(result.data).some((pr) => {
-                if (pr == null) return false
-                return pr.state === 'open' && pr.checkStatus === 'pending'
-              })
+            let hasPending = false
+            if (branches.length > 0) {
+              const result = (await window.api.github.getPrStatuses(
+                repoPath,
+                branches,
+              )) as PrLookupResult
+              setGhAvailability(projectId, result.available)
+              if (result.available) {
+                setPrStatuses(projectId, result.data)
+                hasPending = Object.values(result.data).some((pr) => {
+                  if (pr == null) return false
+                  return pr.state === 'open' && pr.checkStatus === 'pending'
+                })
+              }
             }
-            return false
+
+            if (linkedPullRequests.size > 0) {
+              const numbers = Array.from(linkedPullRequests.keys())
+              const result = (await window.api.github.getPrStatusesByNumber(
+                repoPath,
+                numbers,
+              )) as PrLookupResult
+              setGhAvailability(projectId, result.available)
+              if (result.available) {
+                const aliased: Record<string, NonNullable<PrLookupResult['data'][string]> | null> = {}
+                for (const [number, branchesForPr] of linkedPullRequests.entries()) {
+                  const info = result.data[String(number)] ?? null
+                  for (const branch of branchesForPr) {
+                    aliased[branch] = info
+                  }
+                }
+                setPrStatuses(projectId, aliased)
+                hasPending = hasPending || Object.values(aliased).some((pr) => {
+                  if (pr == null) return false
+                  return pr.state === 'open' && pr.checkStatus === 'pending'
+                })
+              }
+            }
+
+            if (branches.length === 0 && linkedPullRequests.size === 0) {
+              setGhAvailability(projectId, true)
+            }
+
+            return hasPending
           } catch {
             // PR status is nice-to-have — silently ignore errors
             return false

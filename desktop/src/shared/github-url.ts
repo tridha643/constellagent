@@ -21,7 +21,7 @@ function sanitizeFolderName(name: string): string {
   return sanitized || 'repo'
 }
 
-function buildHttpsCloneUrl(owner: string, name: string): string {
+export function buildGithubHttpsCloneUrl(owner: string, name: string): string {
   return `https://github.com/${owner}/${name}.git`
 }
 
@@ -56,7 +56,7 @@ export function parseGithubUrl(input: string): ParsedGithubUrl | null {
       return {
         owner,
         name: rawName,
-        cloneUrl: buildHttpsCloneUrl(owner, rawName),
+        cloneUrl: buildGithubHttpsCloneUrl(owner, rawName),
         suggestedName: sanitizeFolderName(rawName),
       }
     } catch {
@@ -83,7 +83,7 @@ export function parseGithubUrl(input: string): ParsedGithubUrl | null {
     return {
       owner,
       name,
-      cloneUrl: buildHttpsCloneUrl(owner, name),
+      cloneUrl: buildGithubHttpsCloneUrl(owner, name),
       suggestedName: sanitizeFolderName(name),
     }
   }
@@ -95,7 +95,7 @@ export function parseGithubUrl(input: string): ParsedGithubUrl | null {
     return {
       owner,
       name,
-      cloneUrl: buildHttpsCloneUrl(owner, name),
+      cloneUrl: buildGithubHttpsCloneUrl(owner, name),
       suggestedName: sanitizeFolderName(name),
     }
   }
