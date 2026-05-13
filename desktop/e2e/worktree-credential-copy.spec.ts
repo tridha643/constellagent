@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test'
 import { resolve, join } from 'path'
-import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'fs'
-import { execSync } from 'child_process'
+import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, statSync } from 'fs'
+import { execSync, spawn } from 'child_process'
 
 const appPath = resolve(__dirname, '../out/main/index.js')
 
@@ -177,6 +177,46 @@ test.describe('Worktree credential copy', () => {
       await expect(window.locator('[class*="tabTitle"]', { hasText: /^\.env$/ })).toBeVisible({ timeout: 10000 })
       await expect(window.locator('.monaco-editor').first()).toBeVisible({ timeout: 10000 })
     } finally {
+      await app.close()
+      cleanupPath(basePath)
+    }
+  })
+
+  test('snapshots a FIFO .env into the worktree as a regular file', async () => {
+    test.skip(process.platform === 'win32', 'FIFOs are POSIX-only')
+
+    const { basePath, repoPath } = createRepoWithCredentialFixtures('fifo-snapshot')
+    const { app, window } = await launchApp()
+    let writer: ReturnType<typeof spawn> | null = null
+
+    try {
+      // Replace the regular .env with a FIFO and attach a detached writer.
+      rmSync(join(repoPath, '.env'))
+      execSync('mkfifo .env', { cwd: repoPath })
+
+      writer = spawn('bash', ['-c', 'echo "FIFO_KEY=ok" > .env'], {
+        cwd: repoPath,
+        detached: true,
+        stdio: 'ignore',
+      })
+      writer.unref()
+
+      const worktreePath = await window.evaluate(async (repo: string) => {
+        return await (window as any).api.git.createWorktree(
+          repo,
+          'fifo-snapshot',
+          'tracked-creds',
+          false,
+        )
+      }, repoPath)
+
+      const destEnv = join(worktreePath, '.env')
+      const destStat = statSync(destEnv)
+      expect(destStat.isFile()).toBe(true)
+      expect(destStat.isFIFO()).toBe(false)
+      expect(readFileSync(destEnv, 'utf8')).toBe('FIFO_KEY=ok\n')
+    } finally {
+      try { writer?.kill('SIGKILL') } catch {}
       await app.close()
       cleanupPath(basePath)
     }
