@@ -1711,4 +1711,205 @@
   .actionButtonWrapper {
     transition: none;
   }
+  .folderHeader,
+  .folderChevron,
+  .starBtn,
+  .folderHeaderDropTarget {
+    transition: none !important;
+  }
+}
+
+/* ── Sidebar Folders ── */
+
+.folderSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.folderHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-3);
+  margin: 2px 0;
+  height: 24px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  user-select: none;
+  transition: background-color var(--motion-default), box-shadow var(--motion-default);
+}
+
+.folderHeader:hover {
+  background: var(--surface-2);
+}
+
+.folderHeaderDropTarget {
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--accent-blue);
+}
+
+.folderIcon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: color var(--motion-default), opacity var(--motion-default);
+}
+
+.folderHeader:hover .folderIcon {
+  color: var(--text-secondary);
+}
+
+.folderIconCollapsed {
+  opacity: 0.7;
+}
+
+.folderName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-normal);
+  color: var(--text-tertiary);
+  letter-spacing: 0.01em;
+}
+
+.folderHeader:hover .folderName {
+  color: var(--text-secondary);
+}
+
+.folderNameInput {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+  outline: none;
+}
+
+.folderNameInput:focus {
+  border-color: var(--accent-blue);
+}
+
+.folderCount {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.folderBadge {
+  font-size: 10px;
+  color: var(--accent-yellow, var(--accent-blue));
+  opacity: 0.85;
+}
+
+.folderMenuWrap {
+  position: relative;
+  opacity: 0;
+  transition: opacity var(--motion-default);
+}
+
+.folderHeader:hover .folderMenuWrap,
+.folderHeader:focus-within .folderMenuWrap,
+.folderMenuWrap:has(button[aria-expanded='true']) {
+  opacity: 1;
+}
+
+.folderMenuBtn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: background-color var(--motion-default), color var(--motion-default);
+}
+
+.folderMenuBtn:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.folderMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  min-width: 180px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.folderMenuItem {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color var(--motion-default);
+}
+
+.folderMenuItem:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+
+.folderMenuItem:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.folderMenuItemDanger {
+  color: var(--accent-red, #f87171);
+}
+
+/* Star button (priority toggle on workspace rows) */
+.starBtn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--motion-default), transform 160ms var(--ease-press, var(--ease-out));
+  flex-shrink: 0;
+}
+
+.workspaceItem:hover .starBtn,
+.workspaceItem:focus-within .starBtn,
+.workspaceItem.active .starBtn,
+.starBtnActive {
+  opacity: 1;
+}
+
+.starBtnActive {
+  color: var(--accent-yellow, var(--accent-blue));
+}
+
+.starBtn:active {
+  transform: scale(0.97);
 }

@@ -592,6 +592,17 @@ export function useShortcuts() {
         }
         return
       }
+
+      // Cmd+Shift+N — new sidebar folder (Finder-style) for the active project.
+      if (shift && !alt && (e.key === 'n' || e.key === 'N')) {
+        consume()
+        const project = store.activeProject() ?? store.projects[0]
+        if (!project) return
+        window.dispatchEvent(
+          new CustomEvent('constellagent:new-sidebar-folder', { detail: { projectId: project.id } }),
+        )
+        return
+      }
     }
 
     // Capture phase: runs before terminal handlers on the focused textarea.
