@@ -66,6 +66,10 @@ export interface Project {
   prLinkProvider?: PrLinkProvider
   graphiteNewBranchSource?: GraphiteNewBranchSource
   graphitePreferredTrunk?: string | null
+  /** Folder the star toggle maps to (one per project). Migration seeds this. */
+  priorityFolderId?: string | null
+  /** Folder new workspaces land in (one per project). Migration seeds this. */
+  defaultFolderId?: string | null
 }
 
 export interface Workspace {
@@ -83,6 +87,17 @@ export interface Workspace {
    */
   graphiteUiTrunkBranch?: string | null
   linkedPullRequest?: LinkedPullRequest
+  /** Sidebar folder this workspace belongs to. Unset rows fall back to project's defaultFolderId. */
+  folderId?: string
+}
+
+/** Sidebar grouping under a project. Seeded with "Priority" + "Non-Priority" per project. */
+export interface Folder {
+  id: string
+  projectId: string
+  name: string
+  order: number
+  collapsed?: boolean
 }
 
 export type SplitLeaf =
@@ -571,6 +586,7 @@ export interface AppState {
   // Data
   projects: Project[]
   workspaces: Workspace[]
+  folders: Folder[]
   tabs: Tab[]
   automations: Automation[]
   activeWorkspaceId: string | null
@@ -737,6 +753,17 @@ export interface AppState {
   reorderWorkspace: (fromId: string, toId: string) => void
   reorderProject: (fromId: string, toId: string) => void
   reorderSidebarAction: (fromId: SidebarActionId, toId: SidebarActionId) => void
+
+  // Sidebar folder actions
+  addFolder: (projectId: string, name: string) => string
+  renameFolder: (id: string, name: string) => void
+  removeFolder: (id: string, reassignTo?: string) => void
+  reorderFolder: (fromId: string, toId: string) => void
+  toggleFolderCollapsed: (id: string) => void
+  setProjectPriorityFolder: (projectId: string, folderId: string) => void
+  setProjectDefaultFolder: (projectId: string, folderId: string) => void
+  moveWorkspaceToFolder: (workspaceId: string, folderId: string) => void
+  togglePriorityForWorkspace: (workspaceId: string) => void
   updateWorkspaceBranch: (id: string, branch: string) => void
   /** Re-scan `git worktree list` and merge missing linked worktrees into the sidebar. */
   refreshGitWorktrees: () => void
@@ -852,6 +879,7 @@ export const DEFAULT_SIDEBAR_ACTION_ORDER: SidebarActionId[] = [
 export interface PersistedState {
   projects: Project[]
   workspaces: Workspace[]
+  folders?: Folder[]
   tabs?: Tab[]
   automations?: Automation[]
   activeWorkspaceId?: string | null

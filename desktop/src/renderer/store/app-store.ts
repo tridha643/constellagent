@@ -4,6 +4,7 @@ import type {
   AppState,
   Automation,
   ChatSnippet,
+  Folder,
   LinearIssuesPriorityPreset,
   PersistedState,
   Project,
@@ -507,6 +508,96 @@ function normalizeHunkReviewWidthByWorkspace(
   return out
 }
 
+/**
+ * Sidebar folders: every project keeps a "Priority" + "Non-Priority" pair.
+ * `seedFoldersForProjects` builds folders for any project missing pointers
+ * (legacy state). Reassigns dangling workspaces to the default folder.
+ */
+function seedFoldersForProjects(
+  projects: Project[],
+  workspaces: Workspace[],
+  folders: Folder[],
+): { projects: Project[]; workspaces: Workspace[]; folders: Folder[] } {
+  const nextFolders = [...folders]
+  const folderIds = new Set(nextFolders.map((f) => f.id))
+  const foldersByProject = new Map<string, Folder[]>()
+  for (const f of nextFolders) {
+    const list = foldersByProject.get(f.projectId) ?? []
+    list.push(f)
+    foldersByProject.set(f.projectId, list)
+  }
+
+  const nextProjects = projects.map((project) => {
+    let projectFolders = foldersByProject.get(project.id) ?? []
+    let priorityId = project.priorityFolderId && folderIds.has(project.priorityFolderId) ? project.priorityFolderId : null
+    let defaultId = project.defaultFolderId && folderIds.has(project.defaultFolderId) ? project.defaultFolderId : null
+
+    if (!priorityId || !defaultId || projectFolders.length === 0) {
+      // Reuse existing folders that match canonical names if present; otherwise create.
+      let priority = projectFolders.find((f) => f.id === priorityId)
+        ?? projectFolders.find((f) => f.name.toLowerCase() === 'priority')
+      let nonPriority = projectFolders.find((f) => f.id === defaultId && f.id !== priority?.id)
+        ?? projectFolders.find((f) => f !== priority && f.name.toLowerCase() === 'non-priority')
+
+      if (!priority) {
+        priority = { id: crypto.randomUUID(), projectId: project.id, name: 'Priority', order: 0 }
+        nextFolders.push(priority)
+        folderIds.add(priority.id)
+        projectFolders = [...projectFolders, priority]
+      }
+      if (!nonPriority) {
+        nonPriority = { id: crypto.randomUUID(), projectId: project.id, name: 'Non-Priority', order: 1 }
+        nextFolders.push(nonPriority)
+        folderIds.add(nonPriority.id)
+        projectFolders = [...projectFolders, nonPriority]
+      }
+      priorityId = priority.id
+      defaultId = nonPriority.id
+      foldersByProject.set(project.id, projectFolders)
+    }
+
+    if (project.priorityFolderId === priorityId && project.defaultFolderId === defaultId) return project
+    return { ...project, priorityFolderId: priorityId, defaultFolderId: defaultId }
+  })
+
+  const projectDefaults = new Map<string, string>()
+  for (const project of nextProjects) {
+    if (project.defaultFolderId) projectDefaults.set(project.id, project.defaultFolderId)
+  }
+
+  const nextWorkspaces = workspaces.map((ws) => {
+    if (ws.folderId && folderIds.has(ws.folderId)) {
+      const folder = nextFolders.find((f) => f.id === ws.folderId)
+      if (folder && folder.projectId === ws.projectId) return ws
+    }
+    const fallback = projectDefaults.get(ws.projectId)
+    if (!fallback) return ws
+    if (ws.folderId === fallback) return ws
+    return { ...ws, folderId: fallback }
+  })
+
+  return { projects: nextProjects, workspaces: nextWorkspaces, folders: nextFolders }
+}
+
+function normalizeFolders(raw: unknown): Folder[] {
+  if (!Array.isArray(raw)) return []
+  const out: Folder[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const r = entry as Record<string, unknown>
+    if (typeof r.id !== 'string' || typeof r.projectId !== 'string' || typeof r.name !== 'string') continue
+    const order = typeof r.order === 'number' && Number.isFinite(r.order) ? r.order : out.length
+    out.push({
+      id: r.id,
+      projectId: r.projectId,
+      name: r.name,
+      order,
+      collapsed: r.collapsed === true ? true : undefined,
+    })
+  }
+  return out
+}
+
 function pruneLastActiveWorkspaceByProjectId(
   lastActiveWorkspaceByProjectId: Record<string, string>,
   projects: Project[],
@@ -526,6 +617,7 @@ function pruneLastActiveWorkspaceByProjectId(
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
   workspaces: [],
+  folders: [],
   tabs: [],
   automations: [],
   activeWorkspaceId: null,
@@ -575,12 +667,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addProject: (project) => {
     const normalizedProject = normalizeProject(project)
-    set((s) => ({
-      projects: [
-        ...s.projects,
-        normalizedProject,
-      ],
-    }))
+    set((s) => {
+      const projects = [...s.projects, normalizedProject]
+      const seeded = seedFoldersForProjects(projects, s.workspaces, s.folders)
+      return { projects: seeded.projects, workspaces: seeded.workspaces, folders: seeded.folders }
+    })
     void syncExternalProjectStartupCommandsForProject(
       normalizedProject.id,
       normalizedProject.repoPath,
@@ -639,9 +730,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? s.activeTabId
         : (newTabs.find((t) => t.workspaceId === activeWorkspaceId)?.id ?? newTabs[0]?.id ?? null)
 
+      const newFolders = s.folders.filter((f) => f.projectId !== id)
+
       return {
         projects: newProjects,
         workspaces: newWorkspaces,
+        folders: newFolders,
         tabs: newTabs,
         automations: newAutomations,
         unreadWorkspaceIds: newUnread,
@@ -669,14 +763,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       branch: workspace.branch,
       meta: workspace.automationId ? { automationOrigin: workspace.automationId } : undefined,
     })
-    set((s) => ({
-      workspaces: [...s.workspaces, workspace],
-      activeWorkspaceId: workspace.id,
-      lastActiveWorkspaceByProjectId: {
-        ...s.lastActiveWorkspaceByProjectId,
-        [workspace.projectId]: workspace.id,
-      },
-    }))
+    set((s) => {
+      const project = s.projects.find((p) => p.id === workspace.projectId)
+      const folderId = workspace.folderId ?? project?.defaultFolderId ?? undefined
+      const ws = folderId ? { ...workspace, folderId } : workspace
+      return {
+        workspaces: [...s.workspaces, ws],
+        activeWorkspaceId: ws.id,
+        lastActiveWorkspaceByProjectId: {
+          ...s.lastActiveWorkspaceByProjectId,
+          [ws.projectId]: ws.id,
+        },
+      }
+    })
   },
 
   removeWorkspace: (id) => {
@@ -789,6 +888,141 @@ export const useAppStore = create<AppState>((set, get) => ({
       const [moved] = next.splice(fromIdx, 1)
       next.splice(toIdx, 0, moved)
       return { sidebarActionOrder: next }
+    })
+  },
+
+  addFolder: (projectId, name) => {
+    const id = crypto.randomUUID()
+    set((s) => {
+      const siblingMax = s.folders
+        .filter((f) => f.projectId === projectId)
+        .reduce((max, f) => Math.max(max, f.order), -1)
+      const folder: Folder = {
+        id,
+        projectId,
+        name: name.trim() || 'Folder',
+        order: siblingMax + 1,
+      }
+      return { folders: [...s.folders, folder] }
+    })
+    return id
+  },
+
+  renameFolder: (id, name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    set((s) => ({
+      folders: s.folders.map((f) => (f.id === id ? { ...f, name: trimmed } : f)),
+    }))
+  },
+
+  removeFolder: (id, reassignTo) => {
+    set((s) => {
+      const folder = s.folders.find((f) => f.id === id)
+      if (!folder) return s
+      const siblings = s.folders.filter((f) => f.projectId === folder.projectId && f.id !== id)
+      if (siblings.length === 0) return s
+      const project = s.projects.find((p) => p.id === folder.projectId)
+
+      const firstSiblingByOrder = siblings.slice().sort((a, b) => a.order - b.order)[0]!.id
+      const explicit = reassignTo && siblings.some((f) => f.id === reassignTo) ? reassignTo : null
+      // Pointer migration: if the deleted folder is the default/priority pointer,
+      // move it to the explicit target or the first remaining folder.
+      const newDefaultId =
+        project?.defaultFolderId === id
+          ? explicit ?? firstSiblingByOrder
+          : project?.defaultFolderId ?? firstSiblingByOrder
+      const newPriorityId =
+        project?.priorityFolderId === id
+          ? explicit ?? firstSiblingByOrder
+          : project?.priorityFolderId ?? firstSiblingByOrder
+      // Workspaces in the deleted folder land in the (post-update) defaultFolderId.
+      const workspaceTargetId = explicit ?? newDefaultId
+
+      const projects = s.projects.map((p) => {
+        if (p.id !== folder.projectId) return p
+        return { ...p, defaultFolderId: newDefaultId, priorityFolderId: newPriorityId }
+      })
+      const workspaces = s.workspaces.map((w) => (w.folderId === id ? { ...w, folderId: workspaceTargetId } : w))
+      const folders = s.folders.filter((f) => f.id !== id)
+      return { projects, workspaces, folders }
+    })
+  },
+
+  reorderFolder: (fromId, toId) => {
+    if (fromId === toId) return
+    set((s) => {
+      const from = s.folders.find((f) => f.id === fromId)
+      const to = s.folders.find((f) => f.id === toId)
+      if (!from || !to || from.projectId !== to.projectId) return s
+      const list = s.folders
+        .filter((f) => f.projectId === from.projectId)
+        .slice()
+        .sort((a, b) => a.order - b.order)
+      const fromIdx = list.findIndex((f) => f.id === fromId)
+      const toIdx = list.findIndex((f) => f.id === toId)
+      if (fromIdx === -1 || toIdx === -1) return s
+      const [moved] = list.splice(fromIdx, 1)
+      list.splice(toIdx, 0, moved)
+      const orderMap = new Map(list.map((f, idx) => [f.id, idx]))
+      const folders = s.folders.map((f) =>
+        f.projectId === from.projectId ? { ...f, order: orderMap.get(f.id) ?? f.order } : f,
+      )
+      return { folders }
+    })
+  },
+
+  toggleFolderCollapsed: (id) => {
+    set((s) => ({
+      folders: s.folders.map((f) => (f.id === id ? { ...f, collapsed: !f.collapsed } : f)),
+    }))
+  },
+
+  setProjectPriorityFolder: (projectId, folderId) => {
+    set((s) => {
+      const folder = s.folders.find((f) => f.id === folderId)
+      if (!folder || folder.projectId !== projectId) return s
+      return {
+        projects: s.projects.map((p) => (p.id === projectId ? { ...p, priorityFolderId: folderId } : p)),
+      }
+    })
+  },
+
+  setProjectDefaultFolder: (projectId, folderId) => {
+    set((s) => {
+      const folder = s.folders.find((f) => f.id === folderId)
+      if (!folder || folder.projectId !== projectId) return s
+      return {
+        projects: s.projects.map((p) => (p.id === projectId ? { ...p, defaultFolderId: folderId } : p)),
+      }
+    })
+  },
+
+  moveWorkspaceToFolder: (workspaceId, folderId) => {
+    set((s) => {
+      const ws = s.workspaces.find((w) => w.id === workspaceId)
+      const folder = s.folders.find((f) => f.id === folderId)
+      if (!ws || !folder || folder.projectId !== ws.projectId) return s
+      if (ws.folderId === folderId) return s
+      return {
+        workspaces: s.workspaces.map((w) => (w.id === workspaceId ? { ...w, folderId } : w)),
+      }
+    })
+  },
+
+  togglePriorityForWorkspace: (workspaceId) => {
+    set((s) => {
+      const ws = s.workspaces.find((w) => w.id === workspaceId)
+      if (!ws) return s
+      const project = s.projects.find((p) => p.id === ws.projectId)
+      if (!project?.priorityFolderId || !project.defaultFolderId) return s
+      const targetId = ws.folderId === project.priorityFolderId
+        ? project.defaultFolderId
+        : project.priorityFolderId
+      if (ws.folderId === targetId) return s
+      return {
+        workspaces: s.workspaces.map((w) => (w.id === workspaceId ? { ...w, folderId: targetId } : w)),
+      }
     })
   },
 
@@ -2661,9 +2895,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       return tab
     })
     const activeTabId = data.activeTabId ?? null
+    const seeded = seedFoldersForProjects(projects, workspaces, normalizeFolders(data.folders))
     set({
-      projects,
-      workspaces,
+      projects: seeded.projects,
+      workspaces: seeded.workspaces,
+      folders: seeded.folders,
       tabs,
       automations: (data.automations ?? []).map((automation) => normalizeRendererAutomation(automation)),
       activeWorkspaceId,
@@ -2900,6 +3136,7 @@ function getPersistedSlice(state: AppState): PersistedState {
   return {
     projects: state.projects.map(({ startupCommands, ...project }) => project),
     workspaces: state.workspaces,
+    folders: state.folders,
     tabs: state.tabs,
     automations: state.automations,
     composioWebhook: state.composioWebhook,
@@ -2931,6 +3168,7 @@ useAppStore.subscribe((state, prevState) => {
   if (
     state.projects !== prevState.projects ||
     state.workspaces !== prevState.workspaces ||
+    state.folders !== prevState.folders ||
     state.tabs !== prevState.tabs ||
     state.activeTabId !== prevState.activeTabId ||
     state.automations !== prevState.automations ||

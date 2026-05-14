@@ -3,12 +3,13 @@ import { useAppStore } from "../../store/app-store";
 import {
   DEFAULT_SIDEBAR_ACTION_ORDER,
   type AgentType,
+  type Folder,
   type Project,
   type PrLinkProvider,
   type SidebarActionId,
   type StartupCommand,
 } from "../../store/types";
-import { getRenderableProjectWorkspaces } from "../../store/sidebar-navigation";
+import { getRenderableFolderGroups } from "../../store/sidebar-navigation";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
 import type { GithubLookupError, LinkedPullRequest, OpenPrInfo, ResolvedPrInfo } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
@@ -17,6 +18,7 @@ import { GraphiteStack } from "./GraphiteStack";
 import { BranchAndPrLauncher } from "./BranchAndPrLauncher";
 import { AddProjectDialog } from "./AddProjectDialog";
 
+import { Folder as FolderIcon } from "lucide-react";
 import { Tooltip } from "../Tooltip/Tooltip";
 import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME, CONSTELLAGENT_PROJECT_MIME } from "../../utils/add-to-chat";
 import { ContextWindowIndicator } from "./ContextWindowIndicator";
@@ -412,6 +414,79 @@ function WorkspaceSyncIndicator({ workspaceId }: { workspaceId: string }) {
   );
 }
 
+function FolderActionsMenu({
+  folder,
+  projectFolderCount,
+  isPriority,
+  isDefault,
+  onRename,
+  onSetPriority,
+  onSetDefault,
+  onDelete,
+  onClose,
+}: {
+  folder: Folder;
+  projectFolderCount: number;
+  isPriority: boolean;
+  isDefault: boolean;
+  onRename: () => void;
+  onSetPriority: () => void;
+  onSetDefault: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDoc = (event: MouseEvent) => {
+      if (!rootRef.current) return;
+      if (rootRef.current.contains(event.target as Node)) return;
+      onClose();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("mousedown", onDoc, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("mousedown", onDoc, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [onClose]);
+
+  const canDelete = projectFolderCount > 1;
+  return (
+    <div ref={rootRef} className={styles.folderMenu} role="menu" aria-label={`${folder.name} actions`}>
+      <button className={styles.folderMenuItem} role="menuitem" onClick={onRename}>
+        Rename
+      </button>
+      <button
+        className={styles.folderMenuItem}
+        role="menuitem"
+        disabled={isPriority}
+        onClick={onSetPriority}
+      >
+        Set as priority target
+      </button>
+      <button
+        className={styles.folderMenuItem}
+        role="menuitem"
+        disabled={isDefault}
+        onClick={onSetDefault}
+      >
+        Set as default
+      </button>
+      <button
+        className={`${styles.folderMenuItem} ${styles.folderMenuItemDanger}`}
+        role="menuitem"
+        disabled={!canDelete}
+        onClick={onDelete}
+      >
+        Delete
+      </button>
+    </div>
+  );
+}
+
 export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?: boolean; showTitleArea?: boolean }) {
   const projects = useAppStore((s) => s.projects);
   const workspaces = useAppStore((s) => s.workspaces);
@@ -448,6 +523,15 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const collapsedProjectIds = useAppStore((s) => s.collapsedProjectIds);
   const toggleProjectCollapsed = useAppStore((s) => s.toggleProjectCollapsed);
   const lastActiveWorkspaceByProjectId = useAppStore((s) => s.lastActiveWorkspaceByProjectId);
+  const folders = useAppStore((s) => s.folders);
+  const addFolder = useAppStore((s) => s.addFolder);
+  const renameFolder = useAppStore((s) => s.renameFolder);
+  const removeFolder = useAppStore((s) => s.removeFolder);
+  const toggleFolderCollapsed = useAppStore((s) => s.toggleFolderCollapsed);
+  const moveWorkspaceToFolder = useAppStore((s) => s.moveWorkspaceToFolder);
+  const togglePriorityForWorkspace = useAppStore((s) => s.togglePriorityForWorkspace);
+  const setProjectPriorityFolder = useAppStore((s) => s.setProjectPriorityFolder);
+  const setProjectDefaultFolder = useAppStore((s) => s.setProjectDefaultFolder);
 
   const [contextMenu, setContextMenu] = useState<{ wsId: string; x: number; y: number } | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -482,6 +566,11 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const [dropTargetActionId, setDropTargetActionId] = useState<SidebarActionId | null>(null);
   const draggingActionIdRef = useRef<SidebarActionId | null>(null);
   const editRef = useRef<string>("");
+  const [dropTargetFolderId, setDropTargetFolderId] = useState<string | null>(null);
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [addingFolderForProjectId, setAddingFolderForProjectId] = useState<string | null>(null);
+  const [folderMenuId, setFolderMenuId] = useState<string | null>(null);
+  const folderAutoExpandTimerRef = useRef<{ id: string; timer: number } | null>(null);
   const dialogProject = workspaceDialogProjectId
     ? (projects.find((p) => p.id === workspaceDialogProjectId) ?? null)
     : null;
@@ -534,6 +623,18 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       setProjectPrSearch("");
     }
   }, [openProjectPrPopoverId, projects]);
+
+  // ⌘⇧N from useShortcuts opens the inline "new folder" input for the active project.
+  useEffect(() => {
+    const onNewFolder = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: string }>).detail;
+      const projectId = detail?.projectId;
+      if (!projectId) return;
+      setAddingFolderForProjectId(projectId);
+    };
+    window.addEventListener("constellagent:new-sidebar-folder", onNewFolder);
+    return () => window.removeEventListener("constellagent:new-sidebar-folder", onNewFolder);
+  }, []);
 
   const closeProjectPrModal = useCallback(() => {
     setOpenProjectPrPopoverId(null);
@@ -1263,9 +1364,11 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
 
         {projects.map((project) => {
           const isExpanded = isProjectExpanded(project.id);
-          const projectWorkspaces = getRenderableProjectWorkspaces(
-            workspaces,
+          const folderGroups = getRenderableFolderGroups(
             project.id,
+            folders,
+            workspaces,
+            project.defaultFolderId ?? null,
           );
 
           return (
@@ -1366,140 +1469,339 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
 
               {isExpanded && (
                 <div className={styles.workspaceList}>
-                  {projectWorkspaces.map((ws) => {
-                    const isEditing = editingWorkspaceId === ws.id;
-                    const isAutoName = /^ws-[a-z0-9]+$/.test(ws.name);
-                    const displayName = isAutoName ? ws.branch : ws.name;
-                    const showMeta =
-                      !isAutoName && ws.branch && ws.branch !== ws.name;
-
+                  {folderGroups.map(({ folder, workspaces: folderWorkspaces }) => {
+                    const isFolderCollapsed = !!folder.collapsed;
+                    const isPriorityFolder = project.priorityFolderId === folder.id;
+                    const isDefaultFolder = project.defaultFolderId === folder.id;
+                    const isFolderEditing = editingFolderId === folder.id;
+                    const isFolderDropTarget = dropTargetFolderId === folder.id;
+                    const projectFolderCount = folderGroups.length;
                     return (
-                      <div
-                        key={ws.id}
-                        className={`${styles.workspaceItem} ${
-                          ws.id === activeWorkspaceId ? styles.active : ""
-                        } ${unreadWorkspaceIds.has(ws.id) ? styles.unread : ""} ${activeClaudeWorkspaceIds.has(ws.id) ? styles.claudeActive : ""} ${draggedWsId === ws.id ? styles.workspaceItemDragging : ""} ${dropTargetWsId === ws.id && draggedWsId !== ws.id ? styles.workspaceItemDropTarget : ""} ${graphiteStacks.has(ws.id) && (graphiteStacks.get(ws.id)?.branches.length ?? 0) > 1 ? styles.graphiteWorkspace : ""}`}
-                        draggable={!isEditing}
-                        onClick={() =>
-                          !isEditing && handleSelectWorkspace(ws.id)
-                        }
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setContextMenu({ wsId: ws.id, x: e.clientX, y: e.clientY });
-                        }}
-                        onDoubleClick={() => {
-                          editRef.current = displayName;
-                          setEditingWorkspaceId(ws.id);
-                        }}
-                        onDragStart={(e) => {
-                          draggingWorkspaceIdRef.current = ws.id;
-                          setDraggedWsId(ws.id);
-                          e.dataTransfer.setData(CONSTELLAGENT_WORKSPACE_MIME, ws.id);
-                          e.dataTransfer.setData("text/plain", ws.id);
-                          e.dataTransfer.effectAllowed = "move";
-                        }}
-                        onDragEnd={() => {
-                          draggingWorkspaceIdRef.current = null;
-                          setDraggedWsId(null);
-                          setDropTargetWsId(null);
-                        }}
-                        onDragOver={(e) => {
-                          if (!draggingWorkspaceIdRef.current) return;
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = "move";
-                          setDropTargetWsId(ws.id);
-                        }}
-                        onDragLeave={(e) => {
-                          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                          setDropTargetWsId((prev) => prev === ws.id ? null : prev);
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          const fromId =
-                            e.dataTransfer.getData(CONSTELLAGENT_WORKSPACE_MIME)
-                            || e.dataTransfer.getData("text/plain");
-                          if (fromId) reorderWorkspace(fromId, ws.id);
-                          draggingWorkspaceIdRef.current = null;
-                          setDraggedWsId(null);
-                          setDropTargetWsId(null);
-                        }}
-                      >
-                        <span className={styles.workspaceIcon}>
-                          {(() => {
-                            const wss = worktreeSyncMap.get(ws.id);
-                            const syncBusy =
-                              wss?.status === "syncing" || wss?.status === "queued";
-                            const syncWarn =
-                              wss?.status === "error" || wss?.status === "conflict";
-                            return syncBusy ? "⟳" : syncWarn ? "⚠" : ws.automationId ? "⏱" : "⌥";
-                          })()}
-                        </span>
-                        <div className={styles.workspaceNameCol}>
-                          {isEditing ? (
+                      <div key={folder.id} className={styles.folderSection}>
+                        <div
+                          className={`${styles.folderHeader} ${isFolderDropTarget ? styles.folderHeaderDropTarget : ""}`}
+                          data-folder-id={folder.id}
+                          onClick={() => {
+                            if (isFolderEditing) return;
+                            toggleFolderCollapsed(folder.id);
+                          }}
+                          onDragOver={(e) => {
+                            if (!draggingWorkspaceIdRef.current) return;
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = "move";
+                            setDropTargetFolderId(folder.id);
+                            const existing = folderAutoExpandTimerRef.current;
+                            if (folder.collapsed && existing?.id !== folder.id) {
+                              if (existing) window.clearTimeout(existing.timer);
+                              const timer = window.setTimeout(() => {
+                                toggleFolderCollapsed(folder.id);
+                                folderAutoExpandTimerRef.current = null;
+                              }, 350);
+                              folderAutoExpandTimerRef.current = { id: folder.id, timer };
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                            setDropTargetFolderId((prev) => (prev === folder.id ? null : prev));
+                            const existing = folderAutoExpandTimerRef.current;
+                            if (existing?.id === folder.id) {
+                              window.clearTimeout(existing.timer);
+                              folderAutoExpandTimerRef.current = null;
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const wsId =
+                              e.dataTransfer.getData(CONSTELLAGENT_WORKSPACE_MIME)
+                              || e.dataTransfer.getData("text/plain");
+                            if (wsId) moveWorkspaceToFolder(wsId, folder.id);
+                            setDropTargetFolderId(null);
+                            const existing = folderAutoExpandTimerRef.current;
+                            if (existing) {
+                              window.clearTimeout(existing.timer);
+                              folderAutoExpandTimerRef.current = null;
+                            }
+                            draggingWorkspaceIdRef.current = null;
+                            setDraggedWsId(null);
+                            setDropTargetWsId(null);
+                          }}
+                        >
+                          <FolderIcon
+                            size={14}
+                            strokeWidth={1.5}
+                            className={`${styles.folderIcon} ${isFolderCollapsed ? styles.folderIconCollapsed : ""}`}
+                            aria-hidden="true"
+                          />
+                          {isFolderEditing ? (
                             <input
-                              className={styles.workspaceNameInput}
-                              defaultValue={displayName}
+                              className={styles.folderNameInput}
+                              defaultValue={folder.name}
                               autoFocus
-                              ref={(el) => {
-                                if (el) {
-                                  el.select();
-                                }
-                              }}
                               onClick={(e) => e.stopPropagation()}
                               onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.currentTarget.blur();
-                                } else if (e.key === "Escape") {
-                                  editRef.current = "";
-                                  setEditingWorkspaceId(null);
-                                }
+                                if (e.key === "Enter") e.currentTarget.blur();
+                                else if (e.key === "Escape") setEditingFolderId(null);
                               }}
                               onBlur={(e) => {
                                 const val = e.currentTarget.value.trim();
-                                if (val && val !== ws.name) {
-                                  renameWorkspace(ws.id, val);
-                                }
-                                setEditingWorkspaceId(null);
+                                if (val && val !== folder.name) renameFolder(folder.id, val);
+                                setEditingFolderId(null);
                               }}
                             />
                           ) : (
-                            <span className={styles.workspaceName}>
-                              {displayName}
-                            </span>
+                            <span className={styles.folderName}>{folder.name}</span>
                           )}
-                          <span className={styles.workspaceMetaRow}>
-                            <WorkspaceMeta
-                              projectId={ws.projectId}
-                              branch={ws.branch}
-                              showBranch={!!showMeta}
-                            />
-                            <WorkspaceSyncIndicator workspaceId={ws.id} />
-                          </span>
-                          <GraphiteStack
-                            workspaceId={ws.id}
-                            worktreePath={ws.worktreePath}
-                            repoPath={project.repoPath}
-                            graphitePreferredTrunk={project.graphitePreferredTrunk}
-                          />
+                          <span className={styles.folderCount}>{folderWorkspaces.length}</span>
+                          {isPriorityFolder && (
+                            <span className={styles.folderBadge} title="Star toggle target">★</span>
+                          )}
+                          <div className={styles.folderMenuWrap} onClick={(e) => e.stopPropagation()}>
+                            <button
+                              className={styles.folderMenuBtn}
+                              aria-label="Folder actions"
+                              aria-expanded={folderMenuId === folder.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFolderMenuId((prev) => (prev === folder.id ? null : folder.id));
+                              }}
+                            >
+                              …
+                            </button>
+                            {folderMenuId === folder.id && (
+                              <FolderActionsMenu
+                                folder={folder}
+                                projectFolderCount={projectFolderCount}
+                                isPriority={isPriorityFolder}
+                                isDefault={isDefaultFolder}
+                                onRename={() => {
+                                  setEditingFolderId(folder.id);
+                                  setFolderMenuId(null);
+                                }}
+                                onSetPriority={() => {
+                                  setProjectPriorityFolder(folder.projectId, folder.id);
+                                  setFolderMenuId(null);
+                                }}
+                                onSetDefault={() => {
+                                  setProjectDefaultFolder(folder.projectId, folder.id);
+                                  setFolderMenuId(null);
+                                }}
+                                onDelete={() => {
+                                  setFolderMenuId(null);
+                                  if (projectFolderCount <= 1) return;
+                                  if (folderWorkspaces.length === 0) {
+                                    removeFolder(folder.id);
+                                    return;
+                                  }
+                                  showConfirmDialog({
+                                    title: "Delete folder",
+                                    message: `Move ${folderWorkspaces.length} workspace${folderWorkspaces.length === 1 ? "" : "s"} out of "${folder.name}" and delete the folder?`,
+                                    confirmLabel: "Delete",
+                                    destructive: true,
+                                    onConfirm: () => {
+                                      removeFolder(folder.id);
+                                      dismissConfirmDialog();
+                                    },
+                                  });
+                                }}
+                                onClose={() => setFolderMenuId(null)}
+                              />
+                            )}
+                          </div>
                         </div>
-                        <BranchAndPrLauncher
-                          projectId={project.id}
-                          repoPath={project.repoPath}
-                          workspaceId={ws.id}
-                          worktreePath={ws.worktreePath}
-                          workspaceBranch={ws.branch}
-                        />
-                        <Tooltip label="Delete workspace">
-                          <button
-                            className={styles.deleteBtn}
-                            onClick={(e) => handleDeleteWorkspace(e, ws)}
-                          >
-                            ✕
-                          </button>
-                        </Tooltip>
+
+                        {!isFolderCollapsed && folderWorkspaces.map((ws) => {
+                          const isEditing = editingWorkspaceId === ws.id;
+                          const isAutoName = /^ws-[a-z0-9]+$/.test(ws.name);
+                          const displayName = isAutoName ? ws.branch : ws.name;
+                          const showMeta =
+                            !isAutoName && ws.branch && ws.branch !== ws.name;
+                          const isPrioritized =
+                            !!project.priorityFolderId && ws.folderId === project.priorityFolderId;
+
+                          return (
+                            <div
+                              key={ws.id}
+                              className={`${styles.workspaceItem} ${
+                                ws.id === activeWorkspaceId ? styles.active : ""
+                              } ${unreadWorkspaceIds.has(ws.id) ? styles.unread : ""} ${activeClaudeWorkspaceIds.has(ws.id) ? styles.claudeActive : ""} ${draggedWsId === ws.id ? styles.workspaceItemDragging : ""} ${dropTargetWsId === ws.id && draggedWsId !== ws.id ? styles.workspaceItemDropTarget : ""} ${graphiteStacks.has(ws.id) && (graphiteStacks.get(ws.id)?.branches.length ?? 0) > 1 ? styles.graphiteWorkspace : ""}`}
+                              draggable={!isEditing}
+                              onClick={() =>
+                                !isEditing && handleSelectWorkspace(ws.id)
+                              }
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                setContextMenu({ wsId: ws.id, x: e.clientX, y: e.clientY });
+                              }}
+                              onDoubleClick={() => {
+                                editRef.current = displayName;
+                                setEditingWorkspaceId(ws.id);
+                              }}
+                              onDragStart={(e) => {
+                                draggingWorkspaceIdRef.current = ws.id;
+                                setDraggedWsId(ws.id);
+                                e.dataTransfer.setData(CONSTELLAGENT_WORKSPACE_MIME, ws.id);
+                                e.dataTransfer.setData("text/plain", ws.id);
+                                e.dataTransfer.effectAllowed = "move";
+                              }}
+                              onDragEnd={() => {
+                                draggingWorkspaceIdRef.current = null;
+                                setDraggedWsId(null);
+                                setDropTargetWsId(null);
+                                setDropTargetFolderId(null);
+                                const existing = folderAutoExpandTimerRef.current;
+                                if (existing) {
+                                  window.clearTimeout(existing.timer);
+                                  folderAutoExpandTimerRef.current = null;
+                                }
+                              }}
+                              onDragOver={(e) => {
+                                if (!draggingWorkspaceIdRef.current) return;
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = "move";
+                                setDropTargetWsId(ws.id);
+                              }}
+                              onDragLeave={(e) => {
+                                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                                setDropTargetWsId((prev) => prev === ws.id ? null : prev);
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                const fromId =
+                                  e.dataTransfer.getData(CONSTELLAGENT_WORKSPACE_MIME)
+                                  || e.dataTransfer.getData("text/plain");
+                                if (fromId && fromId !== ws.id) {
+                                  const dragged = workspaces.find((w) => w.id === fromId);
+                                  if (dragged && dragged.folderId === ws.folderId) {
+                                    reorderWorkspace(fromId, ws.id);
+                                  } else if (dragged && ws.folderId) {
+                                    moveWorkspaceToFolder(fromId, ws.folderId);
+                                  }
+                                }
+                                draggingWorkspaceIdRef.current = null;
+                                setDraggedWsId(null);
+                                setDropTargetWsId(null);
+                              }}
+                            >
+                              <span className={styles.workspaceIcon}>
+                                {(() => {
+                                  const wss = worktreeSyncMap.get(ws.id);
+                                  const syncBusy =
+                                    wss?.status === "syncing" || wss?.status === "queued";
+                                  const syncWarn =
+                                    wss?.status === "error" || wss?.status === "conflict";
+                                  return syncBusy ? "⟳" : syncWarn ? "⚠" : ws.automationId ? "⏱" : "⌥";
+                                })()}
+                              </span>
+                              <div className={styles.workspaceNameCol}>
+                                {isEditing ? (
+                                  <input
+                                    className={styles.workspaceNameInput}
+                                    defaultValue={displayName}
+                                    autoFocus
+                                    ref={(el) => {
+                                      if (el) {
+                                        el.select();
+                                      }
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.currentTarget.blur();
+                                      } else if (e.key === "Escape") {
+                                        editRef.current = "";
+                                        setEditingWorkspaceId(null);
+                                      }
+                                    }}
+                                    onBlur={(e) => {
+                                      const val = e.currentTarget.value.trim();
+                                      if (val && val !== ws.name) {
+                                        renameWorkspace(ws.id, val);
+                                      }
+                                      setEditingWorkspaceId(null);
+                                    }}
+                                  />
+                                ) : (
+                                  <span className={styles.workspaceName}>
+                                    {displayName}
+                                  </span>
+                                )}
+                                <span className={styles.workspaceMetaRow}>
+                                  <WorkspaceMeta
+                                    projectId={ws.projectId}
+                                    branch={ws.branch}
+                                    showBranch={!!showMeta}
+                                  />
+                                  <WorkspaceSyncIndicator workspaceId={ws.id} />
+                                </span>
+                                <GraphiteStack
+                                  workspaceId={ws.id}
+                                  worktreePath={ws.worktreePath}
+                                  repoPath={project.repoPath}
+                                  graphitePreferredTrunk={project.graphitePreferredTrunk}
+                                />
+                              </div>
+                              <Tooltip label={isPrioritized ? "Remove from priority" : "Mark as priority"}>
+                                <button
+                                  className={`${styles.starBtn} ${isPrioritized ? styles.starBtnActive : ""}`}
+                                  aria-label={isPrioritized ? "Remove from priority" : "Mark as priority"}
+                                  aria-pressed={isPrioritized}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    togglePriorityForWorkspace(ws.id);
+                                  }}
+                                >
+                                  {isPrioritized ? "★" : "☆"}
+                                </button>
+                              </Tooltip>
+                              <BranchAndPrLauncher
+                                projectId={project.id}
+                                repoPath={project.repoPath}
+                                workspaceId={ws.id}
+                                worktreePath={ws.worktreePath}
+                                workspaceBranch={ws.branch}
+                              />
+                              <Tooltip label="Delete workspace">
+                                <button
+                                  className={styles.deleteBtn}
+                                  onClick={(e) => handleDeleteWorkspace(e, ws)}
+                                >
+                                  ✕
+                                </button>
+                              </Tooltip>
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })}
+
+                  {addingFolderForProjectId === project.id ? (
+                    <input
+                      className={styles.folderNameInput}
+                      autoFocus
+                      placeholder="Folder name"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        else if (e.key === "Escape") setAddingFolderForProjectId(null);
+                      }}
+                      onBlur={(e) => {
+                        const val = e.currentTarget.value.trim();
+                        if (val) addFolder(project.id, val);
+                        setAddingFolderForProjectId(null);
+                      }}
+                    />
+                  ) : (
+                    <Tooltip label="New folder" shortcut="⇧⌘N">
+                      <button
+                        className={styles.actionButton}
+                        onClick={() => setAddingFolderForProjectId(project.id)}
+                        style={{ paddingLeft: "var(--space-4)" }}
+                      >
+                        <span className={styles.actionIcon}>+</span>
+                        <span>New folder</span>
+                      </button>
+                    </Tooltip>
+                  )}
 
                   <Tooltip label="New workspace" shortcut="⌘N">
                     <button
