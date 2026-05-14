@@ -319,6 +319,24 @@ function reportCreateWorktreeProgress(
   onProgress?.(progress)
 }
 
+/**
+ * Thrown by `GitService.fetchAndRebase` when `git rebase` exits with content
+ * conflicts. The rebase is left mid-flight on disk — callers decide whether to
+ * abort or hand off to an agent.
+ */
+export class RebaseConflictError extends Error {
+  readonly conflictedFiles: string[]
+  constructor(conflictedFiles: string[]) {
+    super(
+      conflictedFiles.length > 0
+        ? `Rebase conflict in ${conflictedFiles.length} file(s)`
+        : 'Rebase conflict',
+    )
+    this.name = 'RebaseConflictError'
+    this.conflictedFiles = conflictedFiles
+  }
+}
+
 export class GitService {
   private static async hasRemote(repoPath: string, remoteName: string): Promise<boolean> {
     return git(['remote', 'get-url', remoteName], repoPath).then(
@@ -1280,6 +1298,91 @@ export class GitService {
 
   static async commit(worktreePath: string, message: string): Promise<void> {
     await git(['commit', '-m', message], worktreePath)
+  }
+
+  /**
+   * Fetch `<remote> <ref>` then `git rebase FETCH_HEAD`. On conflict, throws
+   * a `RebaseConflictError` with the conflicted file list and leaves the rebase
+   * mid-flight so a coding agent (or the user) can resolve it. Other failures
+   * are surfaced via `friendlyGitError`.
+   */
+  static async fetchAndRebase(worktreePath: string, remote: string, ref: string): Promise<void> {
+    const cleanRemote = GitService.sanitizeRemoteName(remote || 'origin') || 'origin'
+    const cleanRef = GitService.sanitizeBranchName(ref)
+    if (!cleanRef) throw new Error('Remote ref is required for fetch + rebase')
+    try {
+      await git(['fetch', cleanRemote, cleanRef], worktreePath)
+    } catch (err) {
+      throw new Error(friendlyGitError(err, `Failed to fetch ${cleanRemote}/${cleanRef}`))
+    }
+    try {
+      await git(['rebase', 'FETCH_HEAD'], worktreePath)
+    } catch (err) {
+      const stderr =
+        typeof err === 'object' && err !== null && 'stderr' in err
+          ? String((err as { stderr?: unknown }).stderr ?? '')
+          : ''
+      const stdout =
+        typeof err === 'object' && err !== null && 'stdout' in err
+          ? String((err as { stdout?: unknown }).stdout ?? '')
+          : ''
+      const blob = `${stderr}\n${stdout}`
+      const isConflict =
+        /CONFLICT \(/.test(blob) ||
+        /could not apply/i.test(blob) ||
+        /Resolve all conflicts manually/i.test(blob)
+      if (isConflict) {
+        const files = await GitService.listRebaseConflicts(worktreePath).catch(() => [] as string[])
+        throw new RebaseConflictError(files)
+      }
+      throw new Error(friendlyGitError(err, 'Rebase failed'))
+    }
+  }
+
+  /**
+   * Parses `git status --porcelain=v1 -z` for two-character conflict codes
+   * (`UU AA DD UA AU UD DU`) and returns the affected paths.
+   */
+  static async listRebaseConflicts(worktreePath: string): Promise<string[]> {
+    let raw = ''
+    try {
+      raw = await git(['status', '--porcelain=v1', '-z'], worktreePath)
+    } catch {
+      return []
+    }
+    if (!raw) return []
+    const CONFLICT_CODES = new Set(['UU', 'AA', 'DD', 'UA', 'AU', 'UD', 'DU'])
+    const out: string[] = []
+    const entries = raw.split('\0')
+    for (let i = 0; i < entries.length; i += 1) {
+      const entry = entries[i]
+      if (!entry || entry.length < 4) continue
+      const code = entry.slice(0, 2)
+      // `R `/`C ` rename/copy entries occupy two null-terminated fields; skip the second.
+      if (code[0] === 'R' || code[1] === 'R' || code[0] === 'C' || code[1] === 'C') {
+        i += 1
+        continue
+      }
+      if (CONFLICT_CODES.has(code)) {
+        const path = entry.slice(3)
+        if (path) out.push(path)
+      }
+    }
+    return out
+  }
+
+  /** True when HEAD is ahead of `<remote>/<ref>` by at least one commit. */
+  static async isAheadOfRemote(worktreePath: string, remote: string, ref: string): Promise<boolean> {
+    const cleanRemote = GitService.sanitizeRemoteName(remote || 'origin') || 'origin'
+    const cleanRef = GitService.sanitizeBranchName(ref)
+    if (!cleanRef) return false
+    try {
+      const out = await git(['rev-list', '--count', `${cleanRemote}/${cleanRef}..HEAD`], worktreePath)
+      const n = Number.parseInt(out.trim(), 10)
+      return Number.isFinite(n) && n > 0
+    } catch {
+      return false
+    }
   }
 
   static async pushCurrentBranch(worktreePath: string): Promise<void> {

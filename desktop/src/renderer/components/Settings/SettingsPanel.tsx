@@ -13,6 +13,8 @@ import {
   NAVIGATION_PANEL_TYPES,
   normalizeLinearIssueCodingAgent,
   normalizeLinearIssueCodingModel,
+  normalizeConflictResolverAgent,
+  normalizeConflictResolverModel,
   normalizeLinearIssueScope,
   normalizeLinearIssuesPriorityPreset,
   normalizePiCommitMessageModel,
@@ -1337,6 +1339,60 @@ function LinearSettingsSection({
           updateSettings({
             linearIssueCodingModel:
               v === '__default' ? '' : normalizeLinearIssueCodingModel(v),
+          })
+        }
+        options={modelSelectOptions}
+      />
+      <ConflictResolverAgentRows />
+    </>
+  )
+}
+
+function ConflictResolverAgentRows() {
+  const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+
+  const agent = normalizeConflictResolverAgent(settings.conflictResolverAgent)
+  const modelPresets = PLAN_MODEL_PRESETS[agent as PlanAgent]
+  const modelValRaw = normalizeConflictResolverModel(settings.conflictResolverModel).trim()
+  const modelSelectOptions = useMemo(() => {
+    const presetIds = new Set(modelPresets.map((p) => p.cliModel))
+    const opts: { value: string; label: string }[] = [
+      { value: '__default', label: 'CLI default (no --model)' },
+      ...modelPresets.map((p) => ({
+        value: p.cliModel,
+        label: `${p.label} (${p.cliModel})`,
+      })),
+    ]
+    if (modelValRaw && !presetIds.has(modelValRaw)) {
+      opts.push({ value: modelValRaw, label: `${modelValRaw} (custom)` })
+    }
+    return opts
+  }, [modelPresets, modelValRaw])
+  const modelSelectValue = modelValRaw === '' ? '__default' : modelValRaw
+
+  return (
+    <>
+      <SelectRow
+        label="Conflict resolver agent"
+        description="CLI launched in a new terminal when a Commit-triggered push hits a non-fast-forward and the auto-rebase has content conflicts. The agent resolves the rebase mid-flight; you re-click Commit to push."
+        value={agent}
+        onChange={(v) =>
+          updateSettings({ conflictResolverAgent: normalizeConflictResolverAgent(v) })
+        }
+        options={BUILD_HARNESS_OPTIONS.map((o) => ({
+          value: o.agent,
+          label: o.label,
+        }))}
+      />
+      <SelectRow
+        label="Conflict resolver model"
+        description="Passed to the conflict-resolver agent as --model when not “CLI default”."
+        value={modelSelectValue}
+        onChange={(v) =>
+          updateSettings({
+            conflictResolverModel:
+              v === '__default' ? '' : normalizeConflictResolverModel(v),
           })
         }
         options={modelSelectOptions}

@@ -583,5 +583,160 @@ test.describe('Git staging functionality', () => {
     }
   })
 
+  test('fetchAndRebase replays local commit on top of remote when no conflict', async () => {
+    const baseDir = join('/tmp', `test-rebase-${Date.now()}`)
+    mkdirSync(baseDir, { recursive: true })
+    const remote = join(baseDir, 'remote.git')
+    const seed = join(baseDir, 'seed')
+    const local = join(baseDir, 'local')
+    const other = join(baseDir, 'other')
+
+    try {
+      mkdirSync(seed, { recursive: true })
+      execSync('git init -q -b main', { cwd: seed })
+      execSync('git config user.email "a@b"', { cwd: seed })
+      execSync('git config user.name "Tester"', { cwd: seed })
+      writeFileSync(join(seed, 'README.md'), 'seed\n')
+      execSync('git add .', { cwd: seed })
+      execSync('git commit -q -m seed', { cwd: seed })
+      execSync(`git clone --bare -q ${seed} ${remote}`)
+      execSync(`git clone -q ${remote} ${local}`)
+      execSync('git config user.email "a@b"', { cwd: local })
+      execSync('git config user.name "Local"', { cwd: local })
+      execSync(`git clone -q ${remote} ${other}`)
+      execSync('git config user.email "b@b"', { cwd: other })
+      execSync('git config user.name "Other"', { cwd: other })
+
+      // Other pushes a non-conflicting change.
+      writeFileSync(join(other, 'remote-only.txt'), 'r\n')
+      execSync('git add .', { cwd: other })
+      execSync('git commit -q -m remote', { cwd: other })
+      execSync('git push -q origin main', { cwd: other })
+
+      // Local commits a different change.
+      writeFileSync(join(local, 'local-only.txt'), 'l\n')
+      execSync('git add .', { cwd: local })
+      execSync('git commit -q -m local', { cwd: local })
+
+      const { app, window } = await launchApp()
+      try {
+        const result = await window.evaluate(async (p: string) => {
+          return await (window as any).api.git.fetchAndRebase(p, 'origin', 'main')
+        }, realpathSync(local))
+        expect(result.ok).toBe(true)
+
+        const log = execSync('git log --format=%s', { cwd: local }).toString().trim().split('\n')
+        expect(log[0]).toBe('local')
+        expect(log[1]).toBe('remote')
+        expect(log[2]).toBe('seed')
+      } finally {
+        await app.close()
+      }
+    } finally {
+      try { rmSync(baseDir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  test('fetchAndRebase surfaces conflict and leaves rebase mid-flight', async () => {
+    const baseDir = join('/tmp', `test-rebase-conflict-${Date.now()}`)
+    mkdirSync(baseDir, { recursive: true })
+    const remote = join(baseDir, 'remote.git')
+    const seed = join(baseDir, 'seed')
+    const local = join(baseDir, 'local')
+    const other = join(baseDir, 'other')
+
+    try {
+      mkdirSync(seed, { recursive: true })
+      execSync('git init -q -b main', { cwd: seed })
+      execSync('git config user.email "a@b"', { cwd: seed })
+      execSync('git config user.name "Tester"', { cwd: seed })
+      writeFileSync(join(seed, 'README.md'), 'seed\n')
+      execSync('git add .', { cwd: seed })
+      execSync('git commit -q -m seed', { cwd: seed })
+      execSync(`git clone --bare -q ${seed} ${remote}`)
+      execSync(`git clone -q ${remote} ${local}`)
+      execSync('git config user.email "a@b"', { cwd: local })
+      execSync('git config user.name "Local"', { cwd: local })
+      execSync(`git clone -q ${remote} ${other}`)
+      execSync('git config user.email "b@b"', { cwd: other })
+      execSync('git config user.name "Other"', { cwd: other })
+
+      // Both sides edit README.md.
+      writeFileSync(join(other, 'README.md'), 'remote version\n')
+      execSync('git add .', { cwd: other })
+      execSync('git commit -q -m remote', { cwd: other })
+      execSync('git push -q origin main', { cwd: other })
+
+      writeFileSync(join(local, 'README.md'), 'local version\n')
+      execSync('git add .', { cwd: local })
+      execSync('git commit -q -m local', { cwd: local })
+
+      const { app, window } = await launchApp()
+      try {
+        const realLocal = realpathSync(local)
+        const result = await window.evaluate(async (p: string) => {
+          return await (window as any).api.git.fetchAndRebase(p, 'origin', 'main')
+        }, realLocal)
+        expect(result.ok).toBe(false)
+        if (result.ok === false) {
+          expect(result.kind).toBe('conflict')
+          expect(result.files).toContain('README.md')
+        }
+        // Rebase must NOT have been auto-aborted.
+        expect(
+          existsSync(join(realLocal, '.git', 'rebase-merge')) ||
+            existsSync(join(realLocal, '.git', 'rebase-apply')),
+        ).toBe(true)
+      } finally {
+        await app.close()
+      }
+    } finally {
+      try { rmSync(baseDir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  test('isAheadOfRemote reflects HEAD being ahead of origin/<branch>', async () => {
+    const baseDir = join('/tmp', `test-ahead-${Date.now()}`)
+    mkdirSync(baseDir, { recursive: true })
+    const remote = join(baseDir, 'remote.git')
+    const seed = join(baseDir, 'seed')
+    const local = join(baseDir, 'local')
+
+    try {
+      mkdirSync(seed, { recursive: true })
+      execSync('git init -q -b main', { cwd: seed })
+      execSync('git config user.email "a@b"', { cwd: seed })
+      execSync('git config user.name "Tester"', { cwd: seed })
+      writeFileSync(join(seed, 'README.md'), 'seed\n')
+      execSync('git add .', { cwd: seed })
+      execSync('git commit -q -m seed', { cwd: seed })
+      execSync(`git clone --bare -q ${seed} ${remote}`)
+      execSync(`git clone -q ${remote} ${local}`)
+      execSync('git config user.email "a@b"', { cwd: local })
+      execSync('git config user.name "Local"', { cwd: local })
+
+      const realLocal = realpathSync(local)
+      const { app, window } = await launchApp()
+      try {
+        const before = await window.evaluate(async (p: string) => {
+          return await (window as any).api.git.isAheadOfRemote(p, 'origin', 'main')
+        }, realLocal)
+        expect(before).toBe(false)
+
+        writeFileSync(join(local, 'a.txt'), 'x\n')
+        execSync('git add .', { cwd: local })
+        execSync('git commit -q -m local', { cwd: local })
+
+        const after = await window.evaluate(async (p: string) => {
+          return await (window as any).api.git.isAheadOfRemote(p, 'origin', 'main')
+        }, realLocal)
+        expect(after).toBe(true)
+      } finally {
+        await app.close()
+      }
+    } finally {
+      try { rmSync(baseDir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
 
 })
