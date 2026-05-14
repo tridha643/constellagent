@@ -20,6 +20,12 @@ export const IPC = {
   GIT_COMMIT: 'git:commit',
   GIT_PUSH_CURRENT_BRANCH: 'git:push-current-branch',
   GIT_PUSH_TO_PR_HEAD: 'git:push-to-pr-head',
+  /** Fetch a remote ref then `git rebase FETCH_HEAD` — used to recover from non-fast-forward push rejections. */
+  GIT_FETCH_AND_REBASE: 'git:fetch-and-rebase',
+  /** Parse `git status --porcelain` for conflicted-file rows during an in-progress rebase/merge. */
+  GIT_LIST_REBASE_CONFLICTS: 'git:list-rebase-conflicts',
+  /** True when HEAD is ahead of `<remote>/<ref>` (used to enable Commit-as-push after an agent resolves a rebase). */
+  GIT_IS_AHEAD_OF_REMOTE: 'git:is-ahead-of-remote',
   /** Switch to (or create) a branch inside a worktree, carrying uncommitted changes. */
   GIT_CHECKOUT_BRANCH: 'git:checkout-branch',
   GIT_GET_CURRENT_BRANCH: 'git:get-current-branch',

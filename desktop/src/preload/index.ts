@@ -103,6 +103,14 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_PUSH_CURRENT_BRANCH, worktreePath) as Promise<void>,
     pushToPrHead: (worktreePath: string, remote: string, headRefName: string) =>
       ipcRenderer.invoke(IPC.GIT_PUSH_TO_PR_HEAD, worktreePath, remote, headRefName) as Promise<void>,
+    fetchAndRebase: (worktreePath: string, remote: string, ref: string) =>
+      ipcRenderer.invoke(IPC.GIT_FETCH_AND_REBASE, worktreePath, remote, ref) as Promise<
+        { ok: true } | { ok: false; kind: 'conflict'; files: string[] }
+      >,
+    listRebaseConflicts: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.GIT_LIST_REBASE_CONFLICTS, worktreePath) as Promise<string[]>,
+    isAheadOfRemote: (worktreePath: string, remote: string, ref: string) =>
+      ipcRenderer.invoke(IPC.GIT_IS_AHEAD_OF_REMOTE, worktreePath, remote, ref) as Promise<boolean>,
     checkoutBranch: (worktreePath: string, branch: string, createNew?: boolean) =>
       ipcRenderer.invoke(IPC.GIT_CHECKOUT_BRANCH, worktreePath, branch, createNew === true) as Promise<void>,
     getCurrentBranch: (worktreePath: string) =>

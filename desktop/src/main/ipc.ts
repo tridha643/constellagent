@@ -17,7 +17,7 @@ import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GraphiteStackAction } from '../shared/graphite-types'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import { PtyManager, type PtyWriteOpts } from './pty-manager'
-import { GitService } from './git-service'
+import { GitService, RebaseConflictError } from './git-service'
 import { WorktreeSyncService } from './worktree-sync-service'
 import { GithubService } from './github-service'
 import { FileService, type FileNode } from './file-service'
@@ -475,6 +475,26 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.GIT_PUSH_TO_PR_HEAD, async (_e, worktreePath: string, remote: string, headRefName: string) => {
     return GitService.pushToPrHead(worktreePath, remote, headRefName)
+  })
+
+  ipcMain.handle(IPC.GIT_FETCH_AND_REBASE, async (_e, worktreePath: string, remote: string, ref: string) => {
+    try {
+      await GitService.fetchAndRebase(worktreePath, remote, ref)
+      return { ok: true as const }
+    } catch (err) {
+      if (err instanceof RebaseConflictError) {
+        return { ok: false as const, kind: 'conflict' as const, files: err.conflictedFiles }
+      }
+      throw err
+    }
+  })
+
+  ipcMain.handle(IPC.GIT_LIST_REBASE_CONFLICTS, async (_e, worktreePath: string) => {
+    return GitService.listRebaseConflicts(worktreePath)
+  })
+
+  ipcMain.handle(IPC.GIT_IS_AHEAD_OF_REMOTE, async (_e, worktreePath: string, remote: string, ref: string) => {
+    return GitService.isAheadOfRemote(worktreePath, remote, ref)
   })
 
   ipcMain.handle(IPC.GIT_CHECKOUT_BRANCH, async (_e, worktreePath: string, branch: string, createNew?: boolean) => {

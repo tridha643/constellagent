@@ -12,6 +12,13 @@ import {
   normalizeWorkspaceBranch,
   preserveWorkspaceBranch,
 } from '../../store/workspace-branch'
+import {
+  normalizeConflictResolverAgent,
+  normalizeConflictResolverModel,
+} from '../../store/types'
+import type { PlanAgent } from '../../../shared/agent-plan-path'
+import { buildAdHocAgentCommand } from '../../../shared/plan-build-command'
+import { formatRebaseConflictAgentPrompt } from '../../agents/conflict-prompt'
 
 const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
 
@@ -57,6 +64,9 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const setGhAvailability = useAppStore((s) => s.setGhAvailability)
   const updateWorkspaceBranch = useAppStore((s) => s.updateWorkspaceBranch)
   const setProjectDefaultBranch = useAppStore((s) => s.setProjectDefaultBranch)
+  const settings = useAppStore((s) => s.settings)
+  const launchAgentTerminalWithCommand = useAppStore((s) => s.launchAgentTerminalWithCommand)
+  const [isAheadOfRemote, setIsAheadOfRemote] = useState(false)
 
   const workspace = workspaces.find((ws) => ws.id === workspaceId)
   const project = workspace ? projects.find((p) => p.id === workspace.projectId) : undefined
@@ -215,6 +225,10 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const unstaged = files.filter((f) => !f.staged)
   const commitMessage = commitMsg.trim()
   const hasOpenPr = prInfo?.state === 'open'
+  const linkedPushRemote = workspace?.linkedPullRequest?.pushRemote || 'origin'
+  const linkedPushRef = workspace?.linkedPullRequest?.headRefName || branch
+  const resolvedPushRemote = workspace?.linkedPullRequest ? linkedPushRemote : 'origin'
+  const resolvedPushRef = workspace?.linkedPullRequest ? linkedPushRef : branch
   const hasClosedPr = prInfo?.state === 'closed'
   const hasMergedPr = prInfo?.state === 'merged'
   const isRenderableBranch = !!branch && branch.toUpperCase() !== 'HEAD'
@@ -242,7 +256,32 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     && branch === defaultBranch
   const graphiteVisible = isGraphiteDefaultBranch && staged.length > 0
   const graphiteDisabled = busy || !commitMessage
-  const showControls = !!prActionMode || graphiteVisible || files.length > 0
+  // Resume-push case: after an agent resolves a rebase the working tree may be clean,
+  // but we still want the Commit button so the user can push the already-committed change.
+  const canResumePush = hasOpenPr && isAheadOfRemote && staged.length === 0
+  const showControls = !!prActionMode || graphiteVisible || files.length > 0 || canResumePush
+
+  // Track whether HEAD is ahead of the resolved push target so the Commit button
+  // can stay enabled with no staged changes after the conflict-resolver agent
+  // finishes a rebase — letting the user click Commit just to push.
+  useEffect(() => {
+    let cancelled = false
+    if (!hasOpenPr || !resolvedPushRef) {
+      setIsAheadOfRemote(false)
+      return
+    }
+    window.api.git
+      .isAheadOfRemote(worktreePath, resolvedPushRemote, resolvedPushRef)
+      .then((ahead) => {
+        if (!cancelled) setIsAheadOfRemote(ahead)
+      })
+      .catch(() => {
+        if (!cancelled) setIsAheadOfRemote(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [worktreePath, hasOpenPr, resolvedPushRemote, resolvedPushRef, files])
 
   const runGitOp = useCallback(async (
     op: () => Promise<void>,
@@ -325,17 +364,99 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   }, [addToast, files.length, worktreePath])
 
   const handleCommit = useCallback(async () => {
-    if (!commitMessage || staged.length === 0) return
+    // Two entry points share this handler:
+    //   1) Normal: at least one staged file. We commit, then push when an open PR exists.
+    //   2) Resume-push after agent-resolved rebase: no staged files, but HEAD is ahead of the
+    //      open PR's push target. Skip the commit step; go straight to push.
+    const resumePushOnly = staged.length === 0 && hasOpenPr && isAheadOfRemote
+    if (!resumePushOnly && (!commitMessage || staged.length === 0)) return
+
     const committedPaths = staged.map((f) => f.path)
     setBusy(true)
     setBusyAction('commit')
-    setBusyLabel('Committing…')
+    setBusyLabel(resumePushOnly ? 'Pushing…' : 'Committing…')
+
+    const doPush = async () => {
+      if (workspace?.linkedPullRequest) {
+        await window.api.git.pushToPrHead(
+          worktreePath,
+          workspace.linkedPullRequest.pushRemote,
+          workspace.linkedPullRequest.headRefName,
+        )
+      } else {
+        await window.api.git.pushCurrentBranch(worktreePath)
+      }
+    }
+
     try {
-      await window.api.git.commit(worktreePath, commitMessage)
-      setCommitMsg('')
-      window.dispatchEvent(new CustomEvent('git:files-changed', {
-        detail: { worktreePath, paths: committedPaths },
-      }))
+      if (!resumePushOnly) {
+        await window.api.git.commit(worktreePath, commitMessage)
+        setCommitMsg('')
+        window.dispatchEvent(new CustomEvent('git:files-changed', {
+          detail: { worktreePath, paths: committedPaths },
+        }))
+      }
+
+      if (hasOpenPr) {
+        setBusyLabel('Pushing…')
+        try {
+          await doPush()
+        } catch (pushErr) {
+          // Non-fast-forward (or any push failure). Try one auto-recovery: fetch + rebase.
+          // We never roll back the local commit — that matches git's own semantics.
+          console.warn('[ChangedFiles] push failed, attempting fetch + rebase recovery', pushErr)
+          setBusyLabel('Rebasing…')
+          const remote = workspace?.linkedPullRequest?.pushRemote || 'origin'
+          const ref = workspace?.linkedPullRequest?.headRefName || branch
+          let rebaseRes: { ok: true } | { ok: false; kind: 'conflict'; files: string[] }
+          try {
+            rebaseRes = await window.api.git.fetchAndRebase(worktreePath, remote, ref)
+          } catch (rebaseErr) {
+            // Non-conflict rebase failure (network, refusal, etc.). Surface the underlying push error
+            // since that's the user's mental model ("Commit pushed but git complained").
+            console.error('[ChangedFiles] fetch+rebase recovery failed:', rebaseErr)
+            addToast({
+              id: crypto.randomUUID(),
+              message: errorMessage(rebaseErr, errorMessage(pushErr, 'Failed to push to remote')),
+              type: 'error',
+            })
+            return
+          }
+          if (rebaseRes.ok) {
+            setBusyLabel('Pushing…')
+            await doPush()
+          } else {
+            // Conflicted rebase — hand off to the configured agent. The local commit stays;
+            // the rebase is left mid-flight; the user re-clicks Commit after the agent finishes.
+            setBusyLabel('Launching agent…')
+            const agent = normalizeConflictResolverAgent(settings.conflictResolverAgent)
+            const model = normalizeConflictResolverModel(settings.conflictResolverModel).trim() || null
+            const prompt = formatRebaseConflictAgentPrompt({
+              branch,
+              pushRemote: remote,
+              pushRef: ref,
+              conflictedFiles: rebaseRes.files,
+            })
+            const { command } = buildAdHocAgentCommand(agent as PlanAgent, model, prompt)
+            try {
+              await launchAgentTerminalWithCommand({
+                workspaceId,
+                worktreePath,
+                title: 'Resolve rebase conflict',
+                command,
+                agentType: agent,
+              })
+            } catch (launchErr) {
+              console.error('[ChangedFiles] failed to launch conflict-resolver agent:', launchErr)
+            }
+            addToast({
+              id: crypto.randomUUID(),
+              message: `Rebase conflict — ${agent} is resolving it. Click Commit again when it's done.`,
+              type: 'warning',
+            })
+          }
+        }
+      }
     } catch (err) {
       console.error('[ChangedFiles] commit failed:', err)
       addToast({
@@ -349,7 +470,21 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
       setBusyAction(null)
       setBusyLabel('')
     }
-  }, [addToast, commitMessage, refresh, staged, worktreePath])
+  }, [
+    addToast,
+    branch,
+    commitMessage,
+    hasOpenPr,
+    isAheadOfRemote,
+    launchAgentTerminalWithCommand,
+    refresh,
+    settings.conflictResolverAgent,
+    settings.conflictResolverModel,
+    staged,
+    workspace,
+    workspaceId,
+    worktreePath,
+  ])
 
   const handlePrAction = useCallback(async () => {
     if (!project || !prActionMode) return
@@ -572,7 +707,15 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
                 <button
                   type="button"
                   className={`${styles.commitButton} ${(prActionMode || graphiteVisible) ? styles.commitButtonSecondary : ''}`}
-                  disabled={busy || !commitMessage || staged.length === 0}
+                  disabled={
+                    busy ||
+                    // Allow re-click after the conflict-resolver agent finishes:
+                    // staged is empty but HEAD is ahead of the open PR's push target,
+                    // so the click just runs the push step.
+                    (staged.length === 0
+                      ? !(hasOpenPr && isAheadOfRemote)
+                      : !commitMessage)
+                  }
                   onClick={() => { void handleCommit() }}
                 >
                   <span className={styles.commitButtonLabel}>

@@ -414,6 +414,17 @@ export function normalizeLinearIssueCodingModel(v: unknown): string {
   return typeof v === 'string' ? v : ''
 }
 
+export function normalizeConflictResolverAgent(v: unknown): AgentType {
+  if (typeof v === 'string' && (LINEAR_ISSUE_CODING_AGENTS as readonly string[]).includes(v)) {
+    return v as AgentType
+  }
+  return 'claude-code'
+}
+
+export function normalizeConflictResolverModel(v: unknown): string {
+  return typeof v === 'string' ? v : ''
+}
+
 /** Pi model id for commit/PR-adjacent generation; empty means app default (composer-2-fast). */
 export function normalizePiCommitMessageModel(v: unknown): string {
   if (typeof v !== 'string') return ''
@@ -483,6 +494,14 @@ export interface Settings {
    */
   linearIssueCodingModel: string
   /**
+   * CLI launched when `git push` after a commit hits a non-fast-forward and the auto fetch+rebase
+   * runs into content conflicts. The agent resolves the rebase mid-flight; the user re-clicks Commit
+   * to push.
+   */
+  conflictResolverAgent: AgentType
+  /** `--model` passed to the conflict-resolver CLI. Empty = omit flag (CLI default). */
+  conflictResolverModel: string
+  /**
    * Pi CLI `--model` for AI-generated commit summaries (Changes panel, branch+PR popover).
    * GitHub `gh pr create --fill` uses commit messages as PR title/body. Empty = composer-2-fast.
    */
@@ -529,6 +548,8 @@ export const DEFAULT_SETTINGS: Settings = {
   linearCopyCreatedIssueToClipboard: true,
   linearIssueCodingAgent: 'claude-code',
   linearIssueCodingModel: '',
+  conflictResolverAgent: 'claude-code',
+  conflictResolverModel: '',
   piCommitMessageModel: '',
 }
 
