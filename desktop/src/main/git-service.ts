@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'child_process'
 import { existsSync } from 'fs'
-import { lstat, readFile, readlink, readdir, realpath, rm, writeFile } from 'fs/promises'
+import { lstat, open, readFile, readlink, readdir, realpath, rm, writeFile } from 'fs/promises'
 import { homedir, tmpdir } from 'os'
 import { promisify } from 'util'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
@@ -51,7 +51,168 @@ async function git(args: string[], cwd: string): Promise<string> {
   return spawnAndCapture('git', args, cwd, 10 * 1024 * 1024)
 }
 
-function spawnAndCapture(command: string, args: string[], cwd: string, maxBuffer: number): Promise<string> {
+function isSpawnEbadf(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const e = err as NodeJS.ErrnoException
+  return e.code === 'EBADF' && e.syscall === 'spawn'
+}
+
+/** POSIX single-quoted string for `sh -c` (incl. newlines in path). */
+function shellQuotePosix(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`
+}
+
+let loggedGitSpawnFallback = false
+
+function logGitSpawnFallbackOnce(which: 'files' | 'shell'): void {
+  if (loggedGitSpawnFallback) return
+  loggedGitSpawnFallback = true
+  console.warn(
+    `[constellagent] git subprocess used ${which} fallback after spawn EBADF (macOS/Electron + libuv); see git-service spawn fallbacks`,
+  )
+}
+
+/**
+ * Last-resort: spawn `/bin/sh` with stdio fully ignored; the shell redirects git output to temp
+ * files. When even fd-based stdio fails with EBADF, Node never opens pipe endpoints for the child.
+ */
+async function spawnAndCaptureViaShellIgnore(
+  command: string,
+  args: string[],
+  cwd: string,
+  maxBuffer: number,
+): Promise<string> {
+  if (process.platform === 'win32') {
+    throw new Error(`${command}: spawn EBADF — no sh-based fallback on Windows`)
+  }
+
+  const id = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const outPath = join(tmpdir(), `ca-sh-out-${id}.txt`)
+  const codePath = join(tmpdir(), `ca-sh-code-${id}.txt`)
+  const q = shellQuotePosix
+  const script = `cd ${q(cwd)} && ${q(command)} ${args.map(q).join(' ')} > ${q(outPath)} 2>&1; printf %s "$?" > ${q(codePath)}`
+
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    let settled = false
+    const child = spawn('/bin/sh', ['-c', script], {
+      stdio: 'ignore',
+      windowsHide: true,
+      env: process.env,
+    })
+    child.on('error', (err) => {
+      if (settled) return
+      settled = true
+      rejectPromise(err)
+    })
+    child.on('close', () => {
+      if (settled) return
+      settled = true
+      resolvePromise()
+    })
+  })
+
+  let stdout = ''
+  let codeRaw = ''
+  try {
+    stdout = await readFile(outPath, 'utf8')
+    codeRaw = (await readFile(codePath, 'utf8')).trim()
+  } finally {
+    await rm(outPath, { force: true }).catch(() => {})
+    await rm(codePath, { force: true }).catch(() => {})
+  }
+
+  const bufferedBytes = Buffer.byteLength(stdout, 'utf8')
+  if (bufferedBytes > maxBuffer) {
+    throw Object.assign(new Error(`${command} output exceeded ${maxBuffer} bytes`), {
+      code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+    })
+  }
+
+  const exitCode = codeRaw === '' || Number.isNaN(Number(codeRaw)) ? null : Number(codeRaw)
+  if (exitCode === 0) return stdout.trimEnd()
+
+  throw Object.assign(new Error(`${command} exited with code ${exitCode ?? 'unknown'}`), {
+    code: exitCode,
+    stdout,
+  })
+}
+
+/**
+ * Capture stdout/stderr via real files instead of Node pipes. macOS + long-running Electron
+ * can hit `spawn EBADF` when libuv sets up pipe stdio; passing file descriptors avoids that path.
+ */
+async function spawnAndCaptureViaFiles(
+  command: string,
+  args: string[],
+  cwd: string,
+  maxBuffer: number,
+): Promise<string> {
+  const id = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const stdoutPath = join(tmpdir(), `ca-git-out-${id}.txt`)
+  const stderrPath = join(tmpdir(), `ca-git-err-${id}.txt`)
+  const stdoutFh = await open(stdoutPath, 'w')
+  const stderrFh = await open(stderrPath, 'w')
+  let exitCode: number | null = null
+  let exitSignal: NodeJS.Signals | null = null
+  try {
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      let settled = false
+      const child = spawn(command, args, {
+        cwd,
+        stdio: ['ignore', stdoutFh.fd, stderrFh.fd],
+        windowsHide: true,
+      })
+      child.on('error', (err) => {
+        if (settled) return
+        settled = true
+        rejectPromise(err)
+      })
+      child.on('close', (code, signal) => {
+        if (settled) return
+        settled = true
+        exitCode = code
+        exitSignal = signal
+        resolvePromise()
+      })
+    })
+  } finally {
+    await stdoutFh.close().catch(() => {})
+    await stderrFh.close().catch(() => {})
+  }
+
+  let stdout = ''
+  let stderr = ''
+  try {
+    stdout = await readFile(stdoutPath, 'utf8')
+    stderr = await readFile(stderrPath, 'utf8')
+  } finally {
+    await rm(stdoutPath, { force: true }).catch(() => {})
+    await rm(stderrPath, { force: true }).catch(() => {})
+  }
+
+  const bufferedBytes = Buffer.byteLength(stdout, 'utf8') + Buffer.byteLength(stderr, 'utf8')
+  if (bufferedBytes > maxBuffer) {
+    throw Object.assign(new Error(`${command} output exceeded ${maxBuffer} bytes`), {
+      code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+    })
+  }
+
+  if (exitCode === 0) return stdout.trimEnd()
+
+  throw Object.assign(new Error(`${command} exited with code ${exitCode ?? exitSignal}`), {
+    code: exitCode,
+    signal: exitSignal,
+    stdout,
+    stderr,
+  })
+}
+
+function spawnAndCaptureWithPipes(
+  command: string,
+  args: string[],
+  cwd: string,
+  maxBuffer: number,
+): Promise<string> {
   return new Promise((resolvePromise, rejectPromise) => {
     // Keep stdin closed explicitly. Electron dev can surface EBADF from execFile's
     // implicit stdio setup before git starts, which breaks status/worktree IPC.
@@ -105,6 +266,27 @@ function spawnAndCapture(command: string, args: string[], cwd: string, maxBuffer
       reject(Object.assign(new Error(`${command} exited with code ${code ?? signal}`), { code, signal }))
     })
   })
+}
+
+async function spawnAndCapture(command: string, args: string[], cwd: string, maxBuffer: number): Promise<string> {
+  const attempts: Array<{ name: 'pipes' | 'files' | 'shell'; run: () => Promise<string> }> = [
+    { name: 'pipes', run: () => spawnAndCaptureWithPipes(command, args, cwd, maxBuffer) },
+    { name: 'files', run: () => spawnAndCaptureViaFiles(command, args, cwd, maxBuffer) },
+    { name: 'shell', run: () => spawnAndCaptureViaShellIgnore(command, args, cwd, maxBuffer) },
+  ]
+
+  let lastErr: unknown
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      const out = await attempts[i].run()
+      if (i > 0) logGitSpawnFallbackOnce(attempts[i].name === 'shell' ? 'shell' : 'files')
+      return out
+    } catch (err) {
+      lastErr = err
+      if (!isSpawnEbadf(err)) throw err
+    }
+  }
+  throw lastErr
 }
 
 /** Module-level registry of in-flight clone child processes, keyed by requestId, so Cancel can SIGTERM them. */

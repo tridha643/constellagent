@@ -593,7 +593,7 @@ export function useShortcuts() {
         return
       }
 
-      // Cmd+Shift+N — new sidebar folder (Finder-style) for the active project.
+      // Cmd+Shift+N — new sidebar folder modal for the active project.
       if (shift && !alt && (e.key === 'n' || e.key === 'N')) {
         consume()
         const project = store.activeProject() ?? store.projects[0]
