@@ -13,12 +13,22 @@ import { getRenderableFolderGroups } from "../../store/sidebar-navigation";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
 import type { GithubLookupError, LinkedPullRequest, OpenPrInfo, ResolvedPrInfo } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
+import { FolderDialog } from "./FolderDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { GraphiteStack } from "./GraphiteStack";
 import { BranchAndPrLauncher } from "./BranchAndPrLauncher";
 import { AddProjectDialog } from "./AddProjectDialog";
 
-import { Folder as FolderIcon } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  Folder as FolderIcon,
+  FolderOpen,
+  GitBranch,
+  Loader2,
+  Timer,
+} from "lucide-react";
+import type { WorkspaceSyncInfo } from "@shared/worktree-sync-types";
 import { Tooltip } from "../Tooltip/Tooltip";
 import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME, CONSTELLAGENT_PROJECT_MIME } from "../../utils/add-to-chat";
 import { ContextWindowIndicator } from "./ContextWindowIndicator";
@@ -39,6 +49,60 @@ const PR_PROVIDER_DOMAINS: Record<PrLinkProvider, string> = {
 const VALID_SIDEBAR_ACTION_IDS = new Set<SidebarActionId>(DEFAULT_SIDEBAR_ACTION_ORDER);
 
 const LINEAR_ICON_SRC = new URL("../../assets/linear/linear-icon.svg", import.meta.url).href;
+
+const WORKTREE_GLYPH_SIZE = 14;
+const WORKTREE_GLYPH_STROKE = 1.75;
+
+function SidebarWorkspaceGlyph({
+  sync,
+  automationId,
+}: {
+  sync: WorkspaceSyncInfo | undefined;
+  automationId: string | null | undefined;
+}) {
+  const busy = sync?.status === "syncing" || sync?.status === "queued";
+  const warn = sync?.status === "error" || sync?.status === "conflict";
+  const base = `${styles.workspaceGlyph} ${styles.workspaceGlyphSlot}`;
+
+  if (busy) {
+    return (
+      <Loader2
+        className={`${base} ${styles.workspaceGlyphSpin}`}
+        size={WORKTREE_GLYPH_SIZE}
+        strokeWidth={WORKTREE_GLYPH_STROKE}
+        aria-hidden
+      />
+    );
+  }
+  if (warn) {
+    return (
+      <AlertCircle
+        className={`${base} ${styles.workspaceGlyphWarn}`}
+        size={WORKTREE_GLYPH_SIZE}
+        strokeWidth={WORKTREE_GLYPH_STROKE}
+        aria-hidden
+      />
+    );
+  }
+  if (automationId) {
+    return (
+      <Timer
+        className={base}
+        size={WORKTREE_GLYPH_SIZE}
+        strokeWidth={WORKTREE_GLYPH_STROKE}
+        aria-hidden
+      />
+    );
+  }
+  return (
+    <GitBranch
+      className={base}
+      size={WORKTREE_GLYPH_SIZE}
+      strokeWidth={WORKTREE_GLYPH_STROKE}
+      aria-hidden
+    />
+  );
+}
 
 function providerUrl(url: string, provider: PrLinkProvider): string {
   return url.replace("github.com", PR_PROVIDER_DOMAINS[provider]);
@@ -529,7 +593,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const removeFolder = useAppStore((s) => s.removeFolder);
   const toggleFolderCollapsed = useAppStore((s) => s.toggleFolderCollapsed);
   const moveWorkspaceToFolder = useAppStore((s) => s.moveWorkspaceToFolder);
-  const togglePriorityForWorkspace = useAppStore((s) => s.togglePriorityForWorkspace);
   const setProjectPriorityFolder = useAppStore((s) => s.setProjectPriorityFolder);
   const setProjectDefaultFolder = useAppStore((s) => s.setProjectDefaultFolder);
 
@@ -568,11 +631,14 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const editRef = useRef<string>("");
   const [dropTargetFolderId, setDropTargetFolderId] = useState<string | null>(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
-  const [addingFolderForProjectId, setAddingFolderForProjectId] = useState<string | null>(null);
+  const [folderDialogProjectId, setFolderDialogProjectId] = useState<string | null>(null);
   const [folderMenuId, setFolderMenuId] = useState<string | null>(null);
   const folderAutoExpandTimerRef = useRef<{ id: string; timer: number } | null>(null);
   const dialogProject = workspaceDialogProjectId
     ? (projects.find((p) => p.id === workspaceDialogProjectId) ?? null)
+    : null;
+  const folderDialogProject = folderDialogProjectId
+    ? (projects.find((p) => p.id === folderDialogProjectId) ?? null)
     : null;
   const isCreatingWorkspace = workspaceCreation !== null;
 
@@ -624,13 +690,13 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
     }
   }, [openProjectPrPopoverId, projects]);
 
-  // ⌘⇧N from useShortcuts opens the inline "new folder" input for the active project.
+  // ⌘⇧N from useShortcuts opens the new-folder modal for the active project.
   useEffect(() => {
     const onNewFolder = (event: Event) => {
       const detail = (event as CustomEvent<{ projectId?: string }>).detail;
       const projectId = detail?.projectId;
       if (!projectId) return;
-      setAddingFolderForProjectId(projectId);
+      setFolderDialogProjectId(projectId);
     };
     window.addEventListener("constellagent:new-sidebar-folder", onNewFolder);
     return () => window.removeEventListener("constellagent:new-sidebar-folder", onNewFolder);
@@ -1481,6 +1547,17 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                         <div
                           className={`${styles.folderHeader} ${isFolderDropTarget ? styles.folderHeaderDropTarget : ""}`}
                           data-folder-id={folder.id}
+                          role="button"
+                          tabIndex={isFolderEditing ? -1 : 0}
+                          aria-expanded={!isFolderCollapsed}
+                          aria-label={`${folder.name} folder, ${isFolderCollapsed ? "collapsed" : "expanded"}`}
+                          onKeyDown={(e) => {
+                            if (isFolderEditing) return;
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              toggleFolderCollapsed(folder.id);
+                            }
+                          }}
                           onClick={() => {
                             if (isFolderEditing) return;
                             toggleFolderCollapsed(folder.id);
@@ -1526,12 +1603,21 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                             setDropTargetWsId(null);
                           }}
                         >
-                          <FolderIcon
-                            size={14}
-                            strokeWidth={1.5}
-                            className={`${styles.folderIcon} ${isFolderCollapsed ? styles.folderIconCollapsed : ""}`}
-                            aria-hidden="true"
-                          />
+                          {isFolderCollapsed ? (
+                            <FolderIcon
+                              size={15}
+                              strokeWidth={1.65}
+                              className={`${styles.folderIcon} ${styles.folderIconClosed}`}
+                              aria-hidden
+                            />
+                          ) : (
+                            <FolderOpen
+                              size={15}
+                              strokeWidth={1.65}
+                              className={`${styles.folderIcon} ${styles.folderIconOpen}`}
+                              aria-hidden
+                            />
+                          )}
                           {isFolderEditing ? (
                             <input
                               className={styles.folderNameInput}
@@ -1550,10 +1636,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                             />
                           ) : (
                             <span className={styles.folderName}>{folder.name}</span>
-                          )}
-                          <span className={styles.folderCount}>{folderWorkspaces.length}</span>
-                          {isPriorityFolder && (
-                            <span className={styles.folderBadge} title="Star toggle target">★</span>
                           )}
                           <div className={styles.folderMenuWrap} onClick={(e) => e.stopPropagation()}>
                             <button
@@ -1609,14 +1691,14 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                           </div>
                         </div>
 
-                        {!isFolderCollapsed && folderWorkspaces.map((ws) => {
+                        {!isFolderCollapsed && (
+                        <div className={styles.folderChildren}>
+                        {folderWorkspaces.map((ws) => {
                           const isEditing = editingWorkspaceId === ws.id;
                           const isAutoName = /^ws-[a-z0-9]+$/.test(ws.name);
                           const displayName = isAutoName ? ws.branch : ws.name;
                           const showMeta =
                             !isAutoName && ws.branch && ws.branch !== ws.name;
-                          const isPrioritized =
-                            !!project.priorityFolderId && ws.folderId === project.priorityFolderId;
 
                           return (
                             <div
@@ -1683,14 +1765,10 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                               }}
                             >
                               <span className={styles.workspaceIcon}>
-                                {(() => {
-                                  const wss = worktreeSyncMap.get(ws.id);
-                                  const syncBusy =
-                                    wss?.status === "syncing" || wss?.status === "queued";
-                                  const syncWarn =
-                                    wss?.status === "error" || wss?.status === "conflict";
-                                  return syncBusy ? "⟳" : syncWarn ? "⚠" : ws.automationId ? "⏱" : "⌥";
-                                })()}
+                                <SidebarWorkspaceGlyph
+                                  sync={worktreeSyncMap.get(ws.id)}
+                                  automationId={ws.automationId}
+                                />
                               </span>
                               <div className={styles.workspaceNameCol}>
                                 {isEditing ? (
@@ -1740,19 +1818,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                   graphitePreferredTrunk={project.graphitePreferredTrunk}
                                 />
                               </div>
-                              <Tooltip label={isPrioritized ? "Remove from priority" : "Mark as priority"}>
-                                <button
-                                  className={`${styles.starBtn} ${isPrioritized ? styles.starBtnActive : ""}`}
-                                  aria-label={isPrioritized ? "Remove from priority" : "Mark as priority"}
-                                  aria-pressed={isPrioritized}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    togglePriorityForWorkspace(ws.id);
-                                  }}
-                                >
-                                  {isPrioritized ? "★" : "☆"}
-                                </button>
-                              </Tooltip>
                               <BranchAndPrLauncher
                                 projectId={project.id}
                                 repoPath={project.repoPath}
@@ -1771,48 +1836,46 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                             </div>
                           );
                         })}
+                        </div>
+                        )}
                       </div>
                     );
                   })}
 
-                  {addingFolderForProjectId === project.id ? (
-                    <input
-                      className={styles.folderNameInput}
-                      autoFocus
-                      placeholder="Folder name"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") e.currentTarget.blur();
-                        else if (e.key === "Escape") setAddingFolderForProjectId(null);
-                      }}
-                      onBlur={(e) => {
-                        const val = e.currentTarget.value.trim();
-                        if (val) addFolder(project.id, val);
-                        setAddingFolderForProjectId(null);
-                      }}
-                    />
-                  ) : (
-                    <Tooltip label="New folder" shortcut="⇧⌘N">
-                      <button
-                        className={styles.actionButton}
-                        onClick={() => setAddingFolderForProjectId(project.id)}
-                        style={{ paddingLeft: "var(--space-4)" }}
-                      >
-                        <span className={styles.actionIcon}>+</span>
-                        <span>New folder</span>
-                      </button>
-                    </Tooltip>
-                  )}
-
-                  <Tooltip label="New workspace" shortcut="⌘N">
-                    <button
-                      className={styles.actionButton}
-                      onClick={() => openWorkspaceDialog(project.id)}
-                      style={{ paddingLeft: "var(--space-4)" }}
-                    >
-                      <span className={styles.actionIcon}>+</span>
-                      <span>New workspace</span>
-                    </button>
-                  </Tooltip>
+                  <details className={styles.projectAddDetails}>
+                    <summary className={styles.projectAddSummary}>
+                      <ChevronDown className={styles.projectAddChevron} size={14} strokeWidth={2} aria-hidden />
+                      <span>Add</span>
+                    </summary>
+                    <div className={styles.projectAddExpand}>
+                      <div className={styles.projectAddMenu}>
+                        <Tooltip label="New folder" shortcut="⇧⌘N">
+                          <button
+                            type="button"
+                            className={styles.projectAddMenuItem}
+                            onClick={(e) => {
+                              (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
+                              setFolderDialogProjectId(project.id);
+                            }}
+                          >
+                            New folder
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="New workspace" shortcut="⌘N">
+                          <button
+                            type="button"
+                            className={styles.projectAddMenuItem}
+                            onClick={(e) => {
+                              (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
+                              openWorkspaceDialog(project.id);
+                            }}
+                          >
+                            New workspace
+                          </button>
+                        </Tooltip>
+                      </div>
+                    </div>
+                  </details>
                 </div>
               )}
             </div>
@@ -2087,6 +2150,17 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
 
       {addProjectDialogOpen && (
         <AddProjectDialog onClose={() => setAddProjectDialogOpen(false)} />
+      )}
+
+      {folderDialogProject && (
+        <FolderDialog
+          project={folderDialogProject}
+          onConfirm={(name) => {
+            addFolder(folderDialogProject.id, name);
+            setFolderDialogProjectId(null);
+          }}
+          onCancel={() => setFolderDialogProjectId(null)}
+        />
       )}
 
       {dialogProject && (
