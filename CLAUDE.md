@@ -2,7 +2,7 @@
 
 These instructions apply to **any repository** where the constellagent app is in use. They govern all coding agents regardless of which codebase is being worked on.
 
-Shared instructions for all coding agents — session context, Cachebro, AgentFS, and **review annotations** — are in **`AGENTS.md`** at the repository root (when available).
+Shared instructions for all coding agents — session context, Cachebro, AgentFS, and **review annotations** — are in **`AGENTS.md`** at the repository root (when available). Keep this file and `AGENTS.md` in sync when you change shared policies (annotations, Sendblue, AgentFS storage location).
 
 ## Comment selection in Review Changes
 
@@ -66,6 +66,14 @@ constell-annotate add --file src/foo.ts --new-line 42 --summary "Why" --author "
 ## Session & activity context (optional)
 
 In repositories that still ship workspace context files, read **`.constellagent/context/sliding-window.md`**, **`.constellagent/context/agent-context.md`**, and **`.constellagent/sessions/`** when present. Constellagent may store AgentFS-backed data under **`.git/`** instead of `.constellagent/` — see **`AGENTS.md`**.
+
+## AgentFS database location
+
+AgentFS-backed storage for app internals lives under the repo's **`.git/`** directory (no longer under `.constellagent/`). The review-annotations DB is at **`.git/review-annotations.db`** in Constellagent-managed repos, or `~/.local/share/constellagent/review-annotations.db` (scoped by `repo_root`) for standalone CLI use. See `AGENTS.md` for the canonical reference.
+
+## Author tagging is required
+
+When invoking `constell-annotate add`, **always pass `--author "claude-code"`**. Comments without an `--author` are treated as human-authored in the Review Changes panel and become toggleable, which defeats the purpose of distinguishing AI annotations.
 
 ## Cachebro (MCP — auto-configured)
 

@@ -2,6 +2,8 @@
 
 These instructions apply to **any repository** where the constellagent app is in use — not just the constellagent codebase itself. They govern **all** coding agent harnesses (Cursor, Claude Code, Codex, Gemini, etc.).
 
+For Claude-Code-specific overrides and reminders, see **`CLAUDE.md`** alongside this file. When updating shared policies (review annotations, Sendblue notifications, AgentFS storage), update both files together so Claude Code and other harnesses stay aligned.
+
 ## Workspace storage
 
 Constellagent no longer creates a workspace-level `.constellagent/` directory for context capture or session history.
@@ -106,3 +108,4 @@ sendblue send +<YOUR_E164_RECIPIENT> "<agent-name> <plan-topic-name> is over"
 - Use the plan title for `<plan-topic-name>` when one exists; otherwise use a short task topic derived from the user request.
 - Retry the `sendblue send` command up to 3 times if it fails.
 - If all retries fail, the agent must say so explicitly in its final response with the failure string. Silent failure is not allowed.
+- If the `sendblue` CLI is not installed in the environment (`command not found`), treat that as a failed-after-retries case: report it explicitly in the final response with the recipient and message text that would have been sent, and continue the task — do not block PR creation on a missing notifier binary.
