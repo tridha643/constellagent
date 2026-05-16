@@ -290,11 +290,27 @@ export function buildPlanAgentCommand(
   return { command: parts.join(' ') }
 }
 
+export interface AdHocAgentCommandOptions {
+  /**
+   * Append the per-harness "skip every approval prompt" flag. Intended for headless
+   * automation runs (Composio triggers, scheduled jobs) where there is no human at
+   * the terminal to click through permission dialogs. Leave false for UI launches.
+   */
+  autoApprove?: boolean
+}
+
+/** Per-harness flag that bypasses interactive approval / permission prompts. */
+const AGENT_AUTO_APPROVE_FLAG: Partial<Record<PlanAgent, string>> = {
+  'claude-code': '--dangerously-skip-permissions',
+  codex: '--dangerously-bypass-approvals-and-sandbox',
+}
+
 /** Build the CLI command for an ad-hoc prompt (e.g. Linear issue text) in the given harness. */
 export function buildAdHocAgentCommand(
   agent: PlanAgent,
   modelLabel: string | null,
   prompt: string,
+  options: AdHocAgentCommandOptions = {},
 ): BuildCommandResult {
   const cli = AGENT_CLI[agent]
   const cliModel = modelLabel?.trim()
@@ -303,6 +319,10 @@ export function buildAdHocAgentCommand(
   const body = prompt.trim() || ' '
   const parts = [cli]
   if (cliModel) parts.push('--model', cliModel)
+  if (options.autoApprove) {
+    const flag = AGENT_AUTO_APPROVE_FLAG[agent]
+    if (flag) parts.push(flag)
+  }
   parts.push(shellEscape(body))
   return { command: parts.join(' ') }
 }

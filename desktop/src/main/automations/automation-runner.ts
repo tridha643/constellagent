@@ -87,7 +87,11 @@ export class AutomationRunner {
 
     const shell = process.env.SHELL || '/bin/zsh'
     const prompt = buildAgentPrompt(definition, payload)
-    const command = buildAdHocAgentCommand(definition.agent, null, prompt).command
+    // autoApprove: headless trigger runs have no human at the terminal to click
+    // permission/approval prompts (claude --dangerously-skip-permissions,
+    // codex --dangerously-bypass-approvals-and-sandbox). Without this the agent
+    // stalls waiting for input and the automation never finishes.
+    const command = buildAdHocAgentCommand(definition.agent, null, prompt, { autoApprove: true }).command
     const ptyId = this.ptyManager.create(
       worktreePath,
       win.webContents,
