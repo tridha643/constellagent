@@ -106,3 +106,14 @@ sendblue send +<YOUR_E164_RECIPIENT> "<agent-name> <plan-topic-name> is over"
 - Use the plan title for `<plan-topic-name>` when one exists; otherwise use a short task topic derived from the user request.
 - Retry the `sendblue send` command up to 3 times if it fails.
 - If all retries fail, the agent must say so explicitly in its final response with the failure string. Silent failure is not allowed.
+
+## Email-to-PR automation mode
+
+Constellagent ships an automation mode that turns inbound Gmail messages (`GMAIL_NEW_GMAIL_MESSAGE` Composio trigger) into pushed branches and GitHub pull requests. Agents invoked under this mode operate as follows:
+
+- The filtered Composio event (`subject`, `sender`, `message_text`, `message_id`, `thread_id`) carries the user's request — treat the email body as the implementation prompt.
+- Sync `main` from `origin`, then work on a new branch named `email/<short-message-id>-<short-slug>`.
+- Implement the smallest useful change that satisfies the request, run relevant validation, commit with a message referencing the source email subject / `message_id`, push, and open a PR against `main` via the configured GitHub PR creation tool.
+- The PR body must include the requester/sender, Gmail `message_id` / `thread_id`, a summary of changes, tests run, and a note that it was generated from an email automation.
+- Refuse only when the email is plainly unrelated to constellagent or requests no code/documentation/PR work; for ambiguous but valid requests, pick the safest reasonable interpretation and proceed.
+- All other policies above — review annotations, Sendblue notifications, no committed secrets/personal numbers — apply unchanged in this mode.
