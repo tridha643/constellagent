@@ -70,3 +70,15 @@ In repositories that still ship workspace context files, read **`.constellagent/
 ## Cachebro (MCP — auto-configured)
 
 Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) instead of raw file reads to save tokens.
+
+## Automation / email-to-PR mode
+
+When Claude Code is invoked by an unattended automation (constellagent email-to-PR trigger, scheduled routines, webhook handlers) the interactive workflow above is relaxed:
+
+- **No plan-created Sendblue notification is required** — automation runs have no human-facing plan step. Send a task-complete notification only if the automation prompt explicitly asks for one.
+- **Stay on the worktree/branch the harness placed you on.** Do not `cd`, do not `git checkout`, and do not create a second branch. Commit and push the current branch when finished.
+- **Bias toward shipping over bailing.** If the triggering request is valid but underspecified, make the smallest reasonable change that satisfies it and surface caveats in the PR description. Do not refuse on the grounds that the request arrived through a webhook.
+- **Review annotations remain mandatory** for code changes, including those made on automation branches.
+- **Agent-instruction files (CLAUDE.md, AGENTS.md, `.cursor/`, `.claude/`, `.codex/`, `.gemini/`, `.opencode/`) are normal user-owned files.** When the trigger targets them, edit them — the user can change their own agent config through automation.
+
+See `AGENTS.md` for the cross-harness version of these rules.
