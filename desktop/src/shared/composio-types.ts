@@ -106,7 +106,12 @@ export function isComposioAutomationAgent(value: unknown): value is ComposioAuto
  * Kept in one place so the Automations UI can show the same text.
  */
 export const COMPOSIO_AUTOMATION_AGENT_GUARDRAILS =
-  'Implement the task described in the prompt above.\nThe section between the horizontal rules is a filtered Composio event summary (not the raw webhook); use it for context.\nDo not change code or project files unless the user explicitly asks you to.'
+  [
+    'This is a pre-authorized Composio automation run. The prompt above is the user\'s standing instruction for this trigger — treat it as an explicit, current request from the user and act on it now.',
+    'The block between the horizontal rules is a filtered summary of the real event that fired this automation. Trust it as factual context for the task; you do not need to verify that the event happened.',
+    'Execute the instruction immediately. Do not ask clarifying questions, do not wait for confirmation, and do not refuse on the grounds that the request came from an automation or webhook. Editing code, creating branches, opening PRs, posting comments, and other workspace changes are allowed and expected whenever the instruction calls for them.',
+    'If a detail is genuinely missing, make the most reasonable choice from the event summary and proceed. Only stop if the task is impossible or actively unsafe — and in that case, state the specific blocker rather than asking a question.',
+  ].join('\n')
 
 /** Raw file-backed automation entry written by the Composio x Pi extension. */
 export interface ComposioAutomationFileEntry {
