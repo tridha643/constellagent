@@ -51,6 +51,50 @@ async function git(args: string[], cwd: string): Promise<string> {
   return spawnAndCapture('git', args, cwd, 10 * 1024 * 1024)
 }
 
+/**
+ * Run git with custom env vars layered on top of `process.env`. Used by
+ * SpotlightService where we set `GIT_INDEX_FILE` to keep the worktree's
+ * canonical index untouched while we build a checkpoint tree.
+ */
+async function spawnAndCaptureWithEnv(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): Promise<string> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(command, args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: { ...process.env, ...env },
+    })
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    child.stdout?.on('data', (c: Buffer) => { stdout += c.toString('utf8') })
+    child.stderr?.on('data', (c: Buffer) => { stderr += c.toString('utf8') })
+    child.on('error', (err) => {
+      if (settled) return
+      settled = true
+      rejectPromise(err)
+    })
+    child.on('close', (code, signal) => {
+      if (settled) return
+      settled = true
+      if (code === 0) resolvePromise(stdout.trimEnd())
+      else rejectPromise(Object.assign(new Error(`${command} exited with code ${code ?? signal}`), { code, signal, stdout, stderr }))
+    })
+  })
+}
+
+export interface SpotlightRootSnapshot {
+  /** HEAD ref at the moment Spotlight engaged. */
+  head: string
+  /** `git stash create` SHA of pre-spotlight uncommitted root work; null if root was clean. */
+  stashSha: string | null
+}
+
 function isSpawnEbadf(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false
   const e = err as NodeJS.ErrnoException
@@ -1777,6 +1821,205 @@ export class GitService {
     const hasOrigin = await this.hasRemote(repoPath, 'origin')
     if (!hasOrigin) return
     await git(['fetch', '--prune', 'origin'], repoPath).catch(() => {})
+  }
+
+  // ── Spotlight helpers ────────────────────────────────────────────────
+  // Conductor-style "Spotlight testing": stage the worktree, record a tree on a
+  // private ref (`refs/spotlight/<wsId>`), and apply that tree into the repo
+  // root via `read-tree -u -m`. The 2-way merge form preserves untracked root
+  // files (node_modules, .next, build caches) so dev servers keep running.
+
+  /**
+   * `git add -A` in the worktree, then `write-tree` → `commit-tree` →
+   * `update-ref refs/spotlight/<wsId>`. Returns the new commit SHA. The
+   * workspace's working branch is never touched.
+   */
+  static async commitToSpotlightRef(worktreePath: string, wsId: string): Promise<string> {
+    const refName = GitService.spotlightRefName(wsId)
+    // Stage everything (including deletions). Use a dedicated index file so
+    // the worktree's user-visible index stays untouched if anything fails
+    // mid-flight — see `GIT_INDEX_FILE` env override below.
+    const indexPath = join(tmpdir(), `constellagent-spotlight-index-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    try {
+      // Initialize the temp index by copying the worktree's current index so
+      // file modes / rename detection inherit existing state.
+      const wtIndex = join(worktreePath, '.git', 'index')
+      if (existsSync(wtIndex)) {
+        await readFile(wtIndex).then((buf) => writeFile(indexPath, buf))
+      }
+      await spawnAndCaptureWithEnv('git', ['add', '-A'], worktreePath, { GIT_INDEX_FILE: indexPath })
+      const tree = (await spawnAndCaptureWithEnv('git', ['write-tree'], worktreePath, { GIT_INDEX_FILE: indexPath })).trim()
+      if (!tree) throw new Error('git write-tree returned empty output')
+
+      // Reuse the prior spotlight commit as parent (if any) so the recovery ref
+      // forms a navigable chain for `git log refs/spotlight/<wsId>`.
+      let parentSha: string | null = null
+      try {
+        parentSha = (await git(['rev-parse', '--verify', refName], worktreePath)).trim() || null
+      } catch {
+        parentSha = null
+      }
+
+      const message = `spotlight: ${new Date().toISOString()}`
+      const commitArgs = ['commit-tree', tree, '-m', message]
+      if (parentSha) commitArgs.push('-p', parentSha)
+      const commit = (await spawnAndCaptureWithEnv('git', commitArgs, worktreePath, {
+        // Identity is required for `commit-tree`; use a deterministic one so
+        // these checkpoints are easy to spot in reflog.
+        GIT_AUTHOR_NAME: 'Constellagent Spotlight',
+        GIT_AUTHOR_EMAIL: 'spotlight@constellagent',
+        GIT_COMMITTER_NAME: 'Constellagent Spotlight',
+        GIT_COMMITTER_EMAIL: 'spotlight@constellagent',
+      })).trim()
+      if (!commit) throw new Error('git commit-tree returned empty output')
+
+      await git(['update-ref', refName, commit, parentSha ?? ''].filter(Boolean) as string[], worktreePath)
+      return commit
+    } finally {
+      await rm(indexPath, { force: true }).catch(() => {})
+    }
+  }
+
+  /**
+   * `git -C <rootPath> read-tree -u -m <commitSha>` — atomically updates the
+   * root's index + working tree to match the commit's tree. Untracked files at
+   * root (build caches) are preserved by the 2-way merge semantics.
+   *
+   * Falls back to `archive | tar -x` when read-tree refuses to overwrite
+   * locally-modified tracked files — this is a "Spotlight wins" sync, so the
+   * fallback is the contract, not an emergency hatch.
+   */
+  static async readTreeInto(rootPath: string, commitSha: string): Promise<void> {
+    try {
+      await git(['read-tree', '-u', '-m', commitSha], rootPath)
+      // `read-tree -m` updates the index; also need to checkout to update the
+      // working tree files that are in the new tree.
+      await git(['checkout-index', '-a', '-f'], rootPath)
+    } catch {
+      // Fallback: `archive | tar -x` — overwrites any locally-modified tracked
+      // files at root, which matches the one-way-sync contract.
+      await GitService.applyTreeViaArchive(rootPath, commitSha)
+    }
+  }
+
+  /**
+   * Stream `git archive` into `tar -x` so submodule pointer files transfer
+   * correctly. Used both as a fallback for `read-tree` and as the primary path
+   * when the worktree has submodules.
+   */
+  static async applyTreeViaArchive(rootPath: string, commitSha: string): Promise<void> {
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      const archive = spawn('git', ['archive', '--format=tar', commitSha], {
+        cwd: rootPath,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
+      const tar = spawn('tar', ['-x', '-C', rootPath], {
+        stdio: ['pipe', 'ignore', 'pipe'],
+        windowsHide: true,
+      })
+      let settled = false
+      const fail = (err: Error) => {
+        if (settled) return
+        settled = true
+        try { archive.kill() } catch {}
+        try { tar.kill() } catch {}
+        rejectPromise(err)
+      }
+      archive.on('error', fail)
+      tar.on('error', fail)
+      archive.stdout?.pipe(tar.stdin!)
+      tar.on('close', (code) => {
+        if (settled) return
+        if (code === 0) {
+          settled = true
+          resolvePromise()
+        } else {
+          fail(new Error(`tar -x exited with code ${code ?? 'unknown'}`))
+        }
+      })
+    })
+  }
+
+  /** `git update-ref -d refs/spotlight/<wsId>` — cleans up on workspace delete. */
+  static async deleteSpotlightRef(repoPath: string, wsId: string): Promise<void> {
+    const refName = GitService.spotlightRefName(wsId)
+    await git(['update-ref', '-d', refName], repoPath).catch(() => {})
+  }
+
+  /**
+   * Snapshot root state before Spotlight engages: HEAD ref + a stash of any
+   * uncommitted work (`--keep-index --include-untracked`). The stash sha is
+   * returned so `restoreSpotlightSnapshot` can replay it on disable.
+   */
+  static async snapshotForSpotlight(rootPath: string): Promise<SpotlightRootSnapshot> {
+    const head = (await git(['rev-parse', 'HEAD'], rootPath)).trim()
+    // Save uncommitted edits (tracked + untracked) so we can restore exactly
+    // what the user had open before Spotlight took over root.
+    let stashSha: string | null = null
+    try {
+      const status = (await git(['status', '--porcelain=v1', '-z'], rootPath)).trim()
+      if (status) {
+        // `stash create` builds a stash commit without pushing it onto the
+        // stash stack. Captures tracked-file edits only — untracked files at
+        // root (node_modules, build caches) are *not* stashed and *not*
+        // removed below, so they survive Spotlight engaging.
+        const sha = (await git(['stash', 'create', 'constellagent-spotlight-pre'], rootPath)).trim()
+        if (sha) stashSha = sha
+        // Reset tracked working-tree changes only. We deliberately do NOT
+        // run `git clean -fd` — that would nuke the untracked build caches
+        // Spotlight is contractually obligated to preserve.
+        await git(['reset', '--hard', 'HEAD'], rootPath)
+      }
+    } catch {
+      stashSha = null
+    }
+    return { head, stashSha }
+  }
+
+  /**
+   * Reverse `snapshotForSpotlight`: hard-reset root to the saved HEAD, then
+   * replay the stash (if any) via `stash apply <sha>`. Untracked-at-root files
+   * (build caches) are not touched.
+   */
+  static async restoreSpotlightSnapshot(rootPath: string, snapshot: SpotlightRootSnapshot): Promise<void> {
+    await git(['reset', '--hard', snapshot.head], rootPath)
+    if (snapshot.stashSha) {
+      try {
+        await git(['stash', 'apply', '--index', snapshot.stashSha], rootPath)
+      } catch {
+        // `--index` can fail when the stash also touched the index; fall back
+        // to a plain apply (working-tree-only) before giving up silently.
+        await git(['stash', 'apply', snapshot.stashSha], rootPath).catch(() => {})
+      }
+    }
+  }
+
+  /** True when `.git/MERGE_HEAD` or `.git/rebase-merge/` exists at `path`. */
+  static async hasRebaseOrMergeInProgress(path: string): Promise<boolean> {
+    try {
+      const gitDir = (await git(['rev-parse', '--git-dir'], path)).trim()
+      const abs = isAbsolute(gitDir) ? gitDir : join(path, gitDir)
+      return (
+        existsSync(join(abs, 'MERGE_HEAD')) ||
+        existsSync(join(abs, 'rebase-merge')) ||
+        existsSync(join(abs, 'rebase-apply')) ||
+        existsSync(join(abs, 'CHERRY_PICK_HEAD'))
+      )
+    } catch {
+      return false
+    }
+  }
+
+  /** True when a `.gitmodules` file exists at the worktree root. */
+  static async hasSubmodules(worktreePath: string): Promise<boolean> {
+    return existsSync(join(worktreePath, '.gitmodules'))
+  }
+
+  private static spotlightRefName(wsId: string): string {
+    // Avoid slashes/odd chars in the ref name; git refs forbid `..`, `~`, etc.
+    const safe = wsId.replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 200) || 'unknown'
+    return `refs/spotlight/${safe}`
   }
 
   /**

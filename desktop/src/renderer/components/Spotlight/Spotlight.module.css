@@ -1,0 +1,195 @@
+/* Spotlight tokens — strong custom easing curves, not the built-in weak ones. */
+.spotlightTokens,
+:root {
+  --ease-out-spotlight: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-spotlight: cubic-bezier(0.77, 0, 0.175, 1);
+  --spotlight-dot-fade: 180ms;
+  --spotlight-dot-color: 220ms;
+  --spotlight-ring-fade: 220ms;
+  --spotlight-toast-enter: 240ms;
+  --spotlight-toast-exit: 180ms;
+  --spotlight-breath: 1400ms;
+
+  --spotlight-watching: #3b82f6;
+  --spotlight-syncing: #f59e0b;
+  --spotlight-blocked: #ef4444;
+  --spotlight-error: #ef4444;
+}
+
+/* ── Status dot ─────────────────────────────────────────────────────── */
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: 6px;
+  background: var(--spotlight-watching);
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    background-color var(--spotlight-dot-color) var(--ease-in-out-spotlight),
+    opacity var(--spotlight-dot-fade) var(--ease-out-spotlight),
+    transform var(--spotlight-dot-fade) var(--ease-out-spotlight);
+  will-change: opacity, transform;
+}
+
+.dot_preparing {
+  background: var(--spotlight-syncing);
+  animation: spotlight-fade-in 200ms var(--ease-out-spotlight);
+}
+
+/* Breathing during active sync — opacity-only so it animates on the GPU. */
+.dot_syncing {
+  background: var(--spotlight-syncing);
+  animation: spotlight-breathe var(--spotlight-breath) ease-in-out infinite;
+}
+
+.dot_watching {
+  background: var(--spotlight-watching);
+}
+
+.dot_restoring {
+  background: var(--spotlight-syncing);
+  opacity: 0.7;
+}
+
+.dot_blocked,
+.dot_error {
+  background: var(--spotlight-blocked);
+}
+
+.dotWobble {
+  animation: spotlight-wobble 160ms var(--ease-out-spotlight);
+}
+
+@keyframes spotlight-fade-in {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes spotlight-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+@keyframes spotlight-wobble {
+  0% { transform: translateX(0); }
+  33% { transform: translateX(-1px); }
+  66% { transform: translateX(1px); }
+  100% { transform: translateX(0); }
+}
+
+/* ── Glow ring ──────────────────────────────────────────────────────── */
+
+.glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--spotlight-watching) 35%, transparent),
+    0 0 12px -2px color-mix(in srgb, var(--spotlight-watching) 25%, transparent);
+  opacity: 1;
+  transition: box-shadow var(--spotlight-ring-fade) var(--ease-out-spotlight),
+    opacity var(--spotlight-ring-fade) var(--ease-out-spotlight);
+}
+
+.glow_preparing,
+.glow_syncing,
+.glow_restoring {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--spotlight-syncing) 40%, transparent),
+    0 0 12px -2px color-mix(in srgb, var(--spotlight-syncing) 28%, transparent);
+}
+
+.glow_blocked,
+.glow_error {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--spotlight-blocked) 45%, transparent),
+    0 0 12px -2px color-mix(in srgb, var(--spotlight-blocked) 30%, transparent);
+}
+
+/* ── Toast ──────────────────────────────────────────────────────────── */
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--bg-secondary, #1e1e1e);
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-width: 280px;
+  max-width: 380px;
+  font-size: 13px;
+  color: var(--text-primary, #fff);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 10000;
+  transform: translateY(0);
+  opacity: 1;
+  transition:
+    transform var(--spotlight-toast-enter) var(--ease-out-spotlight),
+    opacity var(--spotlight-toast-enter) var(--ease-out-spotlight);
+}
+
+.toastEntering {
+  transform: translateY(8px);
+  opacity: 0;
+}
+
+.toastExiting {
+  transform: translateY(8px);
+  opacity: 0;
+  transition:
+    transform var(--spotlight-toast-exit) var(--ease-out-spotlight),
+    opacity var(--spotlight-toast-exit) var(--ease-out-spotlight);
+}
+
+.toastMessage { flex: 1; }
+
+.toastAction {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border, rgba(255,255,255,0.15));
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out-spotlight), background-color 160ms var(--ease-out-spotlight);
+}
+.toastAction:active { transform: scale(0.97); }
+.toastAction:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+
+.toastDismiss {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+}
+.toastDismiss:hover { opacity: 1; }
+
+/* ── Reduced motion ─────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .dot,
+  .dot_preparing,
+  .dot_syncing,
+  .dot_restoring,
+  .dotWobble,
+  .glow,
+  .toast,
+  .toastExiting,
+  .toastAction {
+    animation: none !important;
+    transition: none !important;
+  }
+}

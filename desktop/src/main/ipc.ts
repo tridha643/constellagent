@@ -19,6 +19,7 @@ import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import { PtyManager, type PtyWriteOpts } from './pty-manager'
 import { GitService, RebaseConflictError } from './git-service'
 import { WorktreeSyncService } from './worktree-sync-service'
+import { SpotlightService } from './spotlight-service'
 import { GithubService } from './github-service'
 import { FileService, type FileNode } from './file-service'
 import { LinearFffService } from './linear-fff-service'
@@ -71,6 +72,7 @@ import {
 
 const ptyManager = new PtyManager()
 const worktreeSyncService = new WorktreeSyncService()
+const spotlightService = new SpotlightService()
 
 const automationEngine = new AutomationEngine(ptyManager)
 const automationRunner = new AutomationRunner(ptyManager)
@@ -550,6 +552,35 @@ export function registerIpcHandlers(): void {
     if (!Array.isArray(paths)) return
     const strings = paths.filter((p): p is string => typeof p === 'string')
     worktreeSyncService.setBusyWorktrees(strings)
+  })
+
+  // ── Spotlight handlers (workspace → repo-root one-way sync) ──
+  ipcMain.handle(
+    IPC.SPOTLIGHT_ENABLE,
+    async (
+      _e,
+      opts: { projectId: string; workspaceId: string; worktreePath: string; rootPath: string },
+    ) => {
+      if (
+        !opts ||
+        typeof opts.projectId !== 'string' ||
+        typeof opts.workspaceId !== 'string' ||
+        typeof opts.worktreePath !== 'string' ||
+        typeof opts.rootPath !== 'string'
+      ) {
+        throw new Error('Invalid spotlight enable request')
+      }
+      return spotlightService.enable(opts)
+    },
+  )
+
+  ipcMain.handle(IPC.SPOTLIGHT_DISABLE, async (_e, projectId: string) => {
+    if (typeof projectId !== 'string') return
+    await spotlightService.disable(projectId)
+  })
+
+  ipcMain.handle(IPC.SPOTLIGHT_GET_STATUS, async (_e, projectId?: string) => {
+    return spotlightService.getStatus(typeof projectId === 'string' ? projectId : undefined)
   })
 
   // ── GitHub handlers ──
@@ -1870,8 +1901,13 @@ export function getGithubPollService(): GithubPollService {
 }
 
 /** Kill all PTY processes and stop all automation jobs. Call on app quit. */
+export function getSpotlightService(): SpotlightService {
+  return spotlightService
+}
+
 export function cleanupAll(): void {
   worktreeSyncService.stopAll()
+  spotlightService.stopAll()
   ptyManager.destroyAll()
   automationEngine.destroyAll()
   githubPollService.stop()

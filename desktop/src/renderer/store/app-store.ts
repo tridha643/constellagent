@@ -412,6 +412,16 @@ function planBuildMapForTabs(map: Record<string, string>, tabs: Tab[]): Record<s
 }
 
 /** Filter invalid IDs and append any missing ones (forward-compat when new actions are added). */
+function normalizeSpotlightWorkspaceMap(raw: unknown): Record<string, string | null> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, string | null> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === 'string') out[k] = v
+    else if (v === null) out[k] = null
+  }
+  return out
+}
+
 function normalizeSidebarActionOrder(raw: SidebarActionId[] | undefined): SidebarActionId[] {
   const valid = new Set<SidebarActionId>(DEFAULT_SIDEBAR_ACTION_ORDER)
   const seen = new Set<SidebarActionId>()
@@ -661,6 +671,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   worktreeSyncStatus: new Map(),
   graphiteStacks: new Map(),
   graphiteStackExpanded: false,
+  spotlightWorkspaceIdByProject: {},
+  spotlightStatusByProject: new Map(),
   lastKnownRemoteHead: {},
   activeMonacoEditor: null,
   planBuildTerminalByPlanPath: {},
@@ -713,6 +725,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         newWorktreeSyncStatus.delete(ws.id)
         newGraphiteStacks.delete(ws.id)
       }
+      const newSpotlightStatusByProject = new Map(s.spotlightStatusByProject)
+      newSpotlightStatusByProject.delete(id)
+      const newSpotlightWorkspaceIdByProject = { ...s.spotlightWorkspaceIdByProject }
+      delete newSpotlightWorkspaceIdByProject[id]
 
       const tabMap = { ...s.lastActiveTabByWorkspace }
       for (const wsId of removedWsIds) delete tabMap[wsId]
@@ -747,6 +763,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         defaultBranchByProjectId: newDefaultBranchByProjectId,
         worktreeSyncStatus: newWorktreeSyncStatus,
         graphiteStacks: newGraphiteStacks,
+        spotlightStatusByProject: newSpotlightStatusByProject,
+        spotlightWorkspaceIdByProject: newSpotlightWorkspaceIdByProject,
         collapsedProjectIds,
         lastActiveWorkspaceByProjectId,
         activeWorkspaceId,
@@ -2171,6 +2189,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!ws) return
     const project = s.projects.find((p) => p.id === ws.projectId)
 
+    // If this workspace was spotlighting into the project repo root, release it
+    // first — main process restores root state and deletes refs/spotlight/<wsId>.
+    if (project && s.spotlightWorkspaceIdByProject[project.id] === workspaceId) {
+      try {
+        await window.api.spotlight.disable(project.id)
+      } catch {}
+      get().setSpotlightWorkspace(project.id, null)
+    }
+
     // Destroy PTYs for this workspace (including backing PTYs and split panes)
     s.tabs.filter((t) => t.workspaceId === workspaceId && t.type === 'terminal').forEach((t) => {
       if (t.type === 'terminal') {
@@ -2632,6 +2659,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { worktreeSyncStatus: next }
     }),
 
+  setSpotlightWorkspace: (projectId, workspaceId) =>
+    set((s) => {
+      const prev = s.spotlightWorkspaceIdByProject[projectId] ?? null
+      if (prev === workspaceId) return {}
+      const next = { ...s.spotlightWorkspaceIdByProject }
+      if (workspaceId) next[projectId] = workspaceId
+      else delete next[projectId]
+      return { spotlightWorkspaceIdByProject: next }
+    }),
+
+  setSpotlightStatus: (status) =>
+    set((s) => {
+      const next = new Map(s.spotlightStatusByProject)
+      if (status.state === 'idle' && !status.workspaceId) {
+        next.delete(status.projectId)
+      } else {
+        next.set(status.projectId, status)
+      }
+      return { spotlightStatusByProject: next }
+    }),
+
   setGraphiteStack: (workspaceId, stack) =>
     set((s) => {
       const next = new Map(s.graphiteStacks)
@@ -2923,6 +2971,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       worktreeSyncStatus: new Map(),
       graphiteStacks: new Map(),
       graphiteStackExpanded: false,
+      spotlightWorkspaceIdByProject: normalizeSpotlightWorkspaceMap(
+        (data as { spotlightWorkspaceIdByProject?: unknown }).spotlightWorkspaceIdByProject,
+      ),
+      spotlightStatusByProject: new Map(),
       lastKnownRemoteHead: {},
       activeMonacoEditor: null,
       planBuildTerminalByPlanPath: {},
@@ -3155,6 +3207,7 @@ function getPersistedSlice(state: AppState): PersistedState {
     reviewPanelStateByWorkspace: state.reviewPanelStateByWorkspace,
     stagedSelectionByWorkspace: state.stagedSelectionByWorkspace,
     sidebarActionOrder: state.sidebarActionOrder,
+    spotlightWorkspaceIdByProject: state.spotlightWorkspaceIdByProject,
   }
 }
 
@@ -3185,7 +3238,8 @@ useAppStore.subscribe((state, prevState) => {
     state.fileTreeExpandedPathsByWorkspace !== prevState.fileTreeExpandedPathsByWorkspace ||
     state.reviewPanelStateByWorkspace !== prevState.reviewPanelStateByWorkspace ||
     state.stagedSelectionByWorkspace !== prevState.stagedSelectionByWorkspace ||
-    state.sidebarActionOrder !== prevState.sidebarActionOrder
+    state.sidebarActionOrder !== prevState.sidebarActionOrder ||
+    state.spotlightWorkspaceIdByProject !== prevState.spotlightWorkspaceIdByProject
   ) {
     debouncedSave(state)
   }

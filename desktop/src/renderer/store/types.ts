@@ -7,6 +7,7 @@ import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '.
 import type { WorktreeCredentialRule } from '../../shared/worktree-credentials'
 import type { GraphiteStackInfo } from '../../shared/graphite-types'
 import type { ComposioAutomationLink, ComposioWebhookSettings } from '../../shared/composio-types'
+import type { SpotlightStatus } from '../../shared/spotlight-types'
 import type { AppearanceThemeId } from '../theme/appearance'
 import type { EditorLanguageOverride } from '../utils/language-map'
 import type { GitStatusSnapshot, WorkingTreeDiffSnapshot, WorkingTreeFileStatus } from '../types/working-tree-diff'
@@ -508,6 +509,8 @@ export interface Settings {
   piCommitMessageModel: string
   /** Last-used parent directory in the Add Project → Clone from GitHub flow. Pre-fills the picker on next use. */
   lastClonedParentDir?: string
+  /** Experimental: Conductor-style Spotlight testing (one-way workspace → repo-root sync). */
+  spotlightExperimentEnabled: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -551,6 +554,7 @@ export const DEFAULT_SETTINGS: Settings = {
   conflictResolverAgent: 'claude-code',
   conflictResolverModel: '',
   piCommitMessageModel: '',
+  spotlightExperimentEnabled: false,
 }
 
 export interface Toast {
@@ -675,6 +679,13 @@ export interface AppState {
   /** Graphite stack info per workspace (ephemeral; filled by poller). */
   graphiteStacks: Map<string, GraphiteStackInfo>
   graphiteStackExpanded: boolean
+  /**
+   * Persisted: which workspace (if any) is spotlighting into each project's repo root.
+   * Map<projectId, workspaceId | null>. Multiple projects can each spotlight independently.
+   */
+  spotlightWorkspaceIdByProject: Record<string, string | null>
+  /** Ephemeral live status broadcast from `SpotlightService`, keyed by projectId. */
+  spotlightStatusByProject: Map<string, SpotlightStatus>
   /** Last seen `git ls-remote origin HEAD` hash per project (background poller) */
   lastKnownRemoteHead: Record<string, string>
   activeMonacoEditor: editor.IStandaloneCodeEditor | null
@@ -847,6 +858,10 @@ export interface AppState {
   setGhAvailability: (projectId: string, available: boolean) => void
   setProjectDefaultBranch: (projectId: string, branch: string) => void
   setWorktreeSyncStatus: (projectId: string, workspaces: Record<string, WorkspaceSyncInfo>) => void
+  /** Persist which workspace is spotlighting into a project's repo root (null = none). */
+  setSpotlightWorkspace: (projectId: string, workspaceId: string | null) => void
+  /** Merge a live SpotlightStatus broadcast into `spotlightStatusByProject`. */
+  setSpotlightStatus: (status: SpotlightStatus) => void
   setGraphiteStack: (workspaceId: string, stack: GraphiteStackInfo | null) => void
   toggleGraphiteStackExpanded: () => void
   setContextWindowData: (data: ContextWindowData | null) => void
@@ -915,4 +930,5 @@ export interface PersistedState {
   stagedSelectionByWorkspace?: Record<string, string[]>
   sidebarActionOrder?: SidebarActionId[]
   composioWebhook?: ComposioWebhookSettings
+  spotlightWorkspaceIdByProject?: Record<string, string | null>
 }
