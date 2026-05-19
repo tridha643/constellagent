@@ -269,4 +269,11 @@ export const IPC = {
   COMPOSIO_SET_AUTOMATION_DEFINITION_ENABLED: 'composio:set-automation-definition-enabled',
   COMPOSIO_SET_AUTOMATION_DEFINITION_INSTRUCTIONS: 'composio:set-automation-definition-instructions',
   COMPOSIO_SET_AUTOMATION_DEFINITION_AGENT: 'composio:set-automation-definition-agent',
+
+  /** Spotlight testing: workspace → repo root one-way sync (Conductor-style). */
+  SPOTLIGHT_ENABLE: 'spotlight:enable',
+  SPOTLIGHT_DISABLE: 'spotlight:disable',
+  SPOTLIGHT_GET_STATUS: 'spotlight:get-status',
+  /** Main → renderer: per-project spotlight state machine transitions. */
+  SPOTLIGHT_STATUS: 'spotlight:status',
 } as const

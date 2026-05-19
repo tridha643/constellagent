@@ -22,6 +22,7 @@ import { HunkReview } from './components/HunkReview/HunkReview'
 import { FloatingPanel } from './components/FloatingPanel/FloatingPanel'
 import { ConfirmDialog } from './components/Sidebar/ConfirmDialog'
 import { ToastContainer } from './components/Toast/Toast'
+import { SpotlightHost } from './components/Spotlight/SpotlightHost'
 import { AddToChatButton } from './components/AddToChatButton/AddToChatButton'
 import { useShortcuts } from './hooks/useShortcuts'
 import { usePrStatusPoller } from './hooks/usePrStatusPoller'
@@ -134,6 +135,14 @@ export function App() {
   useEffect(() => {
     return window.api.git.onWorktreeSyncStatus((event) => {
       useAppStore.getState().setWorktreeSyncStatus(event.projectId, event.workspaces)
+    })
+  }, [])
+
+  // Main process broadcasts Spotlight state machine transitions; mirror into the
+  // store so the sidebar dot / glow / toasts can subscribe without polling.
+  useEffect(() => {
+    return window.api.spotlight.onStatus((status) => {
+      useAppStore.getState().setSpotlightStatus(status)
     })
   }, [])
 
@@ -502,6 +511,7 @@ export function App() {
       )}
       <AddToChatButton />
       <ToastContainer />
+      <SpotlightHost />
     </div>
     </MotionConfig>
   )

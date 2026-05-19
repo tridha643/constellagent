@@ -25,6 +25,7 @@ import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 import type { GithubCloneRepoSuggestion } from '../shared/github-clone-suggestions'
 import type { ComposioAutomationDefinition, ComposioAutomationAgent, ComposioNgrokStatus, ComposioWebhookSettings } from '../shared/composio-types'
+import type { SpotlightStatus } from '../shared/spotlight-types'
 
 /** Linear GraphQL via main process (renderer fetch hits CORS). Exposed on `api` and `api.app`. */
 function linearGraphql(
@@ -595,6 +596,21 @@ const api = {
         return webUtils.getPathForFile(file)
       } catch {
         return undefined
+      }
+    },
+  },
+  spotlight: {
+    enable: (opts: { projectId: string; workspaceId: string; worktreePath: string; rootPath: string }) =>
+      ipcRenderer.invoke(IPC.SPOTLIGHT_ENABLE, opts) as Promise<SpotlightStatus>,
+    disable: (projectId: string) =>
+      ipcRenderer.invoke(IPC.SPOTLIGHT_DISABLE, projectId) as Promise<void>,
+    getStatus: (projectId?: string) =>
+      ipcRenderer.invoke(IPC.SPOTLIGHT_GET_STATUS, projectId) as Promise<SpotlightStatus[]>,
+    onStatus: (callback: (status: SpotlightStatus) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, status: SpotlightStatus) => callback(status)
+      ipcRenderer.on(IPC.SPOTLIGHT_STATUS, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.SPOTLIGHT_STATUS, listener)
       }
     },
   },

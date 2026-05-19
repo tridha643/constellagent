@@ -84,6 +84,7 @@ type SettingsSectionId =
   | 'worktree'
   | 'skills'
   | 'shortcuts'
+  | 'experimental'
 
 const SETTINGS_SIDEBAR: readonly {
   id: SettingsSectionId
@@ -139,6 +140,11 @@ const SETTINGS_SIDEBAR: readonly {
     id: 'shortcuts',
     label: 'Shortcuts',
     blurb: 'Keyboard cheatsheet mirrored from the rest of Constellagent.',
+  },
+  {
+    id: 'experimental',
+    label: 'Experimental',
+    blurb: 'Opt-in previews of unfinished features.',
   },
 ]
 
@@ -1721,6 +1727,19 @@ function SettingsSectionBody({
               <kbd className={styles.kbd}>{s.keys}</kbd>
             </div>
           ))}
+        </div>
+      )
+
+    case 'experimental':
+      return (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Experimental</div>
+          <ToggleRow
+            label="Spotlight testing"
+            description="Conductor-style worktree → repo-root one-way sync. Right-click a workspace to spotlight it; root reflects the spotlighted worktree's tracked files while build caches at root (node_modules, .next, …) stay put."
+            value={settings.spotlightExperimentEnabled}
+            onChange={(v) => update('spotlightExperimentEnabled', v)}
+          />
         </div>
       )
 
