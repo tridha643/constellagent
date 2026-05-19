@@ -1,4 +1,5 @@
 import type { editor } from 'monaco-editor'
+import type { ServiceStatus } from '@shared/service-types'
 import type { LinearIssueNode } from '../linear/linear-api'
 import type { LinkedPullRequest, PrInfo } from '@shared/github-types'
 import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
@@ -120,6 +121,10 @@ export type Tab = {
   | { type: 'markdownPreview'; filePath: string; title: string }
   | { type: 't3code'; title: string; serverUrl: string }
   | { type: 'pi-thread'; title: string; piSessionId?: string; piSessionTitle?: string }
+  // First-class long-running service (e.g. `bun dev`, `npm test`). Hosts a PTY just like
+  // a terminal tab, but the user gets status + Restart/Stop controls instead of agent chrome.
+  | { type: 'service'; title: string; ptyId: string; scriptName: string;
+      command: string; status: ServiceStatus; exitCode?: number; persistKey?: string }
 )
 
 export type Side = 'left' | 'right'
@@ -725,6 +730,12 @@ export interface AppState {
   nextTab: () => void
   prevTab: () => void
   createTerminalForActiveWorkspace: () => Promise<void>
+  /** Launch a long-running service (package.json script or custom command) as a first-class tab. */
+  createServiceForActiveWorkspace: (opts: { scriptName: string; command: string }) => Promise<void>
+  /** Kill the old PTY and spawn a new one for the same service tab; keeps tab id, swaps ptyId. */
+  restartService: (tabId: string) => Promise<void>
+  /** Send SIGTERM via pty.destroy; PTY_EXIT broadcast flips status to exited. */
+  stopService: (tabId: string) => void
   /** Pi SDK agent thread (non-PTY); catalog under app userData. */
   createPiThreadForActiveWorkspace: () => Promise<void>
   /** Update bound Pi session for a PI Chat tab (multi-chat per worktree). */

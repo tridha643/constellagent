@@ -175,8 +175,8 @@ const api = {
   },
 
   pty: {
-    create: (workingDir: string, shell?: string, extraEnv?: Record<string, string>) =>
-      ipcRenderer.invoke(IPC.PTY_CREATE, workingDir, shell, extraEnv),
+    create: (workingDir: string, shell?: string, extraEnv?: Record<string, string>, command?: string[]) =>
+      ipcRenderer.invoke(IPC.PTY_CREATE, workingDir, shell, extraEnv, command),
     write: (ptyId: string, data: string, opts?: { submittedLine?: string }) =>
       ipcRenderer.send(IPC.PTY_WRITE, ptyId, data, opts),
     suggestTabTitle: (ptyId: string, line: string) =>
@@ -213,6 +213,13 @@ const api = {
         ipcRenderer.removeListener(IPC.PTY_AGENT_DETECTED, listener)
       }
     },
+    onExit: (callback: (data: { ptyId: string; exitCode: number; workspaceId?: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { ptyId: string; exitCode: number; workspaceId?: string }) => callback(data)
+      ipcRenderer.on(IPC.PTY_EXIT, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.PTY_EXIT, listener)
+      }
+    },
     /** Track 6: per-tab scrollback persistence (survives app quit/restart). */
     loadScrollback: (key: string) =>
       ipcRenderer.invoke(IPC.PTY_SCROLLBACK_LOAD, key) as Promise<string>,
@@ -220,6 +227,11 @@ const api = {
       ipcRenderer.invoke(IPC.PTY_SCROLLBACK_SAVE, key, text) as Promise<boolean>,
     deleteScrollback: (key: string) =>
       ipcRenderer.invoke(IPC.PTY_SCROLLBACK_DELETE, key) as Promise<boolean>,
+  },
+
+  packageScripts: {
+    list: (workingDir: string) =>
+      ipcRenderer.invoke(IPC.PACKAGE_SCRIPTS_LIST, workingDir) as Promise<import('../shared/service-types').PackageScriptsResult>,
   },
 
   fs: {

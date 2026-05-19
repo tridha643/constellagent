@@ -160,6 +160,16 @@
   color: var(--accent-orange);
 }
 
+.tabIcon.service {
+  color: var(--accent-teal, var(--accent-green));
+}
+
+.serviceLauncherIcon {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
 /* ── Tab Title ── */
 
 .tabTitle {
