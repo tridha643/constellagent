@@ -230,6 +230,8 @@ export class PtyManager {
   onTitleChanged?: (ptyId: string, title: string, workspaceId: string | undefined, workingDir: string) => void
   onAgentDetected?: (ptyId: string, agentType: string) => void
   onPtyData?: (ptyId: string, data: string) => void
+  /** Service tabs subscribe to flip status (running → exited/crashed); also used by ipc.ts to broadcast PTY_EXIT. */
+  onPtyExit?: (ptyId: string, exitCode: number, workspaceId: string | undefined) => void
 
   private appendOutputRing(instance: PtyInstance, data: string): void {
     const next = instance.outputRing + data
@@ -304,6 +306,7 @@ export class PtyManager {
       this.clearCodexWorkspaceActivity(instance.workspaceId, instance.process.pid)
       this.clearAgentActivityMarker(instance)
       for (const cb of instance.onExitCallbacks) cb(exitCode)
+      this.onPtyExit?.(id, exitCode, instance.workspaceId)
       this.ptys.delete(id)
     })
 

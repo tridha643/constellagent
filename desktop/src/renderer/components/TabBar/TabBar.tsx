@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
+import { ServiceLauncherMenu } from './ServiceLauncherMenu'
 import type { Tab, AgentType } from '../../store/types'
 import { resolveEditor } from '../../store/types'
 import { getAllPtyIds } from '../../store/split-helpers'
@@ -10,6 +11,7 @@ import { GeminiIcon } from '../Icons/GeminiIcon'
 import { CursorIcon } from '../Icons/CursorIcon'
 import { OpenCodeIcon } from '../Icons/OpenCodeIcon'
 import { PiIcon } from '../Icons/PiIcon'
+import { PlayIcon } from '../Icons/PlayIcon'
 import { SharedFileIcon, SharedFileIconDefs, getFileGitBadge } from '../../utils/file-presentation'
 import claudeIcon from '../../assets/agent-icons/claude.svg'
 import openaiIcon from '../../assets/agent-icons/openai.svg'
@@ -70,6 +72,8 @@ const TAB_ICONS: Record<Tab['type'], { icon: string; className: string }> = {
   markdownPreview: { icon: '◈', className: styles.file },
   t3code: { icon: '⚡', className: styles.terminal },
   'pi-thread': { icon: 'π', className: styles.terminal },
+  // Distinct teal-green play glyph so users can spot service tabs at a glance.
+  service: { icon: '▶', className: styles.service },
 }
 
 function getTabTitle(tab: Tab): string {
@@ -85,6 +89,7 @@ function getTabTitle(tab: Tab): string {
   if (tab.type === 'markdownPreview') return tab.title
   if (tab.type === 't3code') return tab.title
   if (tab.type === 'pi-thread') return tab.title
+  if (tab.type === 'service') return tab.title
   const name = tab.filePath.split('/').pop() || tab.filePath
   return name
 }
@@ -93,6 +98,9 @@ export function TabBar() {
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null)
   const [reorderDropIndex, setReorderDropIndex] = useState<number | null>(null)
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
+  const [serviceLauncherState, setServiceLauncherState] = useState<{ open: boolean; rect: DOMRect | null; el: HTMLElement | null }>(
+    { open: false, rect: null, el: null },
+  )
   /** Same pattern as Sidebar `draggingWorkspaceIdRef` — Electron needs sync ref for dragOver. */
   const draggingTabIdRef = useRef<string | null>(null)
   const leftSidePanelOpen = useAppStore((s) => s.sidePanels.left.open)
@@ -320,6 +328,8 @@ export function TabBar() {
                 <GeminiIcon className={styles.agentIcon} />
               ) : agentIcon ? (
                 <img src={agentIcon.src} alt={agentIcon.alt} className={styles.agentIcon} />
+              ) : tab.type === 'service' ? (
+                <PlayIcon className={`${styles.tabIcon} ${styles.service}`} />
               ) : isFileLike ? (
                 <SharedFileIcon path={tab.filePath} appearanceThemeId={settings.appearanceThemeId} className={`${styles.tabIcon} ${styles.fileGlyph}`} />
               ) : (
@@ -403,6 +413,32 @@ export function TabBar() {
           π
         </button>
       </Tooltip>
+
+      <Tooltip label="Run service" shortcut="">
+        <button
+          type="button"
+          className={`${styles.newTabButton} ${!activeWorkspaceId ? styles.tabBarActionMuted : ''}`}
+          aria-label="Run service"
+          aria-disabled={!activeWorkspaceId}
+          data-testid="service-launcher-button"
+          onClick={(e) => {
+            if (!activeWorkspaceId) return
+            const el = e.currentTarget
+            setServiceLauncherState((s) => (
+              s.open ? { open: false, rect: null, el: null } : { open: true, rect: el.getBoundingClientRect(), el }
+            ))
+          }}
+        >
+          <PlayIcon className={styles.serviceLauncherIcon} />
+        </button>
+      </Tooltip>
+      {serviceLauncherState.open && activeWorkspaceId && (
+        <ServiceLauncherMenu
+          anchorRect={serviceLauncherState.rect}
+          anchorEl={serviceLauncherState.el}
+          onClose={() => setServiceLauncherState({ open: false, rect: null, el: null })}
+        />
+      )}
 
       <Tooltip label="New terminal" shortcut="⌘T">
         <button

@@ -17,6 +17,7 @@ import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GraphiteStackAction } from '../shared/graphite-types'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import { PtyManager, type PtyWriteOpts } from './pty-manager'
+import { readPackageScripts } from './package-scripts-service'
 import { GitService, RebaseConflictError } from './git-service'
 import { WorktreeSyncService } from './worktree-sync-service'
 import { GithubService } from './github-service'
@@ -642,10 +643,23 @@ export function registerIpcHandlers(): void {
   })
 
   // ── PTY handlers ──
-  ipcMain.handle(IPC.PTY_CREATE, async (_e, workingDir: string, shell?: string, extraEnv?: Record<string, string>) => {
+  ipcMain.handle(IPC.PTY_CREATE, async (_e, workingDir: string, shell?: string, extraEnv?: Record<string, string>, command?: string[]) => {
     const win = BrowserWindow.fromWebContents(_e.sender)
     if (!win) throw new Error('No window found')
-    return ptyManager.create(workingDir, win.webContents, shell, undefined, undefined, extraEnv)
+    return ptyManager.create(workingDir, win.webContents, shell, command, undefined, extraEnv)
+  })
+
+  // Service tabs need a broadcast (not a per-PTY callback) — onExit is consumed by the renderer-side store.
+  ptyManager.onPtyExit = (ptyId, exitCode, workspaceId) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.webContents.isDestroyed()) {
+        win.webContents.send(IPC.PTY_EXIT, { ptyId, exitCode, workspaceId })
+      }
+    }
+  }
+
+  ipcMain.handle(IPC.PACKAGE_SCRIPTS_LIST, async (_e, workingDir: string) => {
+    return readPackageScripts(workingDir)
   })
 
   ipcMain.on(IPC.PTY_WRITE, (_e, ptyId: string, data: string, opts?: PtyWriteOpts) => {

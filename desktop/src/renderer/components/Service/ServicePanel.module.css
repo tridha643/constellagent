@@ -1,0 +1,106 @@
+.servicePanel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.servicePanel[data-active='false'] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-3);
+  background: var(--background-secondary, #1e1e1e);
+  border-bottom: 1px solid var(--border-subtle, #2a2a2a);
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-running {
+  background: var(--accent-green, #4ec9b0);
+  box-shadow: 0 0 0 0 rgba(78, 201, 176, 0.6);
+  animation: servicePulse 1.6s ease-out infinite;
+}
+
+.status-exited {
+  background: var(--text-muted, #888);
+}
+
+.status-crashed {
+  background: var(--accent-red, #f48771);
+}
+
+@keyframes servicePulse {
+  0% { box-shadow: 0 0 0 0 rgba(78, 201, 176, 0.55); }
+  70% { box-shadow: 0 0 0 6px rgba(78, 201, 176, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(78, 201, 176, 0); }
+}
+
+.scriptName {
+  font-weight: 600;
+  color: var(--text-primary, #e6e6e6);
+}
+
+.command {
+  color: var(--text-muted, #888);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 360px;
+}
+
+.statusLabel {
+  color: var(--text-muted, #888);
+  margin-left: var(--space-2);
+}
+
+.exitCode {
+  font-family: var(--font-mono);
+  background: var(--background-tertiary, #2a2a2a);
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--text-secondary, #bbb);
+}
+
+.spacer { flex: 1; }
+
+.actionButton {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 3px 10px;
+  background: transparent;
+  color: var(--text-secondary, #ccc);
+  border: 1px solid var(--border-subtle, #333);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.actionButton:hover:not(:disabled) {
+  background: var(--background-tertiary, #2a2a2a);
+  color: var(--text-primary, #fff);
+}
+
+.actionButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.terminalArea {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}

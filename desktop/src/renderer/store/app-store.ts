@@ -1118,6 +1118,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         const ws = s.workspaces.find((w) => w.id === removed.workspaceId)
         if (ws) void window.api.t3code.stop(ws.worktreePath)
       }
+      if (removed?.type === 'service') {
+        // Mirror t3code: ensure the underlying PTY dies when the user closes the tab.
+        try { window.api.pty.destroy(removed.ptyId) } catch {}
+      }
       // Track 6: drop the saved scrollback file when its tab closes so the
       // userData/scrollback dir doesn't accrue stale entries.
       if (removed?.type === 'terminal') {
@@ -1227,6 +1231,82 @@ export const useAppStore = create<AppState>((set, get) => ({
     const idx = wsTabs.findIndex((t) => t.id === s.activeTabId)
     const prev = wsTabs[(idx - 1 + wsTabs.length) % wsTabs.length]
     set({ activeTabId: prev.id })
+  },
+
+  createServiceForActiveWorkspace: async ({ scriptName, command }) => {
+    const s = get()
+    if (!s.activeWorkspaceId) return
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+    if (!ws) return
+    // Renderer can't see process.env.SHELL under contextIsolation; main resolves `${shell} -l -c …`,
+    // so we just need *some* valid shell path. /bin/zsh is the macOS default; defaultShell wins when set.
+    const shell = s.settings.defaultShell || '/bin/zsh'
+    const tabId = crypto.randomUUID()
+    // shell -l -c "<cmd>" so the user's login profile (PATH, fnm, nvm) applies — bare exec
+    // of `bun dev` from Electron's env won't find user-installed tooling on most setups.
+    const ptyId = await window.api.pty.create(
+      ws.worktreePath,
+      shell,
+      { AGENT_ORCH_WS_ID: ws.id },
+      [shell, '-l', '-c', command],
+    )
+    get().addTab({
+      id: tabId,
+      workspaceId: ws.id,
+      type: 'service',
+      title: scriptName,
+      ptyId,
+      scriptName,
+      command,
+      status: 'running',
+    })
+    // Append to projectStartupSettings (dedupe by command) so the Recent list survives quit.
+    const project = get().projects.find((p) => p.id === ws.projectId)
+    if (project) {
+      try {
+        const existing = (await window.api.projectStartupSettings.get(project.repoPath)) ?? []
+        if (!existing.some((e) => e.command === command)) {
+          await window.api.projectStartupSettings.set(project.repoPath, [
+            ...existing,
+            { name: scriptName, command },
+          ])
+        }
+      } catch {
+        // Best-effort persistence; service still launches in-session.
+      }
+    }
+  },
+
+  restartService: async (tabId) => {
+    const s = get()
+    const tab = s.tabs.find((t) => t.id === tabId)
+    if (!tab || tab.type !== 'service') return
+    const ws = s.workspaces.find((w) => w.id === tab.workspaceId)
+    if (!ws) return
+    window.api.pty.destroy(tab.ptyId)
+    // Renderer can't see process.env.SHELL under contextIsolation; main resolves `${shell} -l -c …`,
+    // so we just need *some* valid shell path. /bin/zsh is the macOS default; defaultShell wins when set.
+    const shell = s.settings.defaultShell || '/bin/zsh'
+    const newPtyId = await window.api.pty.create(
+      ws.worktreePath,
+      shell,
+      { AGENT_ORCH_WS_ID: ws.id },
+      [shell, '-l', '-c', tab.command],
+    )
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId && t.type === 'service'
+          ? { ...t, ptyId: newPtyId, status: 'running', exitCode: undefined }
+          : t,
+      ),
+    }))
+  },
+
+  stopService: (tabId) => {
+    const tab = get().tabs.find((t) => t.id === tabId)
+    if (!tab || tab.type !== 'service') return
+    window.api.pty.destroy(tab.ptyId)
+    // PTY_EXIT broadcast flips status; no optimistic update so we don't race the real exit code.
   },
 
   createTerminalForActiveWorkspace: async () => {

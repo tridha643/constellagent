@@ -74,6 +74,8 @@ export const IPC = {
   PTY_DATA: 'pty:data', // prefix for events: `pty:data:{id}`
   PTY_TITLE_CHANGED: 'pty:title-changed',
   PTY_AGENT_DETECTED: 'pty:agent-detected',
+  /** Main → renderer: PTY process exited; payload `{ ptyId, exitCode }`. Service tabs use this to flip status. */
+  PTY_EXIT: 'pty:exit',
   /** Renderer → main: current input line on Enter (xterm often sends only \\r to PTY) */
   PTY_SUGGEST_TAB_TITLE: 'pty:suggest-tab-title',
 
@@ -226,6 +228,10 @@ export const IPC = {
   PTY_SCROLLBACK_SAVE: 'pty:scrollback:save',
   /** Renderer → main: delete the scrollback file when a tab is closed. */
   PTY_SCROLLBACK_DELETE: 'pty:scrollback:delete',
+
+  // Package.json scripts discovery (Service tabs)
+  /** Renderer → main: walk up from workingDir to nearest package.json, return its `scripts` map. */
+  PACKAGE_SCRIPTS_LIST: 'package-scripts:list',
 
   // External project startup settings
   PROJECT_STARTUP_SETTINGS_LOAD_ALL: 'project-startup-settings:load-all',

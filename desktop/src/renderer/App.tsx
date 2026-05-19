@@ -11,6 +11,7 @@ import { DiffViewer } from './components/Editor/DiffEditor'
 import { FullFileDiffEditor } from './components/Editor/FullFileDiffEditor'
 import { MarkdownPreview } from './components/MarkdownPreview/MarkdownPreview'
 import { T3CodeView } from './components/T3CodeView/T3CodeView'
+import { ServicePanel } from './components/Service/ServicePanel'
 import { PiThreadPanel } from './components/PiThread/PiThreadPanel'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
 import { AutomationsPanel } from './components/Automations/AutomationsPanel'
@@ -128,6 +129,22 @@ export function App() {
     return window.api.pty.onTitleChanged(({ ptyId, title }) => {
       console.log('[constellagent:tab-title] renderer IPC PTY_TITLE_CHANGED', { ptyId, title: title.slice(0, 80) })
       useAppStore.getState().updateTerminalTitle(ptyId, title)
+    })
+  }, [])
+
+  // Service tabs only learn their final status from the PTY exit broadcast — there's no
+  // running/exited toggle on the JS side, so we have to listen here and flip the matching tab.
+  useEffect(() => {
+    return window.api.pty.onExit(async ({ ptyId, exitCode }) => {
+      const { classifyExit } = await import('@shared/service-types')
+      const status = classifyExit(exitCode)
+      useAppStore.setState((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.type === 'service' && t.ptyId === ptyId
+            ? { ...t, status, exitCode }
+            : t,
+        ),
+      }))
     })
   }, [])
 
@@ -292,6 +309,11 @@ export function App() {
   const mountedTerminals = allTabs.filter((t): t is Extract<typeof t, { type: 'terminal' }> => (
     t.type === 'terminal' && t.id === activeTabId
   ))
+  // Keep every service tab mounted so PTY output streams while the user is on another tab —
+  // a `bun dev` log can't go to /dev/null just because the user clicked into the editor.
+  const mountedServices = allTabs.filter((t): t is Extract<typeof t, { type: 'service' }> => (
+    t.type === 'service'
+  ))
   // All file tabs — kept mounted so unsaved edits, scroll position, cursor,
   // selection, and undo stack survive tab switches (mirrors terminal pattern).
   const allFileTabs = allTabs.filter((t): t is Extract<typeof t, { type: 'file' }> => t.type === 'file')
@@ -344,6 +366,20 @@ export function App() {
                       />
                     )
                   })}
+
+                  {/* Service tabs stay mounted so log output keeps streaming when inactive. */}
+                  {mountedServices.map((t) => (
+                    <ServicePanel
+                      key={t.id}
+                      tabId={t.id}
+                      ptyId={t.ptyId}
+                      scriptName={t.scriptName}
+                      command={t.command}
+                      status={t.status}
+                      exitCode={t.exitCode}
+                      active={t.id === activeTabId}
+                    />
+                  ))}
 
                   {/* Keep ALL file editor tabs alive so unsaved edits, cursor,
                       scroll position, and undo stack survive tab switches */}
