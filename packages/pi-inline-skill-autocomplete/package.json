@@ -1,0 +1,39 @@
+{
+  "name": "pi-inline-skill-autocomplete",
+  "version": "0.1.0",
+  "description": "Inline / skill autocomplete for pi, so skills complete anywhere in the editor instead of only at command start.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "autocomplete",
+    "skills",
+    "slash-commands"
+  ],
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/owengretzinger/constellagent.git",
+    "directory": "packages/pi-inline-skill-autocomplete"
+  },
+  "files": [
+    "extensions",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "check": "node --check extensions/inline-skill-autocomplete.js",
+    "test": "node --test test/*.test.js",
+    "verify": "npm run check && npm run test && npm pack --dry-run"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/inline-skill-autocomplete.js"
+    ]
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
