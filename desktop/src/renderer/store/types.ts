@@ -514,8 +514,6 @@ export interface Settings {
   piCommitMessageModel: string
   /** Last-used parent directory in the Add Project → Clone from GitHub flow. Pre-fills the picker on next use. */
   lastClonedParentDir?: string
-  /** Experimental: Conductor-style Spotlight testing (one-way workspace → repo-root sync). */
-  spotlightExperimentEnabled: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -559,7 +557,6 @@ export const DEFAULT_SETTINGS: Settings = {
   conflictResolverAgent: 'claude-code',
   conflictResolverModel: '',
   piCommitMessageModel: '',
-  spotlightExperimentEnabled: false,
 }
 
 export interface Toast {

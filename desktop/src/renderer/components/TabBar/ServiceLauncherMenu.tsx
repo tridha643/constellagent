@@ -27,8 +27,10 @@ export function ServiceLauncherMenu({ anchorRect, anchorEl, onClose }: Props) {
 
   const [scriptsResult, setScriptsResult] = useState<PackageScriptsResult | null>(null)
   const [recent, setRecent] = useState<{ name: string; command: string }[]>([])
+  const [customName, setCustomName] = useState('')
   const [customCommand, setCustomCommand] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
+  const customCommandInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!workspace) return
@@ -47,6 +49,11 @@ export function ServiceLauncherMenu({ anchorRect, anchorEl, onClose }: Props) {
     })
     return () => { cancelled = true }
   }, [project?.repoPath])
+
+  useEffect(() => {
+    const raf = window.requestAnimationFrame(() => customCommandInputRef.current?.focus())
+    return () => window.cancelAnimationFrame(raf)
+  }, [])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -71,6 +78,8 @@ export function ServiceLauncherMenu({ anchorRect, anchorEl, onClose }: Props) {
     return { common: c, other: o }
   }, [scriptsResult])
 
+  const inferCustomName = (command: string) => command.split(/\s+/).slice(0, 2).join(' ')
+
   const launchScript = (name: string, command: string) => {
     void createService({ scriptName: name, command })
     onClose()
@@ -79,7 +88,8 @@ export function ServiceLauncherMenu({ anchorRect, anchorEl, onClose }: Props) {
   const launchCustom = () => {
     const trimmed = customCommand.trim()
     if (!trimmed) return
-    launchScript(trimmed.split(/\s+/).slice(0, 2).join(' '), trimmed)
+    const displayName = customName.trim() || inferCustomName(trimmed)
+    launchScript(displayName, trimmed)
   }
 
   // Anchor below the button, right-aligned to it. position:fixed escapes the tab bar's
@@ -145,26 +155,42 @@ export function ServiceLauncherMenu({ anchorRect, anchorEl, onClose }: Props) {
         </>
       )}
       <div className={styles.sectionLabel}>Custom command</div>
-      <div className={styles.customRow}>
+      <form
+        className={styles.customForm}
+        onSubmit={(e) => {
+          e.preventDefault()
+          launchCustom()
+        }}
+      >
         <input
           type="text"
           className={styles.customInput}
-          placeholder="e.g. bun dev"
-          value={customCommand}
-          onChange={(e) => setCustomCommand(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') launchCustom() }}
-          data-testid="service-custom-input"
+          placeholder="Name (optional)"
+          value={customName}
+          onChange={(e) => setCustomName(e.target.value)}
+          data-testid="service-custom-name"
         />
-        <button
-          type="button"
-          className={styles.customRun}
-          onClick={launchCustom}
-          disabled={!customCommand.trim()}
-          data-testid="service-custom-run"
-        >
-          Run
-        </button>
-      </div>
+        <div className={styles.customRow}>
+          <input
+            ref={customCommandInputRef}
+            type="text"
+            className={styles.customInput}
+            placeholder="Command, e.g. bun dev"
+            value={customCommand}
+            onChange={(e) => setCustomCommand(e.target.value)}
+            data-testid="service-custom-input"
+          />
+          <button
+            type="submit"
+            className={styles.customRun}
+            disabled={!customCommand.trim()}
+            data-testid="service-custom-run"
+          >
+            Run
+          </button>
+        </div>
+        <div className={styles.customHint}>Runs in the active worktree using your login shell.</div>
+      </form>
       {scriptsResult?.missing && recent.length === 0 && common.length === 0 && other.length === 0 ? (
         <div className={styles.emptyHint}>No package.json found. Use a custom command.</div>
       ) : null}

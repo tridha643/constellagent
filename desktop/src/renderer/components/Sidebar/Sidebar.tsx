@@ -406,42 +406,8 @@ function WorkspaceMeta({
   );
 }
 
-function SpotlightContextMenuItem({ wsId, onToggle }: { wsId: string; onToggle: () => void }) {
-  const experimentEnabled = useAppStore((s) => s.settings.spotlightExperimentEnabled);
-  const ws = useAppStore((s) => s.workspaces.find((w) => w.id === wsId));
-  const isActive = useAppStore((s) => {
-    if (!ws) return false;
-    return s.spotlightWorkspaceIdByProject[ws.projectId] === wsId;
-  });
-  if (!experimentEnabled || !ws) return null;
-  return (
-    <>
-      <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-      <button
-        // Inline styles match the surrounding context-menu items; the menu is
-        // hand-rolled here so we don't reach for shadcn/Radix just for one row.
-        style={{
-          width: '100%',
-          textAlign: 'left',
-          padding: '6px 12px',
-          background: 'transparent',
-          border: 'none',
-          color: 'var(--text-primary)',
-          cursor: 'pointer',
-          fontSize: 'var(--text-sm)',
-        }}
-        onClick={onToggle}
-      >
-        {isActive ? 'Stop Spotlight' : 'Spotlight this workspace'}
-      </button>
-    </>
-  );
-}
-
 function SpotlightIndicatorForWorkspace({ workspaceId, projectId }: { workspaceId: string; projectId: string }) {
   const status = useAppStore((s) => s.spotlightStatusByProject.get(projectId));
-  const experimentEnabled = useAppStore((s) => s.settings.spotlightExperimentEnabled);
-  if (!experimentEnabled) return null;
   if (!status || status.workspaceId !== workspaceId) return null;
   return <SpotlightStatusDot state={status.state} message={status.message} />;
 }
@@ -1301,39 +1267,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
         window.api.pty.write(termTab.ptyId, 'opencode resume --last\n');
       } else {
         window.api.pty.write(termTab.ptyId, 'gemini --resume\n');
-      }
-    },
-    [addToast],
-  );
-
-  const handleToggleSpotlight = useCallback(
-    async (wsId: string) => {
-      setContextMenu(null);
-      const state = useAppStore.getState();
-      const ws = state.workspaces.find((w) => w.id === wsId);
-      if (!ws) return;
-      const project = state.projects.find((p) => p.id === ws.projectId);
-      if (!project) return;
-      const current = state.spotlightWorkspaceIdByProject[project.id] ?? null;
-      try {
-        if (current === wsId) {
-          await window.api.spotlight.disable(project.id);
-          state.setSpotlightWorkspace(project.id, null);
-        } else {
-          await window.api.spotlight.enable({
-            projectId: project.id,
-            workspaceId: wsId,
-            worktreePath: ws.worktreePath,
-            rootPath: project.repoPath,
-          });
-          state.setSpotlightWorkspace(project.id, wsId);
-        }
-      } catch (err) {
-        addToast({
-          id: crypto.randomUUID(),
-          message: err instanceof Error ? err.message : 'Spotlight toggle failed',
-          type: 'error',
-        });
       }
     },
     [addToast],
@@ -2329,10 +2262,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
             >
               OpenCode
             </button>
-            <SpotlightContextMenuItem
-              wsId={contextMenu.wsId}
-              onToggle={() => handleToggleSpotlight(contextMenu.wsId)}
-            />
           </div>
         </div>
       )}
