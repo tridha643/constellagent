@@ -12,6 +12,7 @@ import { CursorIcon } from '../Icons/CursorIcon'
 import { OpenCodeIcon } from '../Icons/OpenCodeIcon'
 import { PiIcon } from '../Icons/PiIcon'
 import { PlayIcon } from '../Icons/PlayIcon'
+import { SpotlightIcon } from '../Icons/SpotlightIcon'
 import { SharedFileIcon, SharedFileIconDefs, getFileGitBadge } from '../../utils/file-presentation'
 import claudeIcon from '../../assets/agent-icons/claude.svg'
 import openaiIcon from '../../assets/agent-icons/openai.svg'
@@ -117,13 +118,43 @@ export function TabBar() {
   const settings = useAppStore((s) => s.settings)
   const gitFileStatuses = useAppStore((s) => s.gitFileStatuses)
   const workspaces = useAppStore((s) => s.workspaces)
+  const projects = useAppStore((s) => s.projects)
+  const spotlightWorkspaceIdByProject = useAppStore((s) => s.spotlightWorkspaceIdByProject)
+  const setSpotlightWorkspace = useAppStore((s) => s.setSpotlightWorkspace)
   const addToast = useAppStore((s) => s.addToast)
   const mergeTabIntoSplit = useAppStore((s) => s.mergeTabIntoSplit)
   const reorderTabsInWorkspace = useAppStore((s) => s.reorderTabsInWorkspace)
   const splitTerminalPaneForTab = useAppStore((s) => s.splitTerminalPaneForTab)
   const tabs = allTabs.filter((t) => t.workspaceId === activeWorkspaceId)
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId)
+  const activeProject = workspace ? projects.find((p) => p.id === workspace.projectId) ?? null : null
+  const spotlightTargetWsId = activeProject ? spotlightWorkspaceIdByProject[activeProject.id] ?? null : null
+  const isSpotlightActiveHere = !!workspace && spotlightTargetWsId === workspace.id
   const endDropIndex = tabs.length
+
+  const handleToggleSpotlight = useCallback(async () => {
+    if (!workspace || !activeProject) return
+    try {
+      if (isSpotlightActiveHere) {
+        await window.api.spotlight.disable(activeProject.id)
+        setSpotlightWorkspace(activeProject.id, null)
+      } else {
+        await window.api.spotlight.enable({
+          projectId: activeProject.id,
+          workspaceId: workspace.id,
+          worktreePath: workspace.worktreePath,
+          rootPath: activeProject.repoPath,
+        })
+        setSpotlightWorkspace(activeProject.id, workspace.id)
+      }
+    } catch (err) {
+      addToast({
+        id: crypto.randomUUID(),
+        message: err instanceof Error ? err.message : 'Spotlight toggle failed',
+        type: 'error',
+      })
+    }
+  }, [workspace, activeProject, isSpotlightActiveHere, setSpotlightWorkspace, addToast])
 
   const getTabGitStatus = useCallback((tab: Tab): string | null => {
     if (tab.type !== 'file' && tab.type !== 'markdownPreview') return null
@@ -439,6 +470,27 @@ export function TabBar() {
           onClose={() => setServiceLauncherState({ open: false, rect: null, el: null })}
         />
       )}
+
+      <Tooltip label={isSpotlightActiveHere ? 'Stop spotlight' : 'Spotlight this workspace'} shortcut="">
+        <button
+          type="button"
+          className={[
+            styles.newTabButton,
+            !activeWorkspaceId ? styles.tabBarActionMuted : '',
+            isSpotlightActiveHere ? styles.spotlightActive : '',
+          ].filter(Boolean).join(' ')}
+          aria-label={isSpotlightActiveHere ? 'Stop spotlight' : 'Spotlight this workspace'}
+          aria-pressed={isSpotlightActiveHere}
+          aria-disabled={!activeWorkspaceId}
+          data-testid="spotlight-toggle-button"
+          onClick={() => {
+            if (!activeWorkspaceId) return
+            void handleToggleSpotlight()
+          }}
+        >
+          <SpotlightIcon className={styles.serviceLauncherIcon} />
+        </button>
+      </Tooltip>
 
       <Tooltip label="New terminal" shortcut="⌘T">
         <button

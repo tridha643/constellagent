@@ -53,9 +53,9 @@ test.describe('spotlight testing', () => {
 
     const { app, window } = await launchApp(userDataPath)
     try {
-      // Seed store with a project + workspace pointing at our temp repo and
-      // turn on the experimental flag. Drive entirely through the exposed
-      // window.__store so we don't need to script the sidebar UI.
+      // Seed store with a project + workspace pointing at our temp repo.
+      // Drive entirely through the exposed window.__store so we don't need
+      // to script the sidebar UI.
       const projectId = 'proj-test'
       const workspaceId = 'ws-test'
       await window.evaluate(({ projectId, workspaceId, root, worktree }) => {
@@ -63,7 +63,6 @@ test.describe('spotlight testing', () => {
         store.hydrateState({
           projects: [{ id: projectId, name: 'test', repoPath: root, startupCommands: [] }],
           workspaces: [{ id: workspaceId, projectId, name: 'feature', branch: 'feature', worktreePath: worktree }],
-          settings: { ...store.settings, spotlightExperimentEnabled: true },
         })
       }, { projectId, workspaceId, root: repo.root, worktree: repo.worktree })
 

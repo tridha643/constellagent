@@ -228,6 +228,38 @@ test.describe('Service tabs', () => {
     }
   })
 
+  test('launcher can run a named custom command', async () => {
+    const repoPath = createServiceRepo('custom')
+    const { app, window } = await launchApp()
+    try {
+      await setupServiceWorkspace(window, repoPath)
+      await window.waitForTimeout(800)
+
+      await window.locator('[data-testid="service-launcher-button"]').click()
+      await expect(window.locator('[data-testid="service-launcher-menu"]')).toBeVisible({ timeout: 5000 })
+
+      const customCommand = "node -e \"console.log('custom-ok');process.exit(0);\""
+      await window.locator('[data-testid="service-custom-name"]').fill('custom fast')
+      await window.locator('[data-testid="service-custom-input"]').fill(customCommand)
+      await window.locator('[data-testid="service-custom-run"]').click()
+
+      await window.waitForFunction(() => {
+        const s = (window as any).__store.getState()
+        return s.tabs.some((t: any) => t.type === 'service')
+      }, undefined, { timeout: 5000 })
+
+      const serviceTab = await window.evaluate(() => {
+        const s = (window as any).__store.getState()
+        return s.tabs.find((t: any) => t.type === 'service')
+      })
+      expect(serviceTab.scriptName).toBe('custom fast')
+      expect(serviceTab.command).toBe(customCommand)
+      await expect(window.locator('[data-testid="service-panel"]')).toBeVisible({ timeout: 3000 })
+    } finally {
+      await app.close()
+    }
+  })
+
   test('chosen command is persisted to project startup settings', async () => {
     const repoPath = createServiceRepo('persist')
     const { app, window } = await launchApp()

@@ -325,6 +325,18 @@
   color: var(--text-tertiary);
 }
 
+/* Spotlight toolbar button — yellow glow when this workspace is the spotlight target. */
+.spotlightActive {
+  color: var(--accent-yellow, #f5c542);
+  filter: drop-shadow(0 0 4px var(--accent-yellow, #f5c542));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .spotlightActive:hover {
+    color: var(--accent-yellow, #f5c542);
+  }
+}
+
 /* ── Spacer (drag region) ── */
 
 .dragSpacer {
