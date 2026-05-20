@@ -66,34 +66,43 @@ function repoNameFromPiSlug(piSlug: string): string {
   return (idx >= 0 ? piSlug.slice(idx + 1) : piSlug).toLowerCase()
 }
 
+function poolFromFilter(repoPathsFilter: readonly string[] | null): string[] {
+  return repoPathsFilter === null
+    ? listPersistedProjectsWithBranches().map((p) => resolve(p.repoPath))
+    : Array.from(new Set(repoPathsFilter.map((p) => resolve(p))))
+}
+
 /**
- * Resolve a on-disk repo path for an automation row: `workspace` / `metadata.workspace` / `metadata.repoPath`,
- * else match `metadata.repo` (`owner/repo` or bare repo name) against folder name(s) in the path pool.
+ * Resolve on-disk repo paths for an automation row: explicit `workspace` / `metadata.workspace`
+ * / `metadata.repoPath` wins; else match `metadata.repo` (`owner/repo` or bare repo name) against
+ * folder name(s) in the pool; else (no hint at all) treat as global and fan out to every pool entry.
  *
  * @param repoPathsFilter `null` → all persisted projects; otherwise only these paths (e.g. open tabs).
  */
-function resolveNormRepoForEntry(entry: unknown, repoPathsFilter: readonly string[] | null): string | null {
+function resolveNormReposForEntry(entry: unknown, repoPathsFilter: readonly string[] | null): string[] {
   const hint = repoPathHintFromRaw(entry)
-  if (hint) return resolve(hint)
+  if (hint) return [resolve(hint)]
 
+  const pool = poolFromFilter(repoPathsFilter)
   const piSlug = piMetadataRepoSlug(entry)
-  if (!piSlug) return null
+  if (!piSlug) return pool
 
   const wantDir = repoNameFromPiSlug(piSlug)
-  const pool: string[] =
-    repoPathsFilter === null
-      ? listPersistedProjectsWithBranches().map((p) => resolve(p.repoPath))
-      : Array.from(new Set(repoPathsFilter.map((p) => resolve(p))))
   const matches = pool.filter((p) => basename(p).toLowerCase() === wantDir)
-  if (matches.length === 0) return null
-  if (matches.length === 1) return matches[0]!
+  if (matches.length === 0) return []
+  if (matches.length === 1) return [matches[0]!]
 
   const owner = piSlug.includes('/') ? piSlug.slice(0, piSlug.indexOf('/')) : ''
   if (owner) {
     const narrowed = matches.filter((p) => p.toLowerCase().includes(owner))
-    if (narrowed.length === 1) return narrowed[0]!
+    if (narrowed.length === 1) return [narrowed[0]!]
   }
-  return matches[0]!
+  return [matches[0]!]
+}
+
+function resolveNormRepoForEntry(entry: unknown, repoPathsFilter: readonly string[] | null): string | null {
+  const repos = resolveNormReposForEntry(entry, repoPathsFilter)
+  return repos.length > 0 ? repos[0]! : null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -228,10 +237,10 @@ export async function listComposioAutomationDefinitions(
     try {
       const entries = await readRawEntries(filePath)
       for (const entry of entries) {
-        const normRepo = resolveNormRepoForEntry(entry, poolFilter)
-        if (!normRepo) {
+        const normRepos = resolveNormReposForEntry(entry, poolFilter)
+        if (normRepos.length === 0) {
           console.warn(
-            '[composio-automations] skipping entry: add workspace or metadata.repo matching a project folder',
+            '[composio-automations] skipping entry: metadata.repo did not match any project folder',
             {
               filePath,
               name: isRecord(entry) && typeof entry.name === 'string' ? entry.name : undefined,
@@ -239,13 +248,15 @@ export async function listComposioAutomationDefinitions(
           )
           continue
         }
-        if (allowedRepos && !allowedRepos.has(normRepo)) continue
-        const normalized = normalizeEntry(entry, normRepo, filePath)
-        if (!normalized) continue
-        const k = composioDefinitionDedupeKey(normalized)
-        if (seen.has(k)) continue
-        seen.add(k)
-        definitions.push(normalized)
+        for (const normRepo of normRepos) {
+          if (allowedRepos && !allowedRepos.has(normRepo)) continue
+          const normalized = normalizeEntry(entry, normRepo, filePath)
+          if (!normalized) continue
+          const k = composioDefinitionDedupeKey(normalized)
+          if (seen.has(k)) continue
+          seen.add(k)
+          definitions.push(normalized)
+        }
       }
     } catch (err) {
       console.warn('[composio-automations] failed to read definitions', { filePath, err })
