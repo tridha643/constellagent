@@ -135,6 +135,24 @@ test.describe('Conductor chat view', () => {
     await expect(window.getByText('Codex', { exact: true })).toBeVisible()
   })
 
+  test('uses the configured conductor default model for new draft chats', async () => {
+    const repoPath = createTestRepo('conductor-defaults')
+    await setupWorkspace(window, repoPath)
+
+    await window.evaluate(() => {
+      const store = (window as unknown as { __store: { getState: () => any } }).__store.getState()
+      store.updateSettings({
+        conductorDefaultProvider: 'codex',
+        conductorDefaultModel: 'gpt-5.4-mini',
+      })
+    })
+
+    await openConductorTab(window)
+
+    const modelButton = window.locator('[aria-haspopup="listbox"]').first()
+    await expect(modelButton).toContainText('GPT-5.4 mini')
+  })
+
   test('opens previous messages panel from turn rail', async () => {
     const repoPath = createTestRepo('conductor-history')
     await setupWorkspace(window, repoPath)

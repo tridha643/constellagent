@@ -12,6 +12,8 @@ import type {
   SubagentEntry,
 } from '../../store/types'
 import {
+  normalizeConductorDefaultModelSetting,
+  normalizeConductorDefaultProviderSetting,
   NAVIGATION_PANEL_TYPES,
   normalizeLinearIssueCodingAgent,
   normalizeLinearIssueCodingModel,
@@ -25,6 +27,7 @@ import type { PlanAgent } from '../../../shared/agent-plan-path'
 import { BUILD_HARNESS_OPTIONS, PLAN_MODEL_PRESETS } from '../../../shared/plan-build-command'
 import type { PiModelOption } from '../../../shared/plan-build-command'
 import { formatPiModelOptionLabel } from '../../../shared/pi-models'
+import { defaultConductorModel } from '../../../shared/conductor-model-utils'
 import type { ComposioNgrokStatus, ComposioWebhookSettings } from '../../../shared/composio-types'
 import {
   getDefaultWorktreeCredentialRules,
@@ -110,7 +113,7 @@ const SETTINGS_SIDEBAR: readonly {
   {
     id: 'conductor',
     label: 'Conductor',
-    blurb: 'Sign in for in-app Cursor and Codex chat.',
+    blurb: 'Sign in for in-app chat and choose the default provider/model.',
   },
   {
     id: 'mcp',
@@ -1196,6 +1199,8 @@ function ConductorSettingsSection({
   const [authStatus, setAuthStatus] = useState<ConductorAuthStatus | null>(null)
   const [cursorLoginStarted, setCursorLoginStarted] = useState(false)
   const [codexLoginStarted, setCodexLoginStarted] = useState(false)
+  const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
 
   const refreshAuth = useCallback(() => {
     void syncConductorAuthKeys(cursorApiKey, openaiApiKey)
@@ -1212,6 +1217,29 @@ function ConductorSettingsSection({
     return () => clearInterval(timer)
   }, [cursorLoginStarted, codexLoginStarted, refreshAuth])
 
+  const defaultProvider = normalizeConductorDefaultProviderSetting(
+    settings.conductorDefaultProvider,
+  )
+  const modelPresets = PLAN_MODEL_PRESETS[defaultProvider]
+  const normalizedDefaultModel = normalizeConductorDefaultModelSetting(
+    settings.conductorDefaultModel,
+  )
+  const modelSelectOptions = useMemo(() => {
+    const presetIds = new Set(modelPresets.map((preset) => preset.cliModel))
+    const opts = modelPresets.map((preset) => ({
+      value: preset.cliModel,
+      label: `${preset.label} (${preset.cliModel})`,
+    }))
+    if (normalizedDefaultModel && !presetIds.has(normalizedDefaultModel)) {
+      opts.push({
+        value: normalizedDefaultModel,
+        label: `${normalizedDefaultModel} (custom)`,
+      })
+    }
+    return opts
+  }, [modelPresets, normalizedDefaultModel])
+  const modelSelectValue = normalizedDefaultModel || defaultConductorModel(defaultProvider)
+
   return (
     <>
       <div className={styles.sectionHint}>
@@ -1219,6 +1247,33 @@ function ConductorSettingsSection({
         <code>cursor-agent login</code> or an API key. <strong>Codex</strong> uses the OpenAI Codex CLI — sign in with{' '}
         <code>codex login</code> or an OpenAI API key. Keys are stored locally in app settings (same file as Linear).
       </div>
+      <SelectRow
+        label="Default provider"
+        description="Used for brand-new Conductor chats before you switch providers inside a thread."
+        value={defaultProvider}
+        onChange={(v) => {
+          const nextProvider = normalizeConductorDefaultProviderSetting(v)
+          updateSettings({
+            conductorDefaultProvider: nextProvider,
+            conductorDefaultModel: defaultConductorModel(nextProvider),
+          })
+        }}
+        options={[
+          { value: 'cursor', label: 'Cursor' },
+          { value: 'codex', label: 'Codex' },
+        ]}
+      />
+      <SelectRow
+        label="Default model"
+        description="Starting model for brand-new Conductor chats. You can still change it per thread from the composer."
+        value={modelSelectValue}
+        onChange={(v) =>
+          updateSettings({
+            conductorDefaultModel: normalizeConductorDefaultModelSetting(v),
+          })
+        }
+        options={modelSelectOptions}
+      />
 
       <div className={styles.row}>
         <div className={styles.rowText}>

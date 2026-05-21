@@ -19,6 +19,8 @@ import type {
 } from './types'
 import {
   DEFAULT_SETTINGS,
+  normalizeConductorDefaultModelSetting,
+  normalizeConductorDefaultProviderSetting,
   DEFAULT_SIDEBAR_ACTION_ORDER,
   DEFAULT_SIDE_PANEL_LAYOUT,
   normalizeLinearIssueCodingAgent,
@@ -3033,6 +3035,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         settingsMerged.linearIssueCodingAgent,
       ),
       linearIssueCodingModel: normalizeLinearIssueCodingModel(settingsMerged.linearIssueCodingModel),
+      conductorDefaultProvider: normalizeConductorDefaultProviderSetting(
+        settingsMerged.conductorDefaultProvider,
+      ),
+      conductorDefaultModel: normalizeConductorDefaultModelSetting(
+        settingsMerged.conductorDefaultModel,
+      ),
       conflictResolverAgent: normalizeConflictResolverAgent(settingsMerged.conflictResolverAgent),
       conflictResolverModel: normalizeConflictResolverModel(settingsMerged.conflictResolverModel),
       piCommitMessageModel: normalizePiCommitMessageModel(settingsMerged.piCommitMessageModel),
