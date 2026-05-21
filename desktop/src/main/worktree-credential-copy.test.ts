@@ -53,18 +53,12 @@ describe('copyWorktreeCredentialArtifacts', () => {
     const fifoPath = join(sourceRoot, '.env')
     execSync(`mkfifo "${fifoPath}"`)
 
-    const writerTimer = setTimeout(() => {
-      // Write asynchronously; the reader stream will open the FIFO for read.
-      writeFile(fifoPath, 'KEY=val\n').catch(() => {})
-    }, 50)
+    const writer = writeFile(fifoPath, 'KEY=val\n')
 
-    try {
-      await copyWorktreeCredentialArtifacts(sourceRoot, destRoot, undefined, {
-        envCaptureTimeoutMs: 5000,
-      })
-    } finally {
-      clearTimeout(writerTimer)
-    }
+    await copyWorktreeCredentialArtifacts(sourceRoot, destRoot, undefined, {
+      envCaptureTimeoutMs: 5000,
+    })
+    await writer
 
     const destPath = join(destRoot, '.env')
     expect(existsSync(destPath)).toBe(true)
@@ -74,16 +68,16 @@ describe('copyWorktreeCredentialArtifacts', () => {
     expect(readFileSync(destPath, 'utf8')).toBe('KEY=val\n')
   })
 
-  it.skipIf(isWin)('throws on FIFO read timeout', async () => {
+  it.skipIf(isWin)('skips an unavailable FIFO .env without waiting for timeout', async () => {
     const fifoPath = join(sourceRoot, '.env')
     execSync(`mkfifo "${fifoPath}"`)
 
-    await expect(
-      copyWorktreeCredentialArtifacts(sourceRoot, destRoot, undefined, {
-        envCaptureTimeoutMs: 200,
-      }),
-    ).rejects.toThrow(/Failed to copy required worktree credential "\.env"/)
+    const startedAt = Date.now()
+    await copyWorktreeCredentialArtifacts(sourceRoot, destRoot, undefined, {
+      envCaptureTimeoutMs: 2000,
+    })
 
+    expect(Date.now() - startedAt).toBeLessThan(500)
     expect(existsSync(join(destRoot, '.env'))).toBe(false)
   })
 
@@ -94,17 +88,12 @@ describe('copyWorktreeCredentialArtifacts', () => {
     execSync(`mkfifo "${fifoPath}"`)
     symlinkSync(fifoPath, join(sourceRoot, '.env'))
 
-    const writerTimer = setTimeout(() => {
-      writeFile(fifoPath, 'LINKED=ok\n').catch(() => {})
-    }, 50)
+    const writer = writeFile(fifoPath, 'LINKED=ok\n')
 
-    try {
-      await copyWorktreeCredentialArtifacts(sourceRoot, destRoot, undefined, {
-        envCaptureTimeoutMs: 5000,
-      })
-    } finally {
-      clearTimeout(writerTimer)
-    }
+    await copyWorktreeCredentialArtifacts(sourceRoot, destRoot, undefined, {
+      envCaptureTimeoutMs: 5000,
+    })
+    await writer
 
     const destPath = join(destRoot, '.env')
     expect(existsSync(destPath)).toBe(true)

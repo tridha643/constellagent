@@ -1,0 +1,239 @@
+/*
+ * Read-only ProseMark chat renderer — adapted from writer.computer
+ * apps/desktop/src/components/editor-area/prosemark-theme.css.
+ *
+ * Scoped to `.prosemark-chat` so Conductor assistant messages get sans-serif
+ * prose typography without editor chrome (margin hashes, page inset, gutters).
+ */
+
+.prosemark-chat .cm-editor {
+  --font: var(--font-ui);
+  --pm-header-mark-color: var(--text-tertiary);
+  --pm-link-color: var(--accent-blue);
+  --pm-muted-color: var(--text-tertiary);
+  --pm-code-background-color: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  --pm-code-font: var(--font-mono);
+  --pm-code-btn-background-color: var(--surface-3);
+  --pm-code-btn-hover-background-color: var(--surface-4);
+  --pm-blockquote-vertical-line-background-color: var(--border-strong);
+  --pm-cursor-color: transparent;
+
+  --pm-syntax-link: var(--accent-blue);
+  --pm-syntax-keyword: oklch(70.05% 0.217 296.83);
+  --pm-syntax-atom: oklch(65.69% 0.2 259.93);
+  --pm-syntax-literal: oklch(71.27% 0.101 169.93);
+  --pm-syntax-string: oklch(68.53% 0.164 25.1);
+  --pm-syntax-regexp: oklch(76.88% 0.16 43.42);
+  --pm-syntax-definition-variable: oklch(61.42% 0.158 259.6);
+  --pm-syntax-local-variable: oklch(75.88% 0.082 184.11);
+  --pm-syntax-type-namespace: oklch(64.51% 0.083 165.19);
+  --pm-syntax-class-name: oklch(76.14% 0.1 168.52);
+  --pm-syntax-special-variable-macro: oklch(66.67% 0.193 282.06);
+  --pm-syntax-definition-property: oklch(58.92% 0.132 259.4);
+  --pm-syntax-comment: var(--text-tertiary);
+  --pm-syntax-invalid: oklch(75.93% 0.182 28.91);
+
+  height: auto;
+  outline: none;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.prosemark-chat .cm-editor .cm-scroller {
+  overflow: visible !important;
+}
+
+.prosemark-chat .cm-editor .cm-content {
+  box-sizing: border-box;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.65;
+  letter-spacing: -0.011em;
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+
+.prosemark-chat .cm-editor .cm-line,
+.prosemark-chat .cm-editor .cm-horizontal-rule-container {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.prosemark-chat .cm-editor .cm-line:has(> br:only-child) {
+  line-height: 1;
+}
+
+.prosemark-chat .cm-editor .cm-blockquote-line {
+  padding-inline-start: 1em;
+}
+
+.prosemark-chat .cm-editor .cm-blockquote-line::before {
+  inset-inline-start: 0;
+}
+
+.prosemark-chat .cm-editor .cm-fenced-code-line {
+  margin-left: 0;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.prosemark-chat .cm-editor .cm-gutters {
+  display: none;
+}
+
+.prosemark-chat .cm-editor .cm-code-block-info {
+  display: none;
+}
+
+.prosemark-chat .cm-editor .cm-cursorLayer .cm-cursor,
+.prosemark-chat .cm-editor .cm-cursorLayer .cm-dropCursor {
+  display: none !important;
+}
+
+.prosemark-chat .cm-editor .cm-selectionBackground,
+.prosemark-chat .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground,
+.prosemark-chat .cm-editor .cm-content ::selection {
+  background: transparent;
+}
+
+.prosemark-chat .cm-editor .cm-table-widget table {
+  border-color: var(--border-default);
+  font-family: var(--font-ui);
+  font-size: 0.92em;
+}
+
+.prosemark-chat .cm-editor .cm-table-widget th,
+.prosemark-chat .cm-editor .cm-table-widget td {
+  border-color: var(--border-default);
+}
+
+.prosemark-chat .cm-editor .cm-table-widget th {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+}
+
+.prosemark-chat .cm-editor .cm-table-widget td {
+  color: var(--text-primary);
+}
+
+/* Bullet list markers — rendered dot via fold widget */
+.prosemark-chat .cm-editor .cm-rendered-list-mark {
+  position: relative;
+  color: var(--text-tertiary);
+}
+
+.prosemark-chat .cm-editor .cm-rendered-list-mark-spacer {
+  visibility: hidden;
+}
+
+.prosemark-chat .cm-editor .cm-rendered-list-mark-dot {
+  position: absolute;
+  left: 0;
+}
+
+/* Task list checkboxes — interactive in chat; prose stays non-editable. */
+.prosemark-chat .cm-editor .cm-checkbox-wrapper {
+  position: relative;
+}
+
+.prosemark-chat .cm-editor .cm-checkbox-spacer {
+  visibility: hidden;
+}
+
+.prosemark-chat .cm-editor .cm-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--text-tertiary);
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.prosemark-chat .cm-editor .cm-checkbox:hover {
+  border-color: var(--text-secondary);
+}
+
+.prosemark-chat .cm-editor .cm-checkbox:checked {
+  background-color: var(--accent-blue);
+  border-color: var(--accent-blue);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 12.5L10.5 15L16 9'/%3E%3C/svg%3E");
+  background-size: 16px 16px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Heading lines — hide ATX hash marks in chat (writer hangs them in the editor gutter) */
+.prosemark-chat .cm-editor .cm-content .cm-heading-hash,
+.prosemark-chat .cm-editor .cm-content .cm-hidden-token {
+  font-size: 0 !important;
+  width: 0;
+  display: inline-block;
+  overflow: hidden;
+}
+
+.prosemark-chat .cm-editor .cm-line.cm-heading-line-1 {
+  font-size: 1.35em;
+  font-weight: 600;
+  margin-top: 0.75em;
+  margin-bottom: 0.35em;
+}
+
+.prosemark-chat .cm-editor .cm-line.cm-heading-line-2 {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin-top: 0.65em;
+  margin-bottom: 0.3em;
+}
+
+.prosemark-chat .cm-editor .cm-line.cm-heading-line-3 {
+  font-size: 1.08em;
+  font-weight: 600;
+  margin-top: 0.55em;
+  margin-bottom: 0.25em;
+}
+
+.prosemark-chat .cm-editor .cm-emphasis {
+  font-style: italic;
+}
+
+.prosemark-chat .cm-editor .cm-strikethrough {
+  text-decoration: line-through;
+}
+
+/* Tool / subagent disclosure panels */
+.prosemark-chat.prosemark-chat-compact .cm-editor .cm-content {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.prosemark-chat.prosemark-chat-compact .cm-editor .cm-table-widget table {
+  font-size: 0.88em;
+}
+
+/* Single-line tool rows + activity ticker */
+.prosemark-chat.prosemark-chat-inline .cm-editor .cm-scroller {
+  overflow: hidden !important;
+}
+
+.prosemark-chat.prosemark-chat-inline .cm-editor .cm-content {
+  font-size: var(--text-sm, 13px);
+  line-height: 1.35;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.prosemark-chat.prosemark-chat-inline .cm-editor .cm-line {
+  white-space: nowrap;
+}
+
+.prosemark-chat.prosemark-chat-inline .cm-editor .cm-content p {
+  margin: 0;
+}

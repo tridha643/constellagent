@@ -9,6 +9,13 @@ import {
   makeTranscriptMessage,
   makeTranscriptMessageWithAttachments,
 } from "./pi-app-store-utils";
+import {
+  buildSubagentMetadata,
+  isSubagentTool,
+  subagentStatusHint,
+  subagentToolLabel,
+} from "../shared/conductor-subagent-utils";
+import { safeJsonStringify, toJsonSafe } from "../shared/json-safe";
 
 export interface RunMetrics {
   readonly startedAt: string;
@@ -29,24 +36,35 @@ export function appendUserMessage(
   sessionRef: SessionRef,
   text: string,
   attachments: NonNullable<Extract<TranscriptMessage, { kind: "message" }>["attachments"]> = [],
+  conductorPlan = false,
 ): TranscriptMessage[] {
   const key = sessionKey(sessionRef);
   const transcript = [...(transcriptCache.get(key) ?? [])];
-  transcript.push(
-    attachments.length > 0 ? makeTranscriptMessageWithAttachments("user", text, attachments) : makeTranscriptMessage("user", text),
-  );
+  const base =
+    attachments.length > 0
+      ? makeTranscriptMessageWithAttachments("user", text, attachments)
+      : makeTranscriptMessage("user", text);
+  transcript.push(conductorPlan ? { ...base, conductorPlan: true } : base);
   transcriptCache.set(key, transcript);
   return transcript;
 }
 
+/** Returns the assistant message id that received the delta (for lightweight IPC). */
 export function appendAssistantDelta(
   transcriptCache: Map<string, TranscriptMessage[]>,
   activeAssistantMessageBySession: Map<string, string>,
   sessionRef: SessionRef,
   text: string,
-): void {
+): string | undefined {
+  if (text.length === 0) {
+    return undefined;
+  }
   const key = sessionKey(sessionRef);
-  const transcript = [...(transcriptCache.get(key) ?? [])];
+  let transcript = transcriptCache.get(key);
+  if (!transcript) {
+    transcript = [];
+    transcriptCache.set(key, transcript);
+  }
   const activeId = activeAssistantMessageBySession.get(key);
 
   if (activeId) {
@@ -57,18 +75,14 @@ export function appendAssistantDelta(
         ...current,
         text: `${current.text}${text}`,
       };
-    } else {
-      const message = makeTranscriptMessage("assistant", text);
-      transcript.push(message);
-      activeAssistantMessageBySession.set(key, message.id);
+      return activeId;
     }
-  } else {
-    const message = makeTranscriptMessage("assistant", text);
-    transcript.push(message);
-    activeAssistantMessageBySession.set(key, message.id);
   }
 
-  transcriptCache.set(key, transcript);
+  const message = makeTranscriptMessage("assistant", text);
+  transcript.push(message);
+  activeAssistantMessageBySession.set(key, message.id);
+  return message.id;
 }
 
 export function clearActiveAssistantMessage(
@@ -125,7 +139,24 @@ export function applyTimelineEvent(
         metrics.fileCount += 1;
       }
       state.runMetricsBySession.set(key, metrics);
-      upsertToolRow(transcript, event.callId, event.toolName, "running", toolLabel(event.toolName, event.input), undefined, event.input);
+      if (isSubagentTool(event.toolName)) {
+        upsertToolRow(
+          transcript,
+          event.callId,
+          event.toolName,
+          "running",
+          subagentToolLabel(event.input),
+          subagentStatusHint(event.input),
+          event.input,
+          undefined,
+          {
+            variant: "subagent",
+            metadata: buildSubagentMetadata(event.input),
+          },
+        );
+      } else {
+        upsertToolRow(transcript, event.callId, event.toolName, "running", toolLabel(event.toolName, event.input), undefined, event.input);
+      }
       break;
     }
     case "toolUpdated":
@@ -197,6 +228,7 @@ function upsertToolRow(
   detail?: string,
   input?: unknown,
   output?: unknown,
+  extras?: Pick<Extract<TranscriptMessage, { kind: "tool" }>, "variant" | "metadata">,
 ) {
   const index = transcript.findIndex((item) => item.kind === "tool" && item.callId === callId);
   const existing = index >= 0 ? transcript[index] : undefined;
@@ -208,9 +240,10 @@ function upsertToolRow(
     label ?? (existingTool?.label ?? "Working"),
     {
       detail: detail ?? existingTool?.detail,
-      metadata: existingTool?.metadata,
-      input: input ?? existingTool?.input,
-      output: output ?? existingTool?.output,
+      metadata: extras?.metadata ?? existingTool?.metadata,
+      variant: extras?.variant ?? existingTool?.variant,
+      input: input === undefined ? existingTool?.input : toJsonSafe(input),
+      output: output === undefined ? existingTool?.output : toJsonSafe(output),
     },
   );
 
@@ -288,7 +321,7 @@ function detailFromOutput(output: unknown): string | undefined {
   if (output === undefined || output === null) {
     return undefined;
   }
-  return truncate(JSON.stringify(output));
+  return truncate(safeJsonStringify(output));
 }
 
 function looksLikeSearch(toolName: string, input: unknown): boolean {

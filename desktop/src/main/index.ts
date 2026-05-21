@@ -1,4 +1,5 @@
 import './load-env-local'
+import './cursor-sdk-ripgrep-config'
 import { createHash } from 'crypto'
 import { app, BrowserWindow, Menu, shell } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
@@ -11,6 +12,7 @@ import { registerIpcHandlers, cleanupAll, getGithubPollService } from './ipc'
 import { NotificationWatcher } from './notification-watcher'
 import { emitAutomationEvent } from './automation-event-bus'
 import { composioWebhookService } from './composio-webhook-service'
+import { applyConductorAuthFromPersistedState } from './conductor-auth'
 
 const execFileAsync = promisify(execFile)
 
@@ -214,7 +216,9 @@ app.whenReady().then(() => {
   try {
     const fp = join(app.getPath('userData'), 'constellagent-state.json')
     if (existsSync(fp)) {
-      composioWebhookService.applyFromPersistedState(JSON.parse(readFileSync(fp, 'utf-8')))
+      const persisted = JSON.parse(readFileSync(fp, 'utf-8'))
+      composioWebhookService.applyFromPersistedState(persisted)
+      applyConductorAuthFromPersistedState(persisted)
     }
   } catch (err) {
     console.warn('[composio] initial webhook settings not applied', err)

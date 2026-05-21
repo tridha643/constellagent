@@ -35,7 +35,6 @@ import { CLAUDE_CONFIG_PATH } from './claude-config'
 import { LspService } from './lsp/lsp-service'
 import { SkillsService } from './skills-service'
 import { GraphiteService } from './graphite-service'
-import { t3codeService } from './t3code-service.js'
 import { ContextWindowService } from './context-window-service'
 import { closeAllAgentFS } from './agentfs-service'
 import { AnnotationService } from './annotation-service'
@@ -55,6 +54,13 @@ import {
   setProjectStartupCommands,
 } from './project-startup-settings'
 import { getConstellPiHost } from './pi-host-service'
+import { getAgentChatHost, type CreateAgentChatSessionInput } from './agent-chat-host'
+import type { ForkAgentChatSessionInput } from '../shared/agent-chat-types'
+import {
+  applyConductorAuthFromPersistedState,
+  getConductorAuthStatus,
+  setConductorAuthKeys,
+} from './conductor-auth'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 import { type ComposioWebhookSettings, isComposioAutomationAgent } from '../shared/composio-types'
 import { composioWebhookService } from './composio-webhook-service'
@@ -1534,15 +1540,6 @@ export function registerIpcHandlers(): void {
     await AnnotationService.setResolved(worktreePath, commentId, resolved)
   })
 
-  // ── T3 Code server handlers ──
-  ipcMain.handle(IPC.T3CODE_START, async (_e, cwd: string) => {
-    return t3codeService.start(cwd)
-  })
-
-  ipcMain.handle(IPC.T3CODE_STOP, async (_e, cwd: string) => {
-    t3codeService.stop(cwd)
-  })
-
   // ── Webview guest tab-switch interception ──
   // Electron <webview> guests swallow keyboard events; register before-input-event
   // on the guest WebContents so ⌘⌥←/→ still switches tabs.
@@ -1596,6 +1593,7 @@ export function registerIpcHandlers(): void {
     await mkdir(app.getPath('userData'), { recursive: true })
     await saveJsonFile(stateFilePath(), data)
     composioWebhookService.applyFromPersistedState(data)
+    applyConductorAuthFromPersistedState(data)
   })
 
   // Synchronous save for beforeunload — guarantees state is written before window closes
@@ -1604,6 +1602,7 @@ export function registerIpcHandlers(): void {
       mkdirSync(app.getPath('userData'), { recursive: true })
       writeFileSync(stateFilePath(), JSON.stringify(data, null, 2), 'utf-8')
       composioWebhookService.applyFromPersistedState(data)
+      applyConductorAuthFromPersistedState(data)
       event.returnValue = true
     } catch {
       event.returnValue = false
@@ -1908,6 +1907,48 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle(IPC.PI_RESPOND_HOST_UI, async (_e, response: HostUiResponse) => piHost.respondToHostUi(response))
   ipcMain.handle(IPC.PI_EXTENSION_TUI_INPUT, async (_e, data: string) => piHost.sendExtensionTuiInput(data))
+
+  // ── Conductor agent chat (Codex + Cursor) ──
+  const agentChatHost = getAgentChatHost()
+  ipcMain.handle(IPC.AGENT_CHAT_CREATE_SESSION, async (_e, input: CreateAgentChatSessionInput) =>
+    agentChatHost.createSession(input),
+  )
+  ipcMain.handle(IPC.AGENT_CHAT_FORK_SESSION, async (_e, input: ForkAgentChatSessionInput) =>
+    agentChatHost.forkSession(input),
+  )
+  ipcMain.handle(IPC.AGENT_CHAT_LIST_SESSIONS, async (_e, workspaceId: string) =>
+    agentChatHost.listSessions(workspaceId),
+  )
+  ipcMain.handle(IPC.AGENT_CHAT_GET_SESSION, async (_e, sessionId: string) =>
+    agentChatHost.getSession(sessionId),
+  )
+  ipcMain.handle(IPC.AGENT_CHAT_SUBMIT, async (_e, sessionId: string, text: string) =>
+    agentChatHost.submit(sessionId, text),
+  )
+  ipcMain.handle(IPC.AGENT_CHAT_SET_MODEL, async (_e, sessionId: string, model: string) =>
+    agentChatHost.setModel(sessionId, model),
+  )
+  ipcMain.handle(IPC.AGENT_CHAT_SET_PLAN, async (_e, sessionId: string, plan: boolean) =>
+    agentChatHost.setPlan(sessionId, plan),
+  )
+  ipcMain.handle(
+    IPC.AGENT_CHAT_SET_THINKING_LEVEL,
+    async (_e, sessionId: string, thinkingLevel: import('../shared/conductor-thinking').ThinkingLevel) =>
+      agentChatHost.setThinkingLevel(sessionId, thinkingLevel),
+  )
+  ipcMain.handle(IPC.AGENT_CHAT_CANCEL, async (_e, sessionId: string) => agentChatHost.cancel(sessionId))
+  ipcMain.handle(IPC.AGENT_CHAT_DELETE_SESSION, async (_e, sessionId: string) =>
+    agentChatHost.deleteSession(sessionId),
+  )
+  ipcMain.handle(IPC.AGENT_CHAT_GET_AUTH_STATUS, async (_e, force?: boolean) =>
+    getConductorAuthStatus(Boolean(force)),
+  )
+  ipcMain.handle(
+    IPC.CONDUCTOR_AUTH_SYNC,
+    async (_e, input: { cursorApiKey?: string; openaiApiKey?: string }) => {
+      setConductorAuthKeys(input?.cursorApiKey ?? '', input?.openaiApiKey ?? '')
+    },
+  )
 }
 
 export function getGithubPollService(): GithubPollService {
@@ -1931,7 +1972,7 @@ export function cleanupAll(): void {
   AnnotationService.cleanupAll()
   FileService.disposeQuickOpenSearch()
   LinearFffService.disposeAll()
-  t3codeService.stopAll()
+  getAgentChatHost().dispose()
   guestTabSwitchListeners.clear()
   closeAllAgentFS().catch(() => {})
 }

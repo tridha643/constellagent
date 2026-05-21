@@ -576,6 +576,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const toggleSettings = useAppStore((s) => s.toggleSettings);
   const toggleAutomations = useAppStore((s) => s.toggleAutomations);
   const toggleLinear = useAppStore((s) => s.toggleLinear);
+  const createConductorTabForActiveWorkspace = useAppStore((s) => s.createConductorTabForActiveWorkspace);
   const toggleHunkReview = useAppStore((s) => s.toggleHunkReview);
   const openLatestAgentPlan = useAppStore((s) => s.openLatestAgentPlan);
   const sidebarActionOrder = useAppStore((s) => s.sidebarActionOrder);
@@ -1368,6 +1369,14 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       tooltipLabel: 'Add project',
       onClick: handleAddProject,
     },
+    conductor: {
+      id: 'conductor',
+      icon: '◎',
+      label: 'Conductor',
+      tooltipLabel: 'Conductor chat (Codex + Cursor)',
+      shortcut: '⇧⌘C',
+      onClick: createConductorTabForActiveWorkspace,
+    },
     automations: {
       id: 'automations',
       icon: '⏱',
@@ -1413,7 +1422,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       shortcut: '⌘,',
       onClick: toggleSettings,
     },
-  }), [handleAddProject, toggleAutomations, toggleLinear, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
+  }), [handleAddProject, createConductorTabForActiveWorkspace, toggleAutomations, toggleLinear, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
 
   const orderedActions = useMemo(
     () => sidebarActionOrder.map((id) => actionButtonConfigs[id]),
