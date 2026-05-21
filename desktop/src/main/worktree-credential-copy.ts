@@ -129,14 +129,14 @@ async function resolveEffectiveStat(
   return { stats: linkStats, isFifo: linkStats.isFIFO() }
 }
 
-async function captureFifoBytes(sourcePath: string, timeoutMs: number): Promise<Buffer> {
+async function captureFifoBytes(sourcePath: string, timeoutMs: number): Promise<Buffer | null> {
   // O_NONBLOCK so open() returns immediately even when no writer is attached.
   // POSIX FIFO read semantics on a non-blocking FD:
   //   - writer currently open + empty buffer  → EAGAIN
   //   - no writer open + empty buffer         → 0 (EOF)
-  // We can't tell "no writer yet" from "real EOF after writer close" except by
-  // tracking whether any data has arrived: a 0-byte read before any data means
-  // no writer is attached yet, so we keep polling until the timer fires.
+  // For worktree credential copying, a FIFO with no current writer is not a
+  // readable credential file. Return null immediately instead of blocking
+  // worktree creation until the timeout expires.
   const handle = await fsOpen(sourcePath, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK)
   const buf = Buffer.alloc(64 * 1024)
   const chunks: Buffer[] = []
@@ -168,9 +168,9 @@ async function captureFifoBytes(sourcePath: string, timeoutMs: number): Promise<
           // Real EOF: writer attached, wrote, and closed.
           return Buffer.concat(chunks)
         }
-        // No writer yet — wait and try again.
-        await new Promise((r) => setTimeout(r, 25))
-        continue
+        // No writer is attached right now. Treat the FIFO as unavailable so
+        // worktree creation can continue without an 8s delay/failure.
+        return null
       }
 
       totalBytes += bytesRead
@@ -202,6 +202,7 @@ async function copyCredentialFile(
     if (effective.isFifo) {
       if (!options.envLike) return
       const buf = await captureFifoBytes(sourcePath, options.captureFifoTimeoutMs)
+      if (buf === null) return
       await writeFile(destinationPath, buf, { mode: 0o600 })
       return
     }

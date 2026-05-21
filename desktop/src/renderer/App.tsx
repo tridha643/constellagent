@@ -10,10 +10,10 @@ import { FileEditor } from './components/Editor/FileEditor'
 import { DiffViewer } from './components/Editor/DiffEditor'
 import { FullFileDiffEditor } from './components/Editor/FullFileDiffEditor'
 import { MarkdownPreview } from './components/MarkdownPreview/MarkdownPreview'
-import { T3CodeView } from './components/T3CodeView/T3CodeView'
 import { ServicePanel } from './components/Service/ServicePanel'
 import { PiThreadPanel } from './components/PiThread/PiThreadPanel'
 import { SettingsPanel } from './components/Settings/SettingsPanel'
+import { ConductorChatView } from './components/Conductor/ConductorChatView'
 import { AutomationsPanel } from './components/Automations/AutomationsPanel'
 import { LinearWorkspacePanel } from './components/LinearWorkspace/LinearWorkspacePanel'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
@@ -323,6 +323,9 @@ export function App() {
   const mountedServices = allTabs.filter((t): t is Extract<typeof t, { type: 'service' }> => (
     t.type === 'service'
   ))
+  const mountedConductorTabs = allTabs.filter((t): t is Extract<typeof t, { type: 'conductor' }> => (
+    t.type === 'conductor'
+  ))
   // All file tabs — kept mounted so unsaved edits, scroll position, cursor,
   // selection, and undo stack survive tab switches (mirrors terminal pattern).
   const allFileTabs = allTabs.filter((t): t is Extract<typeof t, { type: 'file' }> => t.type === 'file')
@@ -389,6 +392,28 @@ export function App() {
                       active={t.id === activeTabId}
                     />
                   ))}
+
+                  {mountedConductorTabs.map((t) => {
+                    const ws = workspaces.find((w) => w.id === t.workspaceId)
+                    if (!ws) return null
+                    return (
+                      <ErrorBoundary
+                        key={t.id}
+                        fallback={
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#888', fontSize: 14, padding: 24, textAlign: 'center' }}>
+                            Conductor hit an error. Reload the window (⌘R) or restart dev.
+                          </div>
+                        }
+                      >
+                        <ConductorChatView
+                          tab={t}
+                          workspaceId={ws.id}
+                          worktreePath={ws.worktreePath}
+                          active={t.id === activeTabId}
+                        />
+                      </ErrorBoundary>
+                    )
+                  })}
 
                   {/* Keep ALL file editor tabs alive so unsaved edits, cursor,
                       scroll position, and undo stack survive tab switches */}
@@ -459,15 +484,6 @@ export function App() {
                           key={activeTab.id}
                           filePath={activeTab.filePath}
                           worktreePath={tabWorkspace?.worktreePath}
-                        />
-                      )}
-
-                      {/* Render T3 Code webview */}
-                      {activeTab?.type === 't3code' && (
-                        <T3CodeView
-                          key={activeTab.id}
-                          serverUrl={activeTab.serverUrl}
-                          active={true}
                         />
                       )}
 

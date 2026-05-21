@@ -16,6 +16,14 @@ import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
 import type { GraphiteCreateOptions, GraphiteStackAction, GraphiteStackActionResult, GraphiteStackInfo } from '../shared/graphite-types'
 import type { ReviewComment } from '../shared/review-types'
 import type { HostUiResponse, PiContextUsageSnapshot } from '@pi-gui/session-driver'
+import type {
+  AgentChatDeltaPayload,
+  AgentChatSessionState,
+  AgentChatSessionWithTranscript,
+  AgentChatTranscriptPayload,
+  CreateAgentChatSessionInput,
+  ForkAgentChatSessionInput,
+} from '../shared/agent-chat-types'
 import type { ContextWindowData } from '../shared/context-window-types'
 import type { QuickOpenSearchRequest, QuickOpenSearchResult } from '../shared/quick-open-types'
 import type { LinearFffQuickOpenRequest, LinearFffQuickOpenResult } from '../shared/linear-fff-types'
@@ -518,13 +526,6 @@ const api = {
     },
   },
 
-  t3code: {
-    start: (cwd: string) =>
-      ipcRenderer.invoke(IPC.T3CODE_START, cwd) as Promise<string>,
-    stop: (cwd: string) =>
-      ipcRenderer.invoke(IPC.T3CODE_STOP, cwd),
-  },
-
   webview: {
     registerTabSwitch: (guestWebContentsId: number) =>
       ipcRenderer.invoke(IPC.WEBVIEW_REGISTER_TAB_SWITCH, guestWebContentsId),
@@ -608,6 +609,47 @@ const api = {
         return webUtils.getPathForFile(file)
       } catch {
         return undefined
+      }
+    },
+  },
+  agentChat: {
+    createSession: (input: CreateAgentChatSessionInput) =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_CREATE_SESSION, input) as Promise<AgentChatSessionState>,
+    forkSession: (input: ForkAgentChatSessionInput) =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_FORK_SESSION, input) as Promise<AgentChatSessionState>,
+    listSessions: (workspaceId: string) =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_LIST_SESSIONS, workspaceId) as Promise<AgentChatSessionState[]>,
+    getSession: (sessionId: string) =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_GET_SESSION, sessionId) as Promise<AgentChatSessionWithTranscript | null>,
+    submit: (sessionId: string, text: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_SUBMIT, sessionId, text),
+    setModel: (sessionId: string, model: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_SET_MODEL, sessionId, model),
+    setPlan: (sessionId: string, plan: boolean) => ipcRenderer.invoke(IPC.AGENT_CHAT_SET_PLAN, sessionId, plan),
+    setThinkingLevel: (sessionId: string, thinkingLevel: import('../shared/conductor-thinking').ThinkingLevel) =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_SET_THINKING_LEVEL, sessionId, thinkingLevel),
+    cancel: (sessionId: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_CANCEL, sessionId),
+    deleteSession: (sessionId: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_DELETE_SESSION, sessionId),
+    getAuthStatus: (force?: boolean) => ipcRenderer.invoke(IPC.AGENT_CHAT_GET_AUTH_STATUS, force),
+    syncAuth: (input: { cursorApiKey: string; openaiApiKey: string }) =>
+      ipcRenderer.invoke(IPC.CONDUCTOR_AUTH_SYNC, input),
+    onStateChanged: (listener: (state: AgentChatSessionState) => void) => {
+      const handle = (_event: Electron.IpcRendererEvent, state: AgentChatSessionState) => listener(state)
+      ipcRenderer.on(IPC.AGENT_CHAT_STATE_CHANGED, handle)
+      return () => {
+        ipcRenderer.removeListener(IPC.AGENT_CHAT_STATE_CHANGED, handle)
+      }
+    },
+    onTranscriptChanged: (listener: (payload: AgentChatTranscriptPayload) => void) => {
+      const handle = (_event: Electron.IpcRendererEvent, payload: AgentChatTranscriptPayload) => listener(payload)
+      ipcRenderer.on(IPC.AGENT_CHAT_TRANSCRIPT_CHANGED, handle)
+      return () => {
+        ipcRenderer.removeListener(IPC.AGENT_CHAT_TRANSCRIPT_CHANGED, handle)
+      }
+    },
+    onAssistantDelta: (listener: (payload: AgentChatDeltaPayload) => void) => {
+      const handle = (_event: Electron.IpcRendererEvent, payload: AgentChatDeltaPayload) => listener(payload)
+      ipcRenderer.on(IPC.AGENT_CHAT_ASSISTANT_DELTA, handle)
+      return () => {
+        ipcRenderer.removeListener(IPC.AGENT_CHAT_ASSISTANT_DELTA, handle)
       }
     },
   },

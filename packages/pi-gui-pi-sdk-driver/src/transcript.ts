@@ -24,4 +24,6 @@ export interface SessionTranscriptMessage {
   readonly attachments?: readonly SessionTranscriptAttachment[];
   readonly createdAt: string;
   readonly id: string;
+  /** Set when the user sent this turn with Conductor plan mode enabled. */
+  readonly conductorPlan?: boolean;
 }

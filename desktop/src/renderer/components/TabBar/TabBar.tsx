@@ -71,8 +71,8 @@ const TAB_ICONS: Record<Tab['type'], { icon: string; className: string }> = {
   diff: { icon: '±', className: styles.diff },
   fileDiff: { icon: '⇄', className: styles.diff },
   markdownPreview: { icon: '◈', className: styles.file },
-  t3code: { icon: '⚡', className: styles.terminal },
   'pi-thread': { icon: 'π', className: styles.terminal },
+  conductor: { icon: '◎', className: styles.terminal },
   // Distinct teal-green play glyph so users can spot service tabs at a glance.
   service: { icon: '▶', className: styles.service },
 }
@@ -88,8 +88,8 @@ function getTabTitle(tab: Tab): string {
     return name
   }
   if (tab.type === 'markdownPreview') return tab.title
-  if (tab.type === 't3code') return tab.title
   if (tab.type === 'pi-thread') return tab.title
+  if (tab.type === 'conductor') return tab.title
   if (tab.type === 'service') return tab.title
   const name = tab.filePath.split('/').pop() || tab.filePath
   return name
@@ -113,7 +113,6 @@ export function TabBar() {
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
   const createTerminalForActiveWorkspace = useAppStore((s) => s.createTerminalForActiveWorkspace)
   const createPiThreadForActiveWorkspace = useAppStore((s) => s.createPiThreadForActiveWorkspace)
-  const openT3CodeTab = useAppStore((s) => s.openT3CodeTab)
   const lastSavedTabId = useAppStore((s) => s.lastSavedTabId)
   const settings = useAppStore((s) => s.settings)
   const gitFileStatuses = useAppStore((s) => s.gitFileStatuses)
@@ -416,20 +415,6 @@ export function TabBar() {
           />
         ) : null}
       </div>
-
-      <Tooltip label="T3 Code" shortcut="⇧⌘`">
-        <button
-          type="button"
-          className={`${styles.newTabButton} ${!activeWorkspaceId ? styles.tabBarActionMuted : ''}`}
-          aria-label="Open T3 Code"
-          aria-disabled={!activeWorkspaceId}
-          onClick={() => {
-            if (activeWorkspaceId) openT3CodeTab(activeWorkspaceId)
-          }}
-        >
-          ⚡
-        </button>
-      </Tooltip>
 
       <Tooltip label="PI Chat (pi-sdk)" shortcut="">
         <button

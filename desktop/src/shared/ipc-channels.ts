@@ -202,11 +202,7 @@ export const IPC = {
   /** Main → renderer: all annotations cleared after a PR merge */
   REVIEW_ANNOTATIONS_CLEARED: 'review:annotations-cleared',
 
-  // T3 Code server lifecycle
-  T3CODE_START: 't3code:start',
-  T3CODE_STOP: 't3code:stop',
-
-  // Webview guest keyboard shortcuts (T3 Code webview focus bypass)
+  // Webview guest keyboard shortcuts (webview focus bypass)
   /** Renderer → main: register guest webContentsId for tab-switch interception */
   WEBVIEW_REGISTER_TAB_SWITCH: 'webview:register-tab-switch',
   /** Renderer → main: unregister guest webContentsId */
@@ -260,6 +256,24 @@ export const IPC = {
   /** Main → renderer */
   PI_STATE_CHANGED: 'pi:state-changed',
   PI_SELECTED_TRANSCRIPT_CHANGED: 'pi:selected-transcript-changed',
+
+  // Conductor agent chat (Codex + Cursor drivers) — renderer → main
+  AGENT_CHAT_CREATE_SESSION: 'agent-chat:create-session',
+  AGENT_CHAT_FORK_SESSION: 'agent-chat:fork-session',
+  AGENT_CHAT_LIST_SESSIONS: 'agent-chat:list-sessions',
+  AGENT_CHAT_GET_SESSION: 'agent-chat:get-session',
+  AGENT_CHAT_SUBMIT: 'agent-chat:submit',
+  AGENT_CHAT_SET_MODEL: 'agent-chat:set-model',
+  AGENT_CHAT_SET_PLAN: 'agent-chat:set-plan',
+  AGENT_CHAT_SET_THINKING_LEVEL: 'agent-chat:set-thinking-level',
+  AGENT_CHAT_CANCEL: 'agent-chat:cancel',
+  AGENT_CHAT_DELETE_SESSION: 'agent-chat:delete-session',
+  AGENT_CHAT_GET_AUTH_STATUS: 'agent-chat:get-auth-status',
+  CONDUCTOR_AUTH_SYNC: 'conductor:auth-sync',
+  // Conductor agent chat — main → renderer
+  AGENT_CHAT_STATE_CHANGED: 'agent-chat:state-changed',
+  AGENT_CHAT_TRANSCRIPT_CHANGED: 'agent-chat:transcript-changed',
+  AGENT_CHAT_ASSISTANT_DELTA: 'agent-chat:assistant-delta',
 
   /** Composio webhooks + trigger API (main process). */
   COMPOSIO_WEBHOOK_STATUS: 'composio:webhook-status',

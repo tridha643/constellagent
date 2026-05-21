@@ -43,6 +43,7 @@ import {
 import { buildAdHocAgentCommand, planAgentToPtyAgentType } from '../../shared/plan-build-command'
 import { AGENT_PLAN_DIRS_LABEL } from '../utils/agent-plan-dirs'
 import { GEMINI_TAB_LABEL, isGeminiIdleOscTitle } from '../../shared/gemini-tab-title'
+import { syncConductorAuthKeys } from '../lib/conductor-sign-in'
 import {
   getAllPtyIds,
   splitLeaf,
@@ -649,6 +650,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: { ...DEFAULT_SETTINGS },
   composioWebhook: { ...DEFAULT_COMPOSIO_WEBHOOK_SETTINGS },
   settingsOpen: false,
+  settingsSection: 'appearance',
   automationsOpen: false,
   linearPanelOpen: false,
   confirmDialog: null,
@@ -1132,18 +1134,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeTab: (id) =>
     set((s) => {
       const removed = s.tabs.find((t) => t.id === id)
-      if (removed?.type === 't3code') {
-        const ws = s.workspaces.find((w) => w.id === removed.workspaceId)
-        if (ws) void window.api.t3code.stop(ws.worktreePath)
-      }
       if (removed?.type === 'service') {
-        // Mirror t3code: ensure the underlying PTY dies when the user closes the tab.
+        // Ensure the underlying PTY dies when the user closes the tab.
         try { window.api.pty.destroy(removed.ptyId) } catch {}
       }
       // Track 6: drop the saved scrollback file when its tab closes so the
       // userData/scrollback dir doesn't accrue stale entries.
       if (removed?.type === 'terminal') {
         void window.api.pty.deleteScrollback(removed.id).catch(() => {})
+      }
+      // Drop conductor-chat.db rows when the last tab for a session closes.
+      if (removed?.type === 'conductor' && removed.agentSessionId) {
+        const sessionId = removed.agentSessionId
+        const stillOpen = s.tabs.some(
+          (t) =>
+            t.id !== id &&
+            t.type === 'conductor' &&
+            t.agentSessionId === sessionId,
+        )
+        if (!stillOpen) {
+          void window.api.agentChat.deleteSession(sessionId).catch(() => {})
+        }
       }
       let planBuildTerminalByPlanPath = s.planBuildTerminalByPlanPath
       if (removed?.type === 'terminal') {
@@ -1430,6 +1441,58 @@ export const useAppStore = create<AppState>((set, get) => ({
           : t,
       ),
     })),
+
+  createConductorTabForActiveWorkspace: () => {
+    const s = get()
+    if (!s.activeWorkspaceId) return
+    const conductorCount = s.tabs.filter(
+      (t) => t.workspaceId === s.activeWorkspaceId && t.type === 'conductor',
+    ).length
+    const title = conductorCount === 0 ? 'New chat' : `New chat ${conductorCount + 1}`
+    get().addTab({
+      id: crypto.randomUUID(),
+      workspaceId: s.activeWorkspaceId,
+      type: 'conductor',
+      title,
+    })
+    set({
+      settingsOpen: false,
+      automationsOpen: false,
+      linearPanelOpen: false,
+      linearQuickOpenVisible: false,
+    })
+  },
+
+  setConductorTabSessionBinding: (tabId, agentSessionId, title) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId && t.type === 'conductor'
+          ? {
+              ...t,
+              agentSessionId,
+              ...(title !== undefined ? { title } : {}),
+            }
+          : t,
+      ),
+    })),
+
+  openConductorSessionTab: (agentSessionId, title) => {
+    const s = get()
+    if (!s.activeWorkspaceId) return
+    get().addTab({
+      id: crypto.randomUUID(),
+      workspaceId: s.activeWorkspaceId,
+      type: 'conductor',
+      title: title?.trim() || 'New chat',
+      agentSessionId,
+    })
+    set({
+      settingsOpen: false,
+      automationsOpen: false,
+      linearPanelOpen: false,
+      linearQuickOpenVisible: false,
+    })
+  },
 
   launchAgentTerminalWithCommand: async (opts) => {
     const { workspaceId, worktreePath, title, command, agentType } = opts
@@ -2373,6 +2436,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       linearPanelOpen: false,
       linearQuickOpenVisible: false,
     })),
+
+  setSettingsSection: (section) => set({ settingsSection: section }),
+
+  openSettingsSection: (section) =>
+    set({
+      settingsOpen: true,
+      settingsSection: section,
+      automationsOpen: false,
+      linearPanelOpen: false,
+      linearQuickOpenVisible: false,
+    }),
   toggleAutomations: () =>
     set((s) => ({
       automationsOpen: !s.automationsOpen,
@@ -2799,40 +2873,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ settings: { ...s.settings, subagents: s.settings.subagents.filter((sa) => sa.id !== id) } })),
   updateSubagent: (id, partial) =>
     set((s) => ({ settings: { ...s.settings, subagents: s.settings.subagents.map((sa) => sa.id === id ? { ...sa, ...partial } : sa) } })),
-
-  openT3CodeTab: async (workspaceId) => {
-    const s = get()
-    const ws = s.workspaces.find((w) => w.id === workspaceId)
-    if (!ws) return
-    const existing = s.tabs.find(
-      (t) => t.workspaceId === workspaceId && t.type === 't3code'
-    )
-
-    try {
-      // Always start (or reuse the live server) so `serverUrl` includes a fresh `?token=` pairing
-      // credential. Persisted tabs and the old "reuse" path skipped this and left stale loopback URLs.
-      const serverUrl = await window.api.t3code.start(ws.worktreePath)
-      if (existing) {
-        set((state) => ({
-          activeTabId: existing.id,
-          tabs: state.tabs.map((t) =>
-            t.id === existing.id && t.type === 't3code' ? { ...t, serverUrl } : t
-          ),
-        }))
-        return
-      }
-      get().addTab({
-        id: crypto.randomUUID(),
-        workspaceId,
-        type: 't3code',
-        title: 'T3 Code',
-        serverUrl,
-      })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to start T3 Code'
-      get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
-    }
-  },
 
   openDiffTab: (workspaceId) => {
     const s = get()
@@ -3343,21 +3383,6 @@ useAppStore.subscribe((state, prevState) => {
   })
 })
 
-// T3 Code: auto-collapse both physical side hosts when the active tab is t3code
-useAppStore.subscribe((state, prevState) => {
-  if (state.activeTabId === prevState.activeTabId && state.settings === prevState.settings) return
-  if (!state.settings.t3CodeCollapseSidePanels) return
-  const activeTab = state.tabs.find((t) => t.id === state.activeTabId)
-  if (activeTab?.type !== 't3code') return
-  if (!state.sidePanels.left.open && !state.sidePanels.right.open) return
-  useAppStore.setState({
-    sidePanels: {
-      left: { ...state.sidePanels.left, open: false },
-      right: { ...state.sidePanels.right, open: false },
-    },
-  })
-})
-
 useAppStore.subscribe((state, prevState) => {
   if (activeAgentSetsEqual(state.activeClaudeWorkspaceIds, prevState.activeClaudeWorkspaceIds)) return
   const paths = [...state.activeClaudeWorkspaceIds]
@@ -3379,6 +3404,8 @@ export async function hydrateFromDisk(): Promise<void> {
     const data = await window.api.state.load()
     if (data) {
       useAppStore.getState().hydrateState(data)
+      const { conductorCursorApiKey, conductorOpenaiApiKey } = useAppStore.getState().settings
+      void syncConductorAuthKeys(conductorCursorApiKey, conductorOpenaiApiKey)
       await normalizeProjectRepoAnchorsInStore()
       await syncExternalProjectStartupSettingsForProjects(useAppStore.getState().projects)
     }
@@ -3450,34 +3477,6 @@ export async function hydrateFromDisk(): Promise<void> {
     }
   } catch (err) {
     console.error('Failed to reconcile PTY tabs:', err)
-  }
-
-  // T3 Code tabs persist `serverUrl`, but the dev server and pairing token are ephemeral. Restart
-  // (or attach to an already-running instance) before first paint so the webview always gets `?token=`.
-  try {
-    const storeAfter = useAppStore.getState()
-    const updates: { id: string; serverUrl: string }[] = []
-    for (const tab of storeAfter.tabs) {
-      if (tab.type !== 't3code') continue
-      const ws = storeAfter.workspaces.find((w) => w.id === tab.workspaceId)
-      if (!ws) continue
-      try {
-        const serverUrl = await window.api.t3code.start(ws.worktreePath)
-        updates.push({ id: tab.id, serverUrl })
-      } catch (err) {
-        console.error('[constellagent] Failed to restore T3 Code tab', tab.id, err)
-      }
-    }
-    if (updates.length > 0) {
-      useAppStore.setState((s) => ({
-        tabs: s.tabs.map((t) => {
-          const u = updates.find((x) => x.id === t.id)
-          return u && t.type === 't3code' ? { ...t, serverUrl: u.serverUrl } : t
-        }),
-      }))
-    }
-  } catch (err) {
-    console.error('Failed to rehydrate T3 Code tabs:', err)
   }
 
   const state = useAppStore.getState()

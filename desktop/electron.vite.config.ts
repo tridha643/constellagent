@@ -4,6 +4,13 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
+    // @openai/codex-sdk is ESM-only (exports.import, no require). Bundle it so the
+    // CJS main output does not call require("@openai/codex-sdk") at runtime.
+    build: {
+      externalizeDeps: {
+        exclude: ['@openai/codex-sdk'],
+      },
+    },
     resolve: {
       alias: {
         '@shared': resolve(__dirname, 'src/shared')

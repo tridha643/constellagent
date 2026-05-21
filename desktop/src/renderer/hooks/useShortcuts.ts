@@ -361,6 +361,12 @@ export function useShortcuts() {
         store.createTerminalForActiveWorkspace()
         return
       }
+      // Cmd+Shift+C — new Conductor chat tab in the active worktree
+      if (shift && !alt && e.code === 'KeyC') {
+        consume()
+        store.createConductorTabForActiveWorkspace()
+        return
+      }
       // Cmd+D — split terminal pane right
       if (!shift && !alt && e.code === 'KeyD') {
         consume()
@@ -567,15 +573,6 @@ export function useShortcuts() {
               })
             },
           })
-        }
-        return
-      }
-
-      // ── T3 Code: Cmd+Shift+` (backtick) — avoids macOS ⌘⇧3 / ⌘⇧4 screenshots ──
-      if (shift && !alt && e.code === 'Backquote') {
-        consume()
-        if (store.activeWorkspaceId) {
-          store.openT3CodeTab(store.activeWorkspaceId)
         }
         return
       }

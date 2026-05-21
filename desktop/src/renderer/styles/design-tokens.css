@@ -108,6 +108,8 @@
      ═══════════════════════════════════════════════════════ */
   --font-mono: 'SF Mono', 'Menlo', 'Cascadia Code', 'JetBrains Mono', monospace;
   --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  /* ProseMark / CodeMirror live-preview body font (writer.computer uses --font) */
+  --font: var(--font-ui);
 
   --text-xs: 10px;
   --text-sm: 11px;

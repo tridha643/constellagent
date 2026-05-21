@@ -7,18 +7,26 @@ import type { ReactNode } from "react";
  * Cross-fade two icons (scale + opacity + blur) per make-interfaces-feel-better.
  * Spring with bounce 0 when motion is enabled; instant swap when reduced motion.
  */
+const VARIANTS = {
+  default: { initialScale: 0.25, blur: 4, duration: 0.3 },
+  soft: { initialScale: 0.92, blur: 2, duration: 0.18 },
+} as const;
+
 export function IconSwap({
   active,
   a,
   b,
   size = 16,
+  variant = "default",
 }: {
   active: boolean;
   a: ReactNode;
   b: ReactNode;
   size?: number;
+  variant?: keyof typeof VARIANTS;
 }) {
   const reduceMotion = useReducedMotion();
+  const variantConfig = VARIANTS[variant];
 
   if (reduceMotion) {
     return (
@@ -50,10 +58,10 @@ export function IconSwap({
       <AnimatePresence initial={false} mode="popLayout">
         <motion.span
           key={active ? "a" : "b"}
-          initial={{ scale: 0.25, opacity: 0, filter: "blur(4px)" }}
+          initial={{ scale: variantConfig.initialScale, opacity: 0, filter: `blur(${variantConfig.blur}px)` }}
           animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }}
-          exit={{ scale: 0.25, opacity: 0, filter: "blur(4px)" }}
-          transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+          exit={{ scale: variantConfig.initialScale, opacity: 0, filter: `blur(${variantConfig.blur}px)` }}
+          transition={{ type: "spring", duration: variantConfig.duration, bounce: 0 }}
           style={{
             position: "absolute",
             inset: 0,

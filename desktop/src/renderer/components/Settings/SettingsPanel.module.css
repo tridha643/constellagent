@@ -364,10 +364,24 @@
   white-space: nowrap;
 }
 
-.statusPillOn {
+.statusPillOn,
+.statusPillOk {
   border-color: var(--accent-green);
   background: var(--accent-green-dim);
   color: var(--accent-green);
+}
+
+.statusPillWarn {
+  border-color: rgb(251 191 36 / 45%);
+  background: rgb(251 191 36 / 12%);
+  color: rgb(251 191 36);
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
 }
 
 .inlineCode {

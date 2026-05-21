@@ -20,6 +20,7 @@ export interface TimelineToolCall {
   readonly id: string;
   readonly callId: string;
   readonly toolName: string;
+  readonly variant?: "subagent" | "default";
   readonly status: TimelineToolStatus;
   readonly label: string;
   readonly detail?: string;

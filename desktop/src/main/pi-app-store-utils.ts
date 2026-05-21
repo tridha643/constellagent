@@ -502,7 +502,10 @@ export function makeToolItem(
   toolName: string,
   status: "running" | "success" | "error",
   label: string,
-  options: Pick<Extract<TranscriptMessage, { kind: "tool" }>, "detail" | "metadata" | "input" | "output"> = {},
+  options: Pick<
+    Extract<TranscriptMessage, { kind: "tool" }>,
+    "detail" | "metadata" | "input" | "output" | "variant"
+  > = {},
 ): TranscriptMessage {
   return {
     kind: "tool",

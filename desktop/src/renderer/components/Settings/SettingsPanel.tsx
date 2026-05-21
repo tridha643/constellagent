@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ConductorAuthStatus } from '../../../shared/agent-chat-types'
 import { useAppStore } from '../../store/app-store'
 import type {
   Settings,
+  SettingsSectionId,
   FavoriteEditor,
   McpServer,
   AgentType,
@@ -35,6 +37,13 @@ import { FloatingPanel } from '../FloatingPanel/FloatingPanel'
 import { APPEARANCE_THEME_OPTIONS, type AppearanceThemeId } from '../../theme/appearance'
 import { shouldConfirmAppRestart } from './restart-app'
 import { linearFetchViewer } from '../../linear/linear-api'
+import {
+  fetchConductorAuthStatus,
+  openCursorApiKeyDocs,
+  signInCodex,
+  signInCursor,
+  syncConductorAuthKeys,
+} from '../../lib/conductor-sign-in'
 import styles from './SettingsPanel.module.css'
 
 const SHORTCUTS = [
@@ -73,18 +82,6 @@ const SHORTCUTS = [
   { action: 'Settings', keys: '⌘,' },
 ]
 
-type SettingsSectionId =
-  | 'appearance'
-  | 'sidebar'
-  | 'general'
-  | 'linear'
-  | 'mcp'
-  | 'integrations'
-  | 'composio'
-  | 'worktree'
-  | 'skills'
-  | 'shortcuts'
-
 const SETTINGS_SIDEBAR: readonly {
   id: SettingsSectionId
   label: string
@@ -109,6 +106,11 @@ const SETTINGS_SIDEBAR: readonly {
     id: 'linear',
     label: 'Linear',
     blurb: 'Issues panel API access plus coding defaults.',
+  },
+  {
+    id: 'conductor',
+    label: 'Conductor',
+    blurb: 'Sign in for in-app Cursor and Codex chat.',
   },
   {
     id: 'mcp',
@@ -1180,6 +1182,142 @@ function PiCommitMessageModelSettingsRow({
   )
 }
 
+function ConductorSettingsSection({
+  cursorApiKey,
+  openaiApiKey,
+  onCursorKeyChange,
+  onOpenaiKeyChange,
+}: {
+  cursorApiKey: string
+  openaiApiKey: string
+  onCursorKeyChange: (v: string) => void
+  onOpenaiKeyChange: (v: string) => void
+}) {
+  const [authStatus, setAuthStatus] = useState<ConductorAuthStatus | null>(null)
+  const [cursorLoginStarted, setCursorLoginStarted] = useState(false)
+  const [codexLoginStarted, setCodexLoginStarted] = useState(false)
+
+  const refreshAuth = useCallback(() => {
+    void syncConductorAuthKeys(cursorApiKey, openaiApiKey)
+    void fetchConductorAuthStatus(true).then(setAuthStatus)
+  }, [cursorApiKey, openaiApiKey])
+
+  useEffect(() => {
+    refreshAuth()
+  }, [refreshAuth])
+
+  useEffect(() => {
+    if (!cursorLoginStarted && !codexLoginStarted) return
+    const timer = setInterval(refreshAuth, 2000)
+    return () => clearInterval(timer)
+  }, [cursorLoginStarted, codexLoginStarted, refreshAuth])
+
+  return (
+    <>
+      <div className={styles.sectionHint}>
+        Conductor runs agents inside Constellagent. <strong>Cursor</strong> uses the Cursor SDK — sign in with{' '}
+        <code>cursor-agent login</code> or an API key. <strong>Codex</strong> uses the OpenAI Codex CLI — sign in with{' '}
+        <code>codex login</code> or an OpenAI API key. Keys are stored locally in app settings (same file as Linear).
+      </div>
+
+      <div className={styles.row}>
+        <div className={styles.rowText}>
+          <div className={styles.rowLabel}>Cursor</div>
+          <div className={styles.rowDescription}>
+            {authStatus?.cursor.ready ? authStatus.cursor.detail : authStatus?.cursor.detail ?? 'Checking…'}
+          </div>
+        </div>
+        <div className={styles.rowActions}>
+          <span
+            className={authStatus?.cursor.ready ? styles.statusPillOk : styles.statusPillWarn}
+            aria-live="polite"
+          >
+            {authStatus?.cursor.ready ? 'Ready' : 'Not signed in'}
+          </span>
+          {!authStatus?.cursor.ready && (
+            <button
+              type="button"
+              className={styles.actionBtn}
+              onClick={() => {
+                setCursorLoginStarted(true)
+                void signInCursor(useAppStore.getState)
+              }}
+            >
+              Sign in
+            </button>
+          )}
+        </div>
+      </div>
+      <TextRow
+        label="Cursor API key"
+        description="Optional alternative to `cursor-agent login`. Used when the model selector shows the Cursor badge. Also reads CURSOR_API_KEY from your environment."
+        value={cursorApiKey}
+        onChange={onCursorKeyChange}
+        password
+        placeholder="key_…"
+      />
+      <div className={styles.row}>
+        <div className={styles.rowText}>
+          <div className={styles.rowLabel}>Cursor API docs</div>
+          <div className={styles.rowDescription}>Create a key, paste it above, then Refresh status.</div>
+        </div>
+        <button type="button" className={styles.actionBtn} onClick={openCursorApiKeyDocs}>
+          Open docs
+        </button>
+      </div>
+
+      <div className={styles.row} style={{ marginTop: 12 }}>
+        <div className={styles.rowText}>
+          <div className={styles.rowLabel}>Codex</div>
+          <div className={styles.rowDescription}>
+            {authStatus?.codex.ready ? authStatus.codex.detail : authStatus?.codex.detail ?? 'Checking…'}
+          </div>
+        </div>
+        <div className={styles.rowActions}>
+          <span
+            className={authStatus?.codex.ready ? styles.statusPillOk : styles.statusPillWarn}
+            aria-live="polite"
+          >
+            {authStatus?.codex.ready ? 'Ready' : 'Not signed in'}
+          </span>
+          {!authStatus?.codex.ready && (
+            <button
+              type="button"
+              className={styles.actionBtn}
+              onClick={() => {
+                setCodexLoginStarted(true)
+                void signInCodex(useAppStore.getState)
+              }}
+            >
+              Sign in
+            </button>
+          )}
+        </div>
+      </div>
+      <TextRow
+        label="OpenAI API key (optional)"
+        description="Alternative to `codex login`. Used when the model selector shows the Codex badge. Also reads OPENAI_API_KEY from your environment."
+        value={openaiApiKey}
+        onChange={onOpenaiKeyChange}
+        password
+        placeholder="sk-…"
+      />
+      <div className={styles.row}>
+        <div className={styles.rowText}>
+          <div className={styles.rowLabel}>Refresh status</div>
+          <div className={styles.rowDescription}>
+            After finishing <code>cursor-agent login</code> or <code>codex login</code> in the terminal, refresh to
+            update Ready state.
+          </div>
+        </div>
+        <button type="button" className={styles.actionBtn} onClick={refreshAuth}>
+          Refresh
+        </button>
+      </div>
+    </>
+  )
+}
+
 function LinearSettingsSection({
   apiKey,
   onKeyChange,
@@ -1587,13 +1725,6 @@ function SettingsSectionBody({
           />
 
           <ToggleRow
-            label="T3 Code: hide panels"
-            description="Collapse both sidebars when opening T3 Code (⚡)"
-            value={settings.t3CodeCollapseSidePanels}
-            onChange={(v) => update('t3CodeCollapseSidePanels', v)}
-          />
-
-          <ToggleRow
             label="Search code in Quick Open (Cmd+F)"
             description="Uses fff to grep file contents alongside file-name matches. Results are labeled file or code."
             value={settings.quickOpenCodeSearchEnabled}
@@ -1677,6 +1808,19 @@ function SettingsSectionBody({
         </div>
       )
 
+    case 'conductor':
+      return (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Conductor</div>
+          <ConductorSettingsSection
+            cursorApiKey={settings.conductorCursorApiKey}
+            openaiApiKey={settings.conductorOpenaiApiKey}
+            onCursorKeyChange={(v) => update('conductorCursorApiKey', v)}
+            onOpenaiKeyChange={(v) => update('conductorOpenaiApiKey', v)}
+          />
+        </div>
+      )
+
     case 'mcp':
       return (
         <div className={styles.section}>
@@ -1738,7 +1882,8 @@ export function SettingsPanel() {
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog)
   const addToast = useAppStore((s) => s.addToast)
   const [restarting, setRestarting] = useState(false)
-  const [section, setSection] = useState<SettingsSectionId>('appearance')
+  const section = useAppStore((s) => s.settingsSection)
+  const setSettingsSection = useAppStore((s) => s.setSettingsSection)
 
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     updateSettings({ [key]: value })
@@ -1818,7 +1963,7 @@ export function SettingsPanel() {
                     id={`settings-tab-${item.id}`}
                     aria-controls="settings-pane"
                     className={`${styles.settingsTab} ${selected ? styles.settingsTabActive : ''}`}
-                    onClick={() => setSection(item.id)}
+                    onClick={() => setSettingsSection(item.id)}
                   >
                     {item.label}
                   </button>

@@ -119,8 +119,9 @@ export type Tab = {
   | { type: 'diff'; commitHash?: string; commitMessage?: string }
   | { type: 'fileDiff'; filePath: string; status?: WorkingTreeFileStatus['status']; originalRef?: string }
   | { type: 'markdownPreview'; filePath: string; title: string }
-  | { type: 't3code'; title: string; serverUrl: string }
   | { type: 'pi-thread'; title: string; piSessionId?: string; piSessionTitle?: string }
+  /** Conductor agent chat (Cursor / Codex SDK); session lives in conductor-chat.db. */
+  | { type: 'conductor'; title: string; agentSessionId?: string }
   // First-class long-running service (e.g. `bun dev`, `npm test`). Hosts a PTY just like
   // a terminal tab, but the user gets status + Restart/Stop controls instead of agent chrome.
   | { type: 'service'; title: string; ptyId: string; scriptName: string;
@@ -437,6 +438,19 @@ export function normalizePiCommitMessageModel(v: unknown): string {
   return v.trim()
 }
 
+export type SettingsSectionId =
+  | 'appearance'
+  | 'sidebar'
+  | 'general'
+  | 'linear'
+  | 'conductor'
+  | 'mcp'
+  | 'integrations'
+  | 'composio'
+  | 'worktree'
+  | 'skills'
+  | 'shortcuts'
+
 export interface Settings {
   appearanceThemeId: AppearanceThemeId
   confirmOnClose: boolean
@@ -462,11 +476,14 @@ export interface Settings {
   worktreeCredentialRules: WorktreeCredentialRule[]
   skills: SkillEntry[]
   subagents: SubagentEntry[]
-  t3CodeCollapseSidePanels: boolean
   /** When true, the Cmd+F Quick Open palette also greps file contents via fff and shows code matches alongside file-name matches. */
   quickOpenCodeSearchEnabled: boolean
   /** Linear Personal API key (Settings only; persisted in app state JSON). */
   linearApiKey: string
+  /** Cursor API key for Conductor (Cursor SDK). Falls back to CURSOR_API_KEY in the environment. */
+  conductorCursorApiKey: string
+  /** OpenAI API key for Conductor (Codex SDK). Falls back to OPENAI_API_KEY or `codex login`. */
+  conductorOpenaiApiKey: string
   /** Ordered projects shown in the Linear panel updates bar. */
   linearProjectUpdateBar: LinearProjectUpdateBarEntry[]
   /** Project ids highlighted in the Linear panel Projects list. */
@@ -538,9 +555,10 @@ export const DEFAULT_SETTINGS: Settings = {
   worktreeCredentialRules: getDefaultWorktreeCredentialRules(),
   skills: [],
   subagents: [],
-  t3CodeCollapseSidePanels: false,
   quickOpenCodeSearchEnabled: false,
   linearApiKey: '',
+  conductorCursorApiKey: '',
+  conductorOpenaiApiKey: '',
   linearProjectUpdateBar: [],
   linearFavoriteProjectIds: [],
   linearWorkspaceToolbarTool: 'search',
@@ -643,6 +661,7 @@ export interface AppState {
   /** Composio webhook receiver settings (persisted alongside app state). */
   composioWebhook: ComposioWebhookSettings
   settingsOpen: boolean
+  settingsSection: SettingsSectionId
   automationsOpen: boolean
   linearPanelOpen: boolean
   confirmDialog: ConfirmDialogState | null
@@ -737,6 +756,12 @@ export interface AppState {
   createPiThreadForActiveWorkspace: () => Promise<void>
   /** Update bound Pi session for a PI Chat tab (multi-chat per worktree). */
   setPiThreadSessionBinding: (tabId: string, piSessionId: string, title?: string) => void
+  /** New draft Conductor tab in the active worktree (sidebar button / ⇧⌘C). */
+  createConductorTabForActiveWorkspace: () => void
+  /** Bind a Conductor tab to an agent-chat session after first submit or fork. */
+  setConductorTabSessionBinding: (tabId: string, agentSessionId: string, title?: string) => void
+  /** Open a Conductor tab for an existing session (e.g. fork). */
+  openConductorSessionTab: (agentSessionId: string, title?: string) => void
   /** Launch a new terminal tab with a pre-written command (plan builds, no session resume). */
   launchAgentTerminalWithCommand: (opts: {
     workspaceId: string
@@ -766,7 +791,6 @@ export interface AppState {
   setPlanBuildTerminalForPlan: (planPath: string, terminalTabId: string) => void
   /** Open newest .md/.mdx across agent plan dirs (.cursor/plans, etc.) in the active workspace */
   openLatestAgentPlan: () => Promise<void>
-  openT3CodeTab: (workspaceId: string) => Promise<void>
   openDiffTab: (workspaceId: string) => void
   openCommitDiffTab: (workspaceId: string, hash: string, message: string) => void
   /** Open a VS Code-style full-file diff tab for a single file (HEAD vs working tree). */
@@ -813,6 +837,8 @@ export interface AppState {
   updateSettings: (partial: Partial<Settings>) => void
   updateComposioWebhook: (partial: Partial<ComposioWebhookSettings>) => void
   toggleSettings: () => void
+  setSettingsSection: (section: SettingsSectionId) => void
+  openSettingsSection: (section: SettingsSectionId) => void
   toggleAutomations: () => void
   toggleLinear: () => void
   showConfirmDialog: (dialog: ConfirmDialogState) => void
@@ -909,10 +935,11 @@ export interface AppState {
   resolveProjectTargetWorkspace: (projectId: string) => Workspace | undefined
 }
 
-export type SidebarActionId = 'add-project' | 'automations' | 'linear' | 'plans' | 'settings' | 'review'
+export type SidebarActionId = 'add-project' | 'conductor' | 'automations' | 'linear' | 'plans' | 'settings' | 'review'
 
 export const DEFAULT_SIDEBAR_ACTION_ORDER: SidebarActionId[] = [
   'add-project',
+  'conductor',
   'automations',
   'linear',
   'plans',
