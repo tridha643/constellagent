@@ -98,7 +98,12 @@ export function ContextPanel({
   const pct = Math.min(100, Math.max(0, data.percentage))
 
   return (
-    <div className={styles.contextPanel} role="region" aria-label="Context window usage">
+    <div
+      className={styles.contextPanel}
+      role="region"
+      aria-label="Context window usage"
+      data-conductor-context-panel
+    >
       <div className={styles.contextPanelHeader}>
         <span className={styles.contextPanelTitle}>Context</span>
         <span className={styles.contextPanelCounts}>

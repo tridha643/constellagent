@@ -5,6 +5,7 @@ import {
   displayModelName,
   hasEffortVariants,
   hasFastVariant,
+  mapThinkingLevelToCodexEffort,
   normalizeConductorDefaultProvider,
   parseModelEffort,
   resolveConductorDefaultSelection,
@@ -51,11 +52,19 @@ describe('applyThinkingLevel', () => {
 
 describe('hasEffortVariants', () => {
   test('codex family has variants', () => {
-    expect(hasEffortVariants('gpt-5.3-codex')).toBe(true)
+    expect(hasEffortVariants('gpt-5.3-codex', 'codex')).toBe(true)
   })
 
-  test('composer-2 has no effort variants', () => {
-    expect(hasEffortVariants('composer-2')).toBe(false)
+  test('composer-2 has no effort variants on cursor', () => {
+    expect(hasEffortVariants('composer-2', 'cursor')).toBe(false)
+  })
+})
+
+describe('mapThinkingLevelToCodexEffort', () => {
+  test('maps thinking levels to Codex SDK effort', () => {
+    expect(mapThinkingLevelToCodexEffort('high')).toBe('high')
+    expect(mapThinkingLevelToCodexEffort('xhigh')).toBe('xhigh')
+    expect(mapThinkingLevelToCodexEffort('medium')).toBe('medium')
   })
 })
 
@@ -67,14 +76,14 @@ describe('thinkingLevelFromModel', () => {
 })
 
 describe('hasFastVariant', () => {
-  test('codex family has fast variant', () => {
-    expect(hasFastVariant('gpt-5.3-codex')).toBe(true)
-    expect(hasFastVariant('gpt-5.3-codex-fast')).toBe(true)
+  test('codex hides fast toggle', () => {
+    expect(hasFastVariant('gpt-5.3-codex', 'codex')).toBe(false)
+    expect(hasFastVariant('gpt-5.3-codex-fast', 'codex')).toBe(false)
   })
 
-  test('composer-2 supports fast toggle', () => {
-    expect(hasFastVariant('composer-2')).toBe(true)
-    expect(hasFastVariant('composer-2-fast')).toBe(true)
+  test('composer-2 supports fast toggle on cursor', () => {
+    expect(hasFastVariant('composer-2', 'cursor')).toBe(true)
+    expect(hasFastVariant('composer-2-fast', 'cursor')).toBe(true)
   })
 })
 
@@ -113,6 +122,13 @@ describe('Conductor defaults', () => {
   test('converts stored model ids into draft model + thinking level', () => {
     expect(toConductorDraftSelection('gpt-5.3-codex-high-fast')).toEqual({
       model: 'gpt-5.3-codex-fast',
+      thinkingLevel: 'high',
+    })
+  })
+
+  test('uses configured default thinking level when set', () => {
+    expect(resolveConductorDefaultSelection('codex', 'gpt-5.4', 'high')).toEqual({
+      model: 'gpt-5.4',
       thinkingLevel: 'high',
     })
   })

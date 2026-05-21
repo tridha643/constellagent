@@ -12,7 +12,7 @@ import {
 } from './pi-timeline'
 import { AgentChatStore } from './agent-chat-store'
 import { GitService } from './git-service'
-import type { AgentDriver } from './agents/agent-driver'
+import { evToolFinished, type AgentDriver } from './agents/agent-driver'
 import { CodexDriver } from './agents/codex-driver'
 import { CursorDriver } from './agents/cursor-driver'
 import {
@@ -133,7 +133,11 @@ export class AgentChatHost {
 
   async submit(sessionId: string, text: string): Promise<void> {
     const trimmed = text.trim()
-    const session = this.sessions.get(sessionId)
+    const live = this.sessions.get(sessionId)
+    if (live?.state.status === 'running' || live?.abort) {
+      return
+    }
+    const session = live
     const state = session?.state ?? (await this.rehydrate(sessionId))
     if (!state || trimmed.length === 0) return
 
@@ -313,6 +317,7 @@ export class AgentChatHost {
    * Stopped marker the renderer turns into an INTERRUPTED BY USER pill.
    */
   private interruptRun(state: AgentChatSessionState, ref: SessionRef): void {
+    this.finalizeRunningTools(ref)
     applyTimelineEvent(
       this.transcriptCache,
       this.snapshotEvent(ref, state, 'runCompleted', 'idle'),
@@ -324,6 +329,22 @@ export class AgentChatHost {
       this.timelineState,
     )
     this.update(state.sessionId, { status: 'idle' })
+  }
+
+  /** Mark in-flight tool rows as failed so shell/bash chips do not stay running after Esc/stop. */
+  private finalizeRunningTools(ref: SessionRef): void {
+    const key = sessionKey(ref)
+    const transcript = this.transcriptCache.get(key)
+    if (!transcript) return
+    for (const item of transcript) {
+      if (item.kind === 'tool' && item.status === 'running') {
+        applyTimelineEvent(
+          this.transcriptCache,
+          evToolFinished(ref, item.callId, false, undefined),
+          this.timelineState,
+        )
+      }
+    }
   }
 
   private failRun(state: AgentChatSessionState, ref: SessionRef, message: string): void {
@@ -496,9 +517,21 @@ const PATH_KEYS = [
   'file',
 ]
 
+/** Codex `file_change` items pass `changes: { path, kind }[]` as tool input. */
+function collectCodexFileChangePaths(value: unknown, out: Set<string>): void {
+  if (!Array.isArray(value)) return
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const path = (entry as { path?: unknown }).path
+    if (typeof path === 'string' && path.trim()) out.add(path.trim())
+  }
+}
+
 /** Pull every plausible changed file path out of a tool's input/output payloads. */
 function extractChangedPaths(input: unknown, output: unknown): string[] {
   const found = new Set<string>()
+  collectCodexFileChangePaths(input, found)
+  collectCodexFileChangePaths(output, found)
   collectPaths(input, found, 0)
   collectPaths(output, found, 0)
   return [...found]

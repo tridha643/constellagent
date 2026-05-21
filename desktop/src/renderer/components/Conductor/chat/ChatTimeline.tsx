@@ -65,6 +65,14 @@ function isWorkingActivity(item: TranscriptMessage): boolean {
   return item.kind === 'activity' && item.label === WORKING_LABEL
 }
 
+function isHiddenTranscriptItem(item: TranscriptMessage): boolean {
+  return item.kind === 'summary'
+}
+
+function isCollapsibleTool(item: TranscriptMessage): boolean {
+  return item.kind === 'tool' && !isSubagentToolCall(item)
+}
+
 /** Split deferred Working… rows from the rest of a turn body (rendered last). */
 function partitionTurnBody(body: readonly TranscriptMessage[]): {
   items: TranscriptMessage[]
@@ -198,7 +206,7 @@ export const ChatTimeline = forwardRef<
     [currentTurnTools],
   )
   const runningLabel = currentTurnTools.find((tool) => tool.status === 'running')?.label
-
+  const runningTool = currentTurnTools.find((tool) => tool.status === 'running')
   // Collapse a completed turn's TOOL rows behind a disclosure — never its
   // messages. Assistant/user prose always stays visible (collapsing it would
   // hide earlier answers).
@@ -220,13 +228,18 @@ export const ChatTimeline = forwardRef<
       i += 1
       const body: TranscriptMessage[] = []
       while (i < n && !isUser(transcript[i])) {
-        body.push(transcript[i])
+        const item = transcript[i]
+        if (!isHiddenTranscriptItem(item)) body.push(item)
         i += 1
       }
       const { items: bodyItems, workingActivity } = partitionTurnBody(body)
       const isLatestTurn = i >= n
       const { assistants, rest: nonAssistantBody } = splitTurnAssistants(bodyItems)
-      const toolRows = nonAssistantBody.filter(isCollapsibleTool)
+      const visibleNonAssistantBody =
+        isLatestTurn && running
+          ? nonAssistantBody.filter((item) => !isCollapsibleTool(item))
+          : nonAssistantBody
+      const toolRows = visibleNonAssistantBody.filter(isCollapsibleTool)
       const messageCount = assistants.length
       const pushPlain = (item: TranscriptMessage) => result.push({ type: 'item', item })
       // Collapse completed turns (including the latest once idle). While the
@@ -243,7 +256,7 @@ export const ChatTimeline = forwardRef<
           isPlan: planActive,
         })
       } else {
-        for (const item of nonAssistantBody) {
+        for (const item of visibleNonAssistantBody) {
           pushPlain(item)
         }
       }
@@ -254,6 +267,14 @@ export const ChatTimeline = forwardRef<
     }
     return result
   }, [transcript, planActive, running])
+
+  const latestTurnKey = useMemo(() => {
+    for (let i = units.length - 1; i >= 0; i -= 1) {
+      const unit = units[i]
+      if (unit.type === 'turnGroup') return unit.key
+    }
+    return null
+  }, [units])
 
   const scrollToMessage = useCallback((messageId: string) => {
     const root = scrollRef.current
@@ -373,6 +394,7 @@ export const ChatTimeline = forwardRef<
             return currentTurnTools.length > 0 ? (
               <ActivityTicker
                 items={tickerCompleted}
+                activeTool={runningTool}
                 running={running}
                 startedAt={runStartedAt}
                 runningLabel={runningLabel}
@@ -411,12 +433,13 @@ export const ChatTimeline = forwardRef<
       running,
       runStartedAt,
       runningLabel,
+      runningTool,
     ],
   )
 
   const renderRow = useCallback(
     (item: TranscriptMessage): ReactNode => {
-      // Active-turn tools live in the ticker while running; don't double-render them.
+      // Active-turn tools render in ActivityTicker while running (single live chip slot).
       if (item.kind === 'tool' && running && currentTurnToolIds.has(item.id)) return null
       const node = renderItemInner(item)
       if (node === null || node === undefined) return null
@@ -430,6 +453,18 @@ export const ChatTimeline = forwardRef<
       )
     },
     [running, currentTurnToolIds, renderItemInner],
+  )
+
+  const renderTimelineRow = useCallback(
+    (key: string, content: ReactNode): ReactNode => {
+      if (content === null || content === undefined) return null
+      return (
+        <div key={key} className={styles.timelineRow}>
+          {content}
+        </div>
+      )
+    },
+    [],
   )
 
   if (transcript.length === 0) {
@@ -451,34 +486,29 @@ export const ChatTimeline = forwardRef<
         <div className={styles.timelineStack}>
           {units.map((unit) => {
             if (unit.type === 'item') {
-              return (
-                <div key={unit.item.id} className={styles.timelineRow}>
-                  {renderRow(unit.item)}
-                </div>
-              )
+              return renderTimelineRow(unit.item.id, renderRow(unit.item))
             }
             if (unit.type === 'assistantGroup') {
               const lastId = unit.messages[unit.messages.length - 1]?.id
-              return (
-                <div key={unit.key} className={styles.timelineRow}>
-                  <div className={styles.assistantGroup}>
-                    <div className={styles.messageRole}>Assistant</div>
-                    {unit.messages.map((message, index) => (
-                      <ErrorBoundary
-                        key={message.id}
-                        fallback={
-                          <div className={styles.activityRow}>Couldn&apos;t render this Conductor event.</div>
-                        }
-                      >
-                        {renderAssistantMessage(message, {
-                          hideRole: true,
-                          isSegment: index > 0,
-                          showFooter: message.id === lastId,
-                        })}
-                      </ErrorBoundary>
-                    ))}
-                  </div>
-                </div>
+              return renderTimelineRow(
+                unit.key,
+                <div className={styles.assistantGroup}>
+                  <div className={styles.messageRole}>Assistant</div>
+                  {unit.messages.map((message, index) => (
+                    <ErrorBoundary
+                      key={message.id}
+                      fallback={
+                        <div className={styles.activityRow}>Couldn&apos;t render this Conductor event.</div>
+                      }
+                    >
+                      {renderAssistantMessage(message, {
+                        hideRole: true,
+                        isSegment: index > 0,
+                        showFooter: message.id === lastId,
+                      })}
+                    </ErrorBoundary>
+                  ))}
+                </div>,
               )
             }
             return (
@@ -487,7 +517,7 @@ export const ChatTimeline = forwardRef<
                   toolCount={unit.toolCount}
                   messageCount={unit.messageCount}
                   isPlan={unit.isPlan}
-                  defaultExpanded={false}
+                  defaultExpanded={unit.key === latestTurnKey}
                 >
                   {unit.items.map((item) => renderRow(item))}
                 </TurnSummary>

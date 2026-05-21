@@ -191,6 +191,8 @@
 .turnSummaryEdge {
   box-sizing: border-box;
   width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
   padding-inline: var(--space-4);
 }
 
@@ -1585,6 +1587,7 @@
   border-radius: 6px;
   background: var(--surface-2);
   color: var(--text-secondary);
+  transition: transform 160ms var(--ease-out-strong), background 120ms ease;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   min-width: 0;
@@ -1593,9 +1596,15 @@
   transition: background 120ms var(--ease-out-strong), color 120ms var(--ease-out-strong);
 }
 
-.toolInlineChip:hover {
-  background: var(--surface-3);
-  color: var(--text-primary);
+.toolInlineChip:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .toolInlineChip:hover {
+    background: var(--surface-3);
+    color: var(--text-primary);
+  }
 }
 
 .toolInlineChip:focus-visible {
@@ -1657,7 +1666,7 @@
 .diffHeader {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 6px;
   padding: var(--space-2) var(--space-3);
   color: var(--text-secondary);
   font-family: var(--font-mono);
@@ -1697,6 +1706,7 @@
 .diffCounts {
   margin-left: auto;
   display: inline-flex;
+  flex-shrink: 0;
   gap: 6px;
   font-variant-numeric: tabular-nums;
 }
@@ -1881,51 +1891,27 @@
   padding: var(--space-1) 0;
 }
 
-.tickerViewport {
-  position: relative;
-  height: 80px;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 28px,
-    #000 52px,
-    transparent 80px
-  );
-  mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 52px, transparent 80px);
-}
-
-.tickerTrack {
-  display: flex;
-  flex-direction: column;
-  transition: transform 220ms var(--ease-out-strong);
-  will-change: transform;
-}
-
 .tickerRow {
-  height: 40px;
+  min-height: 28px;
   display: flex;
   align-items: center;
   min-width: 0;
   overflow: hidden;
-  animation: tickerRowIn 240ms var(--ease-out-strong) both;
 }
 
-.tickerRowMarkdown {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
+.tickerRowChip {
+  transition: opacity 120ms var(--ease-out-strong);
 }
 
-@keyframes tickerRowIn {
-  from {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+.toolChipCrossfade {
+  transition: opacity 120ms var(--ease-out-strong);
+}
+
+.conductorPierreDiff {
+  max-height: 320px;
+  overflow: auto;
+  border-radius: 6px;
+  transition: opacity 150ms var(--ease-out-strong);
 }
 
 .tickerStatus {
@@ -1940,6 +1926,12 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
+}
+
+.longRunHint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 .activityRowMarkdown {
@@ -1979,11 +1971,11 @@
   width: auto;
   max-width: 100%;
   text-align: left;
-  transition: color 120ms ease;
+  transition: color 120ms ease, transform 160ms var(--ease-out-strong);
 }
 
 .turnSummaryHeader:active {
-  transform: none;
+  transform: scale(0.98);
 }
 
 .turnSummaryLabel {
@@ -1998,8 +1990,7 @@
   gap: var(--space-2);
   width: 100%;
   max-width: 760px;
-  padding-left: var(--space-4);
-  border-left: 1px solid var(--border-subtle);
+  padding-inline: 0;
 }
 
 /* ── interrupt pill + footer duration (shots 1 & 2) ───────────────────────── */
@@ -2046,8 +2037,15 @@
 @media (prefers-reduced-motion: reduce) {
   .collapsibleChevron,
   .collapsiblePanel,
-  .tickerTrack,
   .tickerRow,
+  .tickerRowChip,
+  .toolChipCrossfade,
+  .toolInlineChip,
+  .toolInline,
+  .conductorPierreDiff,
+  .turnSummaryHeader,
+  .longRunHint,
+  .diffCounts,
   .interruptPill {
     animation: none;
     transition: none;

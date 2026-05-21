@@ -209,9 +209,7 @@ test.describe('Conductor chat view', () => {
     ])
 
     await expect(window.locator('[class*="diffCard"]')).toBeVisible({ timeout: 5000 })
-    await expect(window.locator('[class*="diffBody"] [class*="prosemark-chat"]')).toBeVisible()
-    await expect(window.locator('[class*="diffCard"]')).toContainText('const b = 2')
-    await expect(window.locator('[class*="diffCard"]')).toContainText('const b = 3')
+    await expect(window.getByTestId('conductor-pierre-diff')).toBeVisible()
     await expect(window.locator('[class*="diffCard"]')).toContainText('+1')
     await expect(window.locator('[class*="diffCard"]')).toContainText('−1')
   })
@@ -291,7 +289,34 @@ test.describe('Conductor chat view', () => {
     ])
 
     await expect(window.getByRole('button', { name: 'Open foo.ts' })).toBeVisible({ timeout: 5000 })
-    await expect(window.locator('[class*="diffBody"]')).toBeVisible()
+    await expect(window.getByTestId('conductor-pierre-diff')).toBeVisible()
+  })
+
+  test('shows inline tool chips on the latest completed turn without expanding summary', async () => {
+    const repoPath = createTestRepo('conductor-tool-chips')
+    await setupWorkspace(window, repoPath)
+
+    const title = `tool-chips-${Date.now()}`
+    const sessionId = await createAndSelectSession(window, title)
+    const tool = (id: string, toolName: string, label: string, input?: unknown) => ({
+      kind: 'tool',
+      id,
+      callId: id,
+      toolName,
+      status: 'success',
+      label,
+      createdAt: nowIso(),
+      ...(input ? { input } : {}),
+    })
+    await injectTranscript(app, sessionId, [
+      { kind: 'message', id: 'u1', role: 'user', text: 'go', createdAt: nowIso() },
+      tool('r1', 'read', 'Read 10 lines', { path: 'src/foo.ts' }),
+      tool('b1', 'shell', 'npm test', { command: 'npm test' }),
+      { kind: 'message', id: 'a1', role: 'assistant', text: 'done', createdAt: nowIso() },
+    ])
+
+    await expect(window.locator('[class*="toolInline"]').first()).toBeVisible({ timeout: 5000 })
+    await expect(window.getByText('npm test')).toBeVisible()
   })
 
   test('groups consecutive assistant segments under one header', async () => {
@@ -423,6 +448,148 @@ test.describe('Conductor chat view', () => {
       return (assistant.compareDocumentPosition(ticker) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
     })
     expect(assistantBeforeTicker).toBe(true)
+  })
+
+  test('shows Stop (Esc) on the stop button while the session is running', async () => {
+    const repoPath = createTestRepo('conductor-stop-hint')
+    await setupWorkspace(window, repoPath)
+
+    const title = `stop-hint-${Date.now()}`
+    const sessionId = await createAndSelectSession(window, title)
+    const session = await window.evaluate(async (sid: string) => {
+      return await (
+        window as unknown as { api: { agentChat: { getSession: (id: string) => Promise<{ state: { sessionId: string; workspaceId: string; workspacePath: string; provider: string; model: string; title: string; plan: boolean; thinkingLevel: string; status: string } } | null> } } }
+      ).api.agentChat.getSession(sid)
+    }, sessionId)
+    expect(session?.state).toBeTruthy()
+    await app.evaluate(
+      ({ BrowserWindow }, { state }) => {
+        const payload = { ...state, status: 'running' as const }
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('agent-chat:state-changed', payload)
+        }
+      },
+      { state: session!.state },
+    )
+
+    await expect(window.getByRole('button', { name: 'Stop' })).toHaveAttribute('title', 'Stop (Esc)', {
+      timeout: 5000,
+    })
+  })
+
+  test('Escape while running invokes agent cancel', async () => {
+    const repoPath = createTestRepo('conductor-esc-cancel')
+    await setupWorkspace(window, repoPath)
+
+    const title = `esc-${Date.now()}`
+    const sessionId = await createAndSelectSession(window, title)
+    const session = await window.evaluate(async (sid: string) => {
+      return await (
+        window as unknown as { api: { agentChat: { getSession: (id: string) => Promise<{ state: Record<string, unknown> } | null> } } }
+      ).api.agentChat.getSession(sid)
+    }, sessionId)
+    expect(session?.state).toBeTruthy()
+
+    await app.evaluate(
+      ({ BrowserWindow }, { state }) => {
+        const payload = { ...state, status: 'running' }
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('agent-chat:state-changed', payload)
+        }
+      },
+      { state: session!.state },
+    )
+
+    await app.evaluate(() => {
+      ;(globalThis as { __agentChatCancelCount?: number }).__agentChatCancelCount = 0
+    })
+
+    await window.getByPlaceholder('Ask to make changes').focus()
+    await window.keyboard.press('Escape')
+
+    await expect
+      .poll(async () =>
+        app.evaluate(() => (globalThis as { __agentChatCancelCount?: number }).__agentChatCancelCount ?? 0),
+      )
+      .toBeGreaterThan(0)
+  })
+
+  test('shows +1 and −1 on the diff chip header', async () => {
+    const repoPath = createTestRepo('conductor-diff-header-stats')
+    await setupWorkspace(window, repoPath)
+
+    const title = `diff-header-${Date.now()}`
+    const sessionId = await createAndSelectSession(window, title)
+    await injectTranscript(app, sessionId, [
+      {
+        kind: 'tool',
+        id: 't1',
+        callId: 't1',
+        toolName: 'apply_patch',
+        status: 'success',
+        label: 'Edited foo.ts',
+        createdAt: nowIso(),
+        output: {
+          kind: 'fileChange',
+          files: [
+            {
+              path: 'foo.ts',
+              patch:
+                'diff --git a/foo.ts b/foo.ts\n' +
+                'index 1111111..2222222 100644\n' +
+                '--- a/foo.ts\n' +
+                '+++ b/foo.ts\n' +
+                '@@ -1,2 +1,2 @@\n' +
+                ' const a = 1\n' +
+                '-const b = 2\n' +
+                '+const b = 3\n',
+            },
+          ],
+        },
+      },
+    ])
+
+    const card = window.locator('[class*="diffCard"]').first()
+    await expect(card).toBeVisible({ timeout: 5000 })
+    await expect(card.locator('[class*="diffCountAdd"]')).toHaveText('+1')
+    await expect(card.locator('[class*="diffCountDel"]')).toHaveText('−1')
+  })
+
+  test('left-aligns the turn summary with the chat column', async () => {
+    const repoPath = createTestRepo('conductor-turn-align')
+    await setupWorkspace(window, repoPath)
+
+    const title = `turn-align-${Date.now()}`
+    const sessionId = await createAndSelectSession(window, title)
+    const tool = (id: string, label: string) => ({
+      kind: 'tool',
+      id,
+      callId: id,
+      toolName: 'shell',
+      status: 'success',
+      label,
+      createdAt: nowIso(),
+    })
+    await injectTranscript(app, sessionId, [
+      { kind: 'message', id: 'u1', role: 'user', text: 'go', createdAt: nowIso() },
+      tool('x1', 'ran a'),
+      tool('x2', 'ran b'),
+      { kind: 'message', id: 'a1', role: 'assistant', text: 'done', createdAt: nowIso() },
+    ])
+
+    await expect(window.locator('[class*="turnSummaryHeader"]').first()).toBeVisible({ timeout: 5000 })
+    const leftAligned = await window.evaluate(() => {
+      const summary = document.querySelector('[class*="turnSummary"]:not([class*="turnSummaryEdge"]):not([class*="turnSummaryHeader"]):not([class*="turnSummaryBody"]):not([class*="turnSummaryLabel"])') as HTMLElement | null
+      const header = document.querySelector('[class*="turnSummaryHeader"]') as HTMLElement | null
+      if (!summary || !header) return { ok: false, summaryAlign: null, headerAlign: null }
+      const summaryAlign = getComputedStyle(summary).alignItems
+      const headerAlign = getComputedStyle(header).textAlign
+      const ok =
+        (summaryAlign === 'flex-start' || summaryAlign === 'start') &&
+        (headerAlign === 'left' || headerAlign === 'start')
+      return { ok, summaryAlign, headerAlign }
+    })
+    expect(leftAligned.ok).toBe(true)
   })
 
   test('renders an INTERRUPTED BY USER pill for a Stopped event', async () => {

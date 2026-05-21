@@ -21,6 +21,7 @@ import {
   DEFAULT_SETTINGS,
   normalizeConductorDefaultModelSetting,
   normalizeConductorDefaultProviderSetting,
+  normalizeConductorDefaultThinkingLevelSetting,
   DEFAULT_SIDEBAR_ACTION_ORDER,
   DEFAULT_SIDE_PANEL_LAYOUT,
   normalizeLinearIssueCodingAgent,
@@ -3040,6 +3041,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
       conductorDefaultModel: normalizeConductorDefaultModelSetting(
         settingsMerged.conductorDefaultModel,
+      ),
+      conductorDefaultThinkingLevel: normalizeConductorDefaultThinkingLevelSetting(
+        settingsMerged.conductorDefaultThinkingLevel,
       ),
       conflictResolverAgent: normalizeConflictResolverAgent(settingsMerged.conflictResolverAgent),
       conflictResolverModel: normalizeConflictResolverModel(settingsMerged.conflictResolverModel),

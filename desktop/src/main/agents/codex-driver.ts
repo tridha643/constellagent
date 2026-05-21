@@ -1,12 +1,19 @@
 import { execFileSync } from 'node:child_process'
-import { Codex, type Thread, type ThreadEvent, type ThreadItem } from '@openai/codex-sdk'
+import {
+  Codex,
+  type ModelReasoningEffort,
+  type Thread,
+  type ThreadEvent,
+  type ThreadItem,
+} from '@openai/codex-sdk'
 import { checkCodexAuth, getOpenaiApiKey } from '../conductor-auth'
-import { applyThinkingLevel } from '../../shared/conductor-model-utils'
+import { mapThinkingLevelToCodexEffort, parseModelEffort } from '../../shared/conductor-model-utils'
 import {
   computeTextDelta,
   evAssistantDelta,
   evToolFinished,
   evToolStarted,
+  evToolUpdated,
   buildAgentPrompt,
   type AgentDriver,
   type AgentTurnContext,
@@ -15,6 +22,7 @@ import {
 interface CodexSessionState {
   thread: Thread
   model: string
+  effort: ModelReasoningEffort
   plan: boolean
   /** agent_message item id → text already streamed, for delta computation. */
   readonly emittedByItem: Map<string, string>
@@ -79,18 +87,19 @@ export class CodexDriver implements AgentDriver {
 
   async runTurn(ctx: AgentTurnContext): Promise<void> {
     const key = ctx.sessionRef.sessionId
-    const effectiveModel = applyThinkingLevel(ctx.model, ctx.thinkingLevel)
+    const baseModel = parseModelEffort(ctx.model).base
+    const effort = mapThinkingLevelToCodexEffort(ctx.thinkingLevel)
     let state = this.sessions.get(key)
-    // The Codex thread fixes model + sandbox at creation, so recreate it when
-    // either changes. (Recreating resets server-side context; acceptable for v1.)
-    if (!state || state.model !== effectiveModel || state.plan !== ctx.plan) {
+    // The Codex thread fixes model + effort + sandbox at creation, so recreate when any change.
+    if (!state || state.model !== baseModel || state.effort !== effort || state.plan !== ctx.plan) {
       const thread = this.getCodex().startThread({
-        model: effectiveModel,
+        model: baseModel,
+        modelReasoningEffort: effort,
         workingDirectory: ctx.workspacePath,
         skipGitRepoCheck: true,
         ...(ctx.plan ? { sandboxMode: 'read-only' as const } : {}),
       })
-      state = { thread, model: effectiveModel, plan: ctx.plan, emittedByItem: new Map() }
+      state = { thread, model: baseModel, effort, plan: ctx.plan, emittedByItem: new Map() }
       this.sessions.set(key, state)
     }
 
@@ -144,6 +153,19 @@ export class CodexDriver implements AgentDriver {
           }
           break
         }
+        if (item.type === 'command_execution') {
+          if (event.type === 'item.updated' && item.status === 'in_progress') {
+            const streamed = item.aggregated_output?.trim()
+            if (streamed) {
+              ctx.emit(evToolUpdated(ctx.sessionRef, item.id, truncateShellOutput(streamed)))
+            }
+          }
+          const terminal = item.status === 'completed' || item.status === 'failed'
+          if (terminal) {
+            ctx.emit(evToolFinished(ctx.sessionRef, item.id, toolSucceeded(item), summarizeItem(item)))
+          }
+          break
+        }
         if (event.type === 'item.completed') {
           const descriptor = toolDescriptor(item)
           if (descriptor) {
@@ -164,6 +186,13 @@ export class CodexDriver implements AgentDriver {
   closeSession(sessionId: string): void {
     this.sessions.delete(sessionId)
   }
+}
+
+const MAX_SHELL_STREAM_CHARS = 8_000
+
+function truncateShellOutput(text: string): string {
+  if (text.length <= MAX_SHELL_STREAM_CHARS) return text
+  return text.slice(-MAX_SHELL_STREAM_CHARS)
 }
 
 function summarizeItem(item: ThreadItem): unknown {
