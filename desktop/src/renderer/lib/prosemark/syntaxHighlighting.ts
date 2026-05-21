@@ -75,8 +75,8 @@ export const baseSyntaxHighlights = syntaxHighlighting(
 
 export const baseTheme = EditorView.theme({
   ".cm-content": {
-    fontFamily: "var(--font, var(--font-ui))",
-    fontSize: "0.9rem",
+    fontFamily: "var(--font, var(--font-prose, var(--font-ui)))",
+    fontSize: "inherit",
     caretColor: "var(--pm-cursor-color)",
   },
   ".cm-editor .cm-cursor, .cm-editor .cm-dropCursor": {

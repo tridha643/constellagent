@@ -108,8 +108,10 @@
      ═══════════════════════════════════════════════════════ */
   --font-mono: 'SF Mono', 'Menlo', 'Cascadia Code', 'JetBrains Mono', monospace;
   --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  /* Markdown prose body — always sans-serif even when --font-ui is mono (Absolutely theme). */
+  --font-prose: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
   /* ProseMark / CodeMirror live-preview body font (writer.computer uses --font) */
-  --font: var(--font-ui);
+  --font: var(--font-prose);
 
   --text-xs: 10px;
   --text-sm: 11px;

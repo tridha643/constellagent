@@ -13,7 +13,7 @@ import { GFM } from "@lezer/markdown";
 import { tags } from "@lezer/highlight";
 
 import {
-  chatProsemarkBasicSetup,
+  viewProsemarkBasicSetup,
   allowProgrammaticDocChange,
   prosemarkBaseThemeSetup,
   prosemarkMarkdownSyntaxExtensions,
@@ -63,6 +63,14 @@ export interface MarkdownStreamProps {
 
 const PROSEMARK_PARSE_BUDGET_MS = 25;
 const PROSEMARK_DECORATION_SYNC_DELAY_MS = 120;
+const prosemarkOptionsCompartment = new Compartment();
+
+function prosemarkSurfaceOptions(options: MarkdownFileChipOptions): Extension {
+  return prosemarkOptionsCompartment.of([
+    viewProsemarkBasicSetup({ baseDir: options.baseDir, worktreePath: options.worktreePath }),
+    markdownFileChipExtension(options),
+  ]);
+}
 
 const prosemarkOptionsCompartment = new Compartment();
 const prosemarkClickLinkCompartment = new Compartment();
@@ -127,7 +135,7 @@ const prosemarkDecorationSync = ViewPlugin.fromClass(
 // Read-only render extension set, mirroring the relevant subset of the writer
 // app's `use-prosemark-editor.ts` wiring order:
 //   1. markdown() language with GFM + prosemark syntax + html-block parser
-//   2. chatProsemarkBasicSetup() (hide/fold/codeFence/clickLink/tasks/wrap)
+//   2. viewProsemarkBasicSetup() (hide/fold/codeFence/clickLink/tasks/wrap)
 //   3. base theme + syntax highlighting
 //   4. heading-weight HighlightStyle (Prec.highest, matches upstream)
 //   5. table / html-block decorations + decoration sync
@@ -138,7 +146,7 @@ function buildExtensions(options: MarkdownFileChipOptions): Extension[] {
       codeLanguages: languages,
       extensions: [GFM, prosemarkMarkdownSyntaxExtensions, htmlBlockParserExtension],
     }),
-    chatProsemarkBasicSetup({ baseDir: options.baseDir, worktreePath: options.worktreePath }),
+    prosemarkSurfaceOptions(options),
     prosemarkBaseThemeSetup(),
     darkTheme,
     Prec.highest(
@@ -204,6 +212,7 @@ const MarkdownStream = forwardRef<MarkdownStreamHandle, MarkdownStreamProps>(fun
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const optionsRef = useRef<MarkdownFileChipOptions>({
   const liveOptionsRef = useRef<MarkdownFileChipOptions>({
     baseDir,
     worktreePath,
@@ -282,6 +291,34 @@ const MarkdownStream = forwardRef<MarkdownStreamHandle, MarkdownStreamProps>(fun
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const nextOptions: MarkdownFileChipOptions = {
+      baseDir,
+      worktreePath,
+      appearanceThemeId,
+      onOpenFile: onOpenMarkdownFile,
+    };
+    const prev = optionsRef.current;
+    if (
+      prev.baseDir === nextOptions.baseDir &&
+      prev.worktreePath === nextOptions.worktreePath &&
+      prev.appearanceThemeId === nextOptions.appearanceThemeId &&
+      prev.onOpenFile === nextOptions.onOpenFile
+    ) {
+      return;
+    }
+    optionsRef.current = nextOptions;
+    view.dispatch({
+      effects: prosemarkOptionsCompartment.reconfigure([
+        viewProsemarkBasicSetup({ baseDir, worktreePath }),
+        markdownFileChipExtension(nextOptions),
+      ]),
+    });
+    queueMicrotask(() => refreshProsemarkDecorations(view));
+  }, [baseDir, worktreePath, appearanceThemeId, onOpenMarkdownFile]);
 
   // Sync the `content` prop into the view when it changes and no streaming is
   // in progress. Once streaming has started, the imperative API owns the doc.

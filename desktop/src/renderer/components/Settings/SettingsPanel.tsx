@@ -1246,7 +1246,7 @@ function ConductorSettingsSection({
     <>
       <div className={styles.sectionHint}>
         Conductor runs agents inside Constellagent. <strong>Cursor</strong> uses the Cursor SDK — sign in with{' '}
-        <code>cursor-agent login</code> or an API key. <strong>Codex</strong> uses the OpenAI Codex CLI — sign in with{' '}
+        <code>cursor-agent login</code> signs in the CLI (terminals and plan build). <strong>Conductor chat</strong> uses the Cursor SDK and needs an API key below (or <code>CURSOR_API_KEY</code>). <strong>Codex</strong> uses the OpenAI Codex CLI — sign in with{' '}
         <code>codex login</code> or an OpenAI API key. Keys are stored locally in app settings (same file as Linear).
       </div>
       <SelectRow
@@ -1321,7 +1321,7 @@ function ConductorSettingsSection({
       </div>
       <TextRow
         label="Cursor API key"
-        description="Optional alternative to `cursor-agent login`. Used when the model selector shows the Cursor badge. Also reads CURSOR_API_KEY from your environment."
+        description="Required for Conductor chat (Cursor SDK). Also reads CURSOR_API_KEY from your environment. cursor-agent login does not substitute for this key."
         value={cursorApiKey}
         onChange={onCursorKeyChange}
         password

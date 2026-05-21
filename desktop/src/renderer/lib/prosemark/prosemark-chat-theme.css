@@ -7,7 +7,7 @@
  */
 
 .prosemark-chat .cm-editor {
-  --font: var(--font-ui);
+  --font: var(--font-prose);
   --pm-header-mark-color: var(--text-tertiary);
   --pm-link-color: var(--accent-blue);
   --pm-muted-color: var(--text-tertiary);
@@ -46,7 +46,7 @@
 .prosemark-chat .cm-editor .cm-content {
   box-sizing: border-box;
   padding: 0;
-  font-family: var(--font-ui);
+  font-family: var(--font-prose);
   font-size: 14px;
   line-height: 1.65;
   letter-spacing: -0.011em;
