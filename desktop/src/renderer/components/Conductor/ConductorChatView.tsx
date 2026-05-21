@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
-import { PLAN_MODEL_PRESETS } from '../../../shared/plan-build-command'
 import {
   CONDUCTOR_PROVIDER_LABELS,
   type AgentProvider,
@@ -9,9 +8,10 @@ import {
 import type { ThinkingLevel } from '../../../shared/conductor-thinking'
 import { normalizeThinkingLevel } from '../../../shared/conductor-thinking'
 import {
-  hasEffortVariants,
-  parseModelEffort,
-  thinkingLevelFromModel,
+  normalizeConductorDefaultProvider,
+  normalizeConductorDefaultModel,
+  resolveConductorDefaultSelection,
+  toConductorDraftSelection,
   setModelFast,
 } from '../../../shared/conductor-model-utils'
 import type { Tab } from '../../store/types'
@@ -25,16 +25,6 @@ import {
   syncConductorAuthKeys,
 } from '../../lib/conductor-sign-in'
 import styles from './Conductor.module.css'
-
-const DEFAULT_PROVIDER: AgentProvider = 'cursor'
-const DEFAULT_MODEL = (() => {
-  const effortPreset = PLAN_MODEL_PRESETS.cursor.find((preset) => {
-    if (preset.cliModel === 'auto') return false
-    const { base } = parseModelEffort(preset.cliModel)
-    return hasEffortVariants(base)
-  })
-  return effortPreset ? parseModelEffort(effortPreset.cliModel).base : 'composer-2'
-})()
 
 export type ConductorTab = Extract<Tab, { type: 'conductor' }>
 
@@ -54,11 +44,27 @@ export function ConductorChatView({
   const openSettingsSection = useAppStore((s) => s.openSettingsSection)
   const conductorCursorApiKey = useAppStore((s) => s.settings.conductorCursorApiKey)
   const conductorOpenaiApiKey = useAppStore((s) => s.settings.conductorOpenaiApiKey)
+  const conductorDefaultProviderSetting = useAppStore((s) => s.settings.conductorDefaultProvider)
+  const conductorDefaultModelSetting = useAppStore((s) => s.settings.conductorDefaultModel)
 
   const agentSessionId = tab.agentSessionId ?? null
-  const [draftProvider, setDraftProvider] = useState<AgentProvider>(DEFAULT_PROVIDER)
-  const [draftModel, setDraftModel] = useState<string>(DEFAULT_MODEL)
-  const [draftThinkingLevel, setDraftThinkingLevel] = useState<ThinkingLevel>('low')
+  const [draftProvider, setDraftProvider] = useState<AgentProvider>(() => {
+    return normalizeConductorDefaultProvider(conductorDefaultProviderSetting)
+  })
+  const [draftModel, setDraftModel] = useState<string>(() => {
+    const provider = normalizeConductorDefaultProvider(conductorDefaultProviderSetting)
+    return resolveConductorDefaultSelection(
+      provider,
+      normalizeConductorDefaultModel(conductorDefaultModelSetting),
+    ).model
+  })
+  const [draftThinkingLevel, setDraftThinkingLevel] = useState<ThinkingLevel>(() => {
+    const provider = normalizeConductorDefaultProvider(conductorDefaultProviderSetting)
+    return resolveConductorDefaultSelection(
+      provider,
+      normalizeConductorDefaultModel(conductorDefaultModelSetting),
+    ).thinkingLevel
+  })
   const [draftPlan, setDraftPlan] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [dismissedError, setDismissedError] = useState<string | null>(null)
@@ -159,16 +165,8 @@ export function ConductorChatView({
     }
   }
 
-  const normalizeModelSelection = (cliModel: string) => {
-    const { base, speedSuffix } = parseModelEffort(cliModel)
-    return {
-      storedModel: speedSuffix ? `${base}-fast` : base,
-      level: thinkingLevelFromModel(cliModel),
-    }
-  }
-
   const handleSelectModel = (nextProvider: AgentProvider, nextModel: string) => {
-    const { storedModel, level } = normalizeModelSelection(nextModel)
+    const { model: storedModel, thinkingLevel: level } = toConductorDraftSelection(nextModel)
     if (controller.state) {
       if (controller.state.provider === nextProvider) {
         controller.setModel(storedModel)

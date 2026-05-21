@@ -13,6 +13,13 @@ import type { AppearanceThemeId } from '../theme/appearance'
 import type { EditorLanguageOverride } from '../utils/language-map'
 import type { GitStatusSnapshot, WorkingTreeDiffSnapshot, WorkingTreeFileStatus } from '../types/working-tree-diff'
 import { getDefaultWorktreeCredentialRules } from '../../shared/worktree-credentials'
+import type { AgentProvider } from '../../shared/agent-chat-types'
+import {
+  DEFAULT_CONDUCTOR_PROVIDER,
+  defaultConductorModel,
+  normalizeConductorDefaultModel,
+  normalizeConductorDefaultProvider,
+} from '../../shared/conductor-model-utils'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
 export type WaitCondition =
@@ -432,6 +439,14 @@ export function normalizeConflictResolverModel(v: unknown): string {
   return typeof v === 'string' ? v : ''
 }
 
+export function normalizeConductorDefaultProviderSetting(v: unknown): AgentProvider {
+  return normalizeConductorDefaultProvider(v)
+}
+
+export function normalizeConductorDefaultModelSetting(v: unknown): string {
+  return normalizeConductorDefaultModel(v)
+}
+
 /** Pi model id for commit/PR-adjacent generation; empty means app default (composer-2-fast). */
 export function normalizePiCommitMessageModel(v: unknown): string {
   if (typeof v !== 'string') return ''
@@ -484,6 +499,10 @@ export interface Settings {
   conductorCursorApiKey: string
   /** OpenAI API key for Conductor (Codex SDK). Falls back to OPENAI_API_KEY or `codex login`. */
   conductorOpenaiApiKey: string
+  /** Starting provider for new unsent Conductor chats. */
+  conductorDefaultProvider: AgentProvider
+  /** Starting model for new unsent Conductor chats. */
+  conductorDefaultModel: string
   /** Ordered projects shown in the Linear panel updates bar. */
   linearProjectUpdateBar: LinearProjectUpdateBarEntry[]
   /** Project ids highlighted in the Linear panel Projects list. */
@@ -559,6 +578,8 @@ export const DEFAULT_SETTINGS: Settings = {
   linearApiKey: '',
   conductorCursorApiKey: '',
   conductorOpenaiApiKey: '',
+  conductorDefaultProvider: DEFAULT_CONDUCTOR_PROVIDER,
+  conductorDefaultModel: defaultConductorModel(DEFAULT_CONDUCTOR_PROVIDER),
   linearProjectUpdateBar: [],
   linearFavoriteProjectIds: [],
   linearWorkspaceToolbarTool: 'search',

@@ -1,13 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 import {
   applyThinkingLevel,
+  defaultConductorModel,
   displayModelName,
   hasEffortVariants,
   hasFastVariant,
+  normalizeConductorDefaultProvider,
   parseModelEffort,
+  resolveConductorDefaultSelection,
   setModelFast,
   sameModelFamily,
   thinkingLevelFromModel,
+  toConductorDraftSelection,
 } from './conductor-model-utils'
 
 describe('parseModelEffort', () => {
@@ -93,5 +97,23 @@ describe('displayModelName', () => {
   test('strips effort words', () => {
     expect(displayModelName('GPT-5.3 Codex Low Fast')).toBe('GPT-5.3 Codex')
     expect(displayModelName('Composer 2 Fast')).toBe('Composer 2')
+  })
+})
+
+describe('Conductor defaults', () => {
+  test('falls back to cursor for invalid providers', () => {
+    expect(normalizeConductorDefaultProvider('nope')).toBe('cursor')
+    expect(normalizeConductorDefaultProvider('codex')).toBe('codex')
+  })
+
+  test('resolves blank codex defaults to the provider preset', () => {
+    expect(resolveConductorDefaultSelection('codex', '').model).toBe(defaultConductorModel('codex'))
+  })
+
+  test('converts stored model ids into draft model + thinking level', () => {
+    expect(toConductorDraftSelection('gpt-5.3-codex-high-fast')).toEqual({
+      model: 'gpt-5.3-codex-fast',
+      thinkingLevel: 'high',
+    })
   })
 })

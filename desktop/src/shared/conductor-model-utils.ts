@@ -1,4 +1,5 @@
 import { PLAN_MODEL_PRESETS } from './plan-build-command'
+import type { AgentProvider } from './agent-chat-types'
 import type { ThinkingLevel } from './conductor-thinking'
 
 const EFFORT_SUFFIXES = ['xhigh', 'high', 'medium', 'low'] as const
@@ -7,6 +8,35 @@ export interface ParsedModelEffort {
   readonly base: string
   readonly effortSuffix?: string
   readonly speedSuffix?: 'fast'
+}
+
+export interface ConductorDraftSelection {
+  readonly model: string
+  readonly thinkingLevel: ThinkingLevel
+}
+
+export const DEFAULT_CONDUCTOR_PROVIDER: AgentProvider = 'cursor'
+
+function defaultCursorConductorModel(): string {
+  const effortPreset = PLAN_MODEL_PRESETS.cursor.find((preset) => {
+    if (preset.cliModel === 'auto') return false
+    const { base } = parseModelEffort(preset.cliModel)
+    return hasEffortVariants(base)
+  })
+  return effortPreset ? parseModelEffort(effortPreset.cliModel).base : 'composer-2'
+}
+
+export function defaultConductorModel(provider: AgentProvider): string {
+  if (provider === 'cursor') return defaultCursorConductorModel()
+  return PLAN_MODEL_PRESETS[provider].find((preset) => preset.cliModel.trim() !== '')?.cliModel ?? 'gpt-5.4'
+}
+
+export function normalizeConductorDefaultProvider(v: unknown): AgentProvider {
+  return v === 'codex' ? 'codex' : DEFAULT_CONDUCTOR_PROVIDER
+}
+
+export function normalizeConductorDefaultModel(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : ''
 }
 
 /** Strip effort and speed suffixes from a Cursor CLI model id. */
@@ -108,6 +138,24 @@ export function thinkingLevelFromModel(cliModel: string): ThinkingLevel {
     return effortSuffix
   }
   return 'medium'
+}
+
+/** Convert a preset/CLI id into the draft state stored by the Conductor composer. */
+export function toConductorDraftSelection(cliModel: string): ConductorDraftSelection {
+  const { base, speedSuffix } = parseModelEffort(cliModel)
+  return {
+    model: speedSuffix ? `${base}-fast` : base,
+    thinkingLevel: thinkingLevelFromModel(cliModel),
+  }
+}
+
+/** Resolve persisted defaults to a usable Conductor draft selection. */
+export function resolveConductorDefaultSelection(
+  provider: AgentProvider,
+  configuredModel: string | null | undefined,
+): ConductorDraftSelection {
+  const model = normalizeConductorDefaultModel(configuredModel) || defaultConductorModel(provider)
+  return toConductorDraftSelection(model)
 }
 
 /** Short display label: strip effort/speed words from preset label. */
