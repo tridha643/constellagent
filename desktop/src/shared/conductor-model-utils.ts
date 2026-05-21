@@ -1,3 +1,4 @@
+import type { ModelReasoningEffort } from '@openai/codex-sdk'
 import { PLAN_MODEL_PRESETS } from './plan-build-command'
 import type { AgentProvider } from './agent-chat-types'
 import type { ThinkingLevel } from './conductor-thinking'
@@ -28,7 +29,12 @@ function defaultCursorConductorModel(): string {
 
 export function defaultConductorModel(provider: AgentProvider): string {
   if (provider === 'cursor') return defaultCursorConductorModel()
-  return PLAN_MODEL_PRESETS[provider].find((preset) => preset.cliModel.trim() !== '')?.cliModel ?? 'gpt-5.4'
+  return PLAN_MODEL_PRESETS[provider].find((preset) => preset.cliModel.trim() !== '')?.cliModel ?? 'gpt-5.5'
+}
+
+/** Codex SDK `modelReasoningEffort` — separate from hyphenated Cursor model ids. */
+export function mapThinkingLevelToCodexEffort(level: ThinkingLevel): ModelReasoningEffort {
+  return level
 }
 
 export function normalizeConductorDefaultProvider(v: unknown): AgentProvider {
@@ -83,8 +89,13 @@ function familyHasNonFastPreset(base: string, presets: Set<string>): boolean {
   return false
 }
 
+function codexPresetIds(): Set<string> {
+  return new Set(PLAN_MODEL_PRESETS.codex.map((p) => p.cliModel))
+}
+
 /** Whether this model family supports a Fast (-fast) variant in CLI presets. */
-export function hasFastVariant(cliModel: string): boolean {
+export function hasFastVariant(cliModel: string, provider: AgentProvider = 'cursor'): boolean {
+  if (provider === 'codex') return false
   const { base, speedSuffix } = parseModelEffort(cliModel)
   const presets = cursorPresetIds()
   return speedSuffix === 'fast'
@@ -98,9 +109,13 @@ export function setModelFast(cliModel: string, fast: boolean): string {
   return fast ? `${base}-fast` : base
 }
 
-/** Whether this model family has low/high/xhigh variants in cursor presets. */
-export function hasEffortVariants(cliModel: string): boolean {
-  const { base, speedSuffix } = parseModelEffort(cliModel)
+/** Whether the Effort control applies for this provider + model family. */
+export function hasEffortVariants(cliModel: string, provider: AgentProvider = 'cursor'): boolean {
+  const { base } = parseModelEffort(cliModel)
+  if (provider === 'codex') {
+    return [...codexPresetIds()].some((id) => parseModelEffort(id).base === base)
+  }
+  const { speedSuffix } = parseModelEffort(cliModel)
   const presets = cursorPresetIds()
   const speed = speedSuffix ? '-fast' : ''
   return (
@@ -149,13 +164,22 @@ export function toConductorDraftSelection(cliModel: string): ConductorDraftSelec
   }
 }
 
+export function normalizeConductorDefaultThinkingLevel(v: unknown): ThinkingLevel | undefined {
+  if (typeof v !== 'string' || !v.trim()) return undefined
+  const level = v.trim() as ThinkingLevel
+  return level === 'low' || level === 'medium' || level === 'high' || level === 'xhigh' ? level : undefined
+}
+
 /** Resolve persisted defaults to a usable Conductor draft selection. */
 export function resolveConductorDefaultSelection(
   provider: AgentProvider,
   configuredModel: string | null | undefined,
+  configuredThinkingLevel?: string | null | undefined,
 ): ConductorDraftSelection {
   const model = normalizeConductorDefaultModel(configuredModel) || defaultConductorModel(provider)
-  return toConductorDraftSelection(model)
+  const draft = toConductorDraftSelection(model)
+  const effort = normalizeConductorDefaultThinkingLevel(configuredThinkingLevel)
+  return effort ? { ...draft, thinkingLevel: effort } : draft
 }
 
 /** Short display label: strip effort/speed words from preset label. */

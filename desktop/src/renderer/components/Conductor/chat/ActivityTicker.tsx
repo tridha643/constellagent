@@ -1,83 +1,73 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { TimelineToolCall } from '../../../../shared/pi/timeline-types'
-import { MarkdownBody } from './MarkdownBody'
 import { BrailleLoader } from './BrailleLoader'
+import { ToolPart } from './tools/tool-registry'
 import styles from '../Conductor.module.css'
 
-const ROW_HEIGHT = 40
-const PLACEHOLDER_COUNT = 3
+const LONG_RUN_HINT_MS = 20_000
 
-type Slot = { id: string; label: string } | null
+function isShellTool(tool: TimelineToolCall): boolean {
+  const name = tool.toolName.toLowerCase()
+  return name === 'shell' || name === 'bash' || name === 'command_execution'
+}
 
 /**
- * Slot-reel live activity: completed tools slide upward; labels render via ProseMark.
+ * Live activity: compact tool chip for the active call; completed tools fade without scale pop-in.
  */
 export function ActivityTicker({
   items,
+  activeTool,
   running,
   startedAt,
   runningLabel,
 }: {
   items: readonly TimelineToolCall[]
+  activeTool?: TimelineToolCall
   running: boolean
   startedAt: number | null
   runningLabel?: string
 }) {
-  const done = !running
+  const lastCompleted = items.length > 0 ? items[items.length - 1] : undefined
+  const chipKey = activeTool?.id ?? lastCompleted?.id ?? 'idle'
 
-  const slots = useMemo<Slot[]>(() => {
-    const leading: Slot[] = Array.from({ length: PLACEHOLDER_COUNT }, () => null)
-    const trailing: Slot[] = done ? Array.from({ length: PLACEHOLDER_COUNT }, () => null) : []
-    const real: Slot[] = items.map((item) => ({ id: item.id, label: item.label }))
-    return [...leading, ...real, ...trailing]
-  }, [items, done])
+  const chipContent = useMemo(() => {
+    if (activeTool) return <ToolPart tool={activeTool} />
+    if (lastCompleted) return <ToolPart tool={lastCompleted} />
+    return null
+  }, [activeTool, lastCompleted])
 
-  const [visibleCount, setVisibleCount] = useState(0)
-
+  const [showLongRunHint, setShowLongRunHint] = useState(false)
   useEffect(() => {
-    if (visibleCount >= slots.length) return
-    const id = window.setTimeout(
-      () => setVisibleCount((count) => Math.min(count + 1, slots.length)),
-      running ? 400 : 220,
-    )
-    return () => window.clearTimeout(id)
-  }, [visibleCount, slots.length, running])
+    if (!running || !startedAt) {
+      setShowLongRunHint(false)
+      return
+    }
+    const elapsed = Date.now() - startedAt
+    if (elapsed >= LONG_RUN_HINT_MS) {
+      setShowLongRunHint(true)
+      return
+    }
+    const timer = setTimeout(() => setShowLongRunHint(true), LONG_RUN_HINT_MS - elapsed)
+    return () => clearTimeout(timer)
+  }, [running, startedAt, activeTool?.id])
 
-  useEffect(() => {
-    if (visibleCount > slots.length) setVisibleCount(slots.length)
-  }, [slots.length, visibleCount])
-
-  const translateY = visibleCount < 2 ? 0 : -((visibleCount - 2) * ROW_HEIGHT - 8)
-  const revealed = slots.slice(0, visibleCount)
+  const longRunHint =
+    showLongRunHint && running && (activeTool ? isShellTool(activeTool) : true)
 
   return (
     <div className={styles.ticker}>
-      <div className={styles.tickerViewport}>
-        <div
-          className={styles.tickerTrack}
-          style={{ transform: `translateY(${translateY}px)` }}
-        >
-          {revealed.map((slot, index) =>
-            slot ? (
-              <div key={slot.id} className={styles.tickerRow}>
-                <MarkdownBody content={slot.label} className={styles.tickerRowMarkdown} compact inline />
-              </div>
-            ) : (
-              <div key={`placeholder-${index}`} className={styles.tickerRow} aria-hidden />
-            ),
-          )}
+      {chipContent ? (
+        <div key={chipKey} className={`${styles.tickerRow} ${styles.tickerRowChip}`}>
+          {chipContent}
         </div>
-      </div>
+      ) : null}
       {running && (
         <div className={styles.tickerStatus}>
           <BrailleLoader startedAt={startedAt} />
-          {runningLabel ? (
-            <MarkdownBody
-              content={runningLabel}
-              className={styles.tickerStatusLabel}
-              compact
-              inline
-            />
+          {longRunHint ? (
+            <span className={styles.longRunHint}>Still running — Esc to stop</span>
+          ) : runningLabel && !activeTool ? (
+            <span className={styles.tickerStatusLabel}>{runningLabel}</span>
           ) : null}
         </div>
       )}

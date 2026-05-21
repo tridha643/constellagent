@@ -51,6 +51,7 @@ export const PLAN_MODEL_PRESETS: Record<PlanAgent, ModelPreset[]> = {
   ],
   // Codex CLI: https://developers.openai.com/codex/models/ plus common API models Codex accepts.
   codex: [
+    { label: 'GPT-5.5', cliModel: 'gpt-5.5' },
     { label: 'GPT-5.4', cliModel: 'gpt-5.4' },
     { label: 'GPT-5.4 mini', cliModel: 'gpt-5.4-mini' },
     { label: 'GPT-5.3 Codex', cliModel: 'gpt-5.3-codex' },

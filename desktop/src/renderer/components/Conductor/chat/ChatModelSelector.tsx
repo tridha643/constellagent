@@ -39,8 +39,18 @@ export function ChatModelSelector({
     const onDown = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
     }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setOpen(false)
+      }
+    }
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [open])
 
   return (
@@ -66,10 +76,14 @@ export function ChatModelSelector({
               </div>
               {(PLAN_MODEL_PRESETS[group.provider] ?? []).map((preset) => {
                 const effective =
-                  group.provider === provider ? applyThinkingLevel(model, thinkingLevel) : preset.cliModel
+                  group.provider === provider && provider === 'cursor'
+                    ? applyThinkingLevel(model, thinkingLevel)
+                    : preset.cliModel
                 const active =
                   group.provider === provider &&
-                  (preset.cliModel === effective || sameModelFamily(preset.cliModel, model))
+                  (provider === 'codex'
+                    ? sameModelFamily(preset.cliModel, model)
+                    : preset.cliModel === effective || sameModelFamily(preset.cliModel, model))
                 return (
                   <button
                     key={`${group.provider}:${preset.cliModel}`}

@@ -1936,7 +1936,13 @@ export function registerIpcHandlers(): void {
     async (_e, sessionId: string, thinkingLevel: import('../shared/conductor-thinking').ThinkingLevel) =>
       agentChatHost.setThinkingLevel(sessionId, thinkingLevel),
   )
-  ipcMain.handle(IPC.AGENT_CHAT_CANCEL, async (_e, sessionId: string) => agentChatHost.cancel(sessionId))
+  ipcMain.handle(IPC.AGENT_CHAT_CANCEL, async (_e, sessionId: string) => {
+    if (process.env.CI_TEST === '1' || process.env.CI_TEST === 'true') {
+      ;(globalThis as { __agentChatCancelCount?: number }).__agentChatCancelCount =
+        ((globalThis as { __agentChatCancelCount?: number }).__agentChatCancelCount ?? 0) + 1
+    }
+    return agentChatHost.cancel(sessionId)
+  })
   ipcMain.handle(IPC.AGENT_CHAT_DELETE_SESSION, async (_e, sessionId: string) =>
     agentChatHost.deleteSession(sessionId),
   )

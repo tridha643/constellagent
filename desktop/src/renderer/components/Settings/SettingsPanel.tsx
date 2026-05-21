@@ -14,6 +14,7 @@ import type {
 import {
   normalizeConductorDefaultModelSetting,
   normalizeConductorDefaultProviderSetting,
+  normalizeConductorDefaultThinkingLevelSetting,
   NAVIGATION_PANEL_TYPES,
   normalizeLinearIssueCodingAgent,
   normalizeLinearIssueCodingModel,
@@ -28,6 +29,7 @@ import { BUILD_HARNESS_OPTIONS, PLAN_MODEL_PRESETS } from '../../../shared/plan-
 import type { PiModelOption } from '../../../shared/plan-build-command'
 import { formatPiModelOptionLabel } from '../../../shared/pi-models'
 import { defaultConductorModel } from '../../../shared/conductor-model-utils'
+import { THINKING_LABELS, THINKING_LEVELS } from '../../../shared/conductor-thinking'
 import type { ComposioNgrokStatus, ComposioWebhookSettings } from '../../../shared/composio-types'
 import {
   getDefaultWorktreeCredentialRules,
@@ -1273,6 +1275,20 @@ function ConductorSettingsSection({
           })
         }
         options={modelSelectOptions}
+      />
+      <SelectRow
+        label="Default reasoning effort"
+        description="Starting effort level for brand-new Conductor chats (Codex uses modelReasoningEffort; Cursor uses model id suffixes)."
+        value={settings.conductorDefaultThinkingLevel}
+        onChange={(v) =>
+          updateSettings({
+            conductorDefaultThinkingLevel: normalizeConductorDefaultThinkingLevelSetting(v),
+          })
+        }
+        options={THINKING_LEVELS.map((level) => ({
+          value: level,
+          label: THINKING_LABELS[level],
+        }))}
       />
 
       <div className={styles.row}>

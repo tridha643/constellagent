@@ -56,6 +56,7 @@ export function BashTool({ tool }: { tool: TimelineToolCall }) {
   const command = shellCommand(tool.input)
   const description = shellDescription(tool.input)
   const output = shellOutput(tool.output)
+  const streamed = tool.status === 'running' ? tool.detail?.trim() : ''
 
   if (!output) {
     return (
@@ -63,6 +64,9 @@ export function BashTool({ tool }: { tool: TimelineToolCall }) {
         <div className={styles.bashHeader}>
           <BashHeader description={description} command={command} />
         </div>
+        {streamed ? (
+          <MarkdownBody content={fencedCodeBlock('text', streamed)} className={styles.bashOutput} compact />
+        ) : null}
       </div>
     )
   }

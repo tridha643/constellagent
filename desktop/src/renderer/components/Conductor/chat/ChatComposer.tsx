@@ -57,8 +57,8 @@ export function ChatComposer({
   const composerInnerRef = useRef<HTMLDivElement | null>(null)
   const { data: contextData, idle: contextIdle } = useConductorContextUsage()
   const modelLabel = `${provider} · ${model}`
-  const showEffort = hasEffortVariants(model)
-  const showFast = hasFastVariant(model)
+  const showEffort = hasEffortVariants(model, provider)
+  const showFast = hasFastVariant(model, provider)
   const fastActive = isFastModel(model)
   const effortLevel = normalizeThinkingLevel(thinkingLevel)
   const reasoningActive = effortLevel !== 'low'
@@ -127,7 +127,15 @@ export function ChatComposer({
           onBlur={() => setFocused(false)}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Tab' && e.shiftKey) {
+            if (e.key === 'Escape') {
+              if (contextOpen) {
+                e.preventDefault()
+                setContextOpen(false)
+              } else if (running) {
+                e.preventDefault()
+                onCancel()
+              }
+            } else if (e.key === 'Tab' && e.shiftKey) {
               e.preventDefault()
               onSetPlan(!plan)
             } else if (e.key === 'Enter' && !e.shiftKey) {
@@ -164,7 +172,13 @@ export function ChatComposer({
               onToggle={() => setContextOpen((v) => !v)}
             />
             {running ? (
-              <button type="button" className={styles.stopButton} onClick={onCancel} aria-label="Stop">
+              <button
+                type="button"
+                className={styles.stopButton}
+                onClick={onCancel}
+                aria-label="Stop"
+                title="Stop (Esc)"
+              >
                 <StopIcon />
               </button>
             ) : (

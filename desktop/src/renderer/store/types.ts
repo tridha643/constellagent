@@ -14,11 +14,13 @@ import type { EditorLanguageOverride } from '../utils/language-map'
 import type { GitStatusSnapshot, WorkingTreeDiffSnapshot, WorkingTreeFileStatus } from '../types/working-tree-diff'
 import { getDefaultWorktreeCredentialRules } from '../../shared/worktree-credentials'
 import type { AgentProvider } from '../../shared/agent-chat-types'
+import type { ThinkingLevel } from '../../shared/conductor-thinking'
 import {
   DEFAULT_CONDUCTOR_PROVIDER,
   defaultConductorModel,
   normalizeConductorDefaultModel,
   normalizeConductorDefaultProvider,
+  normalizeConductorDefaultThinkingLevel,
 } from '../../shared/conductor-model-utils'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
@@ -447,6 +449,10 @@ export function normalizeConductorDefaultModelSetting(v: unknown): string {
   return normalizeConductorDefaultModel(v)
 }
 
+export function normalizeConductorDefaultThinkingLevelSetting(v: unknown): ThinkingLevel {
+  return normalizeConductorDefaultThinkingLevel(v) ?? 'medium'
+}
+
 /** Pi model id for commit/PR-adjacent generation; empty means app default (composer-2-fast). */
 export function normalizePiCommitMessageModel(v: unknown): string {
   if (typeof v !== 'string') return ''
@@ -503,6 +509,8 @@ export interface Settings {
   conductorDefaultProvider: AgentProvider
   /** Starting model for new unsent Conductor chats. */
   conductorDefaultModel: string
+  /** Starting reasoning effort for new unsent Conductor chats. */
+  conductorDefaultThinkingLevel: ThinkingLevel
   /** Ordered projects shown in the Linear panel updates bar. */
   linearProjectUpdateBar: LinearProjectUpdateBarEntry[]
   /** Project ids highlighted in the Linear panel Projects list. */
@@ -580,6 +588,7 @@ export const DEFAULT_SETTINGS: Settings = {
   conductorOpenaiApiKey: '',
   conductorDefaultProvider: DEFAULT_CONDUCTOR_PROVIDER,
   conductorDefaultModel: defaultConductorModel(DEFAULT_CONDUCTOR_PROVIDER),
+  conductorDefaultThinkingLevel: 'medium',
   linearProjectUpdateBar: [],
   linearFavoriteProjectIds: [],
   linearWorkspaceToolbarTool: 'search',

@@ -46,6 +46,9 @@ export function ConductorChatView({
   const conductorOpenaiApiKey = useAppStore((s) => s.settings.conductorOpenaiApiKey)
   const conductorDefaultProviderSetting = useAppStore((s) => s.settings.conductorDefaultProvider)
   const conductorDefaultModelSetting = useAppStore((s) => s.settings.conductorDefaultModel)
+  const conductorDefaultThinkingLevelSetting = useAppStore(
+    (s) => s.settings.conductorDefaultThinkingLevel,
+  )
 
   const agentSessionId = tab.agentSessionId ?? null
   const [draftProvider, setDraftProvider] = useState<AgentProvider>(() => {
@@ -56,6 +59,7 @@ export function ConductorChatView({
     return resolveConductorDefaultSelection(
       provider,
       normalizeConductorDefaultModel(conductorDefaultModelSetting),
+      conductorDefaultThinkingLevelSetting,
     ).model
   })
   const [draftThinkingLevel, setDraftThinkingLevel] = useState<ThinkingLevel>(() => {
@@ -63,6 +67,7 @@ export function ConductorChatView({
     return resolveConductorDefaultSelection(
       provider,
       normalizeConductorDefaultModel(conductorDefaultModelSetting),
+      conductorDefaultThinkingLevelSetting,
     ).thinkingLevel
   })
   const [draftPlan, setDraftPlan] = useState(false)
@@ -89,6 +94,7 @@ export function ConductorChatView({
   }, [cursorLoginStarted])
 
   const controller = useConductorSession(agentSessionId)
+  const cancelRun = controller.cancel
 
   const provider = controller.state?.provider ?? draftProvider
   const model = controller.state?.model ?? draftModel
@@ -103,6 +109,21 @@ export function ConductorChatView({
       setRunStartedAt(null)
     }
   }, [running])
+
+  useEffect(() => {
+    if (!active || !running) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      const target = e.target
+      if (!(target instanceof Element)) return
+      if (target.closest('[role="listbox"], [role="dialog"]')) return
+      if (target.closest('[data-conductor-context-panel]')) return
+      e.preventDefault()
+      void cancelRun()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [active, running, cancelRun])
 
   const providerAuth = authStatus?.[provider]
   const sessionError = controller.state?.error ?? null
@@ -129,6 +150,25 @@ export function ConductorChatView({
     if (message.includes('No handler registered')) {
       return 'Conductor backend is out of date — quit and restart the app (dev: restart bun run dev, not just ⌘R).'
     }
+    const trimmed = message.trim()
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed) as Record<string, unknown>
+        const detail =
+          (typeof parsed.message === 'string' && parsed.message) ||
+          (typeof parsed.error === 'string' && parsed.error) ||
+          (typeof parsed.detail === 'string' && parsed.detail) ||
+          (parsed.error &&
+            typeof parsed.error === 'object' &&
+            typeof (parsed.error as { message?: string }).message === 'string' &&
+            (parsed.error as { message: string }).message)
+        if (detail) return detail
+      } catch {
+        // keep raw message
+      }
+    }
+    const apiMatch = message.match(/"message"\s*:\s*"([^"]+)"/)
+    if (apiMatch?.[1]) return apiMatch[1]
     return message
   }
 
