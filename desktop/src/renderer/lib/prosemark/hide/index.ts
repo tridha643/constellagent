@@ -3,6 +3,8 @@ import { type HidableNodeSpec, hidableNodeFacet, hideInlineDecoration } from "./
 import type { InlineContext, MarkdownConfig } from "@lezer/markdown";
 import { markdownTags } from "../markdown/tags";
 import { stateWORDAt } from "../utils";
+import { markdownFileChipOptionsFacet, linkHrefFromNode, inlineCodePathFromNode } from "../file-chip-extension";
+import { isLikelyMarkdownFilePath, resolveMarkdownFileTarget } from "../../../utils/markdown-file-links";
 
 export { hideExtension } from "./core";
 
@@ -49,11 +51,22 @@ const defaultHidableSpecs: HidableNodeSpec[] = [
   },
   {
     nodeName: "InlineCode",
+    predicate: (state, node) => {
+      const path = inlineCodePathFromNode(state, node);
+      if (!path || !isLikelyMarkdownFilePath(path)) return true;
+      const options = state.facet(markdownFileChipOptionsFacet);
+      return !resolveMarkdownFileTarget(path, options);
+    },
     nodeDecoration: inlineCodeDecoration,
     subNodeNameToHide: "CodeMark",
   },
   {
     nodeName: "Link",
+    predicate: (state, node) => {
+      const href = linkHrefFromNode(state, node);
+      const options = state.facet(markdownFileChipOptionsFacet);
+      return !resolveMarkdownFileTarget(href, options);
+    },
     subNodeNameToHide: ["LinkMark", "URL"],
     onHide: (_state, node) => {
       return renderedLinkDecoration.range(node.from, node.to);
