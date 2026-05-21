@@ -78,7 +78,6 @@ export const viewProsemarkBasicSetup = (imageOptions: MarkdownImageOptions = {})
     dashExtension,
   ],
   clickLinkExtension,
-  defaultClickLinkHandler,
   codeBlockDecorationsExtension,
   EditorView.lineWrapping,
 ];

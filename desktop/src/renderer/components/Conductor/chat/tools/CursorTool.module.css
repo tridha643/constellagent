@@ -29,7 +29,25 @@
   font-family: inherit;
 }
 
-.cursorToolRowMain:focus-visible {
+.cursorToolRowHit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cursorToolRowHit:focus-visible {
   outline: 2px solid var(--focus-ring, var(--accent-blue, #60a5fa));
   outline-offset: 2px;
   border-radius: 4px;
@@ -91,6 +109,9 @@
   border: 1px solid color-mix(in srgb, var(--text-tertiary) 35%, transparent);
   border-radius: 6px;
   padding: 1px 6px;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
 }
 
 @media (hover: hover) and (pointer: fine) {

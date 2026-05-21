@@ -39,6 +39,12 @@ class ImageWidget extends WidgetType {
     image.alt = this.alt ?? "";
     image.loading = "lazy";
     image.decoding = "async";
+    image.setAttribute("data-testid", "markdown-image");
+    image.style.pointerEvents = "auto";
+    image.addEventListener("error", () => {
+      image.setAttribute("data-load-state", "error");
+      if (this.alt) image.setAttribute("title", this.alt);
+    });
     elem.appendChild(image);
     if (this.block && this.alt) {
       const caption = document.createElement("figcaption");

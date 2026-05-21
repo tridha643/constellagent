@@ -44,13 +44,15 @@ export function CursorReadRow({ tool }: { tool: TimelineToolCall }) {
 
   return (
     <div className={styles.cursorToolRow} data-testid="cursor-tool-row">
-      <button type="button" className={styles.cursorToolRowMain} data-testid="cursor-read-row" onClick={onRowClick}>
-        <span className={styles.cursorToolIcon} aria-hidden>
-          <CursorReadDocIcon />
-        </span>
-        <span className={styles.cursorToolLabel}>{label}</span>
+      <div className={styles.cursorToolRowMain}>
+        <button type="button" className={styles.cursorToolRowHit} data-testid="cursor-read-row" onClick={onRowClick}>
+          <span className={styles.cursorToolIcon} aria-hidden>
+            <CursorReadDocIcon />
+          </span>
+          <span className={styles.cursorToolLabel}>{label}</span>
+        </button>
         {path ? <CursorToolChip variant="file" path={path} onClick={onChipClick} /> : null}
-      </button>
+      </div>
     </div>
   )
 }

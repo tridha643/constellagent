@@ -267,6 +267,17 @@
   border-right: 1px solid var(--panel-border-inner, var(--border-subtle));
 }
 
+/* Fence delimiter tokens stay in the doc for CM parsing — keep them invisible in preview. */
+.prosemark-chat .cm-editor .cm-fenced-code-line .cm-transparent-token,
+.prosemark-chat .cm-editor .cm-fenced-code-line .cm-hidden-token {
+  opacity: 0 !important;
+  font-size: 0 !important;
+  width: 0;
+  display: inline-block;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .prosemark-chat .cm-editor .cm-fenced-code-line-first {
   margin-top: 0.7em;
   padding-top: 12px;
@@ -305,6 +316,9 @@
   line-height: 1.35;
   vertical-align: baseline;
   cursor: pointer;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
   -webkit-tap-highlight-color: transparent;
   transition:
     background-color 150ms ease,
@@ -366,6 +380,16 @@
   border-radius: 12px;
   border: 1px solid var(--outline-image, rgba(255, 255, 255, 0.1));
   background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  pointer-events: auto;
+}
+
+.prosemark-chat .cm-editor .cm-image img[data-load-state='error'] {
+  min-height: 96px;
+  min-width: 160px;
+  padding: var(--space-3);
+  object-fit: none;
+  color: var(--text-tertiary);
+  font-size: 12px;
 }
 
 .prosemark-chat .cm-editor .cm-image figcaption {

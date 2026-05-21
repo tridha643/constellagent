@@ -37,20 +37,22 @@ export function CursorDiffRow({
       unlocked={unlocked && patch.trim().length > 0}
       unlockedPanel={<CursorDiffCode patch={patch} />}
     >
-      <button
-        type="button"
-        className={styles.cursorToolRowMain}
-        data-testid="diff-inline-row"
-        onClick={onRowClick}
-        aria-expanded={unlocked}
-      >
-        <span className={styles.cursorToolIcon} aria-hidden>
-          <CursorMutateDocIcon />
-        </span>
-        <span className={styles.cursorToolLabel}>{verb}</span>
+      <div className={styles.cursorToolRowMain}>
+        <button
+          type="button"
+          className={styles.cursorToolRowHit}
+          data-testid="diff-inline-row"
+          onClick={onRowClick}
+          aria-expanded={unlocked}
+        >
+          <span className={styles.cursorToolIcon} aria-hidden>
+            <CursorMutateDocIcon />
+          </span>
+          <span className={styles.cursorToolLabel}>{verb}</span>
+        </button>
         <CursorDiffChip path={path} patch={patch} />
         <CursorPlainStats additions={additions} deletions={deletions} />
-      </button>
+      </div>
     </CursorToolRowShell>
   )
 }
