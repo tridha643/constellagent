@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'bun:test'
-import { asFileChangeOutput, normalizePath, parseDiffRows, stripAnsi } from './diff-utils'
+import {
+  asFileChangeOutput,
+  countPatchLineStats,
+  diffStatsFromPatch,
+  normalizePath,
+  parseDiffRows,
+  stripAnsi,
+} from './diff-utils'
 
 const EDIT_PATCH = `diff --git a/foo.ts b/foo.ts
 index 1111111..2222222 100644
@@ -50,6 +57,13 @@ describe('parseDiffRows', () => {
 
   it('returns an empty model for an unparseable patch', () => {
     expect(parseDiffRows('not a patch').rows).toEqual([])
+  })
+})
+
+describe('countPatchLineStats', () => {
+  it('counts raw +/- lines when structured parse is empty', () => {
+    expect(countPatchLineStats(EDIT_PATCH)).toEqual({ additions: 1, deletions: 1 })
+    expect(diffStatsFromPatch(EDIT_PATCH)).toEqual({ additions: 1, deletions: 1 })
   })
 })
 

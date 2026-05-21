@@ -1,0 +1,370 @@
+/* Shared compact Cursor-style tool rows (Conductor-only, no pi-gui) */
+
+.cursorToolRow,
+.cursorToolRowMain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  min-height: 0;
+}
+
+.cursorToolRow {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.cursorToolRowMain {
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
+
+.cursorToolRowMain:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--accent-blue, #60a5fa));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.cursorToolIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  color: var(--text-tertiary);
+}
+
+.cursorToolLabel {
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.cursorToolStats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.cursorToolStatAdd {
+  color: var(--accent-green, #4ade80);
+}
+
+.cursorToolStatDel {
+  color: var(--accent-red, #f87171);
+}
+
+/* Chips */
+
+.cursorToolChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: min(280px, 55vw);
+  flex-shrink: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border: none;
+  margin: 0;
+  font-weight: inherit;
+}
+
+.cursorToolChip--bordered {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--text-tertiary) 35%, transparent);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cursorToolChip--bordered:hover {
+    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--accent-blue) 48%, var(--text-tertiary));
+    background: color-mix(in srgb, var(--surface-3) 70%, transparent);
+  }
+}
+
+.cursorToolChip--bordered {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    transform 130ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.cursorToolChip--bordered:active {
+  transform: scale(0.97);
+}
+
+.cursorToolChip--directory {
+  background: color-mix(in srgb, var(--surface-2) 90%, #000);
+  border: none;
+  border-radius: 6px;
+  padding: 1px 8px;
+  cursor: default;
+  pointer-events: none;
+}
+
+.cursorToolChipIcon {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+}
+
+.cursorToolChipLabel {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Diff hover popover */
+
+.cursorDiffPopover {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-2) 85%, transparent);
+  border: none;
+  border-radius: 6px;
+  box-shadow: none;
+  opacity: 1;
+  transform-origin: top right;
+  pointer-events: auto;
+  transition:
+    opacity 140ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform 140ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.cursorDiffPopover[data-state='closed'] {
+  opacity: 0;
+  transform: scale(0.97);
+  pointer-events: none;
+}
+
+.cursorDiffPopoverHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 50%, transparent);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.cursorDiffPopoverHeaderIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.cursorDiffPopoverBody {
+  overflow: auto;
+  min-height: 0;
+  max-height: inherit;
+}
+
+.cursorDiffPopoverFallback {
+  margin: 0;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+/* Inline unlocked diff + diff code */
+
+.cursorDiffUnlocked {
+  margin-top: 2px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 65%, transparent);
+  border-radius: 6px;
+  overflow: auto;
+  max-height: 120px;
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
+
+.cursorDiffCode {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.cursorDiffRow {
+  display: grid;
+  grid-template-columns: 2.25em 0.85em 1fr;
+  align-items: baseline;
+  column-gap: 4px;
+  padding: 0 6px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cursorDiffRowContext {
+  color: var(--text-tertiary);
+}
+
+.cursorDiffRowAdded {
+  background: color-mix(in srgb, var(--accent-green, #4ade80) 14%, transparent);
+  color: color-mix(in srgb, var(--accent-green, #4ade80) 85%, var(--text-primary));
+  box-shadow: inset 3px 0 0 var(--accent-green, #4ade80);
+}
+
+.cursorDiffRowRemoved {
+  background: color-mix(in srgb, var(--accent-red, #f87171) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.cursorDiffLineNo {
+  text-align: right;
+  color: var(--text-tertiary);
+  user-select: none;
+  opacity: 0.7;
+  font-size: 10px;
+}
+
+.cursorDiffSign {
+  user-select: none;
+  opacity: 0.85;
+}
+
+.cursorDiffContent {
+  min-width: 0;
+}
+
+.cursorDiffIntraline {
+  background: color-mix(in srgb, var(--accent-green, #4ade80) 38%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.cursorDiffRowRemoved .cursorDiffIntraline {
+  background: color-mix(in srgb, var(--accent-red, #f87171) 38%, transparent);
+}
+
+.cursorDiffNoNewline {
+  padding: 4px 10px 6px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-size: 10px;
+}
+
+/* Bash output panel */
+
+.cursorBashOutput {
+  margin-top: 2px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 65%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cursorBashLine {
+  display: block;
+}
+
+.cursorBashPrompt {
+  color: var(--text-tertiary);
+}
+
+.cursorBashPath {
+  color: var(--text-primary);
+}
+
+.cursorBashKeyword {
+  color: color-mix(in srgb, var(--accent-red, #f87171) 75%, var(--text-secondary));
+}
+
+.cursorBashSuccess {
+  color: var(--accent-green, #4ade80);
+}
+
+.cursorDiffStack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Codex todowrite checklist (replaces bordered todoMarkdown card) */
+
+.cursorTodoList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.cursorTodoStep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.cursorTodoStep[data-status='completed'] .cursorTodoStepLabel {
+  color: var(--text-secondary);
+}
+
+.cursorTodoStep[data-status='in_progress'] .cursorTodoStepLabel {
+  color: var(--text-primary);
+}
+
+.cursorTodoCheckDone {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--accent-blue, #60a5fa);
+}
+
+.cursorTodoCheckOpen {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursorDiffPopover,
+  .cursorToolChip--bordered {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursorToolChip--bordered,
+  .cursorDiffPopover {
+    transition: none;
+  }
+
+  .cursorToolChip--bordered:active,
+  .cursorDiffPopover[data-state='closed'] {
+    transform: none;
+  }
+}

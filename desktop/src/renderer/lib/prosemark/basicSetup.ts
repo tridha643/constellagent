@@ -1,7 +1,18 @@
 import { EditorView } from "@codemirror/view";
 import { Annotation, type Extension } from "@codemirror/state";
 import { defaultHideExtensions } from "./hide";
-import { defaultFoldableSyntaxExtensions, readOnlyFoldableSyntaxExtensions } from "./fold";
+import {
+  blockQuoteExtension,
+  bulletListExtension,
+  defaultFoldableSyntaxExtensions,
+  emojiExtension,
+  dashExtension,
+  horizonalRuleExtension,
+  imageExtension,
+  readOnlyTaskExtension,
+  taskExtension,
+} from "./fold";
+import type { MarkdownImageOptions } from "./fold/image";
 import { clickLinkExtension, defaultClickLinkHandler } from "./clickLink";
 import { codeBlockDecorationsExtension, codeFenceTheme } from "./codeFenceExtension";
 import {
@@ -55,9 +66,17 @@ export const prosemarkBasicSetup = (): Extension => [
 ];
 
 /** Conductor chat — live preview with clickable task checkboxes, no free-form editing. */
-export const chatProsemarkBasicSetup = (): Extension => [
+export const chatProsemarkBasicSetup = (imageOptions: MarkdownImageOptions = {}): Extension => [
   defaultHideExtensions,
-  defaultFoldableSyntaxExtensions,
+  [
+    blockQuoteExtension,
+    bulletListExtension,
+    taskExtension,
+    imageExtension(imageOptions),
+    emojiExtension,
+    horizonalRuleExtension,
+    dashExtension,
+  ],
   clickLinkExtension,
   defaultClickLinkHandler,
   codeBlockDecorationsExtension,
@@ -65,9 +84,17 @@ export const chatProsemarkBasicSetup = (): Extension => [
 ];
 
 /** @deprecated Use chatProsemarkBasicSetup — kept for callers that need non-interactive tasks. */
-export const readOnlyProsemarkBasicSetup = (): Extension => [
+export const readOnlyProsemarkBasicSetup = (imageOptions: MarkdownImageOptions = {}): Extension => [
   defaultHideExtensions,
-  readOnlyFoldableSyntaxExtensions,
+  [
+    blockQuoteExtension,
+    bulletListExtension,
+    readOnlyTaskExtension,
+    imageExtension(imageOptions),
+    emojiExtension,
+    horizonalRuleExtension,
+    dashExtension,
+  ],
   clickLinkExtension,
   defaultClickLinkHandler,
   codeBlockDecorationsExtension,

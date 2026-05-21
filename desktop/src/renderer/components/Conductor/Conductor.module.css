@@ -1,8 +1,6 @@
 /* Tab-mounted Conductor chat (center contentArea). */
 .chatView {
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
-  --turn-rail-enter: 200ms;
-  --turn-rail-exit: 150ms;
   --conductor-effort-accent: #d4a574;
   --conductor-chip-fg: #dcc9b8;
   --conductor-chip-warm-bg: color-mix(in srgb, #5c4033 48%, var(--surface-2));
@@ -188,195 +186,84 @@
   padding-inline: var(--space-4);
 }
 
+/* Cursor-style tool rows sit under the assistant reply (matches Cursor chat). */
+.timelineRowTool {
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+.assistantGroup + .timelineRowTool {
+  margin-top: 6px;
+}
+
+.assistantTurnTools {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+/* Assistant prose keeps the writer.computer-inspired ProseMark rhythm.
+   Avoid shrinking code/tables into tiny transcript echoes — dedicated tool rows
+   already hide duplicated blocks via `.messageBodyHideFileEcho` when needed. */
+.messageAssistant .messageBody .prosemark-chat .cm-editor .cm-content {
+  font-size: 14px;
+  line-height: 1.62;
+}
+
+.messageAssistant .messageBody .prosemark-chat .cm-table-widget table {
+  max-width: 100%;
+}
+
+.messageAssistant .messageBody .prosemark-chat .cm-fenced-code-line {
+  max-width: 100%;
+}
+
+.messageBodyHideFileEcho .cm-table-widget,
+.messageBodyHideFileEcho .cm-fenced-code-line {
+  display: none !important;
+}
+
+/* Codex often mirrors todowrite steps as task lists inside the streamed reply — align with tool rows. */
+.messageAssistant .prosemark-chat .cm-editor .cm-checkbox {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border-width: 1.5px;
+}
+
+.messageAssistant .prosemark-chat .cm-editor .cm-checkbox:checked {
+  background-color: var(--accent-blue, #60a5fa);
+  border-color: var(--accent-blue, #60a5fa);
+  background-size: 14px 14px;
+}
+
+.messageAssistant .prosemark-chat .cm-editor .cm-list-item {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+/* Codex echoes the same steps as markdown task lists — hide when transcript todos render. */
+.messageBodyHideTaskLists .cm-checkbox-wrapper {
+  display: none;
+}
+
+.messageBodyHideTaskLists .cm-list-item {
+  padding-left: 0;
+}
+
+.turnSummaryToolRow {
+  padding: 1px 0;
+}
+
 .turnSummaryEdge {
   box-sizing: border-box;
   width: 100%;
   max-width: 760px;
   margin-inline: auto;
   padding-inline: var(--space-4);
-}
-
-/* Turn history rail — writer-computer SectionRail pattern on the right edge. */
-.turnRailHost {
-  pointer-events: none;
-  position: absolute;
-  inset-block: 0;
-  right: 0;
-  z-index: 20;
-}
-
-.turnRailZone {
-  pointer-events: auto;
-  position: absolute;
-  inset-block: 0;
-  right: 0;
-}
-
-.turnRailTicks {
-  position: absolute;
-  top: 50%;
-  right: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  transform: translate3d(0, -50%, 0);
-  transform-origin: right center;
-  opacity: 1;
-  color: var(--text-primary);
-  transition:
-    transform var(--turn-rail-enter) var(--ease-out-strong),
-    opacity var(--turn-rail-exit) var(--ease-out-strong);
-  max-height: 70vh;
-  overflow: hidden;
-  will-change: transform, opacity;
-}
-
-.turnRailTicks[data-open='true'] {
-  transform: translate3d(6px, -50%, 0) scale(1.04);
-  opacity: 0;
-  pointer-events: none;
-  transition-duration: var(--turn-rail-exit);
-}
-
-.turnRailTick {
-  display: block;
-  width: 20px;
-  height: 1px;
-  padding: 0;
-  border: 0;
-  background: currentColor;
-  transform: scaleX(0.5);
-  transform-origin: right center;
-  opacity: 0.35;
-  cursor: default;
-  transition:
-    transform 220ms var(--ease-out-strong),
-    opacity 220ms var(--ease-out-strong);
-}
-
-.turnRailTick[data-active] {
-  transform: scaleX(1);
-  opacity: 1;
-}
-
-.turnRailPopover {
-  pointer-events: auto;
-  position: absolute;
-  top: 50%;
-  right: 12px;
-  width: 280px;
-  max-height: 70vh;
-  overflow: hidden;
-  background: var(--surface-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-overlay, var(--shadow-lg));
-  transform: translate3d(-6px, -50%, 0) scale(1);
-  transform-origin: right center;
-  opacity: 1;
-  transition:
-    transform var(--turn-rail-enter) var(--ease-out-strong),
-    opacity var(--turn-rail-enter) var(--ease-out-strong),
-    filter var(--turn-rail-enter) var(--ease-out-strong);
-  will-change: transform, opacity;
-}
-
-.turnRailPopover[data-state='closed'] {
-  transform: translate3d(4px, -50%, 0) scale(0.96);
-  opacity: 0;
-  filter: blur(2px);
-  pointer-events: none;
-  transition-duration: var(--turn-rail-exit);
-}
-
-.turnRailPopover[data-instant] {
-  transition: none;
-  filter: none;
-}
-
-.turnRailPopoverScroll {
-  max-height: 70vh;
-  overflow-y: auto;
-  padding: var(--space-2) var(--space-3);
-}
-
-.turnRailPopoverList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.turnRailPopover[data-state='open']:not([data-instant]) .turnRailPopoverList > li {
-  animation: turnRailRowIn var(--turn-rail-enter) var(--ease-out-strong) both;
-}
-
-.turnRailPopover[data-state='open']:not([data-instant]) .turnRailPopoverList > li:nth-child(1) {
-  animation-delay: 0ms;
-}
-.turnRailPopover[data-state='open']:not([data-instant]) .turnRailPopoverList > li:nth-child(2) {
-  animation-delay: 30ms;
-}
-.turnRailPopover[data-state='open']:not([data-instant]) .turnRailPopoverList > li:nth-child(3) {
-  animation-delay: 60ms;
-}
-.turnRailPopover[data-state='open']:not([data-instant]) .turnRailPopoverList > li:nth-child(4) {
-  animation-delay: 90ms;
-}
-.turnRailPopover[data-state='open']:not([data-instant]) .turnRailPopoverList > li:nth-child(n + 5) {
-  animation-delay: 120ms;
-}
-
-.turnRailPopoverRow {
-  appearance: none;
-  display: block;
-  width: 100%;
-  padding: var(--space-2) var(--space-2);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  color: var(--text-primary);
-  transition: transform 120ms var(--ease-out-strong);
-}
-
-.turnRailPopoverRow:active {
-  transform: scale(0.98);
-}
-
-.turnRailPopoverUser {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.turnRailPopoverAssistant {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: color 150ms ease;
-}
-
-@keyframes turnRailRowIn {
-  from {
-    opacity: 0;
-    transform: translate3d(6px, 0, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
 }
 
 .empty {
@@ -1489,9 +1376,6 @@
     background: color-mix(in srgb, #6b5038 54%, var(--surface-2));
     border-color: color-mix(in srgb, #9a7560 50%, transparent);
   }
-  .turnRailPopoverRow:hover {
-    color: var(--text-primary);
-  }
   .sessionItem:hover {
     background: var(--surface-2);
   }
@@ -1504,20 +1388,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .turnRailTicks,
-  .turnRailPopover,
-  .turnRailTick,
-  .turnRailPopoverRow {
-    transition: none;
-    animation: none;
-    will-change: auto;
-  }
-  .turnRailPopover[data-state='closed'] {
-    filter: none;
-  }
-  .turnRailPopover[data-state='open']:not([data-instant]) .turnRailPopoverList > li {
-    animation: none;
-  }
   .modelMenu,
   .historyPopover,
   .messageFirstPaint,
@@ -1554,6 +1424,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  width: 100%;
   padding: 3px 0;
   font-size: var(--text-sm);
   color: var(--text-secondary);
@@ -1593,7 +1464,10 @@
   min-width: 0;
   max-width: min(240px, 100%);
   cursor: pointer;
-  transition: background 120ms var(--ease-out-strong), color 120ms var(--ease-out-strong);
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 130ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
 .toolInlineChip:active {
@@ -1653,70 +1527,101 @@
 .diffStack {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
-.diffCard {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-1);
+.diffInlineChipWrap {
+  margin-left: auto;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* Hover preview anchored to the file chip (portal, fixed). */
+.diffHoverPopover {
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.36);
+  transform-origin: top right;
+  opacity: 1;
+  transition:
+    opacity var(--duration-exit-fast) var(--ease-out),
+    transform var(--duration-exit-fast) var(--ease-out);
+  pointer-events: auto;
 }
 
-.diffHeader {
+.diffHoverPopover[data-state='closed'] {
+  opacity: 0;
+  transform: scale(0.97);
+  pointer-events: none;
+}
+
+.diffHoverPopoverMeta {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
-  padding: var(--space-2) var(--space-3);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  min-width: 0;
-}
-
-.diffHeaderTrigger {
-  appearance: none;
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  border: none;
-  background: transparent;
-  color: inherit;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  cursor: pointer;
-  font: inherit;
-}
-
-.diffFileIcon {
-  width: 14px;
-  height: 14px;
+  padding: var(--space-2) var(--space-3) 0;
   flex-shrink: 0;
 }
 
-.diffPath {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-primary);
+.diffHoverPopoverBody {
+  overflow: auto;
+  min-height: 0;
+}
+
+.diffHoverPopoverFallback {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
 }
 
 .diffCounts {
-  margin-left: auto;
   display: inline-flex;
   flex-shrink: 0;
+  align-items: center;
   gap: 6px;
   font-variant-numeric: tabular-nums;
 }
 
-.diffCountAdd {
+.diffStatBadgeAdd,
+.diffStatBadgeDel {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.diffStatBadgeAdd {
   color: var(--accent-green, #4ade80);
+  background: color-mix(in srgb, var(--accent-green, #4ade80) 14%, transparent);
+}
+
+.diffStatBadgeDel {
+  color: var(--accent-red, #f87171);
+  background: color-mix(in srgb, var(--accent-red, #f87171) 14%, transparent);
+}
+
+.diffCountAdd {
+  color: inherit;
 }
 
 .diffCountDel {
-  color: var(--accent-red, #f87171);
+  color: inherit;
 }
 
 .diffBody {
@@ -1725,10 +1630,17 @@
   max-height: 420px;
 }
 
-.diffFallbackLabel {
-  flex: 1;
-  min-width: 0;
+.conductorDiffBody {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  padding: var(--space-1) 0;
 }
+
+.diffBodyMarkdown {
+  padding: var(--space-2) var(--space-3);
+}
+
 
 .diffRow {
   display: grid;
@@ -1907,12 +1819,6 @@
   transition: opacity 120ms var(--ease-out-strong);
 }
 
-.conductorPierreDiff {
-  max-height: 320px;
-  overflow: auto;
-  border-radius: 6px;
-  transition: opacity 150ms var(--ease-out-strong);
-}
 
 .tickerStatus {
   display: flex;
@@ -2027,7 +1933,6 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .diffHeader:hover,
   .bashHeader:hover:not(:disabled),
   .turnSummaryHeader:hover {
     color: var(--text-secondary);
@@ -2042,10 +1947,10 @@
   .toolChipCrossfade,
   .toolInlineChip,
   .toolInline,
-  .conductorPierreDiff,
   .turnSummaryHeader,
   .longRunHint,
   .diffCounts,
+  .diffHoverPopover,
   .interruptPill {
     animation: none;
     transition: none;

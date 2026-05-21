@@ -130,7 +130,7 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
       </div>
       <div className={styles.scrollArea}>
         <AddToChatMarkdownSurface filePath={filePath} className={styles.content}>
-          <MarkdownRenderer>{renderedContent ?? ''}</MarkdownRenderer>
+          <MarkdownRenderer filePath={filePath} worktreePath={worktreePath}>{renderedContent ?? ''}</MarkdownRenderer>
         </AddToChatMarkdownSurface>
       </div>
     </div>

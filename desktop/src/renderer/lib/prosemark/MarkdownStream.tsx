@@ -22,6 +22,9 @@ import { darkTheme } from "./syntaxHighlighting";
 import { tableDecorations } from "./table-decorations";
 import { htmlBlockDecorations, htmlBlockParserExtension } from "./html-block-decorations";
 import { dragFreezeExtensions } from "./drag-selection-gate";
+import { markdownFileChipExtension, type MarkdownFileChipOptions } from "./file-chip-extension";
+import type { MarkdownFileTarget } from "../../utils/markdown-file-links";
+import type { AppearanceThemeId } from "../../theme/appearance";
 import "./prosemark-chat-theme.css";
 
 /**
@@ -48,10 +51,19 @@ export interface MarkdownStreamProps {
   compact?: boolean;
   /** Single-line surfaces (tool chips, activity ticker). */
   inline?: boolean;
+  /** Resolve relative file/image markdown links against this directory. */
+  baseDir?: string;
+  /** Fallback root for repo-relative markdown file/image links. */
+  worktreePath?: string;
+  appearanceThemeId?: AppearanceThemeId;
+  onOpenMarkdownFile?: (target: MarkdownFileTarget) => void;
 }
 
+const PROSEMARK_PARSE_BUDGET_MS = 25;
+const PROSEMARK_DECORATION_SYNC_DELAY_MS = 120;
+
 function refreshProsemarkDecorations(view: EditorView): void {
-  ensureSyntaxTree(view.state, view.state.doc.length, 500);
+  ensureSyntaxTree(view.state, view.state.doc.length, PROSEMARK_PARSE_BUDGET_MS);
   // Nudge hide/fold/table fields to rebuild after the syntax tree catches up.
   view.dispatch({ selection: view.state.selection });
 }
@@ -64,12 +76,29 @@ function refreshProsemarkDecorations(view: EditorView): void {
  */
 const prosemarkDecorationSync = ViewPlugin.fromClass(
   class {
+    private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+    constructor(private readonly view: EditorView) {}
+
     update(update: ViewUpdate) {
       if (update.docChanged) {
-        ensureSyntaxTree(update.view.state, update.view.state.doc.length, 500);
+        this.scheduleRefresh(PROSEMARK_DECORATION_SYNC_DELAY_MS);
       } else if (syntaxTree(update.state) !== syntaxTree(update.startState)) {
-        queueMicrotask(() => refreshProsemarkDecorations(update.view));
+        this.scheduleRefresh(0);
       }
+    }
+
+    private scheduleRefresh(delay: number) {
+      if (this.refreshTimer !== undefined) return;
+      this.refreshTimer = setTimeout(() => {
+        this.refreshTimer = undefined;
+        if (!this.view.dom.isConnected) return;
+        refreshProsemarkDecorations(this.view);
+      }, delay);
+    }
+
+    destroy() {
+      if (this.refreshTimer !== undefined) clearTimeout(this.refreshTimer);
     }
   },
 );
@@ -82,13 +111,13 @@ const prosemarkDecorationSync = ViewPlugin.fromClass(
 //   4. heading-weight HighlightStyle (Prec.highest, matches upstream)
 //   5. table / html-block decorations + decoration sync
 //   6. changeFilter (task toggles + programmatic sync only) + non-editable + wrap
-function buildExtensions(): Extension[] {
+function buildExtensions(options: MarkdownFileChipOptions): Extension[] {
   return [
     markdown({
       codeLanguages: languages,
       extensions: [GFM, prosemarkMarkdownSyntaxExtensions, htmlBlockParserExtension],
     }),
-    chatProsemarkBasicSetup(),
+    chatProsemarkBasicSetup({ baseDir: options.baseDir, worktreePath: options.worktreePath }),
     prosemarkBaseThemeSetup(),
     darkTheme,
     Prec.highest(
@@ -107,6 +136,7 @@ function buildExtensions(): Extension[] {
     ),
     tableDecorations(),
     htmlBlockDecorations(),
+    markdownFileChipExtension(options),
     dragFreezeExtensions,
     prosemarkDecorationSync,
     EditorState.changeFilter.of((tr) => {
@@ -148,7 +178,7 @@ function dispatchDocChange(view: EditorView, spec: Parameters<EditorView["dispat
 }
 
 const MarkdownStream = forwardRef<MarkdownStreamHandle, MarkdownStreamProps>(function MarkdownStream(
-  { content, className, compact, inline: inlineMode },
+  { content, className, compact, inline: inlineMode, baseDir, worktreePath, appearanceThemeId, onOpenMarkdownFile },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -203,7 +233,7 @@ const MarkdownStream = forwardRef<MarkdownStreamHandle, MarkdownStreamProps>(fun
       state: EditorState.create({
         doc: initialDoc,
         selection: selectionAtEnd(initialDoc.length),
-        extensions: buildExtensions(),
+        extensions: buildExtensions({ baseDir, worktreePath, appearanceThemeId, onOpenFile: onOpenMarkdownFile }),
       }),
     });
     viewRef.current = view;

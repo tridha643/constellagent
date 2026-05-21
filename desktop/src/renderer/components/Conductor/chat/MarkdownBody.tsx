@@ -1,5 +1,9 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import { normalizeMarkdownTables } from '../../../../shared/normalize-markdown-tables'
 import MarkdownStream, { type MarkdownStreamHandle } from '../../../lib/prosemark/MarkdownStream'
+import type { MarkdownFileTarget } from '../../../utils/markdown-file-links'
+import { isMarkdownDocumentPath } from '../../../utils/markdown-path'
+import { useAppStore } from '../../../store/app-store'
 
 /**
  * Static ProseMark markdown surface for Conductor (messages, tool bodies, etc.).
@@ -19,20 +23,35 @@ export function MarkdownBody({
   inline?: boolean
 }) {
   const ref = useRef<MarkdownStreamHandle | null>(null)
+  const normalized = useMemo(() => normalizeMarkdownTables(content), [content])
+  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
+  const worktreePath = useAppStore((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+    return ws?.worktreePath ?? undefined
+  })
+  const openFileTab = useAppStore((s) => s.openFileTab)
+  const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
+  const openMarkdownFile = useCallback((target: MarkdownFileTarget) => {
+    if (isMarkdownDocumentPath(target.absolutePath)) openMarkdownPreview(target.absolutePath)
+    else openFileTab(target.absolutePath, target.lineNumber ? { initialPosition: { lineNumber: target.lineNumber, column: 1 } } : undefined)
+  }, [openFileTab, openMarkdownPreview])
 
   useLayoutEffect(() => {
     ref.current?.refreshDecorations()
-  }, [content])
+  }, [normalized])
 
-  if (!content.trim()) return null
+  if (!normalized.trim()) return null
 
   return (
     <MarkdownStream
       ref={ref}
-      content={content}
+      content={normalized}
       className={className}
       compact={compact}
       inline={inlineMode}
+      worktreePath={worktreePath}
+      appearanceThemeId={appearanceThemeId}
+      onOpenMarkdownFile={openMarkdownFile}
     />
   )
 }
