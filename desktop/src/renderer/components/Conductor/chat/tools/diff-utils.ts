@@ -64,6 +64,26 @@ function tokenizeModified(left: string, right: string): {
  * paired with the following `+` lines into `modified` rows (with intra-line token
  * highlight); the remainder fall back to plain added/removed rows.
  */
+/** Fallback +/- counts when `parsePatch` cannot structure the hunk (still shows header stats). */
+export function countPatchLineStats(patch: string): { additions: number; deletions: number } {
+  let additions = 0
+  let deletions = 0
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@')) continue
+    if (line.startsWith('+')) additions += 1
+    else if (line.startsWith('-')) deletions += 1
+  }
+  return { additions, deletions }
+}
+
+export function diffStatsFromPatch(patch: string): { additions: number; deletions: number } {
+  const parsed = parseDiffRows(patch)
+  if (parsed.additions > 0 || parsed.deletions > 0) {
+    return { additions: parsed.additions, deletions: parsed.deletions }
+  }
+  return countPatchLineStats(patch)
+}
+
 export function parseDiffRows(patch: string): ParsedDiff {
   const rows: DiffRow[] = []
   let additions = 0

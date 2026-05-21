@@ -10,18 +10,22 @@ import {
 import type { TranscriptMessage } from '../../../../shared/pi/pi-desktop-state'
 import { groupTranscriptIntoTurns } from '../../../../shared/conductor-transcript-utils'
 import { PlanMapIcon } from './ConductorIcons'
-import styles from '../Conductor.module.css'
+import { ScrollFade } from './ScrollFade'
+import { useActiveTurnIndex, useMountTransition } from './use-active-turn'
+import railStyles from './TurnHistoryRail.module.css'
 
+const TICK_GAP = 6
 const RAIL_INSET = 12
-const ACTIVE_WIDTH = 20
-const RAIL_ZONE_WIDTH = RAIL_INSET + ACTIVE_WIDTH + 2
-const POPOVER_WIDTH = 280
+const RAIL_ZONE_WIDTH = RAIL_INSET + 22
+const POPOVER_WIDTH = 260
+/** Matches `--duration-exit` / `useMountTransition` unmount delay. */
+const POPOVER_TRANSITION_MS = 140
 
 export interface TurnHistoryRailHandle {
   open: () => void
 }
 
-/** Edge rail + floating turn list — writer-computer SectionRail pattern for chat history. */
+/** Edge rail + floating turn list — writer.computer SectionRail (UI + behavior). */
 export const TurnHistoryRail = forwardRef<
   TurnHistoryRailHandle,
   {
@@ -31,8 +35,10 @@ export const TurnHistoryRail = forwardRef<
   }
 >(function TurnHistoryRail({ transcript, scrollContainerRef, onSelectTurn }, ref) {
   const turns = groupTranscriptIntoTurns(transcript)
+  const activeIndex = useActiveTurnIndex(scrollContainerRef, turns)
   const [open, setOpen] = useState(false)
   const [instant, setInstant] = useState(false)
+  const { shouldRender: showPopover, phase } = useMountTransition(open, POPOVER_TRANSITION_MS)
   const railZoneRef = useRef<HTMLDivElement | null>(null)
   const popoverRef = useRef<HTMLDivElement | null>(null)
 
@@ -78,17 +84,15 @@ export const TurnHistoryRail = forwardRef<
 
   if (turns.length === 0) return null
 
-  const activeIndex = turns.length - 1
-
   return (
     <div
-      className={styles.turnRailHost}
+      className={railStyles.host}
       style={{ width: RAIL_INSET + POPOVER_WIDTH }}
       aria-hidden={!open}
     >
       <div
         ref={railZoneRef}
-        className={styles.turnRailZone}
+        className={railStyles.zone}
         style={{ width: RAIL_ZONE_WIDTH }}
         onMouseEnter={() => {
           setInstant(false)
@@ -96,71 +100,77 @@ export const TurnHistoryRail = forwardRef<
         }}
         onMouseLeave={handleRailLeave}
       >
-        <div
-          className={styles.turnRailTicks}
-          data-open={open ? 'true' : 'false'}
-          role="navigation"
-          aria-label="Chat turns"
-        >
-          {turns.map((turn, i) => {
-            const isActive = i === activeIndex
-            return (
-              <button
-                key={turn.userMessageId}
-                type="button"
-                className={styles.turnRailTick}
-                data-active={isActive || undefined}
-                title={turn.userText}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => scrollToTurn(turn.userMessageId)}
-              />
-            )
-          })}
-        </div>
+        <ScrollFade alwaysFade fadeSize="48px" className={railStyles.ticksScrollWrap}>
+          <div
+            className={railStyles.ticks}
+            data-open={open ? 'true' : 'false'}
+            style={{ gap: TICK_GAP }}
+            role="navigation"
+            aria-label="Chat turns"
+          >
+            {turns.map((turn, i) => {
+              const isActive = i === activeIndex
+              return (
+                <button
+                  key={turn.userMessageId}
+                  type="button"
+                  className={railStyles.tick}
+                  data-active={isActive || undefined}
+                  title={turn.userText}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => scrollToTurn(turn.userMessageId)}
+                />
+              )
+            })}
+          </div>
+        </ScrollFade>
       </div>
 
-      <div
-        ref={popoverRef}
-        className={styles.turnRailPopover}
-        data-state={open ? 'open' : 'closed'}
-        data-instant={instant || undefined}
-        role="menu"
-        aria-label="Previous messages"
-        onMouseEnter={() => {
-          setInstant(false)
-          setOpen(true)
-        }}
-        onMouseLeave={handlePopoverLeave}
-      >
-        <div className={styles.turnRailPopoverScroll}>
-          <ul className={styles.turnRailPopoverList}>
-            {[...turns].reverse().map((turn) => (
-              <li key={turn.userMessageId}>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={styles.turnRailPopoverRow}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => {
-                    onSelectTurn(turn.userMessageId, e.shiftKey)
-                    scrollToTurn(turn.userMessageId)
-                    setOpen(false)
-                  }}
-                >
-                  <span className={styles.turnRailPopoverUser}>
-                    {turn.plan ? (
-                      <span className={styles.historyItemMode} aria-label="Plan mode">
-                        <PlanMapIcon size={13} />
-                      </span>
-                    ) : null}
-                    {turn.userText}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+      {showPopover ? (
+        <div
+          ref={popoverRef}
+          className={`${railStyles.surfaceCard} ${railStyles.popover}`}
+          data-state={instant ? 'open' : phase}
+          data-instant={instant || undefined}
+          role="menu"
+          aria-label="Previous messages"
+          onMouseEnter={() => {
+            setInstant(false)
+            setOpen(true)
+          }}
+          onMouseLeave={handlePopoverLeave}
+        >
+          <ScrollFade axis="vertical" fadeSize="20px" className={railStyles.popoverScroll}>
+            <ul className={railStyles.popoverList}>
+              {turns.map((turn, i) => {
+                const isActive = i === activeIndex
+                return (
+                  <li key={turn.userMessageId}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={`${railStyles.popoverRow}${isActive ? ` ${railStyles.popoverRowActive}` : ''}`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={(e) => {
+                        onSelectTurn(turn.userMessageId, e.shiftKey)
+                        scrollToTurn(turn.userMessageId)
+                        setOpen(false)
+                      }}
+                    >
+                      {turn.plan ? (
+                        <span className={railStyles.planIcon} aria-label="Plan mode">
+                          <PlanMapIcon size={13} />
+                        </span>
+                      ) : null}
+                      <span className={railStyles.popoverLabel}>{turn.userText}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </ScrollFade>
         </div>
-      </div>
+      ) : null}
     </div>
   )
 })

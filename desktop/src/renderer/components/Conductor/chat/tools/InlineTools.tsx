@@ -1,32 +1,12 @@
 import type { ReactNode } from 'react'
 import type { TimelineToolCall } from '../../../../../shared/pi/timeline-types'
 import { inlineToolMarkdown, MarkdownBody } from '../MarkdownBody'
+import { CursorListRow } from './CursorListRow'
 import styles from '../../Conductor.module.css'
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null
-}
+import { queryFromInput } from './tool-input-path'
 
-function firstString(input: unknown, keys: string[]): string | undefined {
-  if (typeof input === 'string') return input.trim() || undefined
-  const record = asRecord(input)
-  if (!record) return undefined
-  for (const key of keys) {
-    const value = record[key]
-    if (typeof value === 'string' && value.trim()) return value.trim()
-  }
-  return undefined
-}
-
-export function pathFromInput(input: unknown): string | undefined {
-  return firstString(input, ['path', 'file_path', 'filePath', 'target_file', 'targetFile', 'relative_path'])
-}
-
-export function queryFromInput(input: unknown): string | undefined {
-  return firstString(input, ['query', 'pattern', 'q', 'search', 'regex'])
-}
+export { pathFromInput, queryFromInput } from './tool-input-path'
 
 /** Compact single-line tool row: icon + markdown label (optional path as inline code). */
 export function InlineToolRow({
@@ -82,9 +62,7 @@ function GlobeGlyph() {
 }
 
 export function ListTool({ tool }: { tool: TimelineToolCall }) {
-  const path = pathFromInput(tool.input)
-  const pattern = firstString(tool.input, ['pattern', 'glob', 'query'])
-  return <InlineToolRow icon={<FolderGlyph />} label={pattern ? `Listed ${pattern}` : 'Listed files'} path={path} />
+  return <CursorListRow tool={tool} />
 }
 
 export function GrepTool({ tool }: { tool: TimelineToolCall }) {

@@ -237,3 +237,149 @@
 .prosemark-chat.prosemark-chat-inline .cm-editor .cm-content p {
   margin: 0;
 }
+
+/* Writer-style block rhythm + richer media/file chips for chat markdown. */
+.prosemark-chat .cm-editor .cm-line {
+  min-height: 1.62em;
+}
+
+.prosemark-chat .cm-editor .cm-content .cm-heading-line-1,
+.prosemark-chat .cm-editor .cm-content .cm-heading-line-2,
+.prosemark-chat .cm-editor .cm-content .cm-heading-line-3 {
+  letter-spacing: -0.018em;
+  text-wrap: balance;
+}
+
+.prosemark-chat .cm-editor .cm-content .cm-heading-line-1 + .cm-line,
+.prosemark-chat .cm-editor .cm-content .cm-heading-line-2 + .cm-line,
+.prosemark-chat .cm-editor .cm-content .cm-heading-line-3 + .cm-line {
+  margin-top: 0.1em;
+}
+
+.prosemark-chat .cm-editor .cm-fenced-code-line {
+  margin-left: 0;
+  padding-left: 14px;
+  padding-right: 14px;
+  font-size: 0.92em;
+  line-height: 1.55;
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  border-left: 1px solid var(--panel-border-inner, var(--border-subtle));
+  border-right: 1px solid var(--panel-border-inner, var(--border-subtle));
+}
+
+.prosemark-chat .cm-editor .cm-fenced-code-line-first {
+  margin-top: 0.7em;
+  padding-top: 12px;
+  border-top: 1px solid var(--panel-border-inner, var(--border-subtle));
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+}
+
+.prosemark-chat .cm-editor .cm-fenced-code-line-last {
+  margin-bottom: 0.8em;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--panel-border-inner, var(--border-subtle));
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+
+.prosemark-chat .cm-editor .cm-blockquote-line {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+}
+
+.prosemark-chat .cm-editor .cm-file-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(280px, 100%);
+  gap: 5px;
+  padding: 2px 7px 2px 6px;
+  margin: 0 1px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 78%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+  color: var(--text-secondary);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  line-height: 1.35;
+  vertical-align: baseline;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    transform 130ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.prosemark-chat .cm-editor .cm-file-chip-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.prosemark-chat .cm-editor .cm-file-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .prosemark-chat .cm-editor .cm-file-chip:hover {
+    background: color-mix(in srgb, var(--surface-3) 88%, transparent);
+    border-color: color-mix(in srgb, var(--accent-blue) 48%, var(--border-default));
+    color: var(--text-primary);
+  }
+}
+
+.prosemark-chat .cm-editor .cm-file-chip:active {
+  transform: scale(0.97);
+}
+
+.prosemark-chat .cm-editor .cm-file-chip:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--accent-blue));
+  outline-offset: 2px;
+}
+
+.prosemark-chat .cm-editor .cm-image {
+  display: inline-flex;
+  max-width: 100%;
+  vertical-align: top;
+}
+
+.prosemark-chat .cm-editor .cm-image-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0.8em 0;
+  padding-left: 0;
+}
+
+.prosemark-chat .cm-editor .cm-image img {
+  display: block;
+  max-width: min(100%, 680px);
+  max-height: 520px;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid var(--outline-image, rgba(255, 255, 255, 0.1));
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+}
+
+.prosemark-chat .cm-editor .cm-image figcaption {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prosemark-chat .cm-editor .cm-file-chip {
+    transition: none;
+  }
+
+  .prosemark-chat .cm-editor .cm-file-chip:active {
+    transform: none;
+  }
+}

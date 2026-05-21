@@ -24,6 +24,7 @@ import { MarkdownBody } from './MarkdownBody'
 import { TurnSummary } from './TurnSummary'
 import { SubagentCallCard } from './SubagentCallCard'
 import { ToolPart } from './tools/tool-registry'
+import { turnHasFileTools, turnHasTodoTools } from './tools/turn-tool-flags'
 import { TurnHistoryRail, type TurnHistoryRailHandle } from './TurnHistoryRail'
 
 const WORKING_LABEL = 'Working…'
@@ -53,6 +54,8 @@ type RenderUnit =
       type: 'assistantGroup'
       key: string
       messages: Extract<TranscriptMessage, { kind: 'message' }>[]
+      /** Codex/Cursor tool rows for this turn (shown under the reply, before the footer). */
+      tools: TimelineToolCall[]
     }
 
 type ChatMessageItem = Extract<TranscriptMessage, { kind: 'message' }>
@@ -94,17 +97,26 @@ function pushTurnAssistantGroup(
   result: RenderUnit[],
   assistants: readonly ChatMessageItem[],
   keyPrefix: string,
+  tools: readonly TranscriptMessage[],
   pushPlain: (item: TranscriptMessage) => void,
 ): void {
-  if (assistants.length === 0) return
-  if (assistants.length === 1) {
+  if (assistants.length === 0 && tools.length === 0) return
+  const toolCalls = tools.filter((item): item is TimelineToolCall => item.kind === 'tool')
+  if (assistants.length === 1 && toolCalls.length === 0) {
     pushPlain(assistants[0])
+    return
+  }
+  if (assistants.length === 0 && toolCalls.length > 0) {
+    for (const tool of toolCalls) {
+      pushPlain(tool)
+    }
     return
   }
   result.push({
     type: 'assistantGroup',
-    key: `${keyPrefix}:a:${assistants[0].id}`,
+    key: `${keyPrefix}:a:${assistants[0]?.id ?? 'tools'}`,
     messages: [...assistants],
+    tools: toolCalls,
   })
 }
 
@@ -237,16 +249,22 @@ export const ChatTimeline = forwardRef<
       const { assistants, rest: nonAssistantBody } = splitTurnAssistants(bodyItems)
       const visibleNonAssistantBody =
         isLatestTurn && running
-          ? nonAssistantBody.filter((item) => !isCollapsibleTool(item))
+          ? nonAssistantBody.filter(
+              (item) =>
+                !isCollapsibleTool(item) ||
+                (item.kind === 'tool' && item.status !== 'running'),
+            )
           : nonAssistantBody
       const toolRows = visibleNonAssistantBody.filter(isCollapsibleTool)
+      const otherBody = visibleNonAssistantBody.filter((item) => !isCollapsibleTool(item))
       const messageCount = assistants.length
       const pushPlain = (item: TranscriptMessage) => result.push({ type: 'item', item })
-      // Collapse completed turns (including the latest once idle). While the
-      // latest turn is still running, tools stay in the live ticker instead.
+      // Collapse only older turns; latest turn keeps Cursor-style tool rows visible.
+      // While the latest turn is running, tools stay in the live ticker instead.
       const shouldCollapseTurn =
-        toolRows.length >= TURN_COLLAPSE_MIN_TOOLS && (!isLatestTurn || !running)
+        toolRows.length >= TURN_COLLAPSE_MIN_TOOLS && !isLatestTurn
       if (shouldCollapseTurn) {
+        pushTurnAssistantGroup(result, assistants, userItem.id, [], pushPlain)
         result.push({
           type: 'turnGroup',
           key: `${userItem.id}:group`,
@@ -256,11 +274,11 @@ export const ChatTimeline = forwardRef<
           isPlan: planActive,
         })
       } else {
-        for (const item of visibleNonAssistantBody) {
-          pushPlain(item)
-        }
+        pushTurnAssistantGroup(result, assistants, userItem.id, toolRows, pushPlain)
       }
-      pushTurnAssistantGroup(result, assistants, userItem.id, pushPlain)
+      for (const item of otherBody) {
+        pushPlain(item)
+      }
       for (const activity of workingActivity) {
         pushPlain(activity)
       }
@@ -438,28 +456,40 @@ export const ChatTimeline = forwardRef<
   )
 
   const renderRow = useCallback(
-    (item: TranscriptMessage): ReactNode => {
-      // Active-turn tools render in ActivityTicker while running (single live chip slot).
-      if (item.kind === 'tool' && running && currentTurnToolIds.has(item.id)) return null
+    (item: TranscriptMessage): { node: ReactNode; variant?: 'tool' } | null => {
+      // Only the in-flight tool uses the live ticker; completed tools stay in the turn body.
+      if (
+        item.kind === 'tool' &&
+        running &&
+        item.status === 'running' &&
+        currentTurnToolIds.has(item.id)
+      ) {
+        return null
+      }
       const node = renderItemInner(item)
       if (node === null || node === undefined) return null
-      return (
-        <ErrorBoundary
-          key={item.id}
-          fallback={<div className={styles.activityRow}>Couldn&apos;t render this Conductor event.</div>}
-        >
-          {node}
-        </ErrorBoundary>
-      )
+      return {
+        node: (
+          <ErrorBoundary
+            fallback={<div className={styles.activityRow}>Couldn&apos;t render this Conductor event.</div>}
+          >
+            {node}
+          </ErrorBoundary>
+        ),
+        variant: item.kind === 'tool' ? 'tool' : undefined,
+      }
     },
     [running, currentTurnToolIds, renderItemInner],
   )
 
   const renderTimelineRow = useCallback(
-    (key: string, content: ReactNode): ReactNode => {
+    (key: string, content: ReactNode, variant?: 'tool'): ReactNode => {
       if (content === null || content === undefined) return null
       return (
-        <div key={key} className={styles.timelineRow}>
+        <div
+          key={key}
+          className={variant === 'tool' ? `${styles.timelineRow} ${styles.timelineRowTool}` : styles.timelineRow}
+        >
           {content}
         </div>
       )
@@ -486,14 +516,27 @@ export const ChatTimeline = forwardRef<
         <div className={styles.timelineStack}>
           {units.map((unit) => {
             if (unit.type === 'item') {
-              return renderTimelineRow(unit.item.id, renderRow(unit.item))
+              const row = renderRow(unit.item)
+              return row ? renderTimelineRow(unit.item.id, row.node, row.variant) : null
             }
             if (unit.type === 'assistantGroup') {
               const lastId = unit.messages[unit.messages.length - 1]?.id
+              const toolCalls = unit.tools
+              const hasFileTools = turnHasFileTools(toolCalls)
+              const hasTodoTools = turnHasTodoTools(toolCalls)
+              const turnTools =
+                toolCalls.length > 0 ? (
+                  <div className={styles.assistantTurnTools} data-testid="assistant-turn-tools">
+                    {toolCalls.map((tool) => {
+                      const row = renderRow(tool)
+                      return row ? <div key={tool.id}>{row.node}</div> : null
+                    })}
+                  </div>
+                ) : null
+              const isLastMessage = (messageId: string) => messageId === lastId
               return renderTimelineRow(
                 unit.key,
                 <div className={styles.assistantGroup}>
-                  <div className={styles.messageRole}>Assistant</div>
                   {unit.messages.map((message, index) => (
                     <ErrorBoundary
                       key={message.id}
@@ -504,10 +547,14 @@ export const ChatTimeline = forwardRef<
                       {renderAssistantMessage(message, {
                         hideRole: true,
                         isSegment: index > 0,
-                        showFooter: message.id === lastId,
+                        showFooter: isLastMessage(message.id),
+                        afterBody: isLastMessage(message.id) ? turnTools : undefined,
+                        hideMarkdownTaskLists: isLastMessage(message.id) && hasTodoTools,
+                        hideMarkdownFileEcho: isLastMessage(message.id) && hasFileTools,
                       })}
                     </ErrorBoundary>
                   ))}
+                  {unit.messages.length === 0 && turnTools}
                 </div>,
               )
             }
@@ -519,7 +566,14 @@ export const ChatTimeline = forwardRef<
                   isPlan={unit.isPlan}
                   defaultExpanded={unit.key === latestTurnKey}
                 >
-                  {unit.items.map((item) => renderRow(item))}
+                  {unit.items.map((item) => {
+                    const row = renderRow(item)
+                    return row ? (
+                      <div key={item.id} className={styles.turnSummaryToolRow}>
+                        {row.node}
+                      </div>
+                    ) : null
+                  })}
                 </TurnSummary>
               </div>
             )

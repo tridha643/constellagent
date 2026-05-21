@@ -107,6 +107,24 @@ export function EffortBars({
   )
 }
 
+/** Green “+” for diff addition counts (Conductor file-change header). */
+export function DiffPlusIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" aria-hidden>
+      <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" />
+    </svg>
+  )
+}
+
+/** Red “−” for diff deletion counts (Conductor file-change header). */
+export function DiffMinusIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" aria-hidden>
+      <path d="M3.5 8h9" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" />
+    </svg>
+  )
+}
+
 /** Pencil-on-line edit glyph for diff/file-change tool headers. */
 export function EditIcon({ size = 14 }: { size?: number }) {
   return (

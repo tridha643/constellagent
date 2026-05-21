@@ -168,9 +168,9 @@ test.describe('Conductor chat view', () => {
     })
 
     // Rail ticks sit under aria-hidden host until hover; target the zone, not the nav role.
-    await window.locator('[class*="turnRailZone"]').hover()
+    await window.getByRole('navigation', { name: 'Chat turns' }).hover()
     await expect(window.getByRole('menu', { name: 'Previous messages' })).toBeVisible({ timeout: 5000 })
-    await expect(window.locator('[class*="turnRailPopoverUser"]').filter({ hasText: 'hello' })).toBeVisible()
+    await expect(window.getByRole('menuitem', { name: /hello/ })).toBeVisible()
   })
 
   test('renders a reconstructed diff card with +N −M and added/removed lines', async () => {
@@ -208,10 +208,19 @@ test.describe('Conductor chat view', () => {
       },
     ])
 
-    await expect(window.locator('[class*="diffCard"]')).toBeVisible({ timeout: 5000 })
-    await expect(window.getByTestId('conductor-pierre-diff')).toBeVisible()
-    await expect(window.locator('[class*="diffCard"]')).toContainText('+1')
-    await expect(window.locator('[class*="diffCard"]')).toContainText('−1')
+    const row = window.getByTestId('diff-inline-row').first()
+    await expect(row).toBeVisible({ timeout: 5000 })
+    await expect(row).toContainText('Edit')
+    await expect(row.getByTestId('cursor-diff-stat-add')).toHaveText('+1')
+    await expect(row.getByTestId('cursor-diff-stat-del')).toHaveText('−1')
+    const chip = window.getByTestId('diff-file-chip').first()
+    await chip.hover()
+    const popover = window.getByTestId('conductor-diff-hover-popover')
+    await expect(popover).toBeVisible({ timeout: 3000 })
+    await expect(popover.getByTestId('cursor-diff-popover-header')).toContainText('foo.ts')
+    await expect(popover.getByTestId('conductor-diff-body')).toBeVisible()
+    await row.click()
+    await expect(window.getByTestId('cursor-diff-unlocked').first()).toBeVisible()
   })
 
   test('write tool shows a clickable file chip that opens the file tab', async () => {
@@ -288,8 +297,14 @@ test.describe('Conductor chat view', () => {
       },
     ])
 
-    await expect(window.getByRole('button', { name: 'Open foo.ts' })).toBeVisible({ timeout: 5000 })
-    await expect(window.getByTestId('conductor-pierre-diff')).toBeVisible()
+    const row = window.getByTestId('diff-inline-row').first()
+    await expect(row).toBeVisible({ timeout: 5000 })
+    await expect(row).toContainText('Write')
+    await expect(row.getByTestId('cursor-diff-stat-add')).toHaveText('+1')
+    const chip = window.getByTestId('diff-file-chip').first()
+    await chip.hover()
+    await expect(window.getByTestId('conductor-diff-hover-popover')).toBeVisible({ timeout: 3000 })
+    await expect(window.getByTestId('conductor-diff-body')).toBeVisible()
   })
 
   test('shows inline tool chips on the latest completed turn without expanding summary', async () => {
@@ -315,8 +330,10 @@ test.describe('Conductor chat view', () => {
       { kind: 'message', id: 'a1', role: 'assistant', text: 'done', createdAt: nowIso() },
     ])
 
-    await expect(window.locator('[class*="toolInline"]').first()).toBeVisible({ timeout: 5000 })
-    await expect(window.getByText('npm test')).toBeVisible()
+    await expect(window.getByTestId('cursor-tool-row').first()).toBeVisible({ timeout: 5000 })
+    await expect(window.getByTestId('cursor-read-row')).toContainText('Read')
+    await expect(window.getByTestId('cursor-bash-row')).toContainText('Bash')
+    await expect(window.getByTestId('cursor-bash-chip')).toContainText('npm test')
   })
 
   test('groups consecutive assistant segments under one header', async () => {
@@ -514,11 +531,11 @@ test.describe('Conductor chat view', () => {
       .toBeGreaterThan(0)
   })
 
-  test('shows +1 and −1 on the diff chip header', async () => {
-    const repoPath = createTestRepo('conductor-diff-header-stats')
+  test('cursor tool rows are transparent with bordered file chips', async () => {
+    const repoPath = createTestRepo('conductor-cursor-row-chrome')
     await setupWorkspace(window, repoPath)
 
-    const title = `diff-header-${Date.now()}`
+    const title = `cursor-chrome-${Date.now()}`
     const sessionId = await createAndSelectSession(window, title)
     await injectTranscript(app, sessionId, [
       {
@@ -547,12 +564,31 @@ test.describe('Conductor chat view', () => {
           ],
         },
       },
+      {
+        kind: 'tool',
+        id: 'l1',
+        callId: 'l1',
+        toolName: 'list',
+        status: 'success',
+        label: 'Listed src',
+        createdAt: nowIso(),
+        input: { path: 'src' },
+      },
     ])
 
-    const card = window.locator('[class*="diffCard"]').first()
-    await expect(card).toBeVisible({ timeout: 5000 })
-    await expect(card.locator('[class*="diffCountAdd"]')).toHaveText('+1')
-    await expect(card.locator('[class*="diffCountDel"]')).toHaveText('−1')
+    const row = window.getByTestId('cursor-tool-row').first()
+    await expect(row).toBeVisible({ timeout: 5000 })
+    const rowBg = await row.evaluate((el) => getComputedStyle(el).backgroundColor)
+    expect(rowBg === 'transparent' || rowBg === 'rgba(0, 0, 0, 0)').toBeTruthy()
+
+    const fileChip = window.getByTestId('diff-file-chip').first()
+    const chipBorder = await fileChip.evaluate((el) => getComputedStyle(el).borderWidth)
+    expect(chipBorder).toBe('1px')
+
+    const dirChip = window.getByTestId('cursor-dir-chip')
+    await expect(dirChip).toBeVisible()
+    const dirBorder = await dirChip.evaluate((el) => getComputedStyle(el).borderWidth)
+    expect(dirBorder).toBe('0px')
   })
 
   test('left-aligns the turn summary with the chat column', async () => {

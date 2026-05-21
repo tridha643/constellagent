@@ -1,6 +1,10 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import type { TranscriptMessage } from '../../../../shared/pi/pi-desktop-state'
+import { normalizeMarkdownTables } from '../../../../shared/normalize-markdown-tables'
 import MarkdownStream, { type MarkdownStreamHandle } from '../../../lib/prosemark/MarkdownStream'
+import type { MarkdownFileTarget } from '../../../utils/markdown-file-links'
+import { isMarkdownDocumentPath } from '../../../utils/markdown-path'
+import { useAppStore } from '../../../store/app-store'
 import { BrailleLoader } from './BrailleLoader'
 import { MarkdownBody } from './MarkdownBody'
 import { MessageFooter } from './MessageFooter'
@@ -23,6 +27,9 @@ export function ChatMessage({
   hideRole,
   isSegment,
   suppressIdleLoader,
+  afterBody,
+  hideMarkdownTaskLists,
+  hideMarkdownFileEcho,
 }: {
   message: ChatMessageItem
   firstPaint?: boolean
@@ -37,8 +44,29 @@ export function ChatMessage({
   isSegment?: boolean
   /** Skip the inline Braille loader; the turn-level activity ticker owns loading UX. */
   suppressIdleLoader?: boolean
+  /** Tool rows for this turn (Codex todos, file edits) — rendered before the message footer. */
+  afterBody?: ReactNode
+  /** Hide ProseMark task-list checkboxes when transcript already renders Codex todos. */
+  hideMarkdownTaskLists?: boolean
+  /** Hide Codex echo tables/code fences when transcript renders file tool rows. */
+  hideMarkdownFileEcho?: boolean
 }) {
   const isUser = message.role === 'user'
+  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
+  const worktreePath = useAppStore((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+    return ws?.worktreePath ?? undefined
+  })
+  const openFileTab = useAppStore((s) => s.openFileTab)
+  const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
+  const openMarkdownFile = useCallback((target: MarkdownFileTarget) => {
+    if (isMarkdownDocumentPath(target.absolutePath)) openMarkdownPreview(target.absolutePath)
+    else openFileTab(target.absolutePath, target.lineNumber ? { initialPosition: { lineNumber: target.lineNumber, column: 1 } } : undefined)
+  }, [openFileTab, openMarkdownPreview])
+  const normalizedText = useMemo(
+    () => normalizeMarkdownTables(message.text),
+    [message.text],
+  )
   const streamRef = useRef<MarkdownStreamHandle | null>(null)
   const lastTextRef = useRef('')
   const lastMessageIdRef = useRef(message.id)
@@ -56,7 +84,7 @@ export function ChatMessage({
     if (isUser) return
     const handle = streamRef.current
     if (!handle) return
-    const next = message.text
+    const next = normalizedText
     const prev = lastTextRef.current
     if (next === prev) return
     if (next.startsWith(prev)) {
@@ -65,12 +93,12 @@ export function ChatMessage({
       handle.setContent(next)
     }
     lastTextRef.current = next
-  }, [message.text, isUser, message.id])
+  }, [normalizedText, isUser, message.id])
 
   useLayoutEffect(() => {
     if (isUser || isStreaming) return
     streamRef.current?.refreshDecorations()
-  }, [isStreaming, isUser, message.id, message.text])
+  }, [isStreaming, isUser, message.id, normalizedText])
 
   return (
     <div
@@ -83,14 +111,28 @@ export function ChatMessage({
     >
       {!hideRole ? <div className={styles.messageRole}>{isUser ? 'You' : 'Assistant'}</div> : null}
       {isUser ? (
-        <MarkdownBody content={message.text} className={styles.messageBody} />
+        <MarkdownBody content={normalizedText} className={styles.messageBody} />
       ) : showBraille ? (
         <div className={styles.messageBody}>
           <BrailleLoader />
         </div>
       ) : (
         <>
-          <MarkdownStream ref={streamRef} className={styles.messageBody} content={message.text} />
+          <MarkdownStream
+            ref={streamRef}
+            className={[
+              styles.messageBody,
+              hideMarkdownTaskLists ? styles.messageBodyHideTaskLists : '',
+              hideMarkdownFileEcho ? styles.messageBodyHideFileEcho : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            content={normalizedText}
+            worktreePath={worktreePath}
+            appearanceThemeId={appearanceThemeId}
+            onOpenMarkdownFile={openMarkdownFile}
+          />
+          {afterBody}
           {showFooter ? (
             <MessageFooter
               copyText={message.text}
