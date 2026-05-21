@@ -7,7 +7,7 @@ import {
   type SDKMessage,
   type TextBlock,
 } from '@cursor/sdk'
-import { checkCursorAuth, getCursorApiKey } from '../conductor-auth'
+import { checkCursorAuth, getCursorApiKey, CURSOR_SDK_API_KEY_MESSAGE } from '../conductor-auth'
 import {
   computeTextDelta,
   evAssistantDelta,
@@ -29,8 +29,10 @@ interface CursorSessionState {
 
 /** gRPC/Connect "canceled" code — see connectrpc.com/docs/protocol#error-codes */
 const CONNECT_CODE_CANCELED = 1
+/** Connect "unknown" — often surfaced when a local agent stream is torn down mid-flight. */
+const CONNECT_CODE_UNKNOWN = 2
 
-function connectErrorCode(err: unknown): number | undefined {
+export function connectErrorCode(err: unknown): number | undefined {
   if (!err || typeof err !== 'object' || !('code' in err)) return undefined
   const code = (err as { code?: unknown }).code
   return typeof code === 'number' ? code : undefined
@@ -40,6 +42,17 @@ function connectErrorCode(err: unknown): number | undefined {
 export function isBenignCursorRunError(err: unknown, signal: AbortSignal): boolean {
   if (signal.aborted) return true
   if (connectErrorCode(err) === CONNECT_CODE_CANCELED) return true
+  return false
+}
+
+/**
+ * Detached Connect transport rejections (cancel/dispose/HMR) that never reach
+ * our awaited handlers — safe to swallow in a process-level filter.
+ */
+export function isBenignConnectTransportError(err: unknown): boolean {
+  const code = connectErrorCode(err)
+  if (code === CONNECT_CODE_CANCELED || code === CONNECT_CODE_UNKNOWN) return true
+  if (err instanceof Error && /\[unknown\]\s*Error/i.test(err.message)) return true
   return false
 }
 
@@ -65,6 +78,20 @@ async function disposeCursorAgent(agent: SDKAgent, run?: Run): Promise<void> {
       // best-effort
     }
   }
+}
+
+function detachCursorRun(run: Run): void {
+  if (run.supports('cancel')) {
+    void run.cancel().catch(() => {})
+  }
+  void run.wait().catch(() => {})
+}
+
+function cursorRunErrorMessage(raw: string | undefined): string {
+  const detail = raw?.trim()
+  if (detail && detail !== 'Cursor run error') return detail
+  if (!getCursorApiKey()) return CURSOR_SDK_API_KEY_MESSAGE
+  return detail || 'Cursor run failed'
 }
 
 export class CursorDriver implements AgentDriver {
@@ -110,9 +137,7 @@ export class CursorDriver implements AgentDriver {
     state.emittedText = ''
 
     const onAbort = (): void => {
-      if (run.supports('cancel')) {
-        void run.cancel().catch(() => {})
-      }
+      detachCursorRun(run)
     }
     ctx.signal.addEventListener('abort', onAbort)
     try {
@@ -135,7 +160,7 @@ export class CursorDriver implements AgentDriver {
       }
 
       if (!ctx.signal.aborted && run.status === 'error') {
-        throw new Error(run.result ?? 'Cursor run failed')
+        throw new Error(cursorRunErrorMessage(run.result))
       }
     } finally {
       ctx.signal.removeEventListener('abort', onAbort)
@@ -167,7 +192,7 @@ export class CursorDriver implements AgentDriver {
       }
       case 'status': {
         if (message.status === 'ERROR') {
-          throw new Error(message.message ?? 'Cursor run error')
+          throw new Error(cursorRunErrorMessage(message.message))
         }
         break
       }
@@ -178,9 +203,10 @@ export class CursorDriver implements AgentDriver {
 
   closeSession(sessionId: string): void {
     const state = this.sessions.get(sessionId)
+    this.sessions.delete(sessionId)
     if (state) {
+      if (state.run) detachCursorRun(state.run)
       void disposeCursorAgent(state.agent, state.run).catch(() => {})
     }
-    this.sessions.delete(sessionId)
   }
 }

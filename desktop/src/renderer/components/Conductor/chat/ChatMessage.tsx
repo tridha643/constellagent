@@ -1,12 +1,10 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import type { TranscriptMessage } from '../../../../shared/pi/pi-desktop-state'
 import { normalizeMarkdownTables } from '../../../../shared/normalize-markdown-tables'
 import MarkdownStream, { type MarkdownStreamHandle } from '../../../lib/prosemark/MarkdownStream'
-import type { MarkdownFileTarget } from '../../../utils/markdown-file-links'
-import { isMarkdownDocumentPath } from '../../../utils/markdown-path'
-import { useAppStore } from '../../../store/app-store'
+import { useMarkdownSurfaceContext } from '../../../hooks/useMarkdownSurfaceContext'
 import { BrailleLoader } from './BrailleLoader'
-import { MarkdownBody } from './MarkdownBody'
+import { MarkdownBody } from '../../Markdown/MarkdownBody'
 import { MessageFooter } from './MessageFooter'
 import styles from '../Conductor.module.css'
 
@@ -52,17 +50,7 @@ export function ChatMessage({
   hideMarkdownFileEcho?: boolean
 }) {
   const isUser = message.role === 'user'
-  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
-  const worktreePath = useAppStore((s) => {
-    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
-    return ws?.worktreePath ?? undefined
-  })
-  const openFileTab = useAppStore((s) => s.openFileTab)
-  const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
-  const openMarkdownFile = useCallback((target: MarkdownFileTarget) => {
-    if (isMarkdownDocumentPath(target.absolutePath)) openMarkdownPreview(target.absolutePath)
-    else openFileTab(target.absolutePath, target.lineNumber ? { initialPosition: { lineNumber: target.lineNumber, column: 1 } } : undefined)
-  }, [openFileTab, openMarkdownPreview])
+  const { appearanceThemeId, worktreePath, openMarkdownFile } = useMarkdownSurfaceContext()
   const normalizedText = useMemo(
     () => normalizeMarkdownTables(message.text),
     [message.text],

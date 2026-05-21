@@ -65,8 +65,8 @@ export const prosemarkBasicSetup = (): Extension => [
   EditorView.lineWrapping,
 ];
 
-/** Conductor chat — live preview with clickable task checkboxes, no free-form editing. */
-export const chatProsemarkBasicSetup = (imageOptions: MarkdownImageOptions = {}): Extension => [
+/** Default read-only ProseMark preset — live preview with clickable tasks, images, file chips. */
+export const viewProsemarkBasicSetup = (imageOptions: MarkdownImageOptions = {}): Extension => [
   defaultHideExtensions,
   [
     blockQuoteExtension,
@@ -83,7 +83,10 @@ export const chatProsemarkBasicSetup = (imageOptions: MarkdownImageOptions = {})
   EditorView.lineWrapping,
 ];
 
-/** @deprecated Use chatProsemarkBasicSetup — kept for callers that need non-interactive tasks. */
+/** @deprecated Use viewProsemarkBasicSetup */
+export const chatProsemarkBasicSetup = viewProsemarkBasicSetup;
+
+/** @deprecated Use viewProsemarkBasicSetup — kept for callers that need non-interactive tasks. */
 export const readOnlyProsemarkBasicSetup = (imageOptions: MarkdownImageOptions = {}): Extension => [
   defaultHideExtensions,
   [

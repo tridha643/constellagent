@@ -5,6 +5,7 @@ import type { SyntaxNodeRef } from "@lezer/common";
 import { getFilePresentation } from "../../utils/file-presentation";
 import { markdownBasename, resolveMarkdownFileTarget, type MarkdownFileTarget } from "../../utils/markdown-file-links";
 import type { AppearanceThemeId } from "../../theme/appearance";
+import { shouldRebuildProsemarkDecorations } from "./decoration-sync";
 
 export interface MarkdownFileChipOptions {
   baseDir?: string;
@@ -149,7 +150,7 @@ export function markdownFileChipExtension(options: MarkdownFileChipOptions): Ext
         }
 
         update(update: ViewUpdate) {
-          if (update.docChanged || update.viewportChanged || update.selectionSet) {
+          if (shouldRebuildProsemarkDecorations(update)) {
             this.decorations = fileChipDecorations(update.view);
           }
         }

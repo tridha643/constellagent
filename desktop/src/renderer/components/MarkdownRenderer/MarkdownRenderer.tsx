@@ -1,21 +1,7 @@
-import { useCallback, useMemo, type ReactNode } from 'react'
-import { Streamdown } from 'streamdown'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import { normalizeMarkdownTables } from '../../../shared/normalize-markdown-tables'
-import { createCodePlugin } from '@streamdown/code'
-import { mermaid } from '@streamdown/mermaid'
-import { math } from '@streamdown/math'
-import { cjk } from '@streamdown/cjk'
-import { useAppStore } from '../../store/app-store'
-import { getAppearanceMermaidThemeVariables } from '../../theme/appearance'
-import { SharedFileIcon } from '../../utils/file-presentation'
-import { isMarkdownDocumentPath } from '../../utils/markdown-path'
-import {
-  markdownBasename,
-  markdownDirname,
-  resolveMarkdownFileTarget,
-  resolveMarkdownImageSrc,
-  type MarkdownFileTarget,
-} from '../../utils/markdown-file-links'
+import MarkdownStream, { type MarkdownStreamHandle } from '../../lib/prosemark/MarkdownStream'
+import { useMarkdownSurfaceContext } from '../../hooks/useMarkdownSurfaceContext'
 import styles from './MarkdownRenderer.module.css'
 
 interface Props {
@@ -26,91 +12,49 @@ interface Props {
   worktreePath?: string
 }
 
-function fileChipLabel(children: ReactNode, target: MarkdownFileTarget): string {
-  const raw = typeof children === 'string'
-    ? children
-    : Array.isArray(children)
-      ? children.filter((child) => typeof child === 'string').join('')
-      : ''
-  const trimmed = raw.trim()
-  if (!trimmed || trimmed === target.href || trimmed === target.displayPath) return markdownBasename(target.displayPath)
-  return trimmed
-}
-
+/**
+ * App-wide markdown renderer — ProseMark live preview with file chips, images,
+ * and appearance-theme file icons. Used by plan preview, editor preview, Conductor, etc.
+ */
 export function MarkdownRenderer({ children, isStreaming, className, filePath, worktreePath }: Props) {
   const normalized = useMemo(() => normalizeMarkdownTables(children), [children])
-  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
-  const openFileTab = useAppStore((s) => s.openFileTab)
-  const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
-  const baseDir = useMemo(() => markdownDirname(filePath), [filePath])
-  const openMarkdownFile = useCallback((target: MarkdownFileTarget) => {
-    if (isMarkdownDocumentPath(target.absolutePath)) openMarkdownPreview(target.absolutePath)
-    else openFileTab(target.absolutePath, target.lineNumber ? { initialPosition: { lineNumber: target.lineNumber, column: 1 } } : undefined)
-  }, [openFileTab, openMarkdownPreview])
-  const components = useMemo(() => ({
-    a: ({ href, children: linkChildren }: { href?: string; children?: ReactNode }) => {
-      const target = resolveMarkdownFileTarget(href, { baseDir, worktreePath })
-      if (!target) {
-        return <a href={href} rel="noreferrer" target="_blank">{linkChildren}</a>
-      }
-      return (
-        <button
-          type="button"
-          className={styles.fileChip}
-          title={target.displayPath}
-          aria-label={`Open ${target.displayPath}`}
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            openMarkdownFile(target)
-          }}
-        >
-          <SharedFileIcon path={target.displayPath} appearanceThemeId={appearanceThemeId} className={styles.fileChipIcon} />
-          <span className={styles.fileChipLabel}>{fileChipLabel(linkChildren, target)}</span>
-        </button>
-      )
-    },
-    img: ({ src, alt, ...rest }: { src?: string; alt?: string }) => (
-      <img
-        {...rest}
-        src={resolveMarkdownImageSrc(src, { baseDir, worktreePath })}
-        alt={alt ?? ''}
-        loading="lazy"
-        decoding="async"
-      />
-    ),
-  }), [appearanceThemeId, baseDir, openMarkdownFile, worktreePath])
-  const code = useMemo(() => createCodePlugin({
-    themes: ['github-dark', 'github-dark'],
-  }), [])
-  const mermaidThemeVariables = useMemo(
-    () => getAppearanceMermaidThemeVariables(appearanceThemeId),
-    [appearanceThemeId],
-  )
+  const { appearanceThemeId, worktreePath: resolvedWorktree, baseDir, openMarkdownFile } =
+    useMarkdownSurfaceContext({ filePath, worktreePath })
+
+  const streamRef = useRef<MarkdownStreamHandle | null>(null)
+  const lastTextRef = useRef('')
+
+  useLayoutEffect(() => {
+    if (!isStreaming) return
+    const handle = streamRef.current
+    if (!handle) return
+    const next = normalized
+    const prev = lastTextRef.current
+    if (next === prev) return
+    if (next.startsWith(prev)) {
+      handle.appendDelta(next.slice(prev.length))
+    } else {
+      handle.setContent(next)
+    }
+    lastTextRef.current = next
+  }, [normalized, isStreaming])
+
+  useLayoutEffect(() => {
+    if (isStreaming) return
+    lastTextRef.current = normalized
+    streamRef.current?.refreshDecorations()
+  }, [normalized, isStreaming])
 
   return (
     <div className={`${styles.wrapper} ${className ?? ''}`}>
-      <Streamdown
-        shikiTheme={['github-dark', 'github-dark']}
-        plugins={{ code, mermaid, math, cjk }}
-        animated={isStreaming}
-        isAnimating={isStreaming}
-        mermaid={{
-          config: {
-            theme: 'dark',
-            themeVariables: mermaidThemeVariables,
-          },
-        }}
-        components={components}
-        controls={{
-          mermaid: { fullscreen: true, download: true, copy: true, panZoom: true },
-          code: { copy: true, download: true },
-          /* Table chrome (copy/download/fullscreen) is disabled — layout was unreliable in our shell */
-          table: false,
-        }}
-      >
-        {normalized}
-      </Streamdown>
+      <MarkdownStream
+        ref={streamRef}
+        content={normalized}
+        baseDir={baseDir}
+        worktreePath={resolvedWorktree}
+        appearanceThemeId={appearanceThemeId}
+        onOpenMarkdownFile={openMarkdownFile}
+      />
     </div>
   )
 }

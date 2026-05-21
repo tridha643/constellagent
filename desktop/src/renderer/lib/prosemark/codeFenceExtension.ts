@@ -5,6 +5,7 @@ import type { DecorationSet } from "@codemirror/view";
 import { WidgetType } from "@codemirror/view";
 import { type Extension } from "@codemirror/state";
 import { FRONTMATTER_LANGUAGE_LABEL, isFrontmatterNode } from "./markdown/frontmatter";
+import { shouldRebuildProsemarkDecorations } from "./decoration-sync";
 
 const fallbackMonospaceCodeFont =
   "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
@@ -137,7 +138,7 @@ export const codeBlockDecorationsExtension: Extension = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
+      if (shouldRebuildProsemarkDecorations(update)) {
         this.decorations = codeBlockDecorations(update.view);
       }
     }

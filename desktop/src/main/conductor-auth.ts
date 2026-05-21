@@ -110,6 +110,10 @@ export function hasCursorCliLogin(): boolean {
   return getCursorCliAuthSnapshot().authenticated
 }
 
+/** Conductor chat uses @cursor/sdk, which requires an API key — not cursor-agent OAuth alone. */
+export const CURSOR_SDK_API_KEY_MESSAGE =
+  'Conductor chat uses the Cursor SDK and needs an API key (Settings → Conductor or CURSOR_API_KEY). cursor-agent login signs in the CLI only.'
+
 export function getCursorApiKey(): string | undefined {
   const fromSettings = cursorApiKeyFromSettings
   if (fromSettings) return fromSettings
@@ -130,7 +134,7 @@ export function hasCodexCliLogin(): boolean {
 
 export function checkCursorAuth(): string | null {
   if (getCursorApiKey()) return null
-  if (hasCursorCliLogin()) return null
+  if (hasCursorCliLogin()) return CURSOR_SDK_API_KEY_MESSAGE
   return 'Cursor is not signed in. Run `cursor-agent login` in a terminal or add your API key in Settings → Conductor.'
 }
 
@@ -147,12 +151,12 @@ export function getConductorAuthStatus(forceRefresh = false): ConductorAuthStatu
   const codexLogin = hasCodexCliLogin()
 
   const cliDetail = cliAuth.authenticated
-    ? `Signed in via cursor-agent login${cliAuth.email ? ` (${cliAuth.email})` : ''}`
+    ? `Signed in to cursor-agent${cliAuth.email ? ` (${cliAuth.email})` : ''} — add an API key below for Conductor chat`
     : undefined
 
   return {
     cursor: {
-      ready: Boolean(cursorKey || cliAuth.authenticated),
+      ready: Boolean(cursorKey),
       detail: cursorKey
         ? 'API key configured'
         : cliDetail ??

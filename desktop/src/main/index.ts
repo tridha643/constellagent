@@ -13,6 +13,12 @@ import { NotificationWatcher } from './notification-watcher'
 import { emitAutomationEvent } from './automation-event-bus'
 import { composioWebhookService } from './composio-webhook-service'
 import { applyConductorAuthFromPersistedState } from './conductor-auth'
+import { isBenignConnectTransportError } from './agents/cursor-driver'
+
+process.on('unhandledRejection', (reason) => {
+  if (isBenignConnectTransportError(reason)) return
+  console.error('[main] Unhandled promise rejection:', reason)
+})
 
 const execFileAsync = promisify(execFile)
 
