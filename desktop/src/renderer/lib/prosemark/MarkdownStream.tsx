@@ -5,7 +5,7 @@ import {
   useRef,
 } from "react";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
-import { EditorSelection, EditorState, Prec, type Extension } from "@codemirror/state";
+import { EditorSelection, EditorState, Compartment, Prec, type Extension } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree, HighlightStyle, syntaxHighlighting, syntaxTree } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
@@ -23,6 +23,8 @@ import { tableDecorations } from "./table-decorations";
 import { htmlBlockDecorations, htmlBlockParserExtension } from "./html-block-decorations";
 import { dragFreezeExtensions } from "./drag-selection-gate";
 import { markdownFileChipExtension, type MarkdownFileChipOptions } from "./file-chip-extension";
+import { clickLinkHandler } from "./clickLink";
+import { resolveMarkdownFileTarget } from "../../utils/markdown-file-links";
 import type { MarkdownFileTarget } from "../../utils/markdown-file-links";
 import type { AppearanceThemeId } from "../../theme/appearance";
 import "./prosemark-chat-theme.css";
@@ -61,6 +63,25 @@ export interface MarkdownStreamProps {
 
 const PROSEMARK_PARSE_BUDGET_MS = 25;
 const PROSEMARK_DECORATION_SYNC_DELAY_MS = 120;
+
+const prosemarkOptionsCompartment = new Compartment();
+const prosemarkClickLinkCompartment = new Compartment();
+
+function prosemarkLiveOptions(options: MarkdownFileChipOptions): Extension[] {
+  return [
+    prosemarkOptionsCompartment.of(markdownFileChipExtension(options)),
+    prosemarkClickLinkCompartment.of(
+      clickLinkHandler.of((url) => {
+        const target = resolveMarkdownFileTarget(url, options);
+        if (target && options.onOpenFile) {
+          options.onOpenFile(target);
+          return;
+        }
+        window.open(url, "_blank");
+      }),
+    ),
+  ];
+}
 
 function refreshProsemarkDecorations(view: EditorView): void {
   ensureSyntaxTree(view.state, view.state.doc.length, PROSEMARK_PARSE_BUDGET_MS);
@@ -136,7 +157,7 @@ function buildExtensions(options: MarkdownFileChipOptions): Extension[] {
     ),
     tableDecorations(),
     htmlBlockDecorations(),
-    markdownFileChipExtension(options),
+    ...prosemarkLiveOptions(options),
     dragFreezeExtensions,
     prosemarkDecorationSync,
     EditorState.changeFilter.of((tr) => {
@@ -183,6 +204,12 @@ const MarkdownStream = forwardRef<MarkdownStreamHandle, MarkdownStreamProps>(fun
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const liveOptionsRef = useRef<MarkdownFileChipOptions>({
+    baseDir,
+    worktreePath,
+    appearanceThemeId,
+    onOpenFile: onOpenMarkdownFile,
+  });
   // True once any imperative streaming call has run; while streaming we ignore
   // `content`-prop changes so the prop and the stream don't fight over the doc.
   const streamingRef = useRef(false);
@@ -228,12 +255,19 @@ const MarkdownStream = forwardRef<MarkdownStreamHandle, MarkdownStreamProps>(fun
     if (!host) return;
 
     const initialDoc = content ?? "";
+    const initialOptions: MarkdownFileChipOptions = {
+      baseDir,
+      worktreePath,
+      appearanceThemeId,
+      onOpenFile: onOpenMarkdownFile,
+    };
+    liveOptionsRef.current = initialOptions;
     const view = new EditorView({
       parent: host,
       state: EditorState.create({
         doc: initialDoc,
         selection: selectionAtEnd(initialDoc.length),
-        extensions: buildExtensions({ baseDir, worktreePath, appearanceThemeId, onOpenFile: onOpenMarkdownFile }),
+        extensions: buildExtensions(initialOptions),
       }),
     });
     viewRef.current = view;
@@ -264,6 +298,34 @@ const MarkdownStream = forwardRef<MarkdownStreamHandle, MarkdownStreamProps>(fun
     });
     queueMicrotask(() => refreshProsemarkDecorations(view));
   }, [content]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const nextOptions: MarkdownFileChipOptions = {
+      baseDir,
+      worktreePath,
+      appearanceThemeId,
+      onOpenFile: onOpenMarkdownFile,
+    };
+    liveOptionsRef.current = nextOptions;
+    view.dispatch({
+      effects: [
+        prosemarkOptionsCompartment.reconfigure(markdownFileChipExtension(nextOptions)),
+        prosemarkClickLinkCompartment.reconfigure(
+          clickLinkHandler.of((url) => {
+            const target = resolveMarkdownFileTarget(url, nextOptions);
+            if (target && nextOptions.onOpenFile) {
+              nextOptions.onOpenFile(target);
+              return;
+            }
+            window.open(url, "_blank");
+          }),
+        ),
+      ],
+    });
+    queueMicrotask(() => refreshProsemarkDecorations(view));
+  }, [baseDir, worktreePath, appearanceThemeId, onOpenMarkdownFile]);
 
   const rootClass = [
     "prosemark-chat",

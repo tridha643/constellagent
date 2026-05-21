@@ -78,7 +78,6 @@ export const chatProsemarkBasicSetup = (imageOptions: MarkdownImageOptions = {})
     dashExtension,
   ],
   clickLinkExtension,
-  defaultClickLinkHandler,
   codeBlockDecorationsExtension,
   EditorView.lineWrapping,
 ];

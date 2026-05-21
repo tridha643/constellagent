@@ -39,17 +39,19 @@ export function CursorBashRow({ tool }: { tool: TimelineToolCall }) {
 
   return (
     <div className={styles.cursorToolRow} data-testid="cursor-tool-row">
-      <button
-        type="button"
-        className={styles.cursorToolRowMain}
-        data-testid="cursor-bash-row"
-        onClick={onRowClick}
-        aria-expanded={unlocked && Boolean(displayOutput)}
-      >
-        <span className={styles.cursorToolIcon} aria-hidden>
-          <CursorBashIcon />
-        </span>
-        <span className={styles.cursorToolLabel}>Bash</span>
+      <div className={styles.cursorToolRowMain}>
+        <button
+          type="button"
+          className={styles.cursorToolRowHit}
+          data-testid="cursor-bash-row"
+          onClick={onRowClick}
+          aria-expanded={unlocked && Boolean(displayOutput)}
+        >
+          <span className={styles.cursorToolIcon} aria-hidden>
+            <CursorBashIcon />
+          </span>
+          <span className={styles.cursorToolLabel}>Bash</span>
+        </button>
         {command ? (
           <CursorToolChip
             variant="command"
@@ -58,7 +60,7 @@ export function CursorBashRow({ tool }: { tool: TimelineToolCall }) {
             onClick={(e) => e.stopPropagation()}
           />
         ) : null}
-      </button>
+      </div>
       {unlocked && displayOutput ? <CursorBashOutput text={displayOutput} /> : null}
     </div>
   )

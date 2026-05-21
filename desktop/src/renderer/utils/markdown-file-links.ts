@@ -93,6 +93,11 @@ function isLikelyFilePath(path: string): boolean {
   return path.includes('/') || FILE_EXT_RE.test(path)
 }
 
+/** Whether a markdown path string should render as an inline file chip. */
+export function isLikelyMarkdownFilePath(path: string): boolean {
+  return isLikelyFilePath(path)
+}
+
 export function resolveMarkdownFileTarget(
   href: string | undefined,
   options: { baseDir?: string; worktreePath?: string } = {},
