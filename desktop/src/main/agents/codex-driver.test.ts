@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { buildAgentPrompt } from './agent-driver'
 import { buildCodexUserInput, isBenignCodexInterruptError, isStaleCodexThreadError } from './codex-driver'
 
@@ -26,6 +27,13 @@ describe('CodexDriver prompt seeding', () => {
     expect(prompt).toContain('Previous conversation context')
     expect(prompt).toContain('make a queue system')
     expect(prompt).toContain('Current user request:\ncontinue and build the plan')
+  })
+})
+
+describe('CodexDriver streaming transport', () => {
+  test('keeps the Codex turn on runStreamed', () => {
+    const source = readFileSync(new URL('./codex-driver.ts', import.meta.url), 'utf8')
+    expect(source).toContain('thread.runStreamed(')
   })
 })
 

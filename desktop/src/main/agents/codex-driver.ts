@@ -19,6 +19,7 @@ import {
   type ThreadOptions,
 } from '@openai/codex-sdk'
 import { checkCodexAuth, getOpenaiApiKey } from '../conductor-auth'
+import { logMainPerfEvent } from '../perf'
 import { mapThinkingLevelToCodexEffort, parseModelEffort } from '../../shared/conductor-model-utils'
 import {
   computeTextDelta,
@@ -40,6 +41,7 @@ interface CodexSessionState {
   effort: ModelReasoningEffort
   plan: boolean
   readonly emittedByItem: Map<string, string>
+  readonly lastToolUpdateByItem: Map<string, { text: string; emittedAt: number }>
 }
 
 interface CodexSessionRecovery {
@@ -250,6 +252,7 @@ export class CodexDriver implements AgentDriver {
         effort,
         plan,
         emittedByItem: new Map(),
+        lastToolUpdateByItem: new Map(),
       }
       this.sessions.set(key, state)
     } else if (!forceTranscriptFallback && !configChanged && recovery?.codexThreadId && recovery.preferTranscriptFallback) {
@@ -264,6 +267,7 @@ export class CodexDriver implements AgentDriver {
         effort,
         plan,
         emittedByItem: new Map(),
+        lastToolUpdateByItem: new Map(),
       }
       this.sessions.set(key, state)
     } else {
@@ -281,11 +285,13 @@ export class CodexDriver implements AgentDriver {
         effort,
         plan,
         emittedByItem: new Map(),
+        lastToolUpdateByItem: new Map(),
       }
       this.sessions.set(key, state)
     }
 
     const thread = state.thread
+    state.lastToolUpdateByItem.clear()
 
     const prompt = buildAgentPrompt(
       ctx.text,
@@ -297,11 +303,33 @@ export class CodexDriver implements AgentDriver {
     const input = buildCodexUserInput(prompt, imageInput.inputPaths)
 
     try {
-      const { events } = await thread.runStreamed(input, { signal: ctx.signal })
+      const runStreamedStartedAt = performance.now()
+      const { events } = await thread.runStreamed(prompt, { signal: ctx.signal })
+      logMainPerfEvent('codex.runStreamed_ready', performance.now() - runStreamedStartedAt, {
+        model: baseModel,
+        effort,
+        seedTranscript,
+      })
       try {
+        let firstEventAt: number | undefined
+        let eventCount = 0
         for await (const event of events) {
+          eventCount += 1
+          if (firstEventAt === undefined) {
+            firstEventAt = performance.now()
+            logMainPerfEvent('codex.runStreamed_first_event', firstEventAt - runStreamedStartedAt, {
+              model: baseModel,
+              effort,
+              eventType: event.type,
+            })
+          }
           this.handleEvent(ctx, state, event)
         }
+        logMainPerfEvent('codex.runStreamed_events_total', performance.now() - runStreamedStartedAt, {
+          model: baseModel,
+          effort,
+          eventCount,
+        })
       } catch (err) {
         if (!isBenignCodexInterruptError(err, ctx.signal)) throw err
       }
@@ -369,7 +397,7 @@ export class CodexDriver implements AgentDriver {
         if (item.type === 'command_execution') {
           if (event.type === 'item.updated' && item.status === 'in_progress') {
             const streamed = item.aggregated_output?.trim()
-            if (streamed) {
+            if (streamed && shouldEmitToolUpdate(state, item.id, truncateShellOutput(streamed))) {
               ctx.emit(evToolUpdated(ctx.sessionRef, item.id, truncateShellOutput(streamed)))
             }
           }
@@ -398,6 +426,24 @@ export class CodexDriver implements AgentDriver {
 }
 
 const MAX_SHELL_STREAM_CHARS = 8_000
+const TOOL_UPDATE_MIN_INTERVAL_MS = 120
+
+function shouldEmitToolUpdate(state: CodexSessionState, itemId: string, text: string): boolean {
+  const previous = state.lastToolUpdateByItem.get(itemId)
+  const now = performance.now()
+  if (!previous) {
+    state.lastToolUpdateByItem.set(itemId, { text, emittedAt: now })
+    return true
+  }
+  if (previous.text === text) {
+    return false
+  }
+  if (now - previous.emittedAt < TOOL_UPDATE_MIN_INTERVAL_MS) {
+    return false
+  }
+  state.lastToolUpdateByItem.set(itemId, { text, emittedAt: now })
+  return true
+}
 
 function truncateShellOutput(text: string): string {
   if (text.length <= MAX_SHELL_STREAM_CHARS) return text

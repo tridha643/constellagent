@@ -31,23 +31,34 @@ import type {
   AgentChatSessionState,
   AgentChatStatus,
   AgentProvider,
-  ConductorBlockingQuestionResponse,
   CreateAgentChatSessionInput,
   ForkAgentChatSessionInput,
   QueuedAgentMessage,
   QueuedAgentMessageMode,
 } from '../shared/agent-chat-types'
+import type { ConductorBlockingQuestionResponse } from '../shared/conductor-ask-question-types'
 import {
   enqueueQueuedMessage,
   findSteerMessageIndex,
 } from './agent-chat-queue'
 import { getConductorQuestionBridge } from './agents/conductor-question-bridge'
+import { logMainPerfEvent, measureMainAsync } from './perf'
 
 export type { AgentChatSessionState, CreateAgentChatSessionInput }
 
 interface RuntimeSession {
   state: AgentChatSessionState
   abort?: AbortController
+}
+
+interface TurnTelemetry {
+  readonly submittedAt: number
+  runningAt?: number
+  firstDriverEventAt?: number
+  firstAssistantDeltaAt?: number
+  driverEventCount: number
+  assistantDeltaCount: number
+  transcriptFlushCount: number
 }
 
 export class AgentChatHost {
@@ -67,6 +78,7 @@ export class AgentChatHost {
   }
   /** Coalesces high-frequency transcript broadcasts during streaming (~25fps). */
   private readonly pendingTranscriptFlush = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly turnTelemetry = new Map<string, TurnTelemetry>()
   private static readonly TRANSCRIPT_FLUSH_MS = 40
 
   constructor() {
@@ -217,6 +229,12 @@ export class AgentChatHost {
     const normalizedAttachments = cloneConductorImageAttachments(attachments)
     const promptText = conductorPromptText(text)
     const ref = this.refOf(state)
+    this.turnTelemetry.set(sessionId, {
+      submittedAt: performance.now(),
+      driverEventCount: 0,
+      assistantDeltaCount: 0,
+      transcriptFlushCount: 0,
+    })
     const previousTranscript = [...(this.transcriptCache.get(sessionKey(ref)) ?? [])]
     appendUserMessage(this.transcriptCache, ref, promptText, normalizedAttachments, state.plan)
     this.flushTranscript(state)
@@ -235,6 +253,7 @@ export class AgentChatHost {
       blockingQuestion: null,
       error: undefined,
     })
+    this.markTurnRunning(sessionId, state)
     const running = this.sessions.get(sessionId)
     if (running) running.abort = abort
     // Drives the "Working…" indicator in the timeline.
@@ -252,7 +271,10 @@ export class AgentChatHost {
         attachments: normalizedAttachments,
         previousTranscript,
         signal: abort.signal,
-        emit: (event) => this.onDriverEvent(sessionId, event),
+        emit: (event) => {
+          this.markDriverEvent(sessionId, state, event)
+          this.onDriverEvent(sessionId, event)
+        },
       })
       if (abort.signal.aborted) {
         this.interruptRun(this.currentState(sessionId) ?? state, ref)
@@ -278,9 +300,13 @@ export class AgentChatHost {
       if (finished) finished.abort = undefined
       const finalState = this.currentState(sessionId)
       if (finalState) {
-        void this.persist(finalState)
+        void measureMainAsync('conductor.persist', () => this.persist(finalState), {
+          provider: finalState.provider,
+          transcriptSize: this.transcriptCache.get(sessionKey(this.refOf(finalState)))?.length ?? 0,
+        })
         this.flushTranscript(finalState)
       }
+      this.finishTurnTelemetry(sessionId, finalState ?? state)
     }
   }
 
@@ -345,6 +371,7 @@ export class AgentChatHost {
       this.drivers[session.state.provider].closeSession(sessionId)
     }
     this.sessions.clear()
+    this.turnTelemetry.clear()
   }
 
   // ── internals ──────────────────────────────────────────────────────────
@@ -362,6 +389,7 @@ export class AgentChatHost {
       if (messageId) {
         // Token stream: send only the delta. Full transcript IPC on every token
         // duplicated multi‑MB payloads and OOM'd the main process heap.
+        this.markAssistantDelta(sessionId, state)
         this.broadcastDelta(state, messageId, event.text)
       }
       return
@@ -456,7 +484,7 @@ export class AgentChatHost {
     if (state.provider !== 'codex' || errMessage === undefined) return
     const lower = errMessage.toLowerCase()
     if (lower.includes('thread/resume') || lower.includes('no rollout')) {
-      this.drivers.codex.markSessionInterrupted(state.sessionId)
+      this.drivers.codex.markSessionInterrupted?.(state.sessionId)
     }
   }
 
@@ -482,9 +510,13 @@ export class AgentChatHost {
     this.update(state.sessionId, { status: 'failed', runPhase: 'failed', blockingQuestion: null, error: message })
     const next = this.currentState(state.sessionId)
     if (next) {
-      void this.persist(next)
+      void measureMainAsync('conductor.persist', () => this.persist(next), {
+        provider: next.provider,
+        transcriptSize: this.transcriptCache.get(sessionKey(this.refOf(next)))?.length ?? 0,
+      })
       this.flushTranscript(next)
     }
+    this.finishTurnTelemetry(state.sessionId, next ?? state)
   }
 
   /** Rehydrate from disk when IPC arrives before getSession (e.g. quick plan toggle). */
@@ -610,6 +642,72 @@ export class AgentChatHost {
       clearTimeout(pending)
       this.pendingTranscriptFlush.delete(sessionId)
     }
+    this.turnTelemetry.delete(sessionId)
+  }
+
+  private markTurnRunning(sessionId: string, state: AgentChatSessionState): void {
+    const telemetry = this.turnTelemetry.get(sessionId)
+    if (!telemetry || telemetry.runningAt !== undefined) return
+    const runningAt = performance.now()
+    telemetry.runningAt = runningAt
+    logMainPerfEvent('conductor.submit_to_running', runningAt - telemetry.submittedAt, {
+      provider: state.provider,
+      model: state.model,
+      thinkingLevel: state.thinkingLevel,
+    })
+  }
+
+  private markDriverEvent(
+    sessionId: string,
+    state: AgentChatSessionState,
+    event: SessionDriverEvent,
+  ): void {
+    const telemetry = this.turnTelemetry.get(sessionId)
+    if (!telemetry) return
+    telemetry.driverEventCount += 1
+    if (telemetry.firstDriverEventAt !== undefined) return
+    const firstDriverEventAt = performance.now()
+    telemetry.firstDriverEventAt = firstDriverEventAt
+    logMainPerfEvent(
+      'conductor.running_to_first_driver_event',
+      firstDriverEventAt - (telemetry.runningAt ?? telemetry.submittedAt),
+      {
+        provider: state.provider,
+        model: state.model,
+        eventType: event.type,
+      },
+    )
+  }
+
+  private markAssistantDelta(sessionId: string, state: AgentChatSessionState): void {
+    const telemetry = this.turnTelemetry.get(sessionId)
+    if (!telemetry) return
+    telemetry.assistantDeltaCount += 1
+    if (telemetry.firstAssistantDeltaAt !== undefined) return
+    const firstAssistantDeltaAt = performance.now()
+    telemetry.firstAssistantDeltaAt = firstAssistantDeltaAt
+    logMainPerfEvent(
+      'conductor.submit_to_first_assistant_delta',
+      firstAssistantDeltaAt - telemetry.submittedAt,
+      {
+        provider: state.provider,
+        model: state.model,
+        driverEventCount: telemetry.driverEventCount,
+      },
+    )
+  }
+
+  private finishTurnTelemetry(sessionId: string, state: AgentChatSessionState): void {
+    const telemetry = this.turnTelemetry.get(sessionId)
+    if (!telemetry) return
+    this.turnTelemetry.delete(sessionId)
+    logMainPerfEvent('conductor.turn_total', performance.now() - telemetry.submittedAt, {
+      provider: state.provider,
+      model: state.model,
+      driverEventCount: telemetry.driverEventCount,
+      assistantDeltaCount: telemetry.assistantDeltaCount,
+      transcriptFlushCount: telemetry.transcriptFlushCount,
+    })
   }
 
   private snapshotEvent(
@@ -656,11 +754,23 @@ export class AgentChatHost {
       this.pendingTranscriptFlush.delete(state.sessionId)
     }
     const transcript = this.transcriptCache.get(sessionKey(this.refOf(state))) ?? []
+    const started = performance.now()
     this.send(IPC.AGENT_CHAT_TRANSCRIPT_CHANGED, { sessionId: state.sessionId, transcript })
+    const telemetry = this.turnTelemetry.get(state.sessionId)
+    if (telemetry) telemetry.transcriptFlushCount += 1
+    logMainPerfEvent('conductor.transcript_flush', performance.now() - started, {
+      provider: state.provider,
+      transcriptSize: transcript.length,
+    })
   }
 
   private broadcastDelta(state: AgentChatSessionState, messageId: string, text: string): void {
+    const started = performance.now()
     this.send(IPC.AGENT_CHAT_ASSISTANT_DELTA, { sessionId: state.sessionId, messageId, text })
+    logMainPerfEvent('conductor.assistant_delta_send', performance.now() - started, {
+      provider: state.provider,
+      chars: text.length,
+    })
   }
 
   private send(channel: string, payload: unknown): void {

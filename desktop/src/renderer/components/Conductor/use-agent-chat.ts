@@ -5,6 +5,7 @@ import type { ConductorBlockingQuestionResponse } from '../../../shared/conducto
 import type { ThinkingLevel } from '../../../shared/conductor-thinking'
 import { applyAssistantDeltaToTranscript } from '../../../shared/conductor-transcript-utils'
 import type { TranscriptMessage } from '../../../shared/pi/pi-desktop-state'
+import { logPerfEvent } from '../../utils/perf'
 
 /** Lists Conductor sessions for a workspace, kept fresh via state-change events. */
 export function useConductorSessions(workspaceId: string | null): {
@@ -86,15 +87,25 @@ export function useConductorSession(sessionId: string | null): ConductorSessionC
     const offTranscript = window.api.agentChat.onTranscriptChanged((payload) => {
       if (payload.sessionId === sessionId) {
         liveUpdateSeen = true
+        const started = performance.now()
         setTranscript([...payload.transcript])
+        logPerfEvent('conductor.transcript_replace', performance.now() - started, {
+          transcriptSize: payload.transcript.length,
+        })
       }
     })
     const offDelta = window.api.agentChat.onAssistantDelta((payload) => {
       if (payload.sessionId !== sessionId) return
       liveUpdateSeen = true
-      setTranscript((prev) =>
-        applyAssistantDeltaToTranscript(prev, payload.messageId, payload.text),
-      )
+      setTranscript((prev) => {
+        const started = performance.now()
+        const next = applyAssistantDeltaToTranscript(prev, payload.messageId, payload.text)
+        logPerfEvent('conductor.assistant_delta_apply', performance.now() - started, {
+          transcriptSize: prev.length,
+          chars: payload.text.length,
+        })
+        return next
+      })
     })
     return () => {
       active = false

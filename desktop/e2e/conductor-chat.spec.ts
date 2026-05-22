@@ -444,7 +444,7 @@ test.describe('Conductor chat view', () => {
     await expect(popover.locator('[data-file-icon-token="vite"]')).toBeVisible()
   })
 
-  test('shows inline tool chips on the latest completed turn without expanding summary', async () => {
+  test('shows tool chips after expanding a latest completed turn summary', async () => {
     const repoPath = createTestRepo('conductor-tool-chips')
     await setupWorkspace(window, repoPath)
 
@@ -467,6 +467,7 @@ test.describe('Conductor chat view', () => {
       { kind: 'message', id: 'a1', role: 'assistant', text: 'done', createdAt: nowIso() },
     ])
 
+    await window.getByTestId('turn-summary-header').click()
     await expect(window.getByTestId('cursor-tool-row').first()).toBeVisible({ timeout: 5000 })
     await expect(window.getByTestId('cursor-read-row')).toContainText('Read')
     await expect(window.getByTestId('cursor-bash-row')).toContainText('Bash')
@@ -520,11 +521,26 @@ test.describe('Conductor chat view', () => {
       { kind: 'message', id: 'a1', role: 'assistant', text: 'ANSWER_BELOW_TOOLS', createdAt: nowIso() },
     ])
 
-    const toolsAboveAnswer = await window.evaluate(() => {
-      const tools = document.querySelector('[data-testid="assistant-turn-tools"]')
+    const summary = window.getByTestId('turn-summary-header')
+    await expect(summary).toBeVisible({ timeout: 5000 })
+    await expect(summary).toContainText('1 tool call')
+
+    const summaryAboveAnswer = await window.evaluate(() => {
+      const summaryHeader = document.querySelector('[data-testid="turn-summary-header"]')
       const answer = document.querySelector('[data-message-id="a1"]')
-      if (!tools || !answer) return false
-      return (tools.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+      if (!summaryHeader || !answer) return false
+      return (summaryHeader.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    })
+    expect(summaryAboveAnswer).toBe(true)
+
+    await expect(window.getByTestId('cursor-tool-row')).toHaveCount(0)
+    await summary.click()
+
+    const toolsAboveAnswer = await window.evaluate(() => {
+      const tool = document.querySelector('[data-testid="cursor-tool-row"]')
+      const answer = document.querySelector('[data-message-id="a1"]')
+      if (!tool || !answer) return false
+      return (tool.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
     })
     expect(toolsAboveAnswer).toBe(true)
   })
@@ -832,7 +848,10 @@ test.describe('Conductor chat view', () => {
 
     await expect(window.locator('[class*="turnSummaryHeader"]').first()).toBeVisible({ timeout: 5000 })
     await expect(window.locator('[class*="turnSummaryHeader"]').first()).toContainText('2 tool calls')
+    await expect(window.getByTestId('cursor-tool-row')).toHaveCount(0)
     await expect(window.getByText('DONE')).toBeVisible()
+    await window.getByTestId('turn-summary-header').click()
+    await expect(window.getByTestId('cursor-tool-row')).toHaveCount(2)
   })
 
   test('deletes persisted session data when the conductor tab is closed', async () => {
