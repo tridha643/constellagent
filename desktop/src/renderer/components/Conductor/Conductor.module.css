@@ -2109,6 +2109,14 @@
   transition: color 120ms ease, transform 160ms var(--ease-out-strong);
 }
 
+.turnSummary .collapsibleChevron {
+  transition-duration: 120ms;
+}
+
+.turnSummaryPanel {
+  transition-duration: 150ms;
+}
+
 .turnSummaryHeader:active {
   transform: scale(0.98);
 }
@@ -2117,6 +2125,20 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.turnSummaryMeta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-quaternary, var(--text-tertiary));
+}
+
+.turnSummaryError {
+  flex-shrink: 0;
+  color: var(--accent-red, #f87171);
+  font-variant-numeric: tabular-nums;
 }
 
 .turnSummaryBody {

@@ -31,7 +31,6 @@ const WORKING_LABEL = 'Working…'
 const STOPPED_LABEL = 'Stopped'
 const NEAR_BOTTOM_PX = 80
 const HIGHLIGHT_MS = 2000
-const TURN_COLLAPSE_MIN_TOOLS = 2
 
 import styles from '../Conductor.module.css'
 
@@ -45,9 +44,11 @@ type RenderUnit =
   | {
       type: 'turnGroup'
       key: string
-      items: TranscriptMessage[]
+      items: TimelineToolCall[]
       toolCount: number
       messageCount: number
+      failedToolCount: number
+      toolSummary: string
       isPlan: boolean
     }
   | {
@@ -74,6 +75,58 @@ function isHiddenTranscriptItem(item: TranscriptMessage): boolean {
 
 function isCollapsibleTool(item: TranscriptMessage): boolean {
   return item.kind === 'tool' && !isSubagentToolCall(item)
+}
+
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function getToolCategory(tool: TimelineToolCall): 'file' | 'command' | 'search' | 'task' | 'other' {
+  const name = tool.toolName.toLowerCase()
+  if (
+    name.includes('read') ||
+    name.includes('write') ||
+    name.includes('edit') ||
+    name.includes('patch') ||
+    name.includes('diff') ||
+    name.includes('file') ||
+    name.includes('list')
+  ) {
+    return 'file'
+  }
+  if (
+    name.includes('shell') ||
+    name.includes('bash') ||
+    name.includes('command') ||
+    name.includes('exec')
+  ) {
+    return 'command'
+  }
+  if (name.includes('search') || name.includes('grep') || name.includes('rg')) return 'search'
+  if (name.includes('todo') || name.includes('task')) return 'task'
+  return 'other'
+}
+
+function buildToolSummary(tools: readonly TimelineToolCall[]): string {
+  const counts = new Map<ReturnType<typeof getToolCategory>, number>()
+  for (const tool of tools) {
+    const category = getToolCategory(tool)
+    counts.set(category, (counts.get(category) ?? 0) + 1)
+  }
+  const labels: Array<[ReturnType<typeof getToolCategory>, string, string]> = [
+    ['file', 'file', 'files'],
+    ['command', 'command', 'commands'],
+    ['search', 'search', 'searches'],
+    ['task', 'task', 'tasks'],
+    ['other', 'other', 'other'],
+  ]
+  return labels
+    .map(([category, singular, plural]) => {
+      const count = counts.get(category) ?? 0
+      return count > 0 ? pluralize(count, singular, plural) : null
+    })
+    .filter((part): part is string => Boolean(part))
+    .join(', ')
 }
 
 /** Split deferred Working… rows from the rest of a turn body (rendered last). */
@@ -170,6 +223,7 @@ export const ChatTimeline = forwardRef<
   const pinnedRef = useRef(true)
   const [showJump, setShowJump] = useState(false)
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null)
+  const [expandedTurnKeys, setExpandedTurnKeys] = useState<Set<string>>(() => new Set())
   const seenIdsRef = useRef<Set<string>>(new Set())
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -227,7 +281,7 @@ export const ChatTimeline = forwardRef<
     const n = transcript.length
     let i = 0
     const isUser = (item: TranscriptMessage) => item.kind === 'message' && item.role === 'user'
-    const isCollapsibleTool = (item: TranscriptMessage) =>
+    const isCollapsibleTool = (item: TranscriptMessage): item is TimelineToolCall =>
       item.kind === 'tool' && !isSubagentToolCall(item)
 
     while (i < n && !isUser(transcript[i])) {
@@ -259,20 +313,21 @@ export const ChatTimeline = forwardRef<
       const otherBody = visibleNonAssistantBody.filter((item) => !isCollapsibleTool(item))
       const messageCount = assistants.length
       const pushPlain = (item: TranscriptMessage) => result.push({ type: 'item', item })
-      // Collapse only older turns; latest turn keeps Cursor-style tool rows visible.
-      // While the latest turn is running, tools stay in the live ticker instead.
-      const shouldCollapseTurn =
-        toolRows.length >= TURN_COLLAPSE_MIN_TOOLS && !isLatestTurn
+      // Completed non-subagent tool rows collapse by default, including the
+      // latest completed turn. Running tools stay in the live ticker.
+      const shouldCollapseTurn = toolRows.length > 0
       if (shouldCollapseTurn) {
-        pushTurnAssistantGroup(result, assistants, userItem.id, [], pushPlain)
         result.push({
           type: 'turnGroup',
           key: `${userItem.id}:group`,
           items: toolRows,
           toolCount: toolRows.length,
           messageCount,
+          failedToolCount: toolRows.filter((tool) => tool.status === 'error').length,
+          toolSummary: buildToolSummary(toolRows),
           isPlan: planActive,
         })
+        pushTurnAssistantGroup(result, assistants, userItem.id, [], pushPlain)
       } else {
         pushTurnAssistantGroup(result, assistants, userItem.id, toolRows, pushPlain)
       }
@@ -286,13 +341,41 @@ export const ChatTimeline = forwardRef<
     return result
   }, [transcript, planActive, running])
 
-  const latestTurnKey = useMemo(() => {
-    for (let i = units.length - 1; i >= 0; i -= 1) {
-      const unit = units[i]
-      if (unit.type === 'turnGroup') return unit.key
+  const turnGroupKeys = useMemo(() => {
+    const keys = new Set<string>()
+    for (const unit of units) {
+      if (unit.type === 'turnGroup') keys.add(unit.key)
     }
-    return null
+    return keys
   }, [units])
+
+  useEffect(() => {
+    setExpandedTurnKeys((previous) => {
+      let changed = false
+      const next = new Set<string>()
+      for (const key of previous) {
+        if (turnGroupKeys.has(key)) {
+          next.add(key)
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : previous
+    })
+  }, [turnGroupKeys])
+
+  const setTurnExpanded = useCallback((key: string, open: boolean) => {
+    setExpandedTurnKeys((previous) => {
+      if (previous.has(key) === open) return previous
+      const next = new Set(previous)
+      if (open) {
+        next.add(key)
+      } else {
+        next.delete(key)
+      }
+      return next
+    })
+  }, [])
 
   const scrollToMessage = useCallback((messageId: string) => {
     const root = scrollRef.current
@@ -563,22 +646,28 @@ export const ChatTimeline = forwardRef<
                 </div>,
               )
             }
+            const isExpanded = expandedTurnKeys.has(unit.key)
             return (
               <div key={unit.key} className={styles.turnSummaryEdge}>
                 <TurnSummary
                   toolCount={unit.toolCount}
                   messageCount={unit.messageCount}
+                  failedToolCount={unit.failedToolCount}
+                  toolSummary={unit.toolSummary}
                   isPlan={unit.isPlan}
-                  defaultExpanded={unit.key === latestTurnKey}
+                  open={isExpanded}
+                  onOpenChange={(open) => setTurnExpanded(unit.key, open)}
                 >
-                  {unit.items.map((item) => {
-                    const row = renderRow(item)
-                    return row ? (
-                      <div key={item.id} className={styles.turnSummaryToolRow}>
-                        {row.node}
-                      </div>
-                    ) : null
-                  })}
+                  {isExpanded
+                    ? unit.items.map((item) => {
+                        const row = renderRow(item)
+                        return row ? (
+                          <div key={item.id} className={styles.turnSummaryToolRow}>
+                            {row.node}
+                          </div>
+                        ) : null
+                      })
+                    : null}
                 </TurnSummary>
               </div>
             )
