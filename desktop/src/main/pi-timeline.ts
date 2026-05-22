@@ -12,6 +12,7 @@ import {
 import {
   buildSubagentMetadata,
   isSubagentTool,
+  mergeSubagentResultMetadata,
   subagentStatusHint,
   subagentToolLabel,
 } from "../shared/conductor-subagent-utils";
@@ -164,7 +165,17 @@ export function applyTimelineEvent(
     case "toolUpdated":
       upsertToolRow(transcript, event.callId, undefined, "running", undefined, event.text ?? progressLabel(event.progress));
       break;
-    case "toolFinished":
+    case "toolFinished": {
+      const existing = transcript.find(
+        (item) => item.kind === "tool" && item.callId === event.callId,
+      );
+      const existingTool = existing?.kind === "tool" ? existing : undefined;
+      const subagentFinish =
+        existingTool && (existingTool.variant === "subagent" || isSubagentTool(existingTool.toolName))
+          ? {
+              metadata: mergeSubagentResultMetadata(existingTool.metadata, event.output),
+            }
+          : undefined;
       upsertToolRow(
         transcript,
         event.callId,
@@ -174,8 +185,10 @@ export function applyTimelineEvent(
         detailFromOutput(event.output),
         undefined,
         event.output,
+        subagentFinish,
       );
       break;
+    }
     case "runCompleted": {
       const metrics = currentMetrics;
       clearRunState(transcript, key, event.sessionRef, state);

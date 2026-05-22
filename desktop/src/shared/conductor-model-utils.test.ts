@@ -62,9 +62,11 @@ describe('hasEffortVariants', () => {
 
 describe('mapThinkingLevelToCodexEffort', () => {
   test('maps thinking levels to Codex SDK effort', () => {
+    expect(mapThinkingLevelToCodexEffort('minimal')).toBe('minimal')
     expect(mapThinkingLevelToCodexEffort('high')).toBe('high')
     expect(mapThinkingLevelToCodexEffort('xhigh')).toBe('xhigh')
     expect(mapThinkingLevelToCodexEffort('medium')).toBe('medium')
+    expect(mapThinkingLevelToCodexEffort('low')).toBe('low')
   })
 })
 

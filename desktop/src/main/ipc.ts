@@ -1922,8 +1922,15 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.AGENT_CHAT_GET_SESSION, async (_e, sessionId: string) =>
     agentChatHost.getSession(sessionId),
   )
-  ipcMain.handle(IPC.AGENT_CHAT_SUBMIT, async (_e, sessionId: string, text: string) =>
-    agentChatHost.submit(sessionId, text),
+  ipcMain.handle(
+    IPC.AGENT_CHAT_SUBMIT,
+    async (_e, sessionId: string, text: string, deliverAs?: import('../shared/agent-chat-types').QueuedAgentMessageMode) =>
+      agentChatHost.submit(sessionId, text, deliverAs),
+  )
+  ipcMain.handle(
+    IPC.AGENT_CHAT_REPLACE_QUEUE,
+    async (_e, sessionId: string, messages: import('../shared/agent-chat-types').QueuedAgentMessage[]) =>
+      agentChatHost.replaceQueue(sessionId, messages),
   )
   ipcMain.handle(IPC.AGENT_CHAT_SET_MODEL, async (_e, sessionId: string, model: string) =>
     agentChatHost.setModel(sessionId, model),

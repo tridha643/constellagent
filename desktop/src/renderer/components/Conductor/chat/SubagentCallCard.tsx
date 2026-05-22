@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { AgentProvider } from '../../../../shared/agent-chat-types'
 import type { ThinkingLevel } from '../../../../shared/conductor-thinking'
-import { THINKING_LABELS } from '../../../../shared/conductor-thinking'
+import { THINKING_LABELS, isReasoningEffortActive, normalizeThinkingLevel } from '../../../../shared/conductor-thinking'
 import { displayModelName, isFastModel } from '../../../../shared/conductor-model-utils'
 import { PLAN_MODEL_PRESETS } from '../../../../shared/plan-build-command'
 import type { TimelineToolCall } from '../../../../shared/pi/timeline-types'
-import { isSubagentToolCall } from '../../../../shared/conductor-subagent-utils'
+import { isSubagentToolCall, parseSubagentMetadata } from '../../../../shared/conductor-subagent-utils'
 import { safeJsonStringify } from '../../../../shared/json-safe'
 import { MarkdownBody, toolOutputAsMarkdown } from './MarkdownBody'
 import { ProviderIcon, ReasoningIcon, SubagentCornerIcon } from './ConductorIcons'
@@ -32,6 +32,11 @@ export function SubagentCallCard({
   const [expanded, setExpanded] = useState(false)
   const [statusKey, setStatusKey] = useState(0)
   const prevDetailRef = useRef(tool.detail)
+  const meta = parseSubagentMetadata(tool.metadata)
+  const displayModel = meta?.model ?? model
+  const displayThinking = meta?.thinkingLevel
+    ? normalizeThinkingLevel(meta.thinkingLevel)
+    : thinkingLevel
 
   useEffect(() => {
     if (tool.detail !== prevDetailRef.current) {
@@ -82,15 +87,21 @@ export function SubagentCallCard({
               {tool.label}
             </span>
             <span className={styles.subagentMeta}>
+              {meta?.subagentType ? (
+                <span className={styles.subagentSpeedPill}>{meta.subagentType}</span>
+              ) : null}
               <ProviderIcon provider={provider} size={14} />
-              <span>{modelLabel(provider, model)}</span>
-              {thinkingLevel !== 'low' && (
+              <span>{modelLabel(provider, displayModel)}</span>
+              {isReasoningEffortActive(displayThinking) && (
                 <>
                   <ReasoningIcon size={12} />
-                  <span>{THINKING_LABELS[thinkingLevel]}</span>
+                  <span>{THINKING_LABELS[displayThinking]}</span>
                 </>
               )}
-              {isFastModel(model) && <span className={styles.subagentSpeedPill}>Fast</span>}
+              {isFastModel(displayModel) && <span className={styles.subagentSpeedPill}>Fast</span>}
+              {meta?.durationMs != null && done ? (
+                <span>{Math.round(meta.durationMs / 1000)}s</span>
+              ) : null}
             </span>
           </span>
           {showSubtitle ? (

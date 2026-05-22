@@ -2,6 +2,7 @@ import '../cursor-sdk-ripgrep-config'
 import {
   Agent,
   convertError,
+  type InteractionUpdate,
   type Run,
   type SDKAgent,
   type SDKMessage,
@@ -13,11 +14,18 @@ import {
   evAssistantDelta,
   evToolFinished,
   evToolStarted,
+  evToolUpdated,
   buildAgentPrompt,
   type AgentDriver,
   type AgentTurnContext,
 } from './agent-driver'
 import { applyThinkingLevel } from '../../shared/conductor-model-utils'
+import { isSubagentTool } from '../../shared/conductor-subagent-utils'
+import {
+  subagentInteractionEffect,
+  subagentTaskMessageText,
+} from './cursor-driver-deltas'
+import { loadCursorSdkAgents } from './cursor-subagent-config'
 
 interface CursorSessionState {
   agent: SDKAgent
@@ -25,6 +33,8 @@ interface CursorSessionState {
   /** Assistant text streamed so far this turn, for delta computation. */
   emittedText: string
   run?: Run
+  /** Active subagent tool_call id for progress/thinking/task milestone updates. */
+  activeSubagentCallId?: string
 }
 
 /** gRPC/Connect "canceled" code — see connectrpc.com/docs/protocol#error-codes */
@@ -112,12 +122,14 @@ export class CursorDriver implements AgentDriver {
         await disposeCursorAgent(state.agent, state.run).catch(() => {})
       }
       const apiKey = getCursorApiKey()
+      const agents = await loadCursorSdkAgents(ctx.workspacePath)
       let agent: SDKAgent
       try {
         agent = await Agent.create({
           ...(apiKey ? { apiKey } : {}),
           model: { id: effectiveModel },
-          local: { cwd: ctx.workspacePath },
+          local: { cwd: ctx.workspacePath, settingSources: ['project'] },
+          ...(Object.keys(agents).length > 0 ? { agents } : {}),
         })
       } catch (err) {
         throw toCursorUserError(err)
@@ -136,13 +148,19 @@ export class CursorDriver implements AgentDriver {
     )
     let run: Run
     try {
-      run = await state.agent.send(prompt, { model: { id: effectiveModel } })
+      run = await state.agent.send(prompt, {
+        model: { id: effectiveModel },
+        onDelta: ({ update }) => {
+          this.handleInteractionUpdate(ctx, state!, update)
+        },
+      })
     } catch (err) {
       throw toCursorUserError(err)
     }
     state.run = run
     state.model = effectiveModel
     state.emittedText = ''
+    state.activeSubagentCallId = undefined
 
     const onAbort = (): void => {
       detachCursorRun(run)
@@ -173,6 +191,22 @@ export class CursorDriver implements AgentDriver {
     } finally {
       ctx.signal.removeEventListener('abort', onAbort)
       state.run = undefined
+      state.activeSubagentCallId = undefined
+    }
+  }
+
+  private handleInteractionUpdate(
+    ctx: AgentTurnContext,
+    state: CursorSessionState,
+    update: InteractionUpdate,
+  ): void {
+    const effect = subagentInteractionEffect(update, state.activeSubagentCallId)
+    if (!effect) return
+    if (effect.trackCall) {
+      state.activeSubagentCallId = effect.callId
+    }
+    if (effect.text) {
+      ctx.emit(evToolUpdated(ctx.sessionRef, effect.callId, effect.text))
     }
   }
 
@@ -190,11 +224,38 @@ export class CursorDriver implements AgentDriver {
         }
         break
       }
+      case 'thinking': {
+        const effect = subagentTaskMessageText(message.text, state.activeSubagentCallId)
+        if (effect?.text) {
+          ctx.emit(evToolUpdated(ctx.sessionRef, effect.callId, effect.text))
+        }
+        break
+      }
+      case 'task': {
+        const effect = subagentTaskMessageText(message.text, state.activeSubagentCallId)
+        if (effect?.text) {
+          ctx.emit(evToolUpdated(ctx.sessionRef, effect.callId, effect.text))
+        }
+        break
+      }
       case 'tool_call': {
         if (message.status === 'running') {
+          if (isSubagentTool(message.name)) {
+            state.activeSubagentCallId = message.call_id
+          }
           ctx.emit(evToolStarted(ctx.sessionRef, message.call_id, message.name, message.args))
         } else {
-          ctx.emit(evToolFinished(ctx.sessionRef, message.call_id, message.status === 'completed', message.result))
+          if (state.activeSubagentCallId === message.call_id) {
+            state.activeSubagentCallId = undefined
+          }
+          ctx.emit(
+            evToolFinished(
+              ctx.sessionRef,
+              message.call_id,
+              message.status === 'completed',
+              message.result,
+            ),
+          )
         }
         break
       }

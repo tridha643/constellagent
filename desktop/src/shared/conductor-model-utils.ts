@@ -34,6 +34,7 @@ export function defaultConductorModel(provider: AgentProvider): string {
 
 /** Codex SDK `modelReasoningEffort` — separate from hyphenated Cursor model ids. */
 export function mapThinkingLevelToCodexEffort(level: ThinkingLevel): ModelReasoningEffort {
+  if (level === 'minimal') return 'minimal'
   return level
 }
 
@@ -135,12 +136,13 @@ function effortToken(level: ThinkingLevel): string {
 
 /** Resolve effective CLI model from base selection + session thinking level. */
 export function applyThinkingLevel(cliModel: string, level: ThinkingLevel): string {
+  const effective = level === 'minimal' ? 'low' : level
   const { base, speedSuffix } = parseModelEffort(cliModel)
   const speed = speedSuffix === 'fast' ? '-fast' : ''
-  const candidate = `${base}${effortToken(level)}${speed}`
+  const candidate = `${base}${effortToken(effective)}${speed}`
   const presets = cursorPresetIds()
   if (presets.has(candidate)) return candidate
-  const withoutSpeed = `${base}${effortToken(level)}`
+  const withoutSpeed = `${base}${effortToken(effective)}`
   if (presets.has(withoutSpeed)) return withoutSpeed
   if (presets.has(base + speed)) return base + speed
   return cliModel
@@ -167,7 +169,13 @@ export function toConductorDraftSelection(cliModel: string): ConductorDraftSelec
 export function normalizeConductorDefaultThinkingLevel(v: unknown): ThinkingLevel | undefined {
   if (typeof v !== 'string' || !v.trim()) return undefined
   const level = v.trim() as ThinkingLevel
-  return level === 'low' || level === 'medium' || level === 'high' || level === 'xhigh' ? level : undefined
+  return level === 'minimal' ||
+    level === 'low' ||
+    level === 'medium' ||
+    level === 'high' ||
+    level === 'xhigh'
+    ? level
+    : undefined
 }
 
 /** Resolve persisted defaults to a usable Conductor draft selection. */

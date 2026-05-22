@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AgentChatSessionState } from '../../../shared/agent-chat-types'
+import type { AgentChatSessionState, QueuedAgentMessage, QueuedAgentMessageMode } from '../../../shared/agent-chat-types'
 import type { ThinkingLevel } from '../../../shared/conductor-thinking'
 import { applyAssistantDeltaToTranscript } from '../../../shared/conductor-transcript-utils'
 import type { TranscriptMessage } from '../../../shared/pi/pi-desktop-state'
@@ -38,8 +38,9 @@ export function useConductorSessions(workspaceId: string | null): {
 export interface ConductorSessionController {
   state: AgentChatSessionState | null
   transcript: TranscriptMessage[]
-  submit: (text: string) => void
+  submit: (text: string, deliverAs?: QueuedAgentMessageMode) => void
   cancel: () => void
+  replaceQueue: (messages: readonly QueuedAgentMessage[]) => void
   setModel: (model: string) => void
   setPlan: (plan: boolean) => void
   setThinkingLevel: (level: ThinkingLevel) => void
@@ -97,8 +98,15 @@ export function useConductorSession(sessionId: string | null): ConductorSessionC
   }, [sessionId])
 
   const submit = useCallback(
-    (text: string) => {
-      if (sessionId) void window.api.agentChat.submit(sessionId, text).catch(() => {})
+    (text: string, deliverAs?: QueuedAgentMessageMode) => {
+      if (sessionId) void window.api.agentChat.submit(sessionId, text, deliverAs).catch(() => {})
+    },
+    [sessionId],
+  )
+
+  const replaceQueue = useCallback(
+    (messages: readonly QueuedAgentMessage[]) => {
+      if (sessionId) void window.api.agentChat.replaceQueue(sessionId, messages).catch(() => {})
     },
     [sessionId],
   )
@@ -134,5 +142,5 @@ export function useConductorSession(sessionId: string | null): ConductorSessionC
     [sessionId],
   )
 
-  return { state, transcript, submit, cancel, setModel, setPlan, setThinkingLevel }
+  return { state, transcript, submit, cancel, replaceQueue, setModel, setPlan, setThinkingLevel }
 }

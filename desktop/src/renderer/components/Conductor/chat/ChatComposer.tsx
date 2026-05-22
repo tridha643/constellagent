@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AgentProvider } from '../../../../shared/agent-chat-types'
+import type { AgentProvider, QueuedAgentMessage, QueuedAgentMessageMode } from '../../../../shared/agent-chat-types'
 import { hasEffortVariants, hasFastVariant, isFastModel } from '../../../../shared/conductor-model-utils'
-import { normalizeThinkingLevel, type ThinkingLevel } from '../../../../shared/conductor-thinking'
+import { normalizeThinkingLevel, isReasoningEffortActive, type ThinkingLevel } from '../../../../shared/conductor-thinking'
 import { ChatModelSelector } from './ChatModelSelector'
 import { EffortPill } from './EffortPill'
 import { FastToggle } from './FastToggle'
 import { PlanMapIcon } from './ConductorIcons'
+import { ConductorMessageQueue } from './ConductorMessageQueue'
 import {
   ContextPanel,
   ContextRingButton,
@@ -26,8 +27,10 @@ export function ChatComposer({
   plan,
   running,
   disabled,
+  queuedMessages,
   onSubmit,
   onCancel,
+  onReplaceQueue,
   onSetModel,
   onSetThinkingLevel,
   onToggleFast,
@@ -41,8 +44,10 @@ export function ChatComposer({
   plan: boolean
   running: boolean
   disabled?: boolean
-  onSubmit: (text: string) => void
+  queuedMessages: readonly QueuedAgentMessage[]
+  onSubmit: (text: string, deliverAs?: QueuedAgentMessageMode) => void
   onCancel: () => void
+  onReplaceQueue: (messages: readonly QueuedAgentMessage[]) => void
   onSetModel: (provider: AgentProvider, model: string) => void
   onSetThinkingLevel: (level: ThinkingLevel) => void
   onToggleFast: (fast: boolean) => void
@@ -51,6 +56,7 @@ export function ChatComposer({
   composerRef?: React.RefObject<ChatComposerHandle | null>
 }) {
   const [text, setText] = useState('')
+  const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [contextOpen, setContextOpen] = useState(false)
   const [focused, setFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -61,8 +67,10 @@ export function ChatComposer({
   const showFast = hasFastVariant(model, provider)
   const fastActive = isFastModel(model)
   const effortLevel = normalizeThinkingLevel(thinkingLevel)
-  const reasoningActive = effortLevel !== 'low'
-  const showFocusHint = !focused && !contextOpen && !disabled
+  const reasoningActive = isReasoningEffortActive(effortLevel)
+  const runningHint = 'Enter · queue · ⌘↵ · steer · Esc · stop'
+  const showFocusHint = !focused && !contextOpen && !disabled && !running
+  const showRunningHint = running && !focused && !contextOpen && !disabled
 
   const composerInnerClass = [
     styles.composerInner,
@@ -97,11 +105,48 @@ export function ChatComposer({
     }
   }, [composerRef])
 
-  const submit = () => {
+  const submit = (deliverAs?: QueuedAgentMessageMode) => {
     const trimmed = text.trim()
-    if (!trimmed || disabled || running) return
-    onSubmit(trimmed)
+    if (!trimmed || disabled) return
+
+    if (editingQueueId) {
+      onReplaceQueue(
+        queuedMessages.map((message) =>
+          message.id === editingQueueId ? { ...message, text: trimmed } : message,
+        ),
+      )
+      setEditingQueueId(null)
+      setText('')
+      return
+    }
+
+    onSubmit(trimmed, running ? deliverAs ?? 'followUp' : undefined)
     setText('')
+  }
+
+  const handleEditQueuedMessage = (messageId: string) => {
+    const message = queuedMessages.find((item) => item.id === messageId)
+    if (!message) return
+    setEditingQueueId(messageId)
+    setText(message.text)
+    requestAnimationFrame(() => textareaRef.current?.focus())
+  }
+
+  const handleRemoveQueuedMessage = (messageId: string) => {
+    onReplaceQueue(queuedMessages.filter((message) => message.id !== messageId))
+    if (editingQueueId === messageId) {
+      setEditingQueueId(null)
+      setText('')
+    }
+  }
+
+  const handleMoveQueuedMessageUp = (messageId: string) => {
+    const index = queuedMessages.findIndex((message) => message.id === messageId)
+    if (index <= 0) return
+    const next = [...queuedMessages]
+    const [item] = next.splice(index, 1)
+    next.splice(index - 1, 0, item)
+    onReplaceQueue(next)
   }
 
   return (
@@ -115,22 +160,45 @@ export function ChatComposer({
         {contextOpen && (
           <ContextPanel data={contextData} idle={contextIdle} modelLabel={modelLabel} />
         )}
-        {showFocusHint ? <span className={styles.composerHint}>⌘L to focus</span> : null}
-        <textarea
-          ref={textareaRef}
-          className={`${styles.composerTextarea} ${showFocusHint ? styles.composerTextareaWithHint : ''}`}
-          placeholder="Ask to make changes, @mention files, reference PRs with #, run /commands"
-          rows={1}
-          value={text}
-          disabled={disabled}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
+        {queuedMessages.length > 0 ? (
+          <ConductorMessageQueue
+            messages={queuedMessages}
+            editingMessageId={editingQueueId}
+            onEdit={handleEditQueuedMessage}
+            onRemove={handleRemoveQueuedMessage}
+            onMoveUp={handleMoveQueuedMessageUp}
+          />
+        ) : null}
+        <div className={styles.composerInputBlock}>
+          {showFocusHint ? <span className={styles.composerHint}>⌘L to focus</span> : null}
+          {showRunningHint ? (
+            <span className={styles.composerRunningHint}>{runningHint}</span>
+          ) : null}
+          <textarea
+            ref={textareaRef}
+            className={[
+              styles.composerTextarea,
+              queuedMessages.length > 0 ? styles.composerTextareaQueued : '',
+              showFocusHint || showRunningHint ? styles.composerTextareaWithHint : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            placeholder="Ask to make changes, @mention files, reference PRs with #, run /commands"
+            rows={1}
+            value={text}
+            disabled={disabled}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
             if (e.key === 'Escape') {
               if (contextOpen) {
                 e.preventDefault()
                 setContextOpen(false)
+              } else if (editingQueueId) {
+                e.preventDefault()
+                setEditingQueueId(null)
+                setText('')
               } else if (running) {
                 e.preventDefault()
                 onCancel()
@@ -140,19 +208,24 @@ export function ChatComposer({
               onSetPlan(!plan)
             } else if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              submit()
+              if (e.metaKey || e.ctrlKey) {
+                submit('steer')
+              } else {
+                submit()
+              }
             } else if (e.key === 'ArrowUp' && text.length === 0) {
               e.preventDefault()
               onHistoryUp()
             }
           }}
-        />
+          />
+        </div>
         <div className={styles.composerFooter}>
           <div className={styles.composerActionsLeft}>
             <ChatModelSelector provider={provider} model={model} thinkingLevel={thinkingLevel} onSelect={onSetModel} />
             {showFast ? <FastToggle active={fastActive} onChange={onToggleFast} /> : null}
             {showEffort ? (
-              <EffortPill level={effortLevel} onChange={onSetThinkingLevel} />
+              <EffortPill provider={provider} level={effortLevel} onChange={onSetThinkingLevel} />
             ) : null}
             <button
               type="button"
@@ -185,7 +258,7 @@ export function ChatComposer({
               <button
                 type="button"
                 className={styles.sendButton}
-                onClick={submit}
+                onClick={() => submit()}
                 disabled={!text.trim() || disabled}
                 aria-label="Send"
               >

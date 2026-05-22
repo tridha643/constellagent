@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import {
   buildSubagentMetadata,
   isSubagentTool,
+  mergeSubagentResultMetadata,
   parseSubagentInput,
   parseSubagentMetadata,
+  parseSubagentResult,
   subagentStatusHint,
   subagentToolLabel,
+  toolCallHarnessName,
 } from './conductor-subagent-utils'
 
 describe('isSubagentTool', () => {
@@ -17,6 +20,22 @@ describe('isSubagentTool', () => {
 })
 
 describe('parseSubagentInput', () => {
+  test('parses nested Cursor SDK subagentType object', () => {
+    expect(
+      parseSubagentInput({
+        description: 'Scout codebase',
+        prompt: 'Find Conductor files',
+        subagentType: { kind: 'explore', name: 'medium' },
+        model: 'composer-2',
+      }),
+    ).toEqual({
+      title: 'Scout codebase',
+      statusHint: 'Find Conductor files',
+      subagentType: 'explore/medium',
+      model: 'composer-2',
+    })
+  })
+
   test('uses description as title', () => {
     expect(
       parseSubagentInput({
@@ -63,5 +82,32 @@ describe('subagent metadata', () => {
     expect(parsed?.variant).toBe('subagent')
     expect(parsed?.subagentType).toBe('explore')
     expect(parsed?.title).toBe('Explore UI')
+    expect(parsed?.model).toBe('composer-2')
+    expect(parsed?.thinkingLevel).toBe('low')
+  })
+
+  test('merges task tool result fields into metadata', () => {
+    const base = buildSubagentMetadata({ description: 'Run explore' })
+    const merged = mergeSubagentResultMetadata(base, {
+      status: 'success',
+      value: { agentId: 'bc-child', durationMs: 4200 },
+    })
+    const parsed = parseSubagentMetadata(merged)
+    expect(parsed?.agentId).toBe('bc-child')
+    expect(parsed?.durationMs).toBe(4200)
+  })
+})
+
+describe('toolCallHarnessName', () => {
+  test('maps task tool call type to Task harness name', () => {
+    expect(toolCallHarnessName({ type: 'task', args: {} })).toBe('Task')
+  })
+})
+
+describe('parseSubagentResult', () => {
+  test('reads agentId and durationMs from success value', () => {
+    expect(
+      parseSubagentResult({ status: 'success', value: { agentId: 'a1', durationMs: 100 } }),
+    ).toEqual({ agentId: 'a1', durationMs: 100 })
   })
 })

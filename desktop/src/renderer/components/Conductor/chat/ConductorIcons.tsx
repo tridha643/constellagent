@@ -1,4 +1,5 @@
 import type { AgentProvider } from '../../../../shared/agent-chat-types'
+import type { ThinkingLevel } from '../../../../shared/conductor-thinking'
 import { CursorIcon } from '../../Icons/CursorIcon'
 import openaiIcon from '../../../assets/agent-icons/openai.svg'
 
@@ -78,11 +79,11 @@ export function EffortBars({
   size = 14,
   className,
 }: {
-  level: 'low' | 'medium' | 'high' | 'xhigh'
+  level: ThinkingLevel
   size?: number
   className?: string
 }) {
-  const activeCount = { low: 1, medium: 2, high: 3, xhigh: 4 }[level]
+  const activeCount = { minimal: 0, low: 1, medium: 2, high: 3, xhigh: 4 }[level]
   return (
     <svg
       viewBox="0 0 16 16"

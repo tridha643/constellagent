@@ -39,7 +39,7 @@ export function normalizePath(path: string): string {
   return cleaned
 }
 
-/** Word-level highlight for a modified (removed→added) row pair. */
+/** Word-level highlight for a modified (removedâ†’added) row pair. */
 function tokenizeModified(left: string, right: string): {
   leftTokens: DiffToken[]
   rightTokens: DiffToken[]
