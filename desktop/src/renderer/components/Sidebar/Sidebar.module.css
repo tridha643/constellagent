@@ -1027,6 +1027,46 @@
   box-shadow: none;
 }
 
+.workspaceItem.spotlightWorkspace {
+  --sidebar-spotlight-color: var(--spotlight-watching, var(--accent-blue));
+  --sidebar-spotlight-wash: color-mix(in srgb, var(--sidebar-spotlight-color) 8%, transparent);
+
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--sidebar-spotlight-color) 12%, transparent), transparent 54%),
+    var(--sidebar-spotlight-wash);
+  border-color: color-mix(in srgb, var(--sidebar-spotlight-color) 20%, transparent);
+  box-shadow:
+    inset 2px 0 0 var(--sidebar-spotlight-color),
+    inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
+  color: color-mix(in srgb, var(--text-primary) 88%, var(--sidebar-spotlight-color));
+}
+
+.workspaceItem.spotlightWorkspace[data-spotlight-state="preparing"],
+.workspaceItem.spotlightWorkspace[data-spotlight-state="syncing"],
+.workspaceItem.spotlightWorkspace[data-spotlight-state="restoring"] {
+  --sidebar-spotlight-color: var(--spotlight-syncing, var(--accent-yellow));
+  --sidebar-spotlight-wash: color-mix(in srgb, var(--sidebar-spotlight-color) 9%, transparent);
+}
+
+.workspaceItem.spotlightWorkspace[data-spotlight-state="blocked"],
+.workspaceItem.spotlightWorkspace[data-spotlight-state="error"] {
+  --sidebar-spotlight-color: var(--spotlight-blocked, var(--accent-red));
+  --sidebar-spotlight-wash: color-mix(in srgb, var(--sidebar-spotlight-color) 12%, transparent);
+}
+
+.workspaceItem.spotlightWorkspace.active {
+  border-color: color-mix(in srgb, var(--sidebar-spotlight-color) 30%, transparent);
+  color: color-mix(in srgb, var(--text-primary) 78%, var(--sidebar-spotlight-color));
+}
+
+.workspaceItem.spotlightWorkspace .workspaceIcon,
+.workspaceItem.spotlightWorkspace .workspaceNameCol,
+.workspaceItem.spotlightWorkspace .branchPrBtn,
+.workspaceItem.spotlightWorkspace .deleteBtn {
+  position: relative;
+  z-index: 1;
+}
+
 .workspaceItem:active:not(.workspaceItemDragging) {
   transform: scale(0.992);
 }
@@ -1219,6 +1259,14 @@
     color: var(--text-primary);
   }
 
+  .workspaceItem.spotlightWorkspace:hover {
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--sidebar-spotlight-color) 16%, transparent), transparent 58%),
+      color-mix(in srgb, var(--sidebar-spotlight-color) 11%, transparent);
+    border-color: color-mix(in srgb, var(--sidebar-spotlight-color) 28%, transparent);
+    color: color-mix(in srgb, var(--text-primary) 92%, var(--sidebar-spotlight-color));
+  }
+
   .prInline:hover {
     filter: brightness(1.3);
   }
@@ -1269,6 +1317,79 @@
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+}
+
+.spotlightChip {
+  --sidebar-spotlight-chip-color: var(--spotlight-watching, var(--accent-blue));
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  width: 92px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--sidebar-spotlight-chip-color) 26%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--sidebar-spotlight-chip-color) 12%, transparent);
+  color: color-mix(in srgb, var(--sidebar-spotlight-chip-color) 74%, white);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  transition:
+    background-color 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    border-color 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    color 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    opacity 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.spotlightChip[data-spotlight-state="preparing"],
+.spotlightChip[data-spotlight-state="syncing"],
+.spotlightChip[data-spotlight-state="restoring"] {
+  --sidebar-spotlight-chip-color: var(--spotlight-syncing, var(--accent-yellow));
+}
+
+.spotlightChip[data-spotlight-state="blocked"],
+.spotlightChip[data-spotlight-state="error"] {
+  --sidebar-spotlight-chip-color: var(--spotlight-blocked, var(--accent-red));
+  background: color-mix(in srgb, var(--sidebar-spotlight-chip-color) 15%, transparent);
+  border-color: color-mix(in srgb, var(--sidebar-spotlight-chip-color) 36%, transparent);
+}
+
+.spotlightChip[data-spotlight-state="syncing"] {
+  animation: spotlightChipBreathe 1400ms ease-in-out infinite;
+}
+
+.spotlightChipIcon {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+
+.spotlightChipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spotlightChipDot {
+  width: 6px;
+  height: 6px;
+  margin-left: 0;
+}
+
+@keyframes spotlightChipBreathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
 }
 
 /* ── Graphite Stack Visualization ── */
@@ -1748,7 +1869,8 @@
   }
 
   .projectPrLoadingSpinner,
-  .syncIndicatorSyncing {
+  .syncIndicatorSyncing,
+  .spotlightChip[data-spotlight-state="syncing"] {
     animation: none;
   }
 

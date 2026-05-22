@@ -5,6 +5,7 @@ import styles from './Spotlight.module.css'
 interface Props {
   state: SpotlightState
   message?: string
+  className?: string
 }
 
 /**
@@ -13,7 +14,7 @@ interface Props {
  * smoothly instead of restarting from zero. `prefers-reduced-motion` collapses
  * all motion to instant — see Spotlight.module.css.
  */
-export function SpotlightStatusDot({ state, message }: Props) {
+export function SpotlightStatusDot({ state, message, className }: Props) {
   // One-shot wobble for blocked/error transitions. Track entry into the
   // state so re-renders while still in that state don't re-trigger it.
   const [wobble, setWobble] = useState(false)
@@ -36,6 +37,7 @@ export function SpotlightStatusDot({ state, message }: Props) {
         styles.dot,
         styles[`dot_${state}`],
         wobble ? styles.dotWobble : '',
+        className ?? '',
       ].filter(Boolean).join(' ')}
       title={message ?? labelFor(state)}
       aria-label={`Spotlight: ${labelFor(state)}`}

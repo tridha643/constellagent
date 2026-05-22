@@ -38,9 +38,12 @@ import {
 } from "../../utils/add-to-chat";
 import { ContextWindowIndicator } from "./ContextWindowIndicator";
 import { SpotlightStatusDot } from "../Spotlight/SpotlightStatusDot";
+import { SpotlightGlowRing } from "../Spotlight/SpotlightGlowRing";
+import { SpotlightIcon } from "../Icons/SpotlightIcon";
 import styles from "./Sidebar.module.css";
 import { maybeShowStaleMainToast } from "../../utils/ipc-stale-main";
 import { buildGithubHttpsCloneUrl } from "../../../shared/github-url";
+import type { SpotlightState, SpotlightStatus } from "../../../shared/spotlight-types";
 
 const PR_ICON_SIZE = 10;
 const PR_REVIEW_ICON_SIZE = 10;
@@ -411,10 +414,46 @@ function WorkspaceMeta({
   );
 }
 
-function SpotlightIndicatorForWorkspace({ workspaceId, projectId }: { workspaceId: string; projectId: string }) {
-  const status = useAppStore((s) => s.spotlightStatusByProject.get(projectId));
-  if (!status || status.workspaceId !== workspaceId) return null;
-  return <SpotlightStatusDot state={status.state} message={status.message} />;
+function labelForSpotlightState(state: SpotlightState): string {
+  switch (state) {
+    case "preparing":
+      return "Preparing";
+    case "syncing":
+      return "Syncing";
+    case "watching":
+      return "Spotlight";
+    case "restoring":
+      return "Restoring";
+    case "blocked":
+      return "Blocked";
+    case "error":
+      return "Error";
+    default:
+      return "Spotlight";
+  }
+}
+
+function SidebarSpotlightStatusChip({ status }: { status: SpotlightStatus }) {
+  if (status.state === "idle") return null;
+
+  const label = labelForSpotlightState(status.state);
+
+  return (
+    <span
+      className={styles.spotlightChip}
+      data-spotlight-state={status.state}
+      title={status.message ?? `Spotlight: ${label}`}
+      aria-label={`Spotlight: ${label}`}
+    >
+      <SpotlightIcon className={styles.spotlightChipIcon} />
+      <span className={styles.spotlightChipLabel}>{label}</span>
+      <SpotlightStatusDot
+        className={styles.spotlightChipDot}
+        state={status.state}
+        message={status.message}
+      />
+    </span>
+  );
 }
 
 function WorkspaceSyncIndicator({ workspaceId }: { workspaceId: string }) {
@@ -595,6 +634,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const settings = useAppStore((s) => s.settings);
   const setGhAvailability = useAppStore((s) => s.setGhAvailability);
   const worktreeSyncMap = useAppStore((s) => s.worktreeSyncStatus);
+  const spotlightStatusByProject = useAppStore((s) => s.spotlightStatusByProject);
   const graphiteStacks = useAppStore((s) => s.graphiteStacks);
   const collapsedProjectIds = useAppStore((s) => s.collapsedProjectIds);
   const toggleProjectCollapsed = useAppStore((s) => s.toggleProjectCollapsed);
@@ -1764,13 +1804,19 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                           const displayName = isAutoName ? ws.branch : ws.name;
                           const showMeta =
                             !isAutoName && ws.branch && ws.branch !== ws.name;
+                          const spotlightStatus = spotlightStatusByProject.get(ws.projectId);
+                          const isSpotlightWorkspace =
+                            !!spotlightStatus &&
+                            spotlightStatus.workspaceId === ws.id &&
+                            spotlightStatus.state !== "idle";
 
                           return (
                             <div
                               key={ws.id}
                               className={`${styles.workspaceItem} ${
                                 ws.id === activeWorkspaceId ? styles.active : ""
-                              } ${unreadWorkspaceIds.has(ws.id) ? styles.unread : ""} ${activeClaudeWorkspaceIds.has(ws.id) ? styles.claudeActive : ""} ${draggedWsId === ws.id ? styles.workspaceItemDragging : ""} ${dropTargetWsId === ws.id && draggedWsId !== ws.id ? styles.workspaceItemDropTarget : ""} ${graphiteStacks.has(ws.id) && (graphiteStacks.get(ws.id)?.branches.length ?? 0) > 1 ? styles.graphiteWorkspace : ""}`}
+                              } ${unreadWorkspaceIds.has(ws.id) ? styles.unread : ""} ${activeClaudeWorkspaceIds.has(ws.id) ? styles.claudeActive : ""} ${draggedWsId === ws.id ? styles.workspaceItemDragging : ""} ${dropTargetWsId === ws.id && draggedWsId !== ws.id ? styles.workspaceItemDropTarget : ""} ${graphiteStacks.has(ws.id) && (graphiteStacks.get(ws.id)?.branches.length ?? 0) > 1 ? styles.graphiteWorkspace : ""} ${isSpotlightWorkspace ? styles.spotlightWorkspace : ""}`}
+                              data-spotlight-state={isSpotlightWorkspace ? spotlightStatus!.state : undefined}
                               draggable={!isEditing}
                               onClick={() =>
                                 !isEditing && handleSelectWorkspace(ws.id)
@@ -1824,6 +1870,9 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                 setDropTargetWsId(null);
                               }}
                             >
+                              {isSpotlightWorkspace && (
+                                <SpotlightGlowRing state={spotlightStatus!.state} />
+                              )}
                               <span className={styles.workspaceIcon}>
                                 <SidebarWorkspaceGlyph
                                   sync={worktreeSyncMap.get(ws.id)}
@@ -1870,7 +1919,9 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                     showBranch={!!showMeta}
                                   />
                                   <WorkspaceSyncIndicator workspaceId={ws.id} />
-                                  <SpotlightIndicatorForWorkspace workspaceId={ws.id} projectId={ws.projectId} />
+                                  {isSpotlightWorkspace && (
+                                    <SidebarSpotlightStatusChip status={spotlightStatus!} />
+                                  )}
                                 </span>
                                 <GraphiteStack
                                   workspaceId={ws.id}
