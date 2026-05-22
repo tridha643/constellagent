@@ -160,11 +160,24 @@
 }
 
 .resultIcon {
-  font-size: var(--text-sm);
-  width: 14px;
-  text-align: center;
-  flex-shrink: 0;
-  opacity: 0.5;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  opacity: 0.65;
+}
+
+.resultFileIcon {
+  display: block;
+  margin-top: 1px;
+  opacity: 1;
+}
+
+.resultItemCode .resultFileIcon {
+  margin-top: 2px;
 }
 
 /* Kind pill — matches the hairline-pill preset established by PlanPalette's

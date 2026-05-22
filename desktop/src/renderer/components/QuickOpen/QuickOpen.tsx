@@ -4,6 +4,7 @@ import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import type { QuickOpenSearchItem, QuickOpenSearchResult } from '../../../shared/quick-open-types'
 import type { CodeSearchItem, CodeSearchResult } from '../../../shared/code-search-types'
 import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
+import { SharedFileIcon, SharedFileIconDefs } from '../../utils/file-presentation'
 import styles from './QuickOpen.module.css'
 
 interface Props {
@@ -135,6 +136,7 @@ export function QuickOpen({ worktreePath }: Props) {
   const closeQuickOpen = useAppStore((s) => s.closeQuickOpen)
   const activeTabId = useAppStore((s) => s.activeTabId)
   const tabs = useAppStore((s) => s.tabs)
+  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
   const codeSearchSetting = useAppStore((s) => s.settings.quickOpenCodeSearchEnabled)
 
   const editorFindFilePath = editorFindContext?.filePath ?? null
@@ -327,6 +329,7 @@ export function QuickOpen({ worktreePath }: Props) {
   return (
     <div className={styles.overlay} onClick={closeQuickOpen}>
       <div className={styles.panel} onClick={(e) => e.stopPropagation()}>
+        <SharedFileIconDefs appearanceThemeId={appearanceThemeId} />
         <div className={styles.inputWrap}>
           <input
             ref={inputRef}
@@ -379,7 +382,11 @@ export function QuickOpen({ worktreePath }: Props) {
                   onClick={onClick}
                   onMouseEnter={() => setSelectedIndex(index)}
                 >
-                  <span className={styles.resultIcon}>·</span>
+                  <SharedFileIcon
+                    path={item.path}
+                    appearanceThemeId={appearanceThemeId}
+                    className={`${styles.resultIcon} ${styles.resultFileIcon}`}
+                  />
                   {codeSearchEnabled && (
                     <span
                       className={`${styles.resultKind} ${item.kind === 'code' ? styles.resultKindCode : styles.resultKindFile}`}

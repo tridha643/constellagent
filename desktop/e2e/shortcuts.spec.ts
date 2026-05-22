@@ -147,6 +147,7 @@ test.describe('Keyboard shortcuts', () => {
       await expect(quickOpenInput).toBeVisible({ timeout: 5000 })
 
       await quickOpenInput.fill('utils')
+      await expect(window.locator('[data-file-icon-token="typescript"]').first()).toBeVisible({ timeout: 5000 })
       await window.waitForTimeout(1000)
       await window.keyboard.press('Enter')
       await window.waitForTimeout(1500)
