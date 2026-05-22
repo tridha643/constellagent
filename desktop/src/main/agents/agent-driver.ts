@@ -20,6 +20,9 @@ export type { AgentProvider }
 export const PLAN_PROMPT_PREFIX =
   'Operate in planning mode. Think through the problem and produce a clear, step-by-step implementation plan before changing anything. Do not edit files or run mutating commands in this turn — outline the plan only.'
 
+export const PLAN_PROMPT_CURSOR_ASK =
+  'When important scope or behavior is still unclear, use the native AskQuestion tool to ask 3-4 strong multiple-choice questions first (2-4 options each, include tradeoffs, mark a recommended default when confident).'
+
 /**
  * Prepended to every Conductor turn so assistant replies use markdown the chat
  * renderer can display (GFM headings, task lists, tables, bullets).
@@ -35,9 +38,13 @@ export function buildAgentPrompt(
   text: string,
   plan: boolean,
   previousTranscript?: readonly TranscriptMessage[],
+  provider?: AgentProvider,
 ): string {
   const parts = [CONDUCTOR_MARKDOWN_FORMAT_PREFIX]
-  if (plan) parts.push(PLAN_PROMPT_PREFIX)
+  if (plan) {
+    parts.push(PLAN_PROMPT_PREFIX)
+    if (provider === 'cursor') parts.push(PLAN_PROMPT_CURSOR_ASK)
+  }
   const previousContext = previousTranscript
     ? formatTranscriptForAgentContext(previousTranscript)
     : undefined

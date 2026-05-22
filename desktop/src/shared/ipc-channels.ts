@@ -268,6 +268,7 @@ export const IPC = {
   AGENT_CHAT_SET_PLAN: 'agent-chat:set-plan',
   AGENT_CHAT_SET_THINKING_LEVEL: 'agent-chat:set-thinking-level',
   AGENT_CHAT_CANCEL: 'agent-chat:cancel',
+  AGENT_CHAT_RESPOND_BLOCKING_QUESTION: 'agent-chat:respond-blocking-question',
   AGENT_CHAT_DELETE_SESSION: 'agent-chat:delete-session',
   AGENT_CHAT_GET_AUTH_STATUS: 'agent-chat:get-auth-status',
   CONDUCTOR_AUTH_SYNC: 'conductor:auth-sync',

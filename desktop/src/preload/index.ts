@@ -635,6 +635,10 @@ const api = {
     setThinkingLevel: (sessionId: string, thinkingLevel: import('../shared/conductor-thinking').ThinkingLevel) =>
       ipcRenderer.invoke(IPC.AGENT_CHAT_SET_THINKING_LEVEL, sessionId, thinkingLevel),
     cancel: (sessionId: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_CANCEL, sessionId),
+    respondBlockingQuestion: (
+      sessionId: string,
+      response: import('../shared/conductor-ask-question-types').ConductorBlockingQuestionResponse,
+    ) => ipcRenderer.invoke(IPC.AGENT_CHAT_RESPOND_BLOCKING_QUESTION, sessionId, response),
     deleteSession: (sessionId: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_DELETE_SESSION, sessionId),
     getAuthStatus: (force?: boolean) => ipcRenderer.invoke(IPC.AGENT_CHAT_GET_AUTH_STATUS, force),
     syncAuth: (input: { cursorApiKey: string; openaiApiKey: string }) =>

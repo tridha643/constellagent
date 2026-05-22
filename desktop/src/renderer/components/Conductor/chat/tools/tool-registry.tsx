@@ -65,6 +65,13 @@ for (const name of ['grep', 'search', 'ripgrep', 'rg', 'codebase_search', 'find'
 registerToolEntry('web_search', { render: (tool) => <WebSearchTool tool={tool} />, container: 'inline' })
 registerToolEntry('todowrite', { render: (tool) => <TodoTool tool={tool} />, container: 'block' })
 
+for (const name of ['askquestion', 'ask_question']) {
+  registerToolEntry(name, {
+    render: (tool) => <CursorFallbackRow tool={tool} />,
+    container: 'inline',
+  })
+}
+
 /** Dispatches a tool row to its registered renderer; suppresses `todoread`. */
 export function ToolPart({ tool }: { tool: TimelineToolCall }) {
   const name = tool.toolName.toLowerCase()

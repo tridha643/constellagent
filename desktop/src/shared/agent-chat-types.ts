@@ -1,5 +1,9 @@
 import type { TranscriptMessage } from './pi/pi-desktop-state'
 import type { ThinkingLevel } from './conductor-thinking'
+import type {
+  AgentChatRunPhase,
+  ConductorBlockingQuestion,
+} from './conductor-ask-question-types'
 
 export type AgentProvider = 'codex' | 'cursor'
 
@@ -30,6 +34,8 @@ export interface AgentChatSessionState {
   readonly thinkingLevel: ThinkingLevel
   readonly plan: boolean
   readonly status: AgentChatStatus
+  readonly runPhase?: AgentChatRunPhase
+  readonly blockingQuestion?: ConductorBlockingQuestion | null
   readonly queuedMessages: readonly QueuedAgentMessage[]
   readonly error?: string
   readonly createdAt: string

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AgentChatSessionState, QueuedAgentMessage, QueuedAgentMessageMode } from '../../../shared/agent-chat-types'
+import type { ConductorBlockingQuestionResponse } from '../../../shared/conductor-ask-question-types'
 import type { ThinkingLevel } from '../../../shared/conductor-thinking'
 import { applyAssistantDeltaToTranscript } from '../../../shared/conductor-transcript-utils'
 import type { TranscriptMessage } from '../../../shared/pi/pi-desktop-state'
@@ -44,6 +45,7 @@ export interface ConductorSessionController {
   setModel: (model: string) => void
   setPlan: (plan: boolean) => void
   setThinkingLevel: (level: ThinkingLevel) => void
+  respondBlockingQuestion: (response: ConductorBlockingQuestionResponse) => void
 }
 
 /** Subscribes to a single session's state + transcript and exposes actions. */
@@ -142,5 +144,13 @@ export function useConductorSession(sessionId: string | null): ConductorSessionC
     [sessionId],
   )
 
-  return { state, transcript, submit, cancel, replaceQueue, setModel, setPlan, setThinkingLevel }
+  const respondBlockingQuestion = useCallback(
+    (response: ConductorBlockingQuestionResponse) => {
+      if (!sessionId) return
+      void window.api.agentChat.respondBlockingQuestion(sessionId, response).catch(() => {})
+    },
+    [sessionId],
+  )
+
+  return { state, transcript, submit, cancel, replaceQueue, setModel, setPlan, setThinkingLevel, respondBlockingQuestion }
 }

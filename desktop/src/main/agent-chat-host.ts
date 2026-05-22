@@ -25,6 +25,7 @@ import type {
   AgentChatSessionState,
   AgentChatStatus,
   AgentProvider,
+  ConductorBlockingQuestionResponse,
   CreateAgentChatSessionInput,
   ForkAgentChatSessionInput,
   QueuedAgentMessage,
@@ -34,6 +35,7 @@ import {
   enqueueQueuedMessage,
   findSteerMessageIndex,
 } from './agent-chat-queue'
+import { getConductorQuestionBridge } from './agents/conductor-question-bridge'
 
 export type { AgentChatSessionState, CreateAgentChatSessionInput }
 
@@ -44,6 +46,7 @@ interface RuntimeSession {
 
 export class AgentChatHost {
   private readonly sessions = new Map<string, RuntimeSession>()
+  private readonly questionBridge = getConductorQuestionBridge()
   private readonly transcriptCache = new Map<string, TranscriptMessage[]>()
   private readonly timelineState: TimelineRuntimeState = {
     runMetricsBySession: new Map(),
@@ -60,6 +63,12 @@ export class AgentChatHost {
   private readonly pendingTranscriptFlush = new Map<string, ReturnType<typeof setTimeout>>()
   private static readonly TRANSCRIPT_FLUSH_MS = 40
 
+  constructor() {
+    this.questionBridge.setHostNotifier((question) => {
+      this.setBlockingQuestion(question.sessionId, question)
+    })
+  }
+
   async createSession(input: CreateAgentChatSessionInput): Promise<AgentChatSessionState> {
     const nowIso = new Date().toISOString()
     const state: AgentChatSessionState = {
@@ -72,6 +81,8 @@ export class AgentChatHost {
       thinkingLevel: input.thinkingLevel ?? thinkingLevelFromModel(input.model),
       plan: input.plan ?? false,
       status: 'idle',
+      runPhase: 'idle',
+      blockingQuestion: null,
       queuedMessages: [],
       createdAt: nowIso,
       updatedAt: nowIso,
@@ -151,6 +162,7 @@ export class AgentChatHost {
     if (!state) return
 
     const isRunning = state.status === 'running'
+    if (state.runPhase === 'awaitingUser') return
     if (isRunning) {
       const mode = deliverAs ?? 'followUp'
       this.setQueuedMessages(sessionId, enqueueQueuedMessage(state.queuedMessages, trimmed, mode))
@@ -193,7 +205,12 @@ export class AgentChatHost {
     }
 
     const abort = new AbortController()
-    this.update(state.sessionId, { status: 'running', error: undefined })
+    this.update(state.sessionId, {
+      status: 'running',
+      runPhase: 'running',
+      blockingQuestion: null,
+      error: undefined,
+    })
     const running = this.sessions.get(sessionId)
     if (running) running.abort = abort
     // Drives the "Working…" indicator in the timeline.
@@ -219,7 +236,7 @@ export class AgentChatHost {
         return
       }
       applyTimelineEvent(this.transcriptCache, this.snapshotEvent(ref, state, 'runCompleted', 'idle'), this.timelineState)
-      this.update(sessionId, { status: 'idle' })
+      this.update(sessionId, { status: 'idle', runPhase: 'idle', blockingQuestion: null })
       this.clearTurnAbort(sessionId)
       await this.processQueueAfterTurn(sessionId)
     } catch (err) {
@@ -258,7 +275,23 @@ export class AgentChatHost {
   }
 
   async cancel(sessionId: string): Promise<void> {
+    const pending = this.sessions.get(sessionId)?.state.blockingQuestion
+    if (pending) {
+      this.questionBridge.reject(pending.requestId, 'User cancelled')
+      this.update(sessionId, { runPhase: 'running', blockingQuestion: null })
+    }
     this.sessions.get(sessionId)?.abort?.abort()
+  }
+
+  async respondBlockingQuestion(
+    sessionId: string,
+    response: ConductorBlockingQuestionResponse,
+  ): Promise<void> {
+    const state = this.sessions.get(sessionId)?.state ?? (await this.rehydrate(sessionId))
+    if (!state?.blockingQuestion) return
+    if (state.blockingQuestion.requestId !== response.requestId) return
+    this.questionBridge.resolve(response.requestId, response.details)
+    this.update(sessionId, { runPhase: 'running', blockingQuestion: null })
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -380,7 +413,14 @@ export class AgentChatHost {
       { type: 'sessionClosed', sessionRef: ref, timestamp: new Date().toISOString() } as SessionDriverEvent,
       this.timelineState,
     )
-    this.update(state.sessionId, { status: 'idle' })
+    this.update(state.sessionId, { status: 'idle', runPhase: 'idle', blockingQuestion: null })
+  }
+
+  private setBlockingQuestion(
+    sessionId: string,
+    question: NonNullable<AgentChatSessionState['blockingQuestion']>,
+  ): void {
+    this.update(sessionId, { runPhase: 'awaitingUser', blockingQuestion: question })
   }
 
   /**
@@ -414,7 +454,7 @@ export class AgentChatHost {
   private failRun(state: AgentChatSessionState, ref: SessionRef, message: string): void {
     this.invalidateCodexThreadAfterStop(state, message)
     applyTimelineEvent(this.transcriptCache, this.failEvent(ref, message), this.timelineState)
-    this.update(state.sessionId, { status: 'failed', error: message })
+    this.update(state.sessionId, { status: 'failed', runPhase: 'failed', blockingQuestion: null, error: message })
     const next = this.currentState(state.sessionId)
     if (next) {
       void this.persist(next)
@@ -500,7 +540,7 @@ export class AgentChatHost {
     const model = speedSuffix ? `${base}-fast` : base
     const thinkingLevel =
       inferred !== 'medium' ? inferred : normalizeThinkingLevel(stored.thinkingLevel)
-    return { ...stored, model, thinkingLevel, queuedMessages: stored.queuedMessages ?? [] }
+    return { ...stored, model, thinkingLevel, queuedMessages: stored.queuedMessages ?? [], runPhase: stored.runPhase ?? 'idle', blockingQuestion: stored.blockingQuestion ?? null }
   }
 
   private async rehydrate(sessionId: string): Promise<AgentChatSessionState | null> {
@@ -510,6 +550,8 @@ export class AgentChatHost {
     const normalized = this.normalizeStoredSession({
       ...stored,
       status: stored.status === 'running' ? 'idle' : stored.status,
+      runPhase: stored.status === 'running' ? 'idle' : (stored.runPhase ?? 'idle'),
+      blockingQuestion: null,
       queuedMessages: stored.queuedMessages ?? [],
     })
     const state: AgentChatSessionState = normalized

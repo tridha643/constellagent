@@ -19,6 +19,7 @@ import {
 import type { Tab } from '../../store/types'
 import { ChatTimeline, type ChatTimelineHandle } from './chat/ChatTimeline'
 import { ChatComposer, type ChatComposerHandle } from './chat/ChatComposer'
+import { ConductorAskQuestionModal } from './chat/ConductorAskQuestionModal'
 import { useConductorSession } from './use-agent-chat'
 import {
   fetchConductorAuthStatus,
@@ -108,6 +109,8 @@ export function ConductorChatView({
   const thinkingLevel = normalizeThinkingLevel(controller.state?.thinkingLevel ?? draftThinkingLevel)
   const plan = controller.state?.plan ?? draftPlan
   const running = controller.state?.status === 'running'
+  const awaitingUser = controller.state?.runPhase === 'awaitingUser'
+  const blockingQuestion = controller.state?.blockingQuestion ?? null
 
   useEffect(() => {
     if (running) {
@@ -364,13 +367,24 @@ export function ConductorChatView({
           </span>
         </div>
       )}
+      {blockingQuestion ? (
+        <ConductorAskQuestionModal
+          question={blockingQuestion}
+          onSubmit={(details) => {
+            controller.respondBlockingQuestion({ requestId: blockingQuestion.requestId, details })
+          }}
+          onCancel={() => {
+            void controller.cancel()
+          }}
+        />
+      ) : null}
       <ChatComposer
         provider={provider}
         model={model}
         thinkingLevel={thinkingLevel}
         plan={plan}
         running={running}
-        disabled={!worktreePath}
+        disabled={!worktreePath || awaitingUser}
         queuedMessages={controller.state?.queuedMessages ?? []}
         onSubmit={handleSubmit}
         onCancel={controller.cancel}

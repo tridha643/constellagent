@@ -1950,6 +1950,14 @@ export function registerIpcHandlers(): void {
     }
     return agentChatHost.cancel(sessionId)
   })
+  ipcMain.handle(
+    IPC.AGENT_CHAT_RESPOND_BLOCKING_QUESTION,
+    async (
+      _e,
+      sessionId: string,
+      response: import('../shared/conductor-ask-question-types').ConductorBlockingQuestionResponse,
+    ) => agentChatHost.respondBlockingQuestion(sessionId, response),
+  )
   ipcMain.handle(IPC.AGENT_CHAT_DELETE_SESSION, async (_e, sessionId: string) =>
     agentChatHost.deleteSession(sessionId),
   )
