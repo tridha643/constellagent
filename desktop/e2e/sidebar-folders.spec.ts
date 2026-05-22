@@ -152,6 +152,72 @@ test.describe('Sidebar folders', () => {
     }
   })
 
+  test('reorderFolder persists custom folder order', async () => {
+    const repo = createTestRepo('folders-reorder')
+    const { app, window } = await launchApp()
+    try {
+      const folderNames = await window.evaluate((repoPath: string) => {
+        const store = (window as any).__store.getState()
+        store.hydrateState({ projects: [], workspaces: [] })
+        const projectId = crypto.randomUUID()
+        store.addProject({ id: projectId, name: 'project-reorder', repoPath })
+        const reviewFolderId = store.addFolder(projectId, 'Review')
+
+        const s1 = (window as any).__store.getState()
+        const priorityFolder = s1.folders.find((f: any) => (
+          f.projectId === projectId && f.name === 'Priority'
+        ))
+        ;(window as any).__store.getState().reorderFolder(reviewFolderId, priorityFolder.id)
+
+        return (window as any).__store.getState().folders
+          .filter((f: any) => f.projectId === projectId)
+          .sort((a: any, b: any) => a.order - b.order)
+          .map((f: any) => f.name)
+      }, repo)
+      expect(folderNames).toEqual(['Review', 'Priority', 'Non-Priority'])
+    } finally {
+      await app.close()
+      cleanupTestRepo(repo)
+    }
+  })
+
+  test('moveWorkspaceToFolderBefore places a workspace before a target in another folder', async () => {
+    const repo = createTestRepo('folders-place-before')
+    const { app, window } = await launchApp()
+    try {
+      const result = await window.evaluate((repoPath: string) => {
+        const store = (window as any).__store.getState()
+        store.hydrateState({ projects: [], workspaces: [] })
+        const projectId = crypto.randomUUID()
+        store.addProject({ id: projectId, name: 'project-place-before', repoPath })
+        const reviewFolderId = store.addFolder(projectId, 'Review')
+
+        const wsA = crypto.randomUUID()
+        const wsB = crypto.randomUUID()
+        const wsC = crypto.randomUUID()
+        store.addWorkspace({ id: wsA, name: 'alpha', branch: 'alpha', worktreePath: repoPath, projectId })
+        store.addWorkspace({ id: wsB, name: 'beta', branch: 'beta', worktreePath: repoPath, projectId })
+        store.addWorkspace({ id: wsC, name: 'gamma', branch: 'gamma', worktreePath: repoPath, projectId })
+
+        ;(window as any).__store.getState().moveWorkspaceToFolder(wsB, reviewFolderId)
+        ;(window as any).__store.getState().moveWorkspaceToFolderBefore(wsC, reviewFolderId, wsB)
+
+        const s = (window as any).__store.getState()
+        const reviewWorkspaceNames = s.workspaces
+          .filter((w: any) => w.folderId === reviewFolderId)
+          .map((w: any) => w.name)
+        const moved = s.workspaces.find((w: any) => w.id === wsC)
+
+        return { reviewWorkspaceNames, movedFolderId: moved.folderId, reviewFolderId }
+      }, repo)
+      expect(result.movedFolderId).toBe(result.reviewFolderId)
+      expect(result.reviewWorkspaceNames).toEqual(['gamma', 'beta'])
+    } finally {
+      await app.close()
+      cleanupTestRepo(repo)
+    }
+  })
+
   test('folder collapse state persists across hydrateState round trip', async () => {
     const repo = createTestRepo('folders-collapse')
     const { app, window } = await launchApp()
