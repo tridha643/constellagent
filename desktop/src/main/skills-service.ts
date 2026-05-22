@@ -76,6 +76,24 @@ export class SkillsService {
     }
   }
 
+  /** Body (system prompt) and optional model from a subagent markdown file. */
+  static async readSubagentDefinition(
+    filePath: string,
+  ): Promise<{ description: string; prompt: string; model?: string } | null> {
+    try {
+      const content = await readFile(filePath, 'utf-8')
+      const frontmatter = parseYamlFrontmatter(content)
+      const prompt = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim()
+      return {
+        description: frontmatter.description || '',
+        prompt,
+        model: frontmatter.model || undefined,
+      }
+    } catch {
+      return null
+    }
+  }
+
   static async syncSubagentToAgents(subagentPath: string, projectPath: string): Promise<void> {
     const fileName = basename(subagentPath)
     for (const dir of AGENT_SUBAGENT_DIRS) {

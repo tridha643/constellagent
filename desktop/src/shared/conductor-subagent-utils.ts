@@ -4,6 +4,10 @@ export interface SubagentMetadata {
   readonly variant: 'subagent'
   readonly subagentType?: string
   readonly title?: string
+  readonly model?: string
+  readonly thinkingLevel?: string
+  readonly agentId?: string
+  readonly durationMs?: number
 }
 
 export function isSubagentTool(toolName: string): boolean {
@@ -24,10 +28,38 @@ function firstLine(text: string): string {
   return line.length > 80 ? `${line.slice(0, 79)}…` : line
 }
 
+function parseSubagentTypeField(input: Record<string, unknown>): string | undefined {
+  const nested = input.subagentType ?? input.subagent_type
+  if (typeof nested === 'string' && nested.trim()) {
+    return nested.trim()
+  }
+  if (isRecord(nested)) {
+    const kind = typeof nested.kind === 'string' ? nested.kind.trim() : undefined
+    const name = typeof nested.name === 'string' ? nested.name.trim() : undefined
+    if (kind && name) return `${kind}/${name}`
+    return kind || name
+  }
+  if (typeof input.type === 'string' && input.type.trim()) {
+    return input.type.trim()
+  }
+  return undefined
+}
+
+/** Maps a Cursor SDK internal `ToolCall` union member to a harness tool name. */
+export function toolCallHarnessName(toolCall: unknown): string | undefined {
+  if (!isRecord(toolCall)) return undefined
+  const type = typeof toolCall.type === 'string' ? toolCall.type.trim() : undefined
+  if (!type) return undefined
+  if (type === 'task') return 'Task'
+  if (isSubagentTool(type)) return type
+  return undefined
+}
+
 export function parseSubagentInput(input: unknown): {
   title: string
   statusHint?: string
   subagentType?: string
+  model?: string
 } {
   if (!isRecord(input)) {
     if (typeof input === 'string' && input.trim()) {
@@ -39,19 +71,13 @@ export function parseSubagentInput(input: unknown): {
   const description =
     typeof input.description === 'string' ? input.description.trim() : undefined
   const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : undefined
-  const subagentType =
-    typeof input.subagent_type === 'string'
-      ? input.subagent_type
-      : typeof input.subagentType === 'string'
-        ? input.subagentType
-        : typeof input.type === 'string'
-          ? input.type
-          : undefined
+  const subagentType = parseSubagentTypeField(input)
+  const model = typeof input.model === 'string' ? input.model.trim() : undefined
 
   const title = description || (prompt ? firstLine(prompt) : subagentType || 'Subagent')
   const statusHint = prompt ? firstLine(prompt) : description
 
-  return { title, statusHint, subagentType }
+  return { title, statusHint, subagentType, model }
 }
 
 export function subagentToolLabel(input: unknown): string {
@@ -69,19 +95,38 @@ export function subagentStatusHint(input: unknown): string | undefined {
   return 'Exploring…'
 }
 
+export function parseSubagentResult(output: unknown): Pick<SubagentMetadata, 'agentId' | 'durationMs'> {
+  if (!isRecord(output)) return {}
+  const value = isRecord(output.value) ? output.value : output
+  return {
+    ...(typeof value.agentId === 'string' ? { agentId: value.agentId } : {}),
+    ...(typeof value.durationMs === 'number' ? { durationMs: value.durationMs } : {}),
+  }
+}
+
 export function buildSubagentMetadata(
   input: unknown,
   extras?: { model?: string; thinkingLevel?: string },
 ): string {
   const parsed = parseSubagentInput(input)
-  const payload: SubagentMetadata & { model?: string; thinkingLevel?: string } = {
+  const payload: SubagentMetadata = {
     variant: 'subagent',
     title: parsed.title,
     ...(parsed.subagentType ? { subagentType: parsed.subagentType } : {}),
+    ...(parsed.model ? { model: parsed.model } : {}),
     ...(extras?.model ? { model: extras.model } : {}),
     ...(extras?.thinkingLevel ? { thinkingLevel: extras.thinkingLevel } : {}),
   }
   return JSON.stringify(payload)
+}
+
+export function mergeSubagentResultMetadata(
+  existingMetadata: string | undefined,
+  output: unknown,
+): string {
+  const base = parseSubagentMetadata(existingMetadata) ?? { variant: 'subagent' as const }
+  const result = parseSubagentResult(output)
+  return JSON.stringify({ ...base, ...result })
 }
 
 export function parseSubagentMetadata(metadata: string | undefined): SubagentMetadata | null {
@@ -93,6 +138,11 @@ export function parseSubagentMetadata(metadata: string | undefined): SubagentMet
         variant: 'subagent',
         subagentType: typeof parsed.subagentType === 'string' ? parsed.subagentType : undefined,
         title: typeof parsed.title === 'string' ? parsed.title : undefined,
+        model: typeof parsed.model === 'string' ? parsed.model : undefined,
+        thinkingLevel:
+          typeof parsed.thinkingLevel === 'string' ? parsed.thinkingLevel : undefined,
+        agentId: typeof parsed.agentId === 'string' ? parsed.agentId : undefined,
+        durationMs: typeof parsed.durationMs === 'number' ? parsed.durationMs : undefined,
       }
     }
   } catch {

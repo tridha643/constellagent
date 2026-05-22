@@ -23,6 +23,8 @@ import type {
   AgentChatTranscriptPayload,
   CreateAgentChatSessionInput,
   ForkAgentChatSessionInput,
+  QueuedAgentMessage,
+  QueuedAgentMessageMode,
 } from '../shared/agent-chat-types'
 import type { ContextWindowData } from '../shared/context-window-types'
 import type { QuickOpenSearchRequest, QuickOpenSearchResult } from '../shared/quick-open-types'
@@ -621,7 +623,13 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT_CHAT_LIST_SESSIONS, workspaceId) as Promise<AgentChatSessionState[]>,
     getSession: (sessionId: string) =>
       ipcRenderer.invoke(IPC.AGENT_CHAT_GET_SESSION, sessionId) as Promise<AgentChatSessionWithTranscript | null>,
-    submit: (sessionId: string, text: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_SUBMIT, sessionId, text),
+    submit: (
+      sessionId: string,
+      text: string,
+      deliverAs?: QueuedAgentMessageMode,
+    ) => ipcRenderer.invoke(IPC.AGENT_CHAT_SUBMIT, sessionId, text, deliverAs),
+    replaceQueue: (sessionId: string, messages: readonly QueuedAgentMessage[]) =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_REPLACE_QUEUE, sessionId, messages),
     setModel: (sessionId: string, model: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_SET_MODEL, sessionId, model),
     setPlan: (sessionId: string, plan: boolean) => ipcRenderer.invoke(IPC.AGENT_CHAT_SET_PLAN, sessionId, plan),
     setThinkingLevel: (sessionId: string, thinkingLevel: import('../shared/conductor-thinking').ThinkingLevel) =>

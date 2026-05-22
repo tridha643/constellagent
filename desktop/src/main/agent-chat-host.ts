@@ -27,7 +27,13 @@ import type {
   AgentProvider,
   CreateAgentChatSessionInput,
   ForkAgentChatSessionInput,
+  QueuedAgentMessage,
+  QueuedAgentMessageMode,
 } from '../shared/agent-chat-types'
+import {
+  enqueueQueuedMessage,
+  findSteerMessageIndex,
+} from './agent-chat-queue'
 
 export type { AgentChatSessionState, CreateAgentChatSessionInput }
 
@@ -66,6 +72,7 @@ export class AgentChatHost {
       thinkingLevel: input.thinkingLevel ?? thinkingLevelFromModel(input.model),
       plan: input.plan ?? false,
       status: 'idle',
+      queuedMessages: [],
       createdAt: nowIso,
       updatedAt: nowIso,
     }
@@ -131,19 +138,51 @@ export class AgentChatHost {
     return { state, transcript }
   }
 
-  async submit(sessionId: string, text: string): Promise<void> {
+  async submit(
+    sessionId: string,
+    text: string,
+    deliverAs?: QueuedAgentMessageMode,
+  ): Promise<void> {
     const trimmed = text.trim()
+    if (trimmed.length === 0) return
+
     const live = this.sessions.get(sessionId)
-    if (live?.state.status === 'running' || live?.abort) {
+    const state = live?.state ?? (await this.rehydrate(sessionId))
+    if (!state) return
+
+    const isRunning = state.status === 'running'
+    if (isRunning) {
+      const mode = deliverAs ?? 'followUp'
+      this.setQueuedMessages(sessionId, enqueueQueuedMessage(state.queuedMessages, trimmed, mode))
+      if (mode === 'steer') {
+        await this.cancel(sessionId)
+      }
       return
     }
-    const session = live
-    const state = session?.state ?? (await this.rehydrate(sessionId))
-    if (!state || trimmed.length === 0) return
+
+    await this.startTurn(sessionId, trimmed)
+  }
+
+  async replaceQueue(
+    sessionId: string,
+    messages: readonly QueuedAgentMessage[],
+  ): Promise<void> {
+    await this.ensureSession(sessionId)
+    const timestamp = new Date().toISOString()
+    this.setQueuedMessages(
+      sessionId,
+      messages.map((message) => ({ ...message, updatedAt: timestamp })),
+    )
+  }
+
+  private async startTurn(sessionId: string, text: string): Promise<void> {
+    const live = this.sessions.get(sessionId)
+    const state = live?.state ?? (await this.rehydrate(sessionId))
+    if (!state) return
 
     const ref = this.refOf(state)
     const previousTranscript = [...(this.transcriptCache.get(sessionKey(ref)) ?? [])]
-    appendUserMessage(this.transcriptCache, ref, trimmed, [], state.plan)
+    appendUserMessage(this.transcriptCache, ref, text, [], state.plan)
     this.flushTranscript(state)
 
     const driver = this.drivers[state.provider]
@@ -168,16 +207,26 @@ export class AgentChatHost {
         model: state.model,
         thinkingLevel: state.thinkingLevel,
         plan: state.plan,
-        text: trimmed,
+        text,
         previousTranscript,
         signal: abort.signal,
         emit: (event) => this.onDriverEvent(sessionId, event),
       })
+      if (abort.signal.aborted) {
+        this.interruptRun(this.currentState(sessionId) ?? state, ref)
+        this.clearTurnAbort(sessionId)
+        await this.processSteerOrQueue(sessionId)
+        return
+      }
       applyTimelineEvent(this.transcriptCache, this.snapshotEvent(ref, state, 'runCompleted', 'idle'), this.timelineState)
       this.update(sessionId, { status: 'idle' })
+      this.clearTurnAbort(sessionId)
+      await this.processQueueAfterTurn(sessionId)
     } catch (err) {
       if (abort.signal.aborted) {
         this.interruptRun(this.currentState(sessionId) ?? state, ref)
+        this.clearTurnAbort(sessionId)
+        await this.processSteerOrQueue(sessionId)
       } else {
         const message = err instanceof Error ? err.message : String(err)
         this.failRun(this.currentState(sessionId) ?? state, ref, message)
@@ -319,6 +368,7 @@ export class AgentChatHost {
    * Stopped marker the renderer turns into an INTERRUPTED BY USER pill.
    */
   private interruptRun(state: AgentChatSessionState, ref: SessionRef): void {
+    this.invalidateCodexThreadAfterStop(state)
     this.finalizeRunningTools(ref)
     applyTimelineEvent(
       this.transcriptCache,
@@ -331,6 +381,18 @@ export class AgentChatHost {
       this.timelineState,
     )
     this.update(state.sessionId, { status: 'idle' })
+  }
+
+  /**
+   * After stale CLI resume, force the next Codex turn to seed Conductor transcript.
+   * User interrupt is handled via SDK `AbortSignal` in `CodexDriver.runTurnOnce` (finally).
+   */
+  private invalidateCodexThreadAfterStop(state: AgentChatSessionState, errMessage?: string): void {
+    if (state.provider !== 'codex' || errMessage === undefined) return
+    const lower = errMessage.toLowerCase()
+    if (lower.includes('thread/resume') || lower.includes('no rollout')) {
+      this.drivers.codex.markSessionInterrupted(state.sessionId)
+    }
   }
 
   /** Mark in-flight tool rows as failed so shell/bash chips do not stay running after Esc/stop. */
@@ -350,6 +412,7 @@ export class AgentChatHost {
   }
 
   private failRun(state: AgentChatSessionState, ref: SessionRef, message: string): void {
+    this.invalidateCodexThreadAfterStop(state, message)
     applyTimelineEvent(this.transcriptCache, this.failEvent(ref, message), this.timelineState)
     this.update(state.sessionId, { status: 'failed', error: message })
     const next = this.currentState(state.sessionId)
@@ -392,13 +455,52 @@ export class AgentChatHost {
     return this.rehydrate(sessionId)
   }
 
+  private setQueuedMessages(
+    sessionId: string,
+    queuedMessages: readonly QueuedAgentMessage[],
+  ): void {
+    this.update(sessionId, { queuedMessages })
+  }
+
+  private clearTurnAbort(sessionId: string): void {
+    const session = this.sessions.get(sessionId)
+    if (session) session.abort = undefined
+  }
+
+  private async processSteerOrQueue(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId)
+    if (!session || session.state.status === 'running') return
+
+    const steerIndex = findSteerMessageIndex(session.state.queuedMessages)
+    if (steerIndex >= 0) {
+      const steer = session.state.queuedMessages[steerIndex]
+      const remaining = session.state.queuedMessages.filter((_, index) => index !== steerIndex)
+      this.setQueuedMessages(sessionId, remaining)
+      await this.startTurn(sessionId, steer.text)
+      return
+    }
+
+    await this.processQueueAfterTurn(sessionId)
+  }
+
+  private async processQueueAfterTurn(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId)
+    if (!session || session.state.status === 'running') return
+
+    const [next, ...remaining] = session.state.queuedMessages
+    if (!next) return
+
+    this.setQueuedMessages(sessionId, remaining)
+    await this.startTurn(sessionId, next.text)
+  }
+
   private normalizeStoredSession(stored: AgentChatSessionState): AgentChatSessionState {
     const inferred = thinkingLevelFromModel(stored.model)
     const { base, speedSuffix } = parseModelEffort(stored.model)
     const model = speedSuffix ? `${base}-fast` : base
     const thinkingLevel =
       inferred !== 'medium' ? inferred : normalizeThinkingLevel(stored.thinkingLevel)
-    return { ...stored, model, thinkingLevel }
+    return { ...stored, model, thinkingLevel, queuedMessages: stored.queuedMessages ?? [] }
   }
 
   private async rehydrate(sessionId: string): Promise<AgentChatSessionState | null> {
@@ -408,6 +510,7 @@ export class AgentChatHost {
     const normalized = this.normalizeStoredSession({
       ...stored,
       status: stored.status === 'running' ? 'idle' : stored.status,
+      queuedMessages: stored.queuedMessages ?? [],
     })
     const state: AgentChatSessionState = normalized
     this.sessions.set(sessionId, { state })

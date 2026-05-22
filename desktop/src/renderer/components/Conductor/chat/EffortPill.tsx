@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
+import type { AgentProvider } from '../../../../shared/agent-chat-types'
 import type { ThinkingLevel } from '../../../../shared/conductor-thinking'
 import { THINKING_LABELS, nextThinkingLevel } from '../../../../shared/conductor-thinking'
 import { EffortBars } from './ConductorIcons'
 import styles from '../Conductor.module.css'
 
 export function EffortPill({
+  provider,
   level,
   onChange,
 }: {
+  provider: AgentProvider
   level: ThinkingLevel
   onChange: (level: ThinkingLevel) => void
 }) {
@@ -27,7 +30,7 @@ export function EffortPill({
       setTransitioning(false)
       timerRef.current = undefined
     }, 200)
-    onChange(nextThinkingLevel(level))
+    onChange(nextThinkingLevel(level, provider))
   }
 
   return (

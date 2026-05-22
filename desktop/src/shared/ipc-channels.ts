@@ -263,6 +263,7 @@ export const IPC = {
   AGENT_CHAT_LIST_SESSIONS: 'agent-chat:list-sessions',
   AGENT_CHAT_GET_SESSION: 'agent-chat:get-session',
   AGENT_CHAT_SUBMIT: 'agent-chat:submit',
+  AGENT_CHAT_REPLACE_QUEUE: 'agent-chat:replace-queue',
   AGENT_CHAT_SET_MODEL: 'agent-chat:set-model',
   AGENT_CHAT_SET_PLAN: 'agent-chat:set-plan',
   AGENT_CHAT_SET_THINKING_LEVEL: 'agent-chat:set-thinking-level',

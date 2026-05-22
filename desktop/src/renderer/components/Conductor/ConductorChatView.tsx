@@ -4,6 +4,8 @@ import {
   CONDUCTOR_PROVIDER_LABELS,
   type AgentProvider,
   type ConductorAuthStatus,
+  type QueuedAgentMessage,
+  type QueuedAgentMessageMode,
 } from '../../../shared/agent-chat-types'
 import type { ThinkingLevel } from '../../../shared/conductor-thinking'
 import { normalizeThinkingLevel } from '../../../shared/conductor-thinking'
@@ -199,18 +201,23 @@ export function ConductorChatView({
     return created.sessionId
   }
 
-  const handleSubmit = async (text: string) => {
+  const handleSubmit = async (text: string, deliverAs?: QueuedAgentMessageMode) => {
     setSubmitError(null)
     try {
       let id = agentSessionId
       if (!id) {
         id = await createSession(draftProvider, draftModel, text.slice(0, 48))
       }
-      if (id) await window.api.agentChat.submit(id, text)
+      if (id) await window.api.agentChat.submit(id, text, deliverAs)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setSubmitError(formatChatError(message))
     }
+  }
+
+  const handleReplaceQueue = (messages: readonly QueuedAgentMessage[]) => {
+    if (!agentSessionId) return
+    void window.api.agentChat.replaceQueue(agentSessionId, messages).catch(() => {})
   }
 
   const handleSelectModel = (nextProvider: AgentProvider, nextModel: string) => {
@@ -364,8 +371,10 @@ export function ConductorChatView({
         plan={plan}
         running={running}
         disabled={!worktreePath}
+        queuedMessages={controller.state?.queuedMessages ?? []}
         onSubmit={handleSubmit}
         onCancel={controller.cancel}
+        onReplaceQueue={handleReplaceQueue}
         onSetModel={handleSelectModel}
         onSetThinkingLevel={handleSetThinkingLevel}
         onToggleFast={handleToggleFast}

@@ -9,6 +9,16 @@ export const CONDUCTOR_PROVIDER_LABELS: Record<AgentProvider, string> = {
 }
 export type AgentChatStatus = 'idle' | 'running' | 'failed'
 
+export type QueuedAgentMessageMode = 'followUp' | 'steer'
+
+export interface QueuedAgentMessage {
+  readonly id: string
+  readonly mode: QueuedAgentMessageMode
+  readonly text: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
 /** Serializable session state broadcast to the renderer (no transcript). */
 export interface AgentChatSessionState {
   readonly sessionId: string
@@ -20,6 +30,7 @@ export interface AgentChatSessionState {
   readonly thinkingLevel: ThinkingLevel
   readonly plan: boolean
   readonly status: AgentChatStatus
+  readonly queuedMessages: readonly QueuedAgentMessage[]
   readonly error?: string
   readonly createdAt: string
   readonly updatedAt: string
