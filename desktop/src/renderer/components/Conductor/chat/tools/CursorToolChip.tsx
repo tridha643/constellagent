@@ -72,7 +72,11 @@ export function CursorToolChip({
       onBlur={onBlur}
     >
       {variant === 'file' && path ? (
-        <SharedFileIcon path={path} appearanceThemeId={appearanceThemeId} className={styles.cursorToolChipIcon} />
+        <SharedFileIcon
+          path={path}
+          appearanceThemeId={appearanceThemeId}
+          className={styles.cursorToolChipIcon}
+        />
       ) : null}
       <span className={styles.cursorToolChipLabel}>{label}</span>
     </button>

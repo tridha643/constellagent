@@ -135,6 +135,64 @@ test.describe('Conductor chat view', () => {
     await expect(window.getByText('Codex', { exact: true })).toBeVisible()
   })
 
+  test('keeps Default typography but Absolutely color tokens in Conductor chat', async () => {
+    const repoPath = createTestRepo('conductor-theme-isolation')
+    await setupWorkspace(window, repoPath)
+
+    await window.evaluate(() => {
+      const store = (window as unknown as { __store: { getState: () => any } }).__store.getState()
+      store.updateSettings({ appearanceThemeId: 'absolutely' })
+    })
+    await window.waitForTimeout(300)
+
+    await openConductorTab(window)
+    await expect(window.getByPlaceholder(/Ask to make changes/)).toBeVisible({ timeout: 5000 })
+
+    const sessionId = await createAndSelectSession(window, `theme-rail-${Date.now()}`)
+    await injectTranscript(app, sessionId, [
+      { kind: 'message', id: 'u1', role: 'user', text: 'rail typography check', createdAt: nowIso() },
+    ])
+    await expect(window.getByTestId('conductor-turn-rail')).toBeAttached({ timeout: 5000 })
+
+    const tokens = await window.evaluate(() => {
+      const chat = document.querySelector('[data-testid="conductor-chat-view"]') as HTMLElement | null
+      const textarea = document.querySelector(
+        '[data-testid="conductor-chat-view"] textarea',
+      ) as HTMLTextAreaElement | null
+      if (!chat || !textarea) return null
+      const chatStyle = getComputedStyle(chat)
+      const textareaStyle = getComputedStyle(textarea)
+      const rootStyle = getComputedStyle(document.documentElement)
+      return {
+        chatFontUi: chatStyle.getPropertyValue('--font-ui').trim(),
+        chatSurface0: chatStyle.getPropertyValue('--surface-0').trim(),
+        textareaFont: textareaStyle.fontFamily,
+        rootFontUi: rootStyle.getPropertyValue('--font-ui').trim(),
+      }
+    })
+
+    expect(tokens).not.toBeNull()
+    expect(tokens!.rootFontUi).toContain('ui-monospace')
+    expect(tokens!.chatFontUi).toContain('-apple-system')
+    expect(tokens!.chatSurface0).toBe('#242422')
+    expect(tokens!.textareaFont).toMatch(/-apple-system|SF Pro/i)
+
+    const railTokens = await window.evaluate(() => {
+      const rail = document.querySelector('[data-testid="conductor-turn-rail"]') as HTMLElement | null
+      if (!rail) return null
+      const style = getComputedStyle(rail)
+      return {
+        fontUi: style.getPropertyValue('--font-ui').trim(),
+        fontFamily: style.fontFamily,
+        textPrimary: style.getPropertyValue('--text-primary').trim(),
+      }
+    })
+    expect(railTokens).not.toBeNull()
+    expect(railTokens!.fontUi).toContain('-apple-system')
+    expect(railTokens!.fontFamily).toMatch(/-apple-system|SF Pro/i)
+    expect(railTokens!.textPrimary).toBe('#f9f9f7')
+  })
+
   test('uses the configured conductor default model for new draft chats', async () => {
     const repoPath = createTestRepo('conductor-defaults')
     await setupWorkspace(window, repoPath)
@@ -405,7 +463,7 @@ test.describe('Conductor chat view', () => {
     await injectTranscript(app, sessionId, [
       { kind: 'message', id: 'u1', role: 'user', text: 'go', createdAt: nowIso() },
       tool('r1', 'read', 'Read 10 lines', { path: 'src/foo.ts' }),
-      tool('b1', 'shell', 'npm test', { command: 'npm test' }),
+      tool('b1', 'shell', 'npm test', 'npm test'),
       { kind: 'message', id: 'a1', role: 'assistant', text: 'done', createdAt: nowIso() },
     ])
 

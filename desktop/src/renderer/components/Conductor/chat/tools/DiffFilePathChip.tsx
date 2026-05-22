@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { useAppStore } from '../../../../store/app-store'
+import { getConductorChatTypographyStyle } from '../../../../theme/appearance'
 import { SharedFileIcon } from '../../../../utils/file-presentation'
 import { isMarkdownDocumentPath } from '../../../../utils/markdown-path'
 import { resolveToolFileAbsolutePath, toolFileBasename } from './tool-file-path'
@@ -82,6 +83,8 @@ function useDiffPopoverStyle(open: boolean, anchorRef: React.RefObject<HTMLButto
 }
 
 /** File chip — click opens the file; hover shows the patch preview in a floating card. */
+const conductorTypographyStyle = getConductorChatTypographyStyle()
+
 export function DiffFilePathChip({ path, patch }: { path: string; patch: string }) {
   const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
   const worktreePath = useAppStore((s) => {
@@ -154,7 +157,11 @@ export function DiffFilePathChip({ path, patch }: { path: string; patch: string 
         onFocus={openPreview}
         onBlur={closePreview}
       >
-        <SharedFileIcon path={path} appearanceThemeId={appearanceThemeId} className={styles.toolInlineChipIcon} />
+        <SharedFileIcon
+          path={path}
+          appearanceThemeId={appearanceThemeId}
+          className={styles.toolInlineChipIcon}
+        />
         <span className={styles.toolInlineChipLabel}>{label}</span>
       </button>
       {hasPreview && showPopover && popoverStyle
@@ -162,7 +169,7 @@ export function DiffFilePathChip({ path, patch }: { path: string; patch: string 
             <div
               className={styles.diffHoverPopover}
               data-state={phase}
-              style={popoverStyle}
+              style={{ ...conductorTypographyStyle, ...popoverStyle }}
               data-testid="conductor-diff-hover-popover"
               onMouseEnter={cancelClose}
               onMouseLeave={closePreview}

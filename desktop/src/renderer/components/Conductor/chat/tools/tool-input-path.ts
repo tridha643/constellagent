@@ -19,6 +19,18 @@ export function pathFromInput(input: unknown): string | undefined {
   return firstString(input, ['path', 'file_path', 'filePath', 'target_file', 'targetFile', 'relative_path'])
 }
 
+/** Path keys from object payloads only — never treats plain strings (e.g. shell commands) as paths. */
+export function pathFromObjectInput(input: unknown): string | undefined {
+  if (typeof input === 'string') return undefined
+  const record = asRecord(input)
+  if (!record) return undefined
+  for (const key of ['path', 'file_path', 'filePath', 'target_file', 'targetFile', 'relative_path']) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return undefined
+}
+
 export function queryFromInput(input: unknown): string | undefined {
   return firstString(input, ['query', 'pattern', 'q', 'search', 'regex'])
 }

@@ -10,7 +10,7 @@ import { TodoTool } from './TodoTool'
 import { GrepTool, ListTool, WebSearchTool } from './InlineTools'
 import { asFileChangeOutput } from './diff-utils'
 import { registerToolEntry, resolveToolEntry } from './resolve-tool-entry'
-import { filesFromTool } from './tool-file-change'
+import { filesFromTool, isMutateToolName } from './tool-file-change'
 import styles from '../../Conductor.module.css'
 
 const diff = (tool: TimelineToolCall): ReactNode => <DiffTool tool={tool} />
@@ -70,10 +70,14 @@ export function ToolPart({ tool }: { tool: TimelineToolCall }) {
   const name = tool.toolName.toLowerCase()
   if (name === 'todoread') return null
 
-  const hasFileChange =
-    Boolean(asFileChangeOutput(tool.output)) || filesFromTool(tool).length > 0
-  const resolved = hasFileChange ? { render: diff, container: 'inline' as const } : resolveToolEntry(tool)
-  const render = resolved?.render ?? ((t: TimelineToolCall) => <CursorFallbackRow tool={t} />)
+  const resolved = resolveToolEntry(tool)
+  const hasStructuredFileChange = Boolean(asFileChangeOutput(tool.output))
+  const mutateFileEntries = isMutateToolName(tool.toolName) ? filesFromTool(tool) : []
+  const useDiff =
+    hasStructuredFileChange ||
+    (isMutateToolName(tool.toolName) && mutateFileEntries.length > 0)
+  const entry = useDiff ? { render: diff, container: 'inline' as const } : resolved
+  const render = entry?.render ?? ((t: TimelineToolCall) => <CursorFallbackRow tool={t} />)
 
   return (
     <ErrorBoundary

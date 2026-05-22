@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import type { TimelineToolCall } from '../../../../../shared/pi/timeline-types'
 import { asFileChangeOutput } from './diff-utils'
 import { classifyToolRegistryKey } from './tool-name-classify'
-import { filesFromTool } from './tool-file-change'
 
 export type ToolRenderer = (tool: TimelineToolCall) => ReactNode
 
@@ -30,7 +29,7 @@ export function resolveToolEntry(tool: TimelineToolCall): ToolEntry | undefined 
     tool.toolName,
     tool.label,
     tool.input,
-    Boolean(asFileChangeOutput(tool.output)) || filesFromTool(tool).length > 0,
+    Boolean(asFileChangeOutput(tool.output)),
   )
   return key ? lookupExact(key) : undefined
 }

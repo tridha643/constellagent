@@ -7,6 +7,7 @@ import {
   useState,
   type RefObject,
 } from 'react'
+import { useConductorChatTypographyScope } from '../useConductorChatTypographyScope'
 import type { TranscriptMessage } from '../../../../shared/pi/pi-desktop-state'
 import { groupTranscriptIntoTurns } from '../../../../shared/conductor-transcript-utils'
 import { PlanMapIcon } from './ConductorIcons'
@@ -39,8 +40,10 @@ export const TurnHistoryRail = forwardRef<
   const [open, setOpen] = useState(false)
   const [instant, setInstant] = useState(false)
   const { shouldRender: showPopover, phase } = useMountTransition(open, POPOVER_TRANSITION_MS)
+  const hostRef = useRef<HTMLDivElement | null>(null)
   const railZoneRef = useRef<HTMLDivElement | null>(null)
   const popoverRef = useRef<HTMLDivElement | null>(null)
+  useConductorChatTypographyScope(hostRef)
 
   useImperativeHandle(ref, () => ({
     open: () => {
@@ -86,7 +89,9 @@ export const TurnHistoryRail = forwardRef<
 
   return (
     <div
+      ref={hostRef}
       className={railStyles.host}
+      data-testid="conductor-turn-rail"
       style={{ width: RAIL_INSET + POPOVER_WIDTH }}
       aria-hidden={!open}
     >
