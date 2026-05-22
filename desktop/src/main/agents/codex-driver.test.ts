@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { buildAgentPrompt } from './agent-driver'
-import { isBenignCodexInterruptError, isStaleCodexThreadError } from './codex-driver'
+import { buildCodexUserInput, isBenignCodexInterruptError, isStaleCodexThreadError } from './codex-driver'
 
 describe('CodexDriver prompt seeding', () => {
   test('omits transcript when SDK thread carries history (primary path)', () => {
@@ -67,5 +67,18 @@ describe('isStaleCodexThreadError', () => {
 
   test('ignores unrelated errors', () => {
     expect(isStaleCodexThreadError(new Error('network timeout'))).toBe(false)
+  })
+})
+
+describe('buildCodexUserInput', () => {
+  test('returns plain prompt when no image paths exist', () => {
+    expect(buildCodexUserInput('hello', [])).toBe('hello')
+  })
+
+  test('builds structured text plus local_image input', () => {
+    expect(buildCodexUserInput('look', ['/tmp/a.png'])).toEqual([
+      { type: 'text', text: 'look' },
+      { type: 'local_image', path: '/tmp/a.png' },
+    ])
   })
 })

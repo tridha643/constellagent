@@ -15,6 +15,14 @@ function msg(id: string, mode: QueuedAgentMessage['mode'], text: string): Queued
   return { id, mode, text, createdAt: ts, updatedAt: ts }
 }
 
+const image = {
+  id: 'image-1',
+  kind: 'image' as const,
+  name: 'screenshot.png',
+  mimeType: 'image/png' as const,
+  data: 'aW1hZ2U=',
+}
+
 describe('agent-chat-queue helpers', () => {
   test('enqueueQueuedMessage appends followUp messages in FIFO order', () => {
     const queue = enqueueQueuedMessage([], 'first', 'followUp', ts)
@@ -27,6 +35,11 @@ describe('agent-chat-queue helpers', () => {
     const next = enqueueQueuedMessage(initial, 'new steer', 'steer', ts)
     expect(next.map((item) => item.text)).toEqual(['wait', 'new steer'])
     expect(next.filter((item) => item.mode === 'steer')).toHaveLength(1)
+  })
+
+  test('enqueueQueuedMessage stores image attachments', () => {
+    const queue = enqueueQueuedMessage([], '', 'followUp', ts, [image])
+    expect(queue[0]?.attachments).toEqual([image])
   })
 
   test('findSteerMessageIndex returns the steer row index', () => {
@@ -53,7 +66,9 @@ describe('agent-chat-queue helpers', () => {
     expect(parseQueuedMessagesJson(JSON.stringify([{ id: 'x', mode: 'nope', text: 'bad' }]))).toEqual([])
     expect(
       parseQueuedMessagesJson(
-        JSON.stringify([{ id: 'x', mode: 'followUp', text: 'ok', createdAt: ts, updatedAt: ts }]),
+        JSON.stringify([
+          { id: 'x', mode: 'followUp', text: 'ok', attachments: [image], createdAt: ts, updatedAt: ts },
+        ]),
       ),
     ).toHaveLength(1)
   })

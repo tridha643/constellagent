@@ -4,6 +4,7 @@ import type {
   AgentChatRunPhase,
   ConductorBlockingQuestion,
 } from './conductor-ask-question-types'
+import type { ConductorComposerAttachment } from './conductor-attachments'
 
 export type AgentProvider = 'codex' | 'cursor'
 
@@ -19,6 +20,7 @@ export interface QueuedAgentMessage {
   readonly id: string
   readonly mode: QueuedAgentMessageMode
   readonly text: string
+  readonly attachments?: readonly ConductorComposerAttachment[]
   readonly createdAt: string
   readonly updatedAt: string
 }

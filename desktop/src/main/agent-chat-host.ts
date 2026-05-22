@@ -21,6 +21,12 @@ import {
 } from '../shared/conductor-transcript-utils'
 import { thinkingLevelFromModel, parseModelEffort } from '../shared/conductor-model-utils'
 import { normalizeThinkingLevel } from '../shared/conductor-thinking'
+import {
+  cloneConductorImageAttachments,
+  conductorPromptText,
+  hasConductorMessageInput,
+  type ConductorComposerAttachment,
+} from '../shared/conductor-attachments'
 import type {
   AgentChatSessionState,
   AgentChatStatus,
@@ -165,9 +171,11 @@ export class AgentChatHost {
     sessionId: string,
     text: string,
     deliverAs?: QueuedAgentMessageMode,
+    attachments: readonly ConductorComposerAttachment[] = [],
   ): Promise<void> {
     const trimmed = text.trim()
-    if (trimmed.length === 0) return
+    const normalizedAttachments = cloneConductorImageAttachments(attachments)
+    if (!hasConductorMessageInput(trimmed, normalizedAttachments)) return
 
     const live = this.sessions.get(sessionId)
     const state = live?.state ?? (await this.rehydrate(sessionId))
@@ -177,14 +185,17 @@ export class AgentChatHost {
     if (state.runPhase === 'awaitingUser') return
     if (isRunning) {
       const mode = deliverAs ?? 'followUp'
-      this.setQueuedMessages(sessionId, enqueueQueuedMessage(state.queuedMessages, trimmed, mode))
+      this.setQueuedMessages(
+        sessionId,
+        enqueueQueuedMessage(state.queuedMessages, trimmed, mode, undefined, normalizedAttachments),
+      )
       if (mode === 'steer') {
         await this.cancel(sessionId)
       }
       return
     }
 
-    await this.startTurn(sessionId, trimmed)
+    await this.startTurn(sessionId, trimmed, normalizedAttachments)
   }
 
   async replaceQueue(
@@ -195,15 +206,28 @@ export class AgentChatHost {
     const timestamp = new Date().toISOString()
     this.setQueuedMessages(
       sessionId,
-      messages.map((message) => ({ ...message, updatedAt: timestamp })),
+      messages.map((message) => {
+        const attachments = cloneConductorImageAttachments(message.attachments)
+        return {
+          ...message,
+          attachments,
+          updatedAt: timestamp,
+        }
+      }),
     )
   }
 
-  private async startTurn(sessionId: string, text: string): Promise<void> {
+  private async startTurn(
+    sessionId: string,
+    text: string,
+    attachments: readonly ConductorComposerAttachment[] = [],
+  ): Promise<void> {
     const live = this.sessions.get(sessionId)
     const state = live?.state ?? (await this.rehydrate(sessionId))
     if (!state) return
 
+    const normalizedAttachments = cloneConductorImageAttachments(attachments)
+    const promptText = conductorPromptText(text)
     const ref = this.refOf(state)
     this.turnTelemetry.set(sessionId, {
       submittedAt: performance.now(),
@@ -212,7 +236,7 @@ export class AgentChatHost {
       transcriptFlushCount: 0,
     })
     const previousTranscript = [...(this.transcriptCache.get(sessionKey(ref)) ?? [])]
-    appendUserMessage(this.transcriptCache, ref, text, [], state.plan)
+    appendUserMessage(this.transcriptCache, ref, promptText, normalizedAttachments, state.plan)
     this.flushTranscript(state)
 
     const driver = this.drivers[state.provider]
@@ -243,7 +267,8 @@ export class AgentChatHost {
         model: state.model,
         thinkingLevel: state.thinkingLevel,
         plan: state.plan,
-        text,
+        text: promptText,
+        attachments: normalizedAttachments,
         previousTranscript,
         signal: abort.signal,
         emit: (event) => {
@@ -548,7 +573,7 @@ export class AgentChatHost {
       const steer = session.state.queuedMessages[steerIndex]
       const remaining = session.state.queuedMessages.filter((_, index) => index !== steerIndex)
       this.setQueuedMessages(sessionId, remaining)
-      await this.startTurn(sessionId, steer.text)
+      await this.startTurn(sessionId, steer.text, steer.attachments)
       return
     }
 
@@ -563,7 +588,7 @@ export class AgentChatHost {
     if (!next) return
 
     this.setQueuedMessages(sessionId, remaining)
-    await this.startTurn(sessionId, next.text)
+    await this.startTurn(sessionId, next.text, next.attachments)
   }
 
   private normalizeStoredSession(stored: AgentChatSessionState): AgentChatSessionState {

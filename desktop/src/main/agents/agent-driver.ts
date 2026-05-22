@@ -7,6 +7,7 @@ import type {
   ToolUpdatedEvent,
 } from '@pi-gui/session-driver'
 import type { AgentProvider } from '../../shared/agent-chat-types'
+import type { ConductorComposerAttachment } from '../../shared/conductor-attachments'
 import type { ThinkingLevel } from '../../shared/conductor-thinking'
 import type { TranscriptMessage } from '../../shared/pi/pi-desktop-state'
 import { formatTranscriptForAgentContext } from '../../shared/conductor-transcript-utils'
@@ -65,6 +66,7 @@ export interface AgentTurnContext {
   readonly thinkingLevel: ThinkingLevel
   readonly plan: boolean
   readonly text: string
+  readonly attachments?: readonly ConductorComposerAttachment[]
   /** Prior persisted UI transcript for seeding newly-created backend SDK state. */
   readonly previousTranscript?: readonly TranscriptMessage[]
   /** Aborts the in-flight run when the user cancels. */

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AgentChatSessionState, QueuedAgentMessage, QueuedAgentMessageMode } from '../../../shared/agent-chat-types'
+import type { ConductorComposerAttachment } from '../../../shared/conductor-attachments'
 import type { ConductorBlockingQuestionResponse } from '../../../shared/conductor-ask-question-types'
 import type { ThinkingLevel } from '../../../shared/conductor-thinking'
 import { applyAssistantDeltaToTranscript } from '../../../shared/conductor-transcript-utils'
@@ -40,7 +41,11 @@ export function useConductorSessions(workspaceId: string | null): {
 export interface ConductorSessionController {
   state: AgentChatSessionState | null
   transcript: TranscriptMessage[]
-  submit: (text: string, deliverAs?: QueuedAgentMessageMode) => void
+  submit: (
+    text: string,
+    deliverAs?: QueuedAgentMessageMode,
+    attachments?: readonly ConductorComposerAttachment[],
+  ) => void
   cancel: () => void
   replaceQueue: (messages: readonly QueuedAgentMessage[]) => void
   setModel: (model: string) => void
@@ -111,8 +116,14 @@ export function useConductorSession(sessionId: string | null): ConductorSessionC
   }, [sessionId])
 
   const submit = useCallback(
-    (text: string, deliverAs?: QueuedAgentMessageMode) => {
-      if (sessionId) void window.api.agentChat.submit(sessionId, text, deliverAs).catch(() => {})
+    (
+      text: string,
+      deliverAs?: QueuedAgentMessageMode,
+      attachments?: readonly ConductorComposerAttachment[],
+    ) => {
+      if (sessionId) {
+        void window.api.agentChat.submit(sessionId, text, deliverAs, attachments).catch(() => {})
+      }
     },
     [sessionId],
   )

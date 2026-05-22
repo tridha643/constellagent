@@ -62,6 +62,8 @@ export function ChatMessage({
     !isUser && isStreaming && message.text.trim().length === 0 && !suppressIdleLoader
   const showFooter =
     !isUser && !isStreaming && !showBraille && message.text.trim().length > 0 && onFork
+  const imageAttachments =
+    message.attachments?.filter((attachment) => attachment.kind === 'image') ?? []
 
   if (lastMessageIdRef.current !== message.id) {
     lastMessageIdRef.current = message.id
@@ -99,7 +101,21 @@ export function ChatMessage({
     >
       {!hideRole ? <div className={styles.messageRole}>{isUser ? 'You' : 'Assistant'}</div> : null}
       {isUser ? (
-        <MarkdownBody content={normalizedText} className={styles.messageBody} />
+        <div className={styles.messageBody}>
+          {imageAttachments.length > 0 ? (
+            <div className={styles.messageAttachments}>
+              {imageAttachments.map((attachment, index) => (
+                <img
+                  alt={attachment.name ?? `Attachment ${index + 1}`}
+                  className={styles.messageAttachmentImage}
+                  key={`${message.id}:${index}`}
+                  src={`data:${attachment.mimeType};base64,${attachment.data}`}
+                />
+              ))}
+            </div>
+          ) : null}
+          <MarkdownBody content={normalizedText} />
+        </div>
       ) : showBraille ? (
         <div className={styles.messageBody}>
           <BrailleLoader />
