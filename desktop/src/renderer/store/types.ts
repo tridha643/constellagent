@@ -857,6 +857,7 @@ export interface AppState {
   setProjectPriorityFolder: (projectId: string, folderId: string) => void
   setProjectDefaultFolder: (projectId: string, folderId: string) => void
   moveWorkspaceToFolder: (workspaceId: string, folderId: string) => void
+  moveWorkspaceToFolderBefore: (workspaceId: string, folderId: string, beforeWorkspaceId: string) => void
   togglePriorityForWorkspace: (workspaceId: string) => void
   updateWorkspaceBranch: (id: string, branch: string) => void
   /** Re-scan `git worktree list` and merge missing linked worktrees into the sidebar. */

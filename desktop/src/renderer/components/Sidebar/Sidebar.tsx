@@ -30,7 +30,12 @@ import {
 } from "lucide-react";
 import type { WorkspaceSyncInfo } from "@shared/worktree-sync-types";
 import { Tooltip } from "../Tooltip/Tooltip";
-import { CONSTELLAGENT_WORKSPACE_MIME, CONSTELLAGENT_ACTION_MIME, CONSTELLAGENT_PROJECT_MIME } from "../../utils/add-to-chat";
+import {
+  CONSTELLAGENT_WORKSPACE_MIME,
+  CONSTELLAGENT_ACTION_MIME,
+  CONSTELLAGENT_PROJECT_MIME,
+  CONSTELLAGENT_FOLDER_MIME,
+} from "../../utils/add-to-chat";
 import { ContextWindowIndicator } from "./ContextWindowIndicator";
 import { SpotlightStatusDot } from "../Spotlight/SpotlightStatusDot";
 import styles from "./Sidebar.module.css";
@@ -584,7 +589,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const unreadWorkspaceIds = useAppStore((s) => s.unreadWorkspaceIds);
   const activeClaudeWorkspaceIds = useAppStore((s) => s.activeClaudeWorkspaceIds);
   const renameWorkspace = useAppStore((s) => s.renameWorkspace);
-  const reorderWorkspace = useAppStore((s) => s.reorderWorkspace);
   const reorderProject = useAppStore((s) => s.reorderProject);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setPrStatuses = useAppStore((s) => s.setPrStatuses);
@@ -599,8 +603,10 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const addFolder = useAppStore((s) => s.addFolder);
   const renameFolder = useAppStore((s) => s.renameFolder);
   const removeFolder = useAppStore((s) => s.removeFolder);
+  const reorderFolder = useAppStore((s) => s.reorderFolder);
   const toggleFolderCollapsed = useAppStore((s) => s.toggleFolderCollapsed);
   const moveWorkspaceToFolder = useAppStore((s) => s.moveWorkspaceToFolder);
+  const moveWorkspaceToFolderBefore = useAppStore((s) => s.moveWorkspaceToFolderBefore);
   const setProjectPriorityFolder = useAppStore((s) => s.setProjectPriorityFolder);
   const setProjectDefaultFolder = useAppStore((s) => s.setProjectDefaultFolder);
 
@@ -637,6 +643,9 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const [dropTargetActionId, setDropTargetActionId] = useState<SidebarActionId | null>(null);
   const draggingActionIdRef = useRef<SidebarActionId | null>(null);
   const editRef = useRef<string>("");
+  const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
+  const [dropTargetFolderReorderId, setDropTargetFolderReorderId] = useState<string | null>(null);
+  const draggingFolderIdRef = useRef<string | null>(null);
   const [dropTargetFolderId, setDropTargetFolderId] = useState<string | null>(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [folderDialogProjectId, setFolderDialogProjectId] = useState<string | null>(null);
@@ -1557,14 +1566,19 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                     const isDefaultFolder = project.defaultFolderId === folder.id;
                     const isFolderEditing = editingFolderId === folder.id;
                     const isFolderDropTarget = dropTargetFolderId === folder.id;
+                    const isFolderReorderDropTarget = dropTargetFolderReorderId === folder.id;
                     const projectFolderCount = folderGroups.length;
                     return (
-                      <div key={folder.id} className={styles.folderSection}>
+                      <div
+                        key={folder.id}
+                        className={`${styles.folderSection} ${draggedFolderId === folder.id ? styles.folderSectionDragging : ""}`}
+                      >
                         <div
-                          className={`${styles.folderHeader} ${isFolderDropTarget ? styles.folderHeaderDropTarget : ""}`}
+                          className={`${styles.folderHeader} ${isFolderDropTarget ? styles.folderHeaderDropTarget : ""} ${isFolderReorderDropTarget && draggedFolderId !== folder.id ? styles.folderHeaderReorderTarget : ""}`}
                           data-folder-id={folder.id}
                           role="button"
                           tabIndex={isFolderEditing ? -1 : 0}
+                          draggable={!isFolderEditing}
                           aria-expanded={!isFolderCollapsed}
                           aria-label={`${folder.name} folder, ${isFolderCollapsed ? "collapsed" : "expanded"}`}
                           onKeyDown={(e) => {
@@ -1578,8 +1592,29 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                             if (isFolderEditing) return;
                             toggleFolderCollapsed(folder.id);
                           }}
+                          onDragStart={(e) => {
+                            if (isFolderEditing) return;
+                            draggingFolderIdRef.current = folder.id;
+                            setDraggedFolderId(folder.id);
+                            e.dataTransfer.setData(CONSTELLAGENT_FOLDER_MIME, folder.id);
+                            e.dataTransfer.setData("text/plain", folder.id);
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onDragEnd={() => {
+                            draggingFolderIdRef.current = null;
+                            setDraggedFolderId(null);
+                            setDropTargetFolderReorderId(null);
+                          }}
                           onDragOver={(e) => {
+                            if (draggingFolderIdRef.current) {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = "move";
+                              setDropTargetFolderReorderId(folder.id);
+                              return;
+                            }
                             if (!draggingWorkspaceIdRef.current) return;
+                            e.stopPropagation();
                             e.preventDefault();
                             e.dataTransfer.dropEffect = "move";
                             setDropTargetFolderId(folder.id);
@@ -1595,6 +1630,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                           }}
                           onDragLeave={(e) => {
                             if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                            setDropTargetFolderReorderId((prev) => (prev === folder.id ? null : prev));
                             setDropTargetFolderId((prev) => (prev === folder.id ? null : prev));
                             const existing = folderAutoExpandTimerRef.current;
                             if (existing?.id === folder.id) {
@@ -1603,7 +1639,19 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                             }
                           }}
                           onDrop={(e) => {
+                            e.stopPropagation();
                             e.preventDefault();
+                            const fromFolderId =
+                              e.dataTransfer.getData(CONSTELLAGENT_FOLDER_MIME)
+                              || (draggingFolderIdRef.current ?? "");
+                            if (fromFolderId) {
+                              reorderFolder(fromFolderId, folder.id);
+                              draggingFolderIdRef.current = null;
+                              setDraggedFolderId(null);
+                              setDropTargetFolderReorderId(null);
+                              setDropTargetFolderId(null);
+                              return;
+                            }
                             const wsId =
                               e.dataTransfer.getData(CONSTELLAGENT_WORKSPACE_MIME)
                               || e.dataTransfer.getData("text/plain");
@@ -1617,6 +1665,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                             draggingWorkspaceIdRef.current = null;
                             setDraggedWsId(null);
                             setDropTargetWsId(null);
+                            setDropTargetFolderReorderId(null);
                           }}
                         >
                           {isFolderCollapsed ? (
@@ -1768,12 +1817,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                   e.dataTransfer.getData(CONSTELLAGENT_WORKSPACE_MIME)
                                   || e.dataTransfer.getData("text/plain");
                                 if (fromId && fromId !== ws.id) {
-                                  const dragged = workspaces.find((w) => w.id === fromId);
-                                  if (dragged && dragged.folderId === ws.folderId) {
-                                    reorderWorkspace(fromId, ws.id);
-                                  } else if (dragged && ws.folderId) {
-                                    moveWorkspaceToFolder(fromId, ws.folderId);
-                                  }
+                                  moveWorkspaceToFolderBefore(fromId, folder.id, ws.id);
                                 }
                                 draggingWorkspaceIdRef.current = null;
                                 setDraggedWsId(null);

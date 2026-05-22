@@ -1035,6 +1035,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
+  moveWorkspaceToFolderBefore: (workspaceId, folderId, beforeWorkspaceId) => {
+    if (workspaceId === beforeWorkspaceId) return
+    set((s) => {
+      const ws = s.workspaces.find((w) => w.id === workspaceId)
+      const folder = s.folders.find((f) => f.id === folderId)
+      const beforeWs = s.workspaces.find((w) => w.id === beforeWorkspaceId)
+      if (!ws || !folder || !beforeWs) return s
+      if (folder.projectId !== ws.projectId || beforeWs.projectId !== ws.projectId) return s
+      const project = s.projects.find((p) => p.id === beforeWs.projectId)
+      const beforeFolderId = beforeWs.folderId ?? project?.defaultFolderId
+      if (beforeFolderId !== folderId) return s
+
+      const next = s.workspaces.filter((w) => w.id !== workspaceId)
+      const toIdx = next.findIndex((w) => w.id === beforeWorkspaceId)
+      if (toIdx === -1) return s
+
+      next.splice(toIdx, 0, ws.folderId === folderId ? ws : { ...ws, folderId })
+      return { workspaces: next }
+    })
+  },
+
   togglePriorityForWorkspace: (workspaceId) => {
     set((s) => {
       const ws = s.workspaces.find((w) => w.id === workspaceId)
