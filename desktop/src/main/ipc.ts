@@ -1924,8 +1924,13 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle(
     IPC.AGENT_CHAT_SUBMIT,
-    async (_e, sessionId: string, text: string, deliverAs?: import('../shared/agent-chat-types').QueuedAgentMessageMode) =>
-      agentChatHost.submit(sessionId, text, deliverAs),
+    async (
+      _e,
+      sessionId: string,
+      text: string,
+      deliverAs?: import('../shared/agent-chat-types').QueuedAgentMessageMode,
+      attachments?: readonly import('../shared/conductor-attachments').ConductorComposerAttachment[],
+    ) => agentChatHost.submit(sessionId, text, deliverAs, attachments),
   )
   ipcMain.handle(
     IPC.AGENT_CHAT_REPLACE_QUEUE,

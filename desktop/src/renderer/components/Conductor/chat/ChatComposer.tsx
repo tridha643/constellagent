@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
+import { ImageIcon, X } from 'lucide-react'
 import type { AgentProvider, QueuedAgentMessage, QueuedAgentMessageMode } from '../../../../shared/agent-chat-types'
+import type { ConductorComposerAttachment } from '../../../../shared/conductor-attachments'
 import { hasEffortVariants, hasFastVariant, isFastModel } from '../../../../shared/conductor-model-utils'
 import { normalizeThinkingLevel, isReasoningEffortActive, type ThinkingLevel } from '../../../../shared/conductor-thinking'
 import { ChatModelSelector } from './ChatModelSelector'
@@ -13,6 +15,14 @@ import {
   useConductorContextUsage,
   useContextPanelDismiss,
 } from './ContextWindowControl'
+import {
+  CONDUCTOR_IMAGE_ACCEPT,
+  extractImageFilesFromClipboardData,
+  extractImageFilesFromDataTransfer,
+  hasFilesInDataTransfer,
+  mergeConductorAttachments,
+  readConductorImageAttachmentsFromFiles,
+} from './conductor-attachments'
 import styles from '../Conductor.module.css'
 
 export interface ChatComposerHandle {
@@ -45,7 +55,11 @@ export function ChatComposer({
   running: boolean
   disabled?: boolean
   queuedMessages: readonly QueuedAgentMessage[]
-  onSubmit: (text: string, deliverAs?: QueuedAgentMessageMode) => void
+  onSubmit: (
+    text: string,
+    deliverAs?: QueuedAgentMessageMode,
+    attachments?: readonly ConductorComposerAttachment[],
+  ) => void
   onCancel: () => void
   onReplaceQueue: (messages: readonly QueuedAgentMessage[]) => void
   onSetModel: (provider: AgentProvider, model: string) => void
@@ -56,10 +70,13 @@ export function ChatComposer({
   composerRef?: React.RefObject<ChatComposerHandle | null>
 }) {
   const [text, setText] = useState('')
+  const [attachments, setAttachments] = useState<ConductorComposerAttachment[]>([])
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [contextOpen, setContextOpen] = useState(false)
   const [focused, setFocused] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerInnerRef = useRef<HTMLDivElement | null>(null)
   const { data: contextData, idle: contextIdle } = useConductorContextUsage()
   const modelLabel = `${provider} · ${model}`
@@ -71,11 +88,13 @@ export function ChatComposer({
   const runningHint = 'Enter · queue · ⌘↵ · steer · Esc · stop'
   const showFocusHint = !focused && !contextOpen && !disabled && !running
   const showRunningHint = running && !focused && !contextOpen && !disabled
+  const hasInput = text.trim().length > 0 || attachments.length > 0
 
   const composerInnerClass = [
     styles.composerInner,
     plan ? styles.composerInnerPlan : '',
     reasoningActive ? styles.composerInnerReasoning : '',
+    dragActive ? styles.composerInnerDragActive : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -107,21 +126,25 @@ export function ChatComposer({
 
   const submit = (deliverAs?: QueuedAgentMessageMode) => {
     const trimmed = text.trim()
-    if (!trimmed || disabled) return
+    if (!hasInput || disabled) return
 
     if (editingQueueId) {
       onReplaceQueue(
         queuedMessages.map((message) =>
-          message.id === editingQueueId ? { ...message, text: trimmed } : message,
+          message.id === editingQueueId
+            ? { ...message, text: trimmed, attachments: [...attachments] }
+            : message,
         ),
       )
       setEditingQueueId(null)
       setText('')
+      setAttachments([])
       return
     }
 
-    onSubmit(trimmed, running ? deliverAs ?? 'followUp' : undefined)
+    onSubmit(trimmed, running ? deliverAs ?? 'followUp' : undefined, attachments)
     setText('')
+    setAttachments([])
   }
 
   const handleEditQueuedMessage = (messageId: string) => {
@@ -129,6 +152,7 @@ export function ChatComposer({
     if (!message) return
     setEditingQueueId(messageId)
     setText(message.text)
+    setAttachments([...(message.attachments ?? [])])
     requestAnimationFrame(() => textareaRef.current?.focus())
   }
 
@@ -137,6 +161,7 @@ export function ChatComposer({
     if (editingQueueId === messageId) {
       setEditingQueueId(null)
       setText('')
+      setAttachments([])
     }
   }
 
@@ -149,6 +174,36 @@ export function ChatComposer({
     onReplaceQueue(next)
   }
 
+  const mergeFiles = (files: readonly File[]) => {
+    if (disabled || files.length === 0) return
+    void readConductorImageAttachmentsFromFiles(files).then((nextAttachments) => {
+      if (nextAttachments.length === 0) return
+      setAttachments((current) => mergeConductorAttachments(current, nextAttachments))
+    })
+  }
+
+  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    const files = extractImageFilesFromClipboardData(event.clipboardData)
+    if (files.length === 0) return
+    event.preventDefault()
+    mergeFiles(files)
+  }
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!hasFilesInDataTransfer(event.dataTransfer)) return
+    event.preventDefault()
+    setDragActive(false)
+    const files = extractImageFilesFromDataTransfer(event.dataTransfer)
+    mergeFiles(files)
+  }
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!hasFilesInDataTransfer(event.dataTransfer)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setDragActive(true)
+  }
+
   return (
     <div className={styles.composer}>
       <div
@@ -156,7 +211,33 @@ export function ChatComposer({
         ref={composerInnerRef}
         data-plan={plan ? 'true' : undefined}
         data-reasoning={reasoningActive ? effortLevel : undefined}
+        onPaste={handlePaste}
+        onDragEnter={(event) => {
+          if (!hasFilesInDataTransfer(event.dataTransfer)) return
+          event.preventDefault()
+          setDragActive(true)
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setDragActive(false)
+          }
+        }}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
       >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={CONDUCTOR_IMAGE_ACCEPT}
+          multiple
+          className={styles.composerFileInput}
+          tabIndex={-1}
+          onChange={(event) => {
+            const files = Array.from(event.currentTarget.files ?? [])
+            event.currentTarget.value = ''
+            mergeFiles(files)
+          }}
+        />
         {contextOpen && (
           <ContextPanel data={contextData} idle={contextIdle} modelLabel={modelLabel} />
         )}
@@ -195,10 +276,14 @@ export function ChatComposer({
               if (contextOpen) {
                 e.preventDefault()
                 setContextOpen(false)
+              } else if (dragActive) {
+                e.preventDefault()
+                setDragActive(false)
               } else if (editingQueueId) {
                 e.preventDefault()
                 setEditingQueueId(null)
                 setText('')
+                setAttachments([])
               } else if (running) {
                 e.preventDefault()
                 onCancel()
@@ -219,9 +304,50 @@ export function ChatComposer({
             }
           }}
           />
+          {dragActive ? (
+            <div className={styles.composerDropIndicator} aria-hidden>
+              Drop images to attach
+            </div>
+          ) : null}
         </div>
+        {attachments.length > 0 ? (
+          <div className={styles.composerAttachments} aria-label="Attached images">
+            {attachments.map((attachment) => (
+              <div className={styles.composerAttachment} key={attachment.id}>
+                <img
+                  alt={attachment.name}
+                  className={styles.composerAttachmentPreview}
+                  src={`data:${attachment.mimeType};base64,${attachment.data}`}
+                />
+                <span className={styles.composerAttachmentName}>{attachment.name}</span>
+                <button
+                  type="button"
+                  className={styles.composerAttachmentRemove}
+                  aria-label={`Remove ${attachment.name}`}
+                  onClick={() =>
+                    setAttachments((current) =>
+                      current.filter((item) => item.id !== attachment.id),
+                    )
+                  }
+                >
+                  <X size={13} strokeWidth={2} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className={styles.composerFooter}>
           <div className={styles.composerActionsLeft}>
+            <button
+              type="button"
+              className={`${styles.composerChip} ${styles.composerChipNeutral} ${styles.composerImageButton}`}
+              aria-label="Attach image"
+              title="Attach image"
+              disabled={disabled}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <ImageIcon size={15} strokeWidth={1.9} />
+            </button>
             <ChatModelSelector provider={provider} model={model} thinkingLevel={thinkingLevel} onSelect={onSetModel} />
             {showFast ? <FastToggle active={fastActive} onChange={onToggleFast} /> : null}
             {showEffort ? (
@@ -259,7 +385,7 @@ export function ChatComposer({
                 type="button"
                 className={styles.sendButton}
                 onClick={() => submit()}
-                disabled={!text.trim() || disabled}
+                disabled={!hasInput || disabled}
                 aria-label="Send"
               >
                 <SendArrowIcon />

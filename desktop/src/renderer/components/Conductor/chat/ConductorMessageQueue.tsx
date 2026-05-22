@@ -81,7 +81,23 @@ export function ConductorMessageQueue({
                       Steer
                     </span>
                   ) : null}
-                  <span className={styles.composerQueueListText}>{message.text}</span>
+                  <span className={styles.composerQueueListContent}>
+                    {message.attachments?.length ? (
+                      <span className={styles.composerQueueAttachments} aria-label="Attached images">
+                        {message.attachments.map((attachment) => (
+                          <img
+                            alt={attachment.name}
+                            className={styles.composerQueueAttachmentPreview}
+                            key={attachment.id}
+                            src={`data:${attachment.mimeType};base64,${attachment.data}`}
+                          />
+                        ))}
+                      </span>
+                    ) : null}
+                    <span className={styles.composerQueueListText}>
+                      {message.text || 'Image attachment'}
+                    </span>
+                  </span>
                 </button>
                 <div className={styles.composerQueueListActions}>
                   {index > 0 ? (

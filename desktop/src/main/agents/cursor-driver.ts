@@ -6,6 +6,7 @@ import {
   type InteractionUpdate,
   type Run,
   type SDKAgent,
+  type SDKUserMessage,
   type SDKMessage,
   type TextBlock,
 } from '@cursor/sdk'
@@ -29,6 +30,7 @@ import {
 import { loadCursorSdkAgents } from './cursor-subagent-config'
 import { createCursorAskQuestionHandler } from './cursor-interaction-bridge'
 import { setCursorAskQuestionHandler } from './cursor-sdk-interaction-patch'
+import type { ConductorComposerAttachment } from '../../shared/conductor-attachments'
 
 interface CursorSessionState {
   agent: SDKAgent
@@ -107,6 +109,17 @@ function cursorRunErrorMessage(raw: string | undefined): string {
   return detail || 'Cursor run failed'
 }
 
+export function buildCursorUserMessage(
+  text: string,
+  attachments: readonly ConductorComposerAttachment[] | undefined,
+): string | SDKUserMessage {
+  const images = attachments
+    ?.filter((attachment) => attachment.kind === 'image')
+    .map((attachment) => ({ data: attachment.data, mimeType: attachment.mimeType }))
+  if (!images?.length) return text
+  return { text, images }
+}
+
 export class CursorDriver implements AgentDriver {
   readonly provider = 'cursor' as const
   private readonly sessions = new Map<string, CursorSessionState>()
@@ -150,10 +163,11 @@ export class CursorDriver implements AgentDriver {
       needsNewAgent ? ctx.previousTranscript : undefined,
       'cursor',
     )
+    const message = buildCursorUserMessage(prompt, ctx.attachments)
     setCursorAskQuestionHandler(ctx.plan ? createCursorAskQuestionHandler(ctx) : null)
     let run: Run
     try {
-      run = await state.agent.send(prompt, {
+      run = await state.agent.send(message, {
         model: { id: effectiveModel },
         onDelta: ({ update }) => {
           this.handleInteractionUpdate(ctx, state!, update)

@@ -26,6 +26,7 @@ import type {
   QueuedAgentMessage,
   QueuedAgentMessageMode,
 } from '../shared/agent-chat-types'
+import type { ConductorComposerAttachment } from '../shared/conductor-attachments'
 import type { ContextWindowData } from '../shared/context-window-types'
 import type { QuickOpenSearchRequest, QuickOpenSearchResult } from '../shared/quick-open-types'
 import type { LinearFffQuickOpenRequest, LinearFffQuickOpenResult } from '../shared/linear-fff-types'
@@ -627,7 +628,8 @@ const api = {
       sessionId: string,
       text: string,
       deliverAs?: QueuedAgentMessageMode,
-    ) => ipcRenderer.invoke(IPC.AGENT_CHAT_SUBMIT, sessionId, text, deliverAs),
+      attachments?: readonly ConductorComposerAttachment[],
+    ) => ipcRenderer.invoke(IPC.AGENT_CHAT_SUBMIT, sessionId, text, deliverAs, attachments),
     replaceQueue: (sessionId: string, messages: readonly QueuedAgentMessage[]) =>
       ipcRenderer.invoke(IPC.AGENT_CHAT_REPLACE_QUEUE, sessionId, messages),
     setModel: (sessionId: string, model: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_SET_MODEL, sessionId, model),

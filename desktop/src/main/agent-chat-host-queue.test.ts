@@ -17,6 +17,9 @@ mock.module('electron', () => ({
   },
 }))
 
+mock.module('./cursor-sdk-interaction-config', () => ({}))
+mock.module('./agents/../cursor-sdk-interaction-config', () => ({}))
+
 const { AgentChatHost } = await import('./agent-chat-host')
 
 function createMockDriver(provider: AgentProvider, runTurn: AgentDriver['runTurn']): AgentDriver {
@@ -88,5 +91,42 @@ describe('AgentChatHost queue drain', () => {
       queue: [],
       status: 'idle',
     })
+  })
+
+  test('passes image-only turns through transcript and driver context', async () => {
+    const host = new AgentChatHost()
+    const image = {
+      id: 'image-1',
+      kind: 'image' as const,
+      name: 'screenshot.png',
+      mimeType: 'image/png' as const,
+      data: 'aW1hZ2U=',
+    }
+    let captured: AgentTurnContext | undefined
+
+    ;(host as unknown as { drivers: Record<AgentProvider, AgentDriver> }).drivers = {
+      codex: createMockDriver('codex', async (ctx: AgentTurnContext) => {
+        captured = ctx
+      }),
+      cursor: createMockDriver('cursor', async () => {}),
+    }
+
+    const created = await host.createSession({
+      workspaceId: 'ws-1',
+      workspacePath: '/tmp/ws',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    })
+
+    await host.submit(created.sessionId, '', undefined, [image])
+    const session = await host.getSession(created.sessionId)
+    const firstMessage = session?.transcript[0]
+
+    expect(captured?.text).toBe('Please inspect the attached image and respond to it.')
+    expect(captured?.attachments).toEqual([image])
+    expect(firstMessage?.kind).toBe('message')
+    if (firstMessage?.kind === 'message') {
+      expect(firstMessage.attachments).toEqual([image])
+    }
   })
 })

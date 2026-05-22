@@ -1,15 +1,23 @@
 import { randomUUID } from 'node:crypto'
 import type { QueuedAgentMessage, QueuedAgentMessageMode } from '../shared/agent-chat-types'
+import {
+  cloneConductorImageAttachments,
+  normalizeConductorImageAttachments,
+  type ConductorComposerAttachment,
+} from '../shared/conductor-attachments'
 
 export function createQueuedMessage(
   text: string,
   mode: QueuedAgentMessageMode,
   timestamp = new Date().toISOString(),
+  attachments: readonly ConductorComposerAttachment[] = [],
 ): QueuedAgentMessage {
+  const normalizedAttachments = cloneConductorImageAttachments(attachments)
   return {
     id: randomUUID(),
     mode,
     text,
+    ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
     createdAt: timestamp,
     updatedAt: timestamp,
   }
@@ -21,8 +29,9 @@ export function enqueueQueuedMessage(
   text: string,
   mode: QueuedAgentMessageMode,
   timestamp = new Date().toISOString(),
+  attachments: readonly ConductorComposerAttachment[] = [],
 ): QueuedAgentMessage[] {
-  const message = createQueuedMessage(text, mode, timestamp)
+  const message = createQueuedMessage(text, mode, timestamp, attachments)
   if (mode === 'steer') {
     return [...queue.filter((item) => item.mode !== 'steer'), message]
   }
@@ -43,12 +52,19 @@ export function parseQueuedMessagesJson(raw: unknown): QueuedAgentMessage[] {
 function isQueuedAgentMessage(value: unknown): value is QueuedAgentMessage {
   if (!value || typeof value !== 'object') return false
   const record = value as Record<string, unknown>
+  const attachmentsValid =
+    record.attachments === undefined ||
+    (Array.isArray(record.attachments) &&
+      normalizeConductorImageAttachments(
+        record.attachments as readonly ConductorComposerAttachment[],
+      ).length === record.attachments.length)
   return (
     typeof record.id === 'string' &&
     (record.mode === 'followUp' || record.mode === 'steer') &&
     typeof record.text === 'string' &&
     typeof record.createdAt === 'string' &&
-    typeof record.updatedAt === 'string'
+    typeof record.updatedAt === 'string' &&
+    attachmentsValid
   )
 }
 

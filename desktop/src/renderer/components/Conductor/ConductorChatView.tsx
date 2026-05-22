@@ -7,6 +7,7 @@ import {
   type QueuedAgentMessage,
   type QueuedAgentMessageMode,
 } from '../../../shared/agent-chat-types'
+import type { ConductorComposerAttachment } from '../../../shared/conductor-attachments'
 import type { ThinkingLevel } from '../../../shared/conductor-thinking'
 import { normalizeThinkingLevel } from '../../../shared/conductor-thinking'
 import {
@@ -204,14 +205,18 @@ export function ConductorChatView({
     return created.sessionId
   }
 
-  const handleSubmit = async (text: string, deliverAs?: QueuedAgentMessageMode) => {
+  const handleSubmit = async (
+    text: string,
+    deliverAs?: QueuedAgentMessageMode,
+    attachments?: readonly ConductorComposerAttachment[],
+  ) => {
     setSubmitError(null)
     try {
       let id = agentSessionId
       if (!id) {
         id = await createSession(draftProvider, draftModel, text.slice(0, 48))
       }
-      if (id) await window.api.agentChat.submit(id, text, deliverAs)
+      if (id) await window.api.agentChat.submit(id, text, deliverAs, attachments)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setSubmitError(formatChatError(message))

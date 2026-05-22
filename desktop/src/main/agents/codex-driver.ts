@@ -6,8 +6,12 @@
  * Conductor are therefore Cursor-only unless a future SDK item type is added.
  */
 import { execFileSync } from 'node:child_process'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   Codex,
+  type Input,
   type ModelReasoningEffort,
   type Thread,
   type ThreadEvent,
@@ -26,6 +30,7 @@ import {
   type AgentDriver,
   type AgentTurnContext,
 } from './agent-driver'
+import type { ConductorImageAttachment } from '../../shared/conductor-attachments'
 
 interface CodexSessionState {
   thread: Thread
@@ -44,6 +49,37 @@ interface CodexSessionRecovery {
   plan: boolean
   /** After user interrupt or stale resume — next turn seeds Conductor transcript instead of CLI resume. */
   preferTranscriptFallback: boolean
+}
+
+const CODEX_IMAGE_EXTENSION_BY_MIME: Record<ConductorImageAttachment['mimeType'], string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+}
+
+export function buildCodexUserInput(prompt: string, imagePaths: readonly string[]): Input {
+  if (imagePaths.length === 0) return prompt
+  return [
+    { type: 'text', text: prompt },
+    ...imagePaths.map((path) => ({ type: 'local_image' as const, path })),
+  ]
+}
+
+async function writeCodexImageAttachments(
+  attachments: readonly ConductorImageAttachment[] | undefined,
+): Promise<{ inputPaths: string[]; tempDir?: string }> {
+  if (!attachments?.length) return { inputPaths: [] }
+  const tempDir = await mkdtemp(join(tmpdir(), 'constellagent-codex-images-'))
+  const inputPaths = await Promise.all(
+    attachments.map(async (attachment, index) => {
+      const extension = CODEX_IMAGE_EXTENSION_BY_MIME[attachment.mimeType]
+      const filePath = join(tempDir, `${index + 1}-${attachment.id}.${extension}`)
+      await writeFile(filePath, Buffer.from(attachment.data, 'base64'))
+      return filePath
+    }),
+  )
+  return { inputPaths, tempDir }
 }
 
 function toolDescriptor(item: ThreadItem): { toolName: string; input?: unknown } | null {
@@ -257,9 +293,11 @@ export class CodexDriver implements AgentDriver {
       seedTranscript && ctx.previousTranscript?.length ? ctx.previousTranscript : undefined,
       'codex',
     )
+    const imageInput = await writeCodexImageAttachments(ctx.attachments)
+    const input = buildCodexUserInput(prompt, imageInput.inputPaths)
 
     try {
-      const { events } = await thread.runStreamed(prompt, { signal: ctx.signal })
+      const { events } = await thread.runStreamed(input, { signal: ctx.signal })
       try {
         for await (const event of events) {
           this.handleEvent(ctx, state, event)
@@ -273,6 +311,9 @@ export class CodexDriver implements AgentDriver {
       }
       if (!isBenignCodexInterruptError(err, ctx.signal)) throw err
     } finally {
+      if (imageInput.tempDir) {
+        await rm(imageInput.tempDir, { recursive: true, force: true }).catch(() => {})
+      }
       if (ctx.signal.aborted) {
         this.markSessionInterrupted(key)
       }
