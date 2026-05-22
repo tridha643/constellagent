@@ -42,7 +42,7 @@ type InteractionResponses = {
 export function normalizeCursorAskQuestions(args: CursorAskQuestionArgs | undefined): ConductorAskQuestionPrompt[] {
   const questions = args?.questions ?? []
   return questions
-    .map((item) => {
+    .map((item): ConductorAskQuestionPrompt | null => {
       const question = item.prompt?.trim() ?? ''
       const header = clampAskQuestionHeader(item.id?.trim() || args?.title?.trim() || 'Question')
       const options = (item.options ?? [])

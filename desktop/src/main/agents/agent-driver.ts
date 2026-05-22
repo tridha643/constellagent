@@ -84,6 +84,8 @@ export interface AgentDriver {
   checkAuth(): string | null
   /** Runs one turn, streaming events via `ctx.emit`. Throws to signal failure. */
   runTurn(ctx: AgentTurnContext): Promise<void>
+  /** Optional provider-specific recovery hook used after user interrupts or stale resumes. */
+  markSessionInterrupted?(sessionId: string): void
   /** Releases per-session resources (child processes, agents). */
   closeSession(sessionId: string): void
 }

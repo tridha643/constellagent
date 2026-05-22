@@ -71,7 +71,9 @@ export function appendAssistantDelta(
   const activeId = activeAssistantMessageBySession.get(key);
 
   if (activeId) {
-    const index = transcript.findIndex((message) => message.id === activeId);
+    const lastIndex = transcript.length - 1;
+    const last = transcript[lastIndex];
+    const index = last?.id === activeId ? lastIndex : transcript.findIndex((message) => message.id === activeId);
     const current = index >= 0 ? transcript[index] : undefined;
     if (current?.kind === "message") {
       transcript[index] = {
