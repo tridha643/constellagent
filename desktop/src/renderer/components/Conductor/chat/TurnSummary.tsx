@@ -12,30 +12,43 @@ import styles from '../Conductor.module.css'
 export function TurnSummary({
   toolCount,
   messageCount,
+  failedToolCount = 0,
+  toolSummary,
   isPlan,
-  defaultExpanded,
+  open,
+  onOpenChange,
   children,
 }: {
   toolCount: number
   messageCount: number
+  failedToolCount?: number
+  toolSummary?: string
   isPlan?: boolean
-  defaultExpanded?: boolean
-  children: ReactNode
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children?: ReactNode
 }) {
+  const label = `${toolCount} tool call${toolCount === 1 ? '' : 's'}, ${messageCount} message${
+    messageCount === 1 ? '' : 's'
+  }`
+  const statusLabel = failedToolCount > 0 ? `${failedToolCount} failed` : null
   return (
-    <Collapsible.Root defaultOpen={Boolean(defaultExpanded)} className={styles.turnSummary}>
-      <Collapsible.Trigger className={styles.turnSummaryHeader}>
+    <Collapsible.Root open={open} onOpenChange={onOpenChange} className={styles.turnSummary}>
+      <Collapsible.Trigger
+        className={styles.turnSummaryHeader}
+        data-testid="turn-summary-header"
+        aria-label={`${label}${toolSummary ? `, ${toolSummary}` : ''}${statusLabel ? `, ${statusLabel}` : ''}`}
+      >
         <span className={styles.collapsibleChevron}>
           <ChevronDownIcon size={12} />
         </span>
         {isPlan ? <PlanMapIcon size={13} /> : null}
-        <span className={styles.turnSummaryLabel}>
-          {toolCount} tool call{toolCount === 1 ? '' : 's'}, {messageCount} message
-          {messageCount === 1 ? '' : 's'}
-        </span>
+        <span className={styles.turnSummaryLabel}>{label}</span>
+        {toolSummary ? <span className={styles.turnSummaryMeta}>{toolSummary}</span> : null}
+        {statusLabel ? <span className={styles.turnSummaryError}>{statusLabel}</span> : null}
       </Collapsible.Trigger>
-      <Collapsible.Panel className={styles.collapsiblePanel}>
-        <div className={styles.turnSummaryBody}>{children}</div>
+      <Collapsible.Panel className={`${styles.collapsiblePanel} ${styles.turnSummaryPanel}`}>
+        <div className={styles.turnSummaryBody}>{open ? children : null}</div>
       </Collapsible.Panel>
     </Collapsible.Root>
   )
