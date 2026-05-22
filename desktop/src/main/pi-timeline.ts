@@ -44,7 +44,9 @@ export function appendUserMessage(
     attachments.length > 0
       ? makeTranscriptMessageWithAttachments("user", text, attachments)
       : makeTranscriptMessage("user", text);
-  transcript.push(conductorPlan ? { ...base, conductorPlan: true } : base);
+  const message =
+    conductorPlan && base.kind === "message" ? { ...base, conductorPlan: true } : base;
+  transcript.push(message);
   transcriptCache.set(key, transcript);
   return transcript;
 }

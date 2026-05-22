@@ -142,6 +142,7 @@ export class AgentChatHost {
     if (!state || trimmed.length === 0) return
 
     const ref = this.refOf(state)
+    const previousTranscript = [...(this.transcriptCache.get(sessionKey(ref)) ?? [])]
     appendUserMessage(this.transcriptCache, ref, trimmed, [], state.plan)
     this.flushTranscript(state)
 
@@ -168,6 +169,7 @@ export class AgentChatHost {
         thinkingLevel: state.thinkingLevel,
         plan: state.plan,
         text: trimmed,
+        previousTranscript,
         signal: abort.signal,
         emit: (event) => this.onDriverEvent(sessionId, event),
       })

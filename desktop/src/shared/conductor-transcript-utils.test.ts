@@ -4,6 +4,7 @@ import {
   applyAssistantDeltaToTranscript,
   buildTurnDurationMap,
   cloneTranscriptWithNewIds,
+  formatTranscriptForAgentContext,
   groupTranscriptIntoTurns,
   parseWorkedForLabel,
   sliceTranscriptForFork,
@@ -87,5 +88,35 @@ describe('conductor-transcript-utils', () => {
     const turns = groupTranscriptIntoTurns(t)
     expect(turns[0].plan).toBe(true)
     expect(turns[1].plan).toBeUndefined()
+  })
+
+  test('formatTranscriptForAgentContext includes prior plan turns and omits timeline chrome', () => {
+    const t: TranscriptMessage[] = [
+      { kind: 'message', id: 'u1', role: 'user', text: 'make a plan', createdAt: '', conductorPlan: true },
+      msg('a1', 'assistant', '## Plan\n\n- [ ] Do the thing'),
+      { kind: 'activity', id: 'w1', createdAt: '', label: 'Working…' },
+      { kind: 'summary', id: 's1', createdAt: '', label: 'Worked for 1s', presentation: 'divider' },
+    ]
+
+    const context = formatTranscriptForAgentContext(t)
+
+    expect(context).toContain('### User (plan mode)')
+    expect(context).toContain('make a plan')
+    expect(context).toContain('## Plan')
+    expect(context).not.toContain('Working…')
+    expect(context).not.toContain('Worked for')
+  })
+
+  test('formatTranscriptForAgentContext keeps the newest transcript text when truncated', () => {
+    const t: TranscriptMessage[] = [
+      msg('u1', 'user', 'older context'),
+      msg('a1', 'assistant', 'newest plan content'),
+    ]
+
+    const context = formatTranscriptForAgentContext(t, 32)
+
+    expect(context).toStartWith('[Earlier conversation truncated]')
+    expect(context).toContain('newest plan content')
+    expect(context).not.toContain('older context')
   })
 })

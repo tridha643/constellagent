@@ -186,7 +186,7 @@
   padding-inline: var(--space-4);
 }
 
-/* Cursor-style tool rows sit under the assistant reply (matches Cursor chat). */
+/* Cursor-style tool rows sit above the assistant reply (matches chronological order). */
 .timelineRowTool {
   margin-top: 2px;
   margin-bottom: 2px;
@@ -200,8 +200,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 4px;
-  margin-bottom: 2px;
+  margin-top: 0;
+  margin-bottom: 6px;
 }
 
 /* Assistant prose keeps the writer.computer-inspired ProseMark rhythm.

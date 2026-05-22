@@ -8,6 +8,8 @@ import type {
 } from '@pi-gui/session-driver'
 import type { AgentProvider } from '../../shared/agent-chat-types'
 import type { ThinkingLevel } from '../../shared/conductor-thinking'
+import type { TranscriptMessage } from '../../shared/pi/pi-desktop-state'
+import { formatTranscriptForAgentContext } from '../../shared/conductor-transcript-utils'
 
 export type { AgentProvider }
 
@@ -25,11 +27,26 @@ export const PLAN_PROMPT_PREFIX =
 export const CONDUCTOR_MARKDOWN_FORMAT_PREFIX =
   'Format your reply as clean GitHub-Flavored Markdown: use ATX headings (`## Section`) without wrapping the markers in bold; use `- [ ]` / `- [x]` task lists (no emoji list markers); use pipe tables with a header row and `|---|---|` separator; use `-` bullets for unordered lists.'
 
-/** Builds the user prompt sent to agent drivers (format hint + optional plan mode). */
-export function buildAgentPrompt(text: string, plan: boolean): string {
+const CONDUCTOR_CONTEXT_PROMPT_PREFIX =
+  'Previous conversation context from this Conductor chat is below. Use it as the authoritative thread history, including any plan the assistant already produced.'
+
+/** Builds the user prompt sent to agent drivers (format hint + optional plan mode/context). */
+export function buildAgentPrompt(
+  text: string,
+  plan: boolean,
+  previousTranscript?: readonly TranscriptMessage[],
+): string {
   const parts = [CONDUCTOR_MARKDOWN_FORMAT_PREFIX]
   if (plan) parts.push(PLAN_PROMPT_PREFIX)
-  parts.push(text)
+  const previousContext = previousTranscript
+    ? formatTranscriptForAgentContext(previousTranscript)
+    : undefined
+  if (previousContext) {
+    parts.push(`${CONDUCTOR_CONTEXT_PROMPT_PREFIX}\n\n${previousContext}`)
+    parts.push(`Current user request:\n${text}`)
+  } else {
+    parts.push(text)
+  }
   return parts.join('\n\n')
 }
 
@@ -41,6 +58,8 @@ export interface AgentTurnContext {
   readonly thinkingLevel: ThinkingLevel
   readonly plan: boolean
   readonly text: string
+  /** Prior persisted UI transcript for seeding newly-created backend SDK state. */
+  readonly previousTranscript?: readonly TranscriptMessage[]
   /** Aborts the in-flight run when the user cancels. */
   readonly signal: AbortSignal
   /** Emit a streaming event (assistant text / tool activity) for the timeline. */

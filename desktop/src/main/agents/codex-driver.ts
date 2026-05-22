@@ -91,7 +91,9 @@ export class CodexDriver implements AgentDriver {
     const effort = mapThinkingLevelToCodexEffort(ctx.thinkingLevel)
     let state = this.sessions.get(key)
     // The Codex thread fixes model + effort + sandbox at creation, so recreate when any change.
-    if (!state || state.model !== baseModel || state.effort !== effort || state.plan !== ctx.plan) {
+    const needsNewThread =
+      !state || state.model !== baseModel || state.effort !== effort || state.plan !== ctx.plan
+    if (needsNewThread) {
       const thread = this.getCodex().startThread({
         model: baseModel,
         modelReasoningEffort: effort,
@@ -102,8 +104,15 @@ export class CodexDriver implements AgentDriver {
       state = { thread, model: baseModel, effort, plan: ctx.plan, emittedByItem: new Map() }
       this.sessions.set(key, state)
     }
+    if (!state) {
+      throw new Error('Failed to create Codex thread')
+    }
 
-    const prompt = buildAgentPrompt(ctx.text, ctx.plan)
+    const prompt = buildAgentPrompt(
+      ctx.text,
+      ctx.plan,
+      needsNewThread ? ctx.previousTranscript : undefined,
+    )
     const { events } = await state.thread.runStreamed(prompt, { signal: ctx.signal })
     for await (const event of events) {
       this.handleEvent(ctx, state, event)

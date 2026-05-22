@@ -42,7 +42,7 @@ export function ChatMessage({
   isSegment?: boolean
   /** Skip the inline Braille loader; the turn-level activity ticker owns loading UX. */
   suppressIdleLoader?: boolean
-  /** Tool rows for this turn (Codex todos, file edits) — rendered before the message footer. */
+  /** Tool rows for this turn — prefer rendering at the assistant-group level above prose. */
   afterBody?: ReactNode
   /** Hide ProseMark task-list checkboxes when transcript already renders Codex todos. */
   hideMarkdownTaskLists?: boolean

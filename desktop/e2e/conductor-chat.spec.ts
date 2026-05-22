@@ -307,6 +307,85 @@ test.describe('Conductor chat view', () => {
     await expect(window.getByTestId('conductor-diff-body')).toBeVisible()
   })
 
+  test('resolves Conductor file chips to shared non-default icon tokens', async () => {
+    const repoPath = createTestRepo('conductor-file-icons')
+    await setupWorkspace(window, repoPath)
+
+    const title = `file-icons-${Date.now()}`
+    const sessionId = await createAndSelectSession(window, title)
+    await injectTranscript(app, sessionId, [
+      {
+        kind: 'tool',
+        id: 'r1',
+        callId: 'r1',
+        toolName: 'read',
+        status: 'success',
+        label: 'Read src/index.ts',
+        createdAt: nowIso(),
+        input: { path: 'src/index.ts' },
+        output: 'export const index = 1\n',
+      },
+      {
+        kind: 'tool',
+        id: 'r2',
+        callId: 'r2',
+        toolName: 'read',
+        status: 'success',
+        label: 'Read src/App.tsx',
+        createdAt: nowIso(),
+        input: { path: 'src/App.tsx' },
+        output: 'export function App() { return null }\n',
+      },
+      {
+        kind: 'tool',
+        id: 'r3',
+        callId: 'r3',
+        toolName: 'read',
+        status: 'success',
+        label: 'Read README.md',
+        createdAt: nowIso(),
+        input: { path: 'README.md' },
+        output: '# Test Repo\n',
+      },
+      {
+        kind: 'tool',
+        id: 'd1',
+        callId: 'd1',
+        toolName: 'apply_patch',
+        status: 'success',
+        label: 'Edited vite.config.ts',
+        createdAt: nowIso(),
+        output: {
+          kind: 'fileChange',
+          files: [
+            {
+              path: 'vite.config.ts',
+              patch:
+                'diff --git a/vite.config.ts b/vite.config.ts\n' +
+                'new file mode 100644\n' +
+                '--- /dev/null\n' +
+                '+++ b/vite.config.ts\n' +
+                '@@ -0,0 +1,1 @@\n' +
+                '+export default {}\n',
+            },
+          ],
+        },
+      },
+    ])
+
+    const view = window.getByTestId('conductor-chat-view')
+    await expect(view.locator('[data-file-icon-token="typescript"]').first()).toBeVisible({ timeout: 5000 })
+    await expect(view.locator('[data-file-icon-token="react"]').first()).toBeVisible()
+    await expect(view.locator('[data-file-icon-token="markdown"]').first()).toBeVisible()
+    await expect(view.locator('[data-file-icon-token="vite"]').first()).toBeVisible()
+
+    await window.getByRole('button', { name: 'Open vite.config.ts' }).hover()
+    const popover = window.getByTestId('conductor-diff-hover-popover')
+    await expect(popover).toBeVisible({ timeout: 3000 })
+    await expect(popover.getByTestId('cursor-diff-popover-header')).toContainText('vite.config.ts')
+    await expect(popover.locator('[data-file-icon-token="vite"]')).toBeVisible()
+  })
+
   test('shows inline tool chips on the latest completed turn without expanding summary', async () => {
     const repoPath = createTestRepo('conductor-tool-chips')
     await setupWorkspace(window, repoPath)
@@ -361,6 +440,35 @@ test.describe('Conductor chat view', () => {
     await expect(assistantLabels).toHaveCount(1)
     await expect(window.getByText('First segment.')).toBeVisible()
     await expect(window.getByText('Second segment.')).toBeVisible()
+  })
+
+  test('renders turn tool rows above assistant prose', async () => {
+    const repoPath = createTestRepo('conductor-tools-above')
+    await setupWorkspace(window, repoPath)
+
+    const title = `tools-above-${Date.now()}`
+    const sessionId = await createAndSelectSession(window, title)
+    await injectTranscript(app, sessionId, [
+      { kind: 'message', id: 'u1', role: 'user', text: 'go', createdAt: nowIso() },
+      {
+        kind: 'tool',
+        id: 't1',
+        callId: 't1',
+        toolName: 'read',
+        status: 'success',
+        label: 'Read 10 lines',
+        createdAt: nowIso(),
+      },
+      { kind: 'message', id: 'a1', role: 'assistant', text: 'ANSWER_BELOW_TOOLS', createdAt: nowIso() },
+    ])
+
+    const toolsAboveAnswer = await window.evaluate(() => {
+      const tools = document.querySelector('[data-testid="assistant-turn-tools"]')
+      const answer = document.querySelector('[data-message-id="a1"]')
+      if (!tools || !answer) return false
+      return (tools.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    })
+    expect(toolsAboveAnswer).toBe(true)
   })
 
   test('groups assistant segments split by tool calls under one header', async () => {

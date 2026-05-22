@@ -24,6 +24,7 @@ import {
   signInCursor,
   syncConductorAuthKeys,
 } from '../../lib/conductor-sign-in'
+import { SharedFileIconDefs } from '../../utils/file-presentation'
 import styles from './Conductor.module.css'
 
 export type ConductorTab = Extract<Tab, { type: 'conductor' }>
@@ -49,6 +50,7 @@ export function ConductorChatView({
   const conductorDefaultThinkingLevelSetting = useAppStore(
     (s) => s.settings.conductorDefaultThinkingLevel,
   )
+  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
 
   const agentSessionId = tab.agentSessionId ?? null
   const [draftProvider, setDraftProvider] = useState<AgentProvider>(() => {
@@ -154,14 +156,17 @@ export function ConductorChatView({
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
       try {
         const parsed = JSON.parse(trimmed) as Record<string, unknown>
+        const nestedErrorMessage =
+          parsed.error &&
+          typeof parsed.error === 'object' &&
+          typeof (parsed.error as { message?: unknown }).message === 'string'
+            ? (parsed.error as { message: string }).message
+            : undefined
         const detail =
           (typeof parsed.message === 'string' && parsed.message) ||
           (typeof parsed.error === 'string' && parsed.error) ||
           (typeof parsed.detail === 'string' && parsed.detail) ||
-          (parsed.error &&
-            typeof parsed.error === 'object' &&
-            typeof (parsed.error as { message?: string }).message === 'string' &&
-            (parsed.error as { message: string }).message)
+          nestedErrorMessage
         if (detail) return detail
       } catch {
         // keep raw message
@@ -276,89 +281,90 @@ export function ConductorChatView({
 
   return (
     <div className={styles.chatView} data-active={active} data-testid="conductor-chat-view">
-        <ChatTimeline
-          ref={timelineRef}
-          transcript={controller.transcript}
-          running={running}
-          runStartedAt={runStartedAt}
-          planActive={plan}
-          onSelectHistoryTurn={handleSelectHistoryTurn}
-          onFork={handleForkFromMessage}
-          forkDisabled={forking}
-          provider={provider}
-          model={model}
-          thinkingLevel={thinkingLevel}
-        />
-        {(visibleSessionError || submitError) && (
-          <div className={styles.composerError} role="alert">
-            <span>{visibleSessionError ?? submitError}</span>
-            <button
-              type="button"
-              className={styles.composerErrorDismiss}
-              aria-label="Dismiss"
-              onClick={() => {
-                if (visibleSessionError) setDismissedError(visibleSessionError)
-                else setSubmitError(null)
-              }}
-            >
-              ×
-            </button>
-          </div>
-        )}
-        {signInHint && !visibleSessionError && !submitError && (
-          <div className={styles.authNotice}>
-            <span>{signInHint}</span>
-            <span className={styles.authNoticeActions}>
-              {provider === 'cursor' ? (
-                <button
-                  type="button"
-                  className={styles.authSignInBtn}
-                  onClick={() => {
-                    setCursorLoginStarted(true)
-                    void signInCursor(useAppStore.getState)
-                    void fetchConductorAuthStatus(true).then(setAuthStatus)
-                  }}
-                >
-                  Sign in with Cursor
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className={styles.authSignInBtn}
-                  onClick={() => {
-                    void signInCodex(useAppStore.getState)
-                    void fetchConductorAuthStatus(true).then(setAuthStatus)
-                  }}
-                >
-                  Sign in with Codex
-                </button>
-              )}
+      <SharedFileIconDefs appearanceThemeId={appearanceThemeId} />
+      <ChatTimeline
+        ref={timelineRef}
+        transcript={controller.transcript}
+        running={running}
+        runStartedAt={runStartedAt}
+        planActive={plan}
+        onSelectHistoryTurn={handleSelectHistoryTurn}
+        onFork={handleForkFromMessage}
+        forkDisabled={forking}
+        provider={provider}
+        model={model}
+        thinkingLevel={thinkingLevel}
+      />
+      {(visibleSessionError || submitError) && (
+        <div className={styles.composerError} role="alert">
+          <span>{visibleSessionError ?? submitError}</span>
+          <button
+            type="button"
+            className={styles.composerErrorDismiss}
+            aria-label="Dismiss"
+            onClick={() => {
+              if (visibleSessionError) setDismissedError(visibleSessionError)
+              else setSubmitError(null)
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {signInHint && !visibleSessionError && !submitError && (
+        <div className={styles.authNotice}>
+          <span>{signInHint}</span>
+          <span className={styles.authNoticeActions}>
+            {provider === 'cursor' ? (
               <button
                 type="button"
-                className={styles.authNoticeLink}
-                onClick={() => openSettingsSection('conductor')}
+                className={styles.authSignInBtn}
+                onClick={() => {
+                  setCursorLoginStarted(true)
+                  void signInCursor(useAppStore.getState)
+                  void fetchConductorAuthStatus(true).then(setAuthStatus)
+                }}
               >
-                Settings
+                Sign in with Cursor
               </button>
-            </span>
-          </div>
-        )}
-        <ChatComposer
-          provider={provider}
-          model={model}
-          thinkingLevel={thinkingLevel}
-          plan={plan}
-          running={running}
-          disabled={!worktreePath}
-          onSubmit={handleSubmit}
-          onCancel={controller.cancel}
-          onSetModel={handleSelectModel}
-          onSetThinkingLevel={handleSetThinkingLevel}
-          onToggleFast={handleToggleFast}
-          onSetPlan={handleSetPlan}
-          onHistoryUp={() => timelineRef.current?.openHistory()}
-          composerRef={composerRef}
-        />
+            ) : (
+              <button
+                type="button"
+                className={styles.authSignInBtn}
+                onClick={() => {
+                  void signInCodex(useAppStore.getState)
+                  void fetchConductorAuthStatus(true).then(setAuthStatus)
+                }}
+              >
+                Sign in with Codex
+              </button>
+            )}
+            <button
+              type="button"
+              className={styles.authNoticeLink}
+              onClick={() => openSettingsSection('conductor')}
+            >
+              Settings
+            </button>
+          </span>
+        </div>
+      )}
+      <ChatComposer
+        provider={provider}
+        model={model}
+        thinkingLevel={thinkingLevel}
+        plan={plan}
+        running={running}
+        disabled={!worktreePath}
+        onSubmit={handleSubmit}
+        onCancel={controller.cancel}
+        onSetModel={handleSelectModel}
+        onSetThinkingLevel={handleSetThinkingLevel}
+        onToggleFast={handleToggleFast}
+        onSetPlan={handleSetPlan}
+        onHistoryUp={() => timelineRef.current?.openHistory()}
+        composerRef={composerRef}
+      />
     </div>
   )
 }
