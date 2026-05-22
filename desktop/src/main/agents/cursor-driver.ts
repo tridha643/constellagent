@@ -1,4 +1,5 @@
 import '../cursor-sdk-ripgrep-config'
+import '../cursor-sdk-interaction-config'
 import {
   Agent,
   convertError,
@@ -26,6 +27,8 @@ import {
   subagentTaskMessageText,
 } from './cursor-driver-deltas'
 import { loadCursorSdkAgents } from './cursor-subagent-config'
+import { createCursorAskQuestionHandler } from './cursor-interaction-bridge'
+import { setCursorAskQuestionHandler } from './cursor-sdk-interaction-patch'
 
 interface CursorSessionState {
   agent: SDKAgent
@@ -145,7 +148,9 @@ export class CursorDriver implements AgentDriver {
       ctx.text,
       ctx.plan,
       needsNewAgent ? ctx.previousTranscript : undefined,
+      'cursor',
     )
+    setCursorAskQuestionHandler(ctx.plan ? createCursorAskQuestionHandler(ctx) : null)
     let run: Run
     try {
       run = await state.agent.send(prompt, {
@@ -190,6 +195,7 @@ export class CursorDriver implements AgentDriver {
       }
     } finally {
       ctx.signal.removeEventListener('abort', onAbort)
+      setCursorAskQuestionHandler(null)
       state.run = undefined
       state.activeSubagentCallId = undefined
     }

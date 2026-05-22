@@ -255,6 +255,7 @@ export class CodexDriver implements AgentDriver {
       ctx.text,
       plan,
       seedTranscript && ctx.previousTranscript?.length ? ctx.previousTranscript : undefined,
+      'codex',
     )
 
     try {
