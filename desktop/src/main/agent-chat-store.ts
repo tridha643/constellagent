@@ -5,7 +5,7 @@ import type { TranscriptMessage } from '../shared/pi/pi-desktop-state'
 import type { AgentProvider } from './agents/agent-driver'
 import type { ThinkingLevel } from '../shared/conductor-thinking'
 import { normalizeThinkingLevel } from '../shared/conductor-thinking'
-import type { QueuedAgentMessage } from '../shared/agent-chat-types'
+import type { AgentChatSessionState, QueuedAgentMessage } from '../shared/agent-chat-types'
 import { safeJsonStringify } from '../shared/json-safe'
 import { parseQueuedMessagesJson } from './agent-chat-queue'
 
@@ -19,6 +19,8 @@ export interface StoredSession {
   readonly thinkingLevel: ThinkingLevel
   readonly plan: boolean
   readonly status: 'idle' | 'running' | 'failed'
+  readonly runPhase?: AgentChatSessionState['runPhase']
+  readonly blockingQuestion?: AgentChatSessionState['blockingQuestion']
   readonly queuedMessages: readonly QueuedAgentMessage[]
   readonly error?: string
   readonly createdAt: string

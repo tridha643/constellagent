@@ -13,6 +13,16 @@ export function applyAssistantDeltaToTranscript(
   text: string,
 ): TranscriptMessage[] {
   if (text.length === 0) return [...transcript]
+  const last = transcript[transcript.length - 1]
+  if (
+    last?.id === messageId &&
+    last.kind === 'message' &&
+    last.role === 'assistant'
+  ) {
+    const next = transcript.slice() as TranscriptMessage[]
+    next[next.length - 1] = { ...last, text: `${last.text}${text}` }
+    return next
+  }
   const index = transcript.findIndex((item) => item.id === messageId)
   if (index >= 0) {
     const current = transcript[index]
