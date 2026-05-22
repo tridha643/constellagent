@@ -31,6 +31,7 @@ const WORKING_LABEL = 'Working…'
 const STOPPED_LABEL = 'Stopped'
 const NEAR_BOTTOM_PX = 80
 const HIGHLIGHT_MS = 2000
+const COPY_TOAST_MS = 1200
 
 import styles from '../Conductor.module.css'
 
@@ -222,10 +223,45 @@ export const ChatTimeline = forwardRef<
   const turnHistoryRailRef = useRef<TurnHistoryRailHandle | null>(null)
   const pinnedRef = useRef(true)
   const [showJump, setShowJump] = useState(false)
+  const [copyToast, setCopyToast] = useState(false)
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null)
   const [expandedTurnKeys, setExpandedTurnKeys] = useState<Set<string>>(() => new Set())
   const seenIdsRef = useRef<Set<string>>(new Set())
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const copyToastTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  const selectionInTimeline = useCallback((node: Node | null) => {
+    const root = scrollRef.current
+    if (!root || !node) return false
+    if (node instanceof Element) return root.contains(node)
+    return root.contains(node.parentElement)
+  }, [])
+
+  const handleCopy = useCallback(
+    (event: React.ClipboardEvent) => {
+      const selection = window.getSelection()
+      if (!selection || selection.isCollapsed) return
+      const text = selection.toString()
+      if (!text.trim()) return
+      if (!selectionInTimeline(selection.anchorNode) && !selectionInTimeline(selection.focusNode)) {
+        return
+      }
+      setCopyToast(true)
+      if (copyToastTimerRef.current !== undefined) clearTimeout(copyToastTimerRef.current)
+      copyToastTimerRef.current = setTimeout(() => {
+        setCopyToast(false)
+        copyToastTimerRef.current = undefined
+      }, COPY_TOAST_MS)
+      event.stopPropagation()
+    },
+    [selectionInTimeline],
+  )
+
+  useEffect(() => {
+    return () => {
+      if (copyToastTimerRef.current !== undefined) clearTimeout(copyToastTimerRef.current)
+    }
+  }, [])
 
   const assistantStreamMessageId = useMemo(
     () => getAssistantStreamMessageId(transcript, running),
@@ -589,19 +625,24 @@ export const ChatTimeline = forwardRef<
   if (transcript.length === 0) {
     return (
       <div className={styles.timelineWrap}>
-        <div className={styles.timeline} ref={scrollRef} onScroll={onScroll}>
+        <div className={styles.timeline} ref={scrollRef} onScroll={onScroll} onCopy={handleCopy}>
           <div className={styles.empty}>
             <div>Start a conversation</div>
             <div>Pick a model below and send a message.</div>
           </div>
         </div>
+        {copyToast ? (
+          <div className={styles.copyToast} role="status" aria-live="polite">
+            Copied
+          </div>
+        ) : null}
       </div>
     )
   }
 
   return (
     <div className={styles.timelineWrap}>
-      <div className={styles.timeline} ref={scrollRef} onScroll={onScroll}>
+      <div className={styles.timeline} ref={scrollRef} onScroll={onScroll} onCopy={handleCopy}>
         <div className={styles.timelineStack}>
           {units.map((unit) => {
             if (unit.type === 'item') {
@@ -679,6 +720,11 @@ export const ChatTimeline = forwardRef<
           </button>
         )}
       </div>
+      {copyToast ? (
+        <div className={styles.copyToast} role="status" aria-live="polite">
+          Copied
+        </div>
+      ) : null}
       {onSelectHistoryTurn ? (
         <TurnHistoryRail
           ref={turnHistoryRailRef}

@@ -38,7 +38,6 @@ import {
 } from "../../utils/add-to-chat";
 import { ContextWindowIndicator } from "./ContextWindowIndicator";
 import { SpotlightStatusDot } from "../Spotlight/SpotlightStatusDot";
-import { SpotlightGlowRing } from "../Spotlight/SpotlightGlowRing";
 import { SpotlightIcon } from "../Icons/SpotlightIcon";
 import styles from "./Sidebar.module.css";
 import { maybeShowStaleMainToast } from "../../utils/ipc-stale-main";
@@ -1870,9 +1869,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                 setDropTargetWsId(null);
                               }}
                             >
-                              {isSpotlightWorkspace && (
-                                <SpotlightGlowRing state={spotlightStatus!.state} />
-                              )}
                               <span className={styles.workspaceIcon}>
                                 <SidebarWorkspaceGlyph
                                   sync={worktreeSyncMap.get(ws.id)}

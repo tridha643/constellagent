@@ -132,6 +132,8 @@ export const IPC = {
   CODEX_INSTALL_NOTIFY: 'codex:install-notify',
   CODEX_UNINSTALL_NOTIFY: 'codex:uninstall-notify',
   CODEX_CHECK_NOTIFY: 'codex:check-notify',
+  CODEX_GET_RATE_LIMITS: 'codex:get-rate-limits',
+  CURSOR_GET_RATE_LIMITS: 'cursor:get-rate-limits',
 
   // Automation operations
   AUTOMATION_CREATE: 'automation:create',
@@ -262,7 +264,9 @@ export const IPC = {
   AGENT_CHAT_FORK_SESSION: 'agent-chat:fork-session',
   AGENT_CHAT_LIST_SESSIONS: 'agent-chat:list-sessions',
   AGENT_CHAT_GET_SESSION: 'agent-chat:get-session',
+  AGENT_CHAT_GET_CONTEXT_USAGE: 'agent-chat:get-context-usage',
   AGENT_CHAT_SUBMIT: 'agent-chat:submit',
+  AGENT_CHAT_PICK_IMAGES: 'agent-chat:pick-images',
   AGENT_CHAT_REPLACE_QUEUE: 'agent-chat:replace-queue',
   AGENT_CHAT_SET_MODEL: 'agent-chat:set-model',
   AGENT_CHAT_SET_PLAN: 'agent-chat:set-plan',
@@ -276,6 +280,7 @@ export const IPC = {
   AGENT_CHAT_STATE_CHANGED: 'agent-chat:state-changed',
   AGENT_CHAT_TRANSCRIPT_CHANGED: 'agent-chat:transcript-changed',
   AGENT_CHAT_ASSISTANT_DELTA: 'agent-chat:assistant-delta',
+  AGENT_CHAT_CONTEXT_CHANGED: 'agent-chat:context-changed',
 
   /** Composio webhooks + trigger API (main process). */
   COMPOSIO_WEBHOOK_STATUS: 'composio:webhook-status',

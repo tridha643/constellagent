@@ -94,10 +94,28 @@ function codexPresetIds(): Set<string> {
   return new Set(PLAN_MODEL_PRESETS.codex.map((p) => p.cliModel))
 }
 
-/** Whether this model family supports a Fast (-fast) variant in CLI presets. */
+/**
+ * Codex SDK fast mode is not always mirrored in Cursor CLI presets. Keep SDK-only
+ * fast-capable families here so the Conductor composer can expose the fast toggle.
+ */
+const CODEX_FAST_MODEL_FAMILIES = new Set(['gpt-5.5'])
+
+/** Whether this model family supports a Fast (-fast) variant in CLI/SDK presets. */
 export function hasFastVariant(cliModel: string, provider: AgentProvider = 'cursor'): boolean {
-  if (provider === 'codex') return false
   const { base, speedSuffix } = parseModelEffort(cliModel)
+  if (provider === 'codex') {
+    const codexPresets = codexPresetIds()
+    const cursorPresets = cursorPresetIds()
+    if (familyHasNonFastPreset(base, codexPresets) && CODEX_FAST_MODEL_FAMILIES.has(base)) {
+      return true
+    }
+    return (
+      familyHasNonFastPreset(base, codexPresets) &&
+      (speedSuffix === 'fast'
+        ? familyHasNonFastPreset(base, cursorPresets)
+        : familyHasFastPreset(base, cursorPresets))
+    )
+  }
   const presets = cursorPresetIds()
   return speedSuffix === 'fast'
     ? familyHasNonFastPreset(base, presets)

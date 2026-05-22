@@ -36,6 +36,8 @@ import { LspService } from './lsp/lsp-service'
 import { SkillsService } from './skills-service'
 import { GraphiteService } from './graphite-service'
 import { ContextWindowService } from './context-window-service'
+import { CodexUsageService } from './codex-usage-service'
+import { CursorUsageService } from './cursor-usage-service'
 import { closeAllAgentFS } from './agentfs-service'
 import { AnnotationService } from './annotation-service'
 import { emitAutomationEvent, onAutomationEvent } from './automation-event-bus'
@@ -1048,6 +1050,11 @@ export function registerIpcHandlers(): void {
     return contextWindowService.getUsage(worktreePath)
   })
 
+  const codexUsageService = new CodexUsageService()
+  const cursorUsageService = new CursorUsageService()
+  ipcMain.handle(IPC.CODEX_GET_RATE_LIMITS, async () => codexUsageService.getRateLimits())
+  ipcMain.handle(IPC.CURSOR_GET_RATE_LIMITS, async () => cursorUsageService.getRateLimits())
+
   // ── Claude Code trust ──
   ipcMain.handle(IPC.CLAUDE_TRUST_PATH, async (_e, dirPath: string) => {
     await trustPathForClaude(dirPath)
@@ -1922,6 +1929,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.AGENT_CHAT_GET_SESSION, async (_e, sessionId: string) =>
     agentChatHost.getSession(sessionId),
   )
+  ipcMain.handle(IPC.AGENT_CHAT_GET_CONTEXT_USAGE, async (_e, sessionId: string) =>
+    agentChatHost.getContextUsage(sessionId),
+  )
   ipcMain.handle(
     IPC.AGENT_CHAT_SUBMIT,
     async (
@@ -1932,6 +1942,10 @@ export function registerIpcHandlers(): void {
       attachments?: readonly import('../shared/conductor-attachments').ConductorComposerAttachment[],
     ) => agentChatHost.submit(sessionId, text, deliverAs, attachments),
   )
+  ipcMain.handle(IPC.AGENT_CHAT_PICK_IMAGES, async () => {
+    const { pickConductorImageAttachments } = await import('./conductor-image-picker')
+    return pickConductorImageAttachments()
+  })
   ipcMain.handle(
     IPC.AGENT_CHAT_REPLACE_QUEUE,
     async (_e, sessionId: string, messages: import('../shared/agent-chat-types').QueuedAgentMessage[]) =>

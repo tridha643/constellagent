@@ -4,6 +4,7 @@ import type { LinearIssueNode } from '../linear/linear-api'
 import type { LinkedPullRequest, PrInfo } from '@shared/github-types'
 import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
 import type { ContextWindowData } from '@shared/context-window-types'
+import type { UsageLimitsData } from '@shared/usage-limits-types'
 import type { AutomationAction, AutomationTrigger, AutomationRunStatus } from '../../shared/automation-types'
 import type { WorktreeCredentialRule } from '../../shared/worktree-credentials'
 import type { GraphiteStackInfo } from '../../shared/graphite-types'
@@ -744,6 +745,8 @@ export interface AppState {
   planBuildTerminalByPlanPath: Record<string, string>
   /** Ephemeral: context window usage for the active workspace's Claude Code session. */
   contextWindowData: ContextWindowData | null
+  /** Ephemeral: Codex/Cursor account rate limits for Conductor composer hover popover. */
+  usageLimitsData: UsageLimitsData | null
 
   // Sidebar action order (persisted)
   sidebarActionOrder: SidebarActionId[]
@@ -930,6 +933,7 @@ export interface AppState {
   setGraphiteStack: (workspaceId: string, stack: GraphiteStackInfo | null) => void
   toggleGraphiteStackExpanded: () => void
   setContextWindowData: (data: ContextWindowData | null) => void
+  setUsageLimitsData: (data: UsageLimitsData | null) => void
 
   // Automation actions
   addAutomation: (automation: Automation) => void

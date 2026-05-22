@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLAN_MODEL_PRESETS } from './plan-build-command'
 import {
   applyThinkingLevel,
   defaultConductorModel,
@@ -78,9 +79,36 @@ describe('thinkingLevelFromModel', () => {
 })
 
 describe('hasFastVariant', () => {
-  test('codex hides fast toggle', () => {
-    expect(hasFastVariant('gpt-5.3-codex', 'codex')).toBe(false)
-    expect(hasFastVariant('gpt-5.3-codex-fast', 'codex')).toBe(false)
+  test('codex exposes fast toggle for model families with known fast variants', () => {
+    expect(hasFastVariant('gpt-5.3-codex', 'codex')).toBe(true)
+    expect(hasFastVariant('gpt-5.3-codex-fast', 'codex')).toBe(true)
+    expect(hasFastVariant('gpt-5.5', 'codex')).toBe(true)
+    expect(hasFastVariant('gpt-5.5-fast', 'codex')).toBe(true)
+  })
+
+  test('codex hides fast toggle when no fast variant is known', () => {
+    expect(hasFastVariant('gpt-5.4-mini', 'codex')).toBe(false)
+  })
+
+  test('codex fast support is explicit for every current Codex preset', () => {
+    const expectedFastModels = new Set([
+      'gpt-5.5',
+      'gpt-5.4',
+      'gpt-5.3-codex',
+      'gpt-5.2-codex',
+      'gpt-5.2',
+      'gpt-5.1-codex-max',
+    ])
+    const actual = Object.fromEntries(
+      PLAN_MODEL_PRESETS.codex.map((preset) => [
+        preset.cliModel,
+        hasFastVariant(preset.cliModel, 'codex'),
+      ]),
+    )
+
+    for (const preset of PLAN_MODEL_PRESETS.codex) {
+      expect(actual[preset.cliModel]).toBe(expectedFastModels.has(preset.cliModel))
+    }
   })
 
   test('composer-2 supports fast toggle on cursor', () => {

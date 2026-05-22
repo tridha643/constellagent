@@ -72,6 +72,11 @@ export interface AgentChatDeltaPayload {
   readonly text: string
 }
 
+export interface AgentChatContextPayload {
+  readonly sessionId: string
+  readonly usage: import('./context-window-types').ContextWindowData
+}
+
 export interface AgentChatSessionWithTranscript {
   readonly state: AgentChatSessionState
   readonly transcript: readonly TranscriptMessage[]

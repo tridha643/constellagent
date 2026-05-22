@@ -400,6 +400,7 @@ export function ConductorChatView({
         onSetPlan={handleSetPlan}
         onHistoryUp={() => timelineRef.current?.openHistory()}
         composerRef={composerRef}
+        sessionId={agentSessionId}
       />
     </div>
   )

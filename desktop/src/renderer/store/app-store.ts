@@ -682,6 +682,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeMonacoEditor: null,
   planBuildTerminalByPlanPath: {},
   contextWindowData: null,
+  usageLimitsData: null,
   sidebarActionOrder: [...DEFAULT_SIDEBAR_ACTION_ORDER],
 
   addProject: (project) => {
@@ -2873,6 +2874,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ graphiteStackExpanded: !s.graphiteStackExpanded })),
 
   setContextWindowData: (data) => set({ contextWindowData: data }),
+
+  setUsageLimitsData: (data) => set({ usageLimitsData: data }),
 
   addAutomation: (automation) =>
     set((s) => ({ automations: [...s.automations, normalizeRendererAutomation(automation)] })),
