@@ -46,6 +46,31 @@ export function ForkIcon({ size = 14 }: { size?: number }) {
   )
 }
 
+/** Thin upward arrow for composer send (rounded-square primary action). */
+export function ComposerSendIcon() {
+  return (
+    <svg aria-hidden viewBox="0 0 20 20" fill="none">
+      <path d="M10 14.5V6" stroke="currentColor" strokeLinecap="round" strokeWidth="1.65" />
+      <path
+        d="M5.85 9.35 10 5.2 14.15 9.35"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.65"
+      />
+    </svg>
+  )
+}
+
+/** Rounded square for composer stop — same shell as send. */
+export function ComposerStopIcon() {
+  return (
+    <svg aria-hidden viewBox="0 0 20 20" fill="none">
+      <rect x="5.2" y="5.2" width="9.6" height="9.6" rx="1.6" fill="currentColor" />
+    </svg>
+  )
+}
+
 /** Three-panel folded map for plan mode. */
 export function PlanMapIcon({ size = 14 }: { size?: number }) {
   return (

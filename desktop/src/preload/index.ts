@@ -17,6 +17,7 @@ import type { GraphiteCreateOptions, GraphiteStackAction, GraphiteStackActionRes
 import type { ReviewComment } from '../shared/review-types'
 import type { HostUiResponse, PiContextUsageSnapshot } from '@pi-gui/session-driver'
 import type {
+  AgentChatContextPayload,
   AgentChatDeltaPayload,
   AgentChatSessionState,
   AgentChatSessionWithTranscript,
@@ -398,6 +399,13 @@ const api = {
       ipcRenderer.invoke(IPC.CODEX_UNINSTALL_NOTIFY),
     checkNotify: () =>
       ipcRenderer.invoke(IPC.CODEX_CHECK_NOTIFY),
+    getRateLimits: () =>
+      ipcRenderer.invoke(IPC.CODEX_GET_RATE_LIMITS),
+  },
+
+  cursor: {
+    getRateLimits: () =>
+      ipcRenderer.invoke(IPC.CURSOR_GET_RATE_LIMITS),
   },
 
   automations: {
@@ -624,12 +632,21 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT_CHAT_LIST_SESSIONS, workspaceId) as Promise<AgentChatSessionState[]>,
     getSession: (sessionId: string) =>
       ipcRenderer.invoke(IPC.AGENT_CHAT_GET_SESSION, sessionId) as Promise<AgentChatSessionWithTranscript | null>,
+    getContextUsage: (sessionId: string) =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_GET_CONTEXT_USAGE, sessionId) as Promise<
+        import('../shared/context-window-types').ContextWindowData | null
+      >,
     submit: (
       sessionId: string,
       text: string,
       deliverAs?: QueuedAgentMessageMode,
       attachments?: readonly ConductorComposerAttachment[],
     ) => ipcRenderer.invoke(IPC.AGENT_CHAT_SUBMIT, sessionId, text, deliverAs, attachments),
+    pickImages: () =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_PICK_IMAGES) as Promise<{
+        attachments: readonly ConductorComposerAttachment[]
+        error?: string
+      }>,
     replaceQueue: (sessionId: string, messages: readonly QueuedAgentMessage[]) =>
       ipcRenderer.invoke(IPC.AGENT_CHAT_REPLACE_QUEUE, sessionId, messages),
     setModel: (sessionId: string, model: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_SET_MODEL, sessionId, model),
@@ -664,6 +681,13 @@ const api = {
       ipcRenderer.on(IPC.AGENT_CHAT_ASSISTANT_DELTA, handle)
       return () => {
         ipcRenderer.removeListener(IPC.AGENT_CHAT_ASSISTANT_DELTA, handle)
+      }
+    },
+    onContextChanged: (listener: (payload: AgentChatContextPayload) => void) => {
+      const handle = (_event: Electron.IpcRendererEvent, payload: AgentChatContextPayload) => listener(payload)
+      ipcRenderer.on(IPC.AGENT_CHAT_CONTEXT_CHANGED, handle)
+      return () => {
+        ipcRenderer.removeListener(IPC.AGENT_CHAT_CONTEXT_CHANGED, handle)
       }
     },
   },

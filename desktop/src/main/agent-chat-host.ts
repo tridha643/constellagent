@@ -27,6 +27,11 @@ import {
   hasConductorMessageInput,
   type ConductorComposerAttachment,
 } from '../shared/conductor-attachments'
+import {
+  buildContextWindowData,
+  estimateTokensFromTranscript,
+} from '../shared/context-window-utils'
+import type { ContextWindowData } from '../shared/context-window-types'
 import type {
   AgentChatSessionState,
   AgentChatStatus,
@@ -165,6 +170,39 @@ export class AgentChatHost {
       this.transcriptCache.set(key, transcript)
     }
     return { state, transcript }
+  }
+
+  async getContextUsage(sessionId: string): Promise<ContextWindowData | null> {
+    const state = await this.resolveState(sessionId)
+    if (!state) return null
+    const key = sessionKey(this.refOf(state))
+    let transcript = this.transcriptCache.get(key)
+    if (!transcript) {
+      transcript = await this.store.loadTranscript(sessionId)
+      this.transcriptCache.set(key, transcript)
+    }
+    return this.buildContextUsage(state, transcript)
+  }
+
+  private buildContextUsage(
+    state: AgentChatSessionState,
+    transcript: readonly TranscriptMessage[],
+  ): ContextWindowData {
+    const estimated = estimateTokensFromTranscript(transcript)
+    const sdkUsed = this.drivers[state.provider].getContextUsage?.(state.sessionId) ?? null
+    const usedTokens = sdkUsed != null ? Math.max(sdkUsed, estimated) : estimated
+    return buildContextWindowData({
+      usedTokens,
+      model: state.model,
+      sessionId: state.sessionId,
+    })
+  }
+
+  private broadcastContextUsage(state: AgentChatSessionState | undefined): void {
+    if (!state) return
+    const transcript = this.transcriptCache.get(sessionKey(this.refOf(state))) ?? []
+    const usage = this.buildContextUsage(state, transcript)
+    this.send(IPC.AGENT_CHAT_CONTEXT_CHANGED, { sessionId: state.sessionId, usage })
   }
 
   async submit(
@@ -756,6 +794,7 @@ export class AgentChatHost {
     const transcript = this.transcriptCache.get(sessionKey(this.refOf(state))) ?? []
     const started = performance.now()
     this.send(IPC.AGENT_CHAT_TRANSCRIPT_CHANGED, { sessionId: state.sessionId, transcript })
+    this.broadcastContextUsage(state)
     const telemetry = this.turnTelemetry.get(state.sessionId)
     if (telemetry) telemetry.transcriptFlushCount += 1
     logMainPerfEvent('conductor.transcript_flush', performance.now() - started, {

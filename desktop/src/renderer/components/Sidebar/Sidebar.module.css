@@ -1029,49 +1029,58 @@
 
 .workspaceItem.spotlightWorkspace {
   --sidebar-spotlight-color: var(--spotlight-watching, var(--accent-blue));
-  --sidebar-spotlight-wash: color-mix(in srgb, var(--sidebar-spotlight-color) 8%, transparent);
-
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--sidebar-spotlight-color) 12%, transparent), transparent 54%),
-    var(--sidebar-spotlight-wash);
-  border-color: color-mix(in srgb, var(--sidebar-spotlight-color) 20%, transparent);
-  box-shadow:
-    inset 2px 0 0 var(--sidebar-spotlight-color),
-    inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
-  color: color-mix(in srgb, var(--text-primary) 88%, var(--sidebar-spotlight-color));
 }
 
 .workspaceItem.spotlightWorkspace[data-spotlight-state="preparing"],
 .workspaceItem.spotlightWorkspace[data-spotlight-state="syncing"],
 .workspaceItem.spotlightWorkspace[data-spotlight-state="restoring"] {
   --sidebar-spotlight-color: var(--spotlight-syncing, var(--accent-yellow));
-  --sidebar-spotlight-wash: color-mix(in srgb, var(--sidebar-spotlight-color) 9%, transparent);
 }
 
 .workspaceItem.spotlightWorkspace[data-spotlight-state="blocked"],
 .workspaceItem.spotlightWorkspace[data-spotlight-state="error"] {
   --sidebar-spotlight-color: var(--spotlight-blocked, var(--accent-red));
-  --sidebar-spotlight-wash: color-mix(in srgb, var(--sidebar-spotlight-color) 12%, transparent);
 }
 
-.workspaceItem.spotlightWorkspace.active {
-  border-color: color-mix(in srgb, var(--sidebar-spotlight-color) 30%, transparent);
-  color: color-mix(in srgb, var(--text-primary) 78%, var(--sidebar-spotlight-color));
+/* Small accent bar — not a full-row wash. Opacity + scaleY only (GPU). */
+.workspaceItem.spotlightWorkspace::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--sidebar-spotlight-color);
+  transform: translateY(-50%);
+  opacity: 1;
+  pointer-events: none;
+  animation: spotlightBarBreathe var(--spotlight-breath, 1400ms) ease-in-out infinite;
 }
 
-.workspaceItem.spotlightWorkspace .workspaceIcon,
-.workspaceItem.spotlightWorkspace .workspaceNameCol,
-.workspaceItem.spotlightWorkspace .branchPrBtn,
-.workspaceItem.spotlightWorkspace .deleteBtn {
-  position: relative;
-  z-index: 1;
+.workspaceItem.spotlightWorkspace[data-spotlight-state="blocked"]::before,
+.workspaceItem.spotlightWorkspace[data-spotlight-state="error"]::before {
+  animation: none;
+}
+
+@keyframes spotlightBarBreathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) scaleY(1);
+  }
+
+  50% {
+    opacity: 0.55;
+    transform: translateY(-50%) scaleY(0.82);
+  }
 }
 
 .workspaceItem:active:not(.workspaceItemDragging) {
   transform: scale(0.992);
 }
 
-.workspaceItem.active::before {
+.workspaceItem.active:not(.spotlightWorkspace)::before {
   display: none;
 }
 
@@ -1257,14 +1266,6 @@
   .workspaceItem:hover {
     background: color-mix(in srgb, var(--text-primary) 3%, transparent);
     color: var(--text-primary);
-  }
-
-  .workspaceItem.spotlightWorkspace:hover {
-    background:
-      linear-gradient(90deg, color-mix(in srgb, var(--sidebar-spotlight-color) 16%, transparent), transparent 58%),
-      color-mix(in srgb, var(--sidebar-spotlight-color) 11%, transparent);
-    border-color: color-mix(in srgb, var(--sidebar-spotlight-color) 28%, transparent);
-    color: color-mix(in srgb, var(--text-primary) 92%, var(--sidebar-spotlight-color));
   }
 
   .prInline:hover {
@@ -1870,7 +1871,8 @@
 
   .projectPrLoadingSpinner,
   .syncIndicatorSyncing,
-  .spotlightChip[data-spotlight-state="syncing"] {
+  .spotlightChip[data-spotlight-state="syncing"],
+  .workspaceItem.spotlightWorkspace::before {
     animation: none;
   }
 

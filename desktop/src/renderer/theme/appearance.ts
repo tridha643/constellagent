@@ -80,6 +80,8 @@ const DEFAULT_THEME: AppearanceThemePreset = {
     '--border-default': '#2e2e2e',
     '--border-strong': '#404040',
     '--border-accent': '#7B93BD',
+    '--conductor-composer-plan-dash-color':
+      'color-mix(in srgb, var(--border-strong) 55%, var(--text-tertiary))',
     '--text-primary': '#eeeeee',
     '--text-secondary': '#999999',
     '--text-tertiary': '#666666',
@@ -254,6 +256,8 @@ const ABSOLUTELY_THEME: AppearanceThemePreset = {
     '--border-default': '#4b4b47',
     '--border-strong': '#61615b',
     '--border-accent': '#cc7d5e',
+    '--conductor-composer-plan-dash-color':
+      'color-mix(in srgb, var(--border-strong) 50%, var(--text-tertiary))',
     '--text-primary': '#f9f9f7',
     '--text-secondary': '#d3d2cc',
     '--text-tertiary': '#9f9e97',

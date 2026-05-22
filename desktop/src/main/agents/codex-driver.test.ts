@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { buildAgentPrompt } from './agent-driver'
-import { buildCodexUserInput, isBenignCodexInterruptError, isStaleCodexThreadError } from './codex-driver'
+import {
+  buildCodexUserInput,
+  codexSdkModelForConductorModel,
+  isBenignCodexInterruptError,
+  isStaleCodexThreadError,
+} from './codex-driver'
 
 describe('CodexDriver prompt seeding', () => {
   test('omits transcript when SDK thread carries history (primary path)', () => {
@@ -34,6 +39,23 @@ describe('CodexDriver streaming transport', () => {
   test('keeps the Codex turn on runStreamed', () => {
     const source = readFileSync(new URL('./codex-driver.ts', import.meta.url), 'utf8')
     expect(source).toContain('thread.runStreamed(')
+  })
+
+  test('passes structured input (with local_image) to runStreamed, not prompt alone', () => {
+    const source = readFileSync(new URL('./codex-driver.ts', import.meta.url), 'utf8')
+    expect(source).toContain('thread.runStreamed(input')
+    expect(source).not.toMatch(/thread\.runStreamed\(prompt/)
+  })
+})
+
+describe('codexSdkModelForConductorModel', () => {
+  test('preserves fast mode for Codex SDK model selection', () => {
+    expect(codexSdkModelForConductorModel('gpt-5.3-codex-fast')).toBe('gpt-5.3-codex-fast')
+  })
+
+  test('strips conductor effort suffixes because Codex SDK receives effort separately', () => {
+    expect(codexSdkModelForConductorModel('gpt-5.3-codex-high-fast')).toBe('gpt-5.3-codex-fast')
+    expect(codexSdkModelForConductorModel('gpt-5.3-codex-high')).toBe('gpt-5.3-codex')
   })
 })
 

@@ -44,6 +44,11 @@ interface CodexSessionState {
   readonly lastToolUpdateByItem: Map<string, { text: string; emittedAt: number }>
 }
 
+interface CodexContextUsage {
+  usedTokens: number
+  updatedAt: number
+}
+
 interface CodexSessionRecovery {
   codexThreadId: string | null
   model: string
@@ -142,11 +147,16 @@ function resolveCodexCliPath(): string | undefined {
   }
 }
 
+export function codexSdkModelForConductorModel(model: string): string {
+  const { base, speedSuffix } = parseModelEffort(model)
+  return speedSuffix === 'fast' ? `${base}-fast` : base
+}
+
 function threadOptionsForTurn(ctx: AgentTurnContext): ThreadOptions {
-  const baseModel = parseModelEffort(ctx.model).base
+  const sdkModel = codexSdkModelForConductorModel(ctx.model)
   const effort = mapThinkingLevelToCodexEffort(ctx.thinkingLevel)
   return {
-    model: baseModel,
+    model: sdkModel,
     modelReasoningEffort: effort,
     workingDirectory: ctx.workspacePath,
     skipGitRepoCheck: true,
@@ -168,6 +178,7 @@ export class CodexDriver implements AgentDriver {
   private codex: Codex | null = null
   private readonly sessions = new Map<string, CodexSessionState>()
   private readonly recovery = new Map<string, CodexSessionRecovery>()
+  private readonly contextUsage = new Map<string, CodexContextUsage>()
 
   private getCodex(): Codex {
     if (!this.codex) {
@@ -219,6 +230,11 @@ export class CodexDriver implements AgentDriver {
   closeSession(sessionId: string): void {
     this.sessions.delete(sessionId)
     this.recovery.delete(sessionId)
+    this.contextUsage.delete(sessionId)
+  }
+
+  getContextUsage(sessionId: string): number | null {
+    return this.contextUsage.get(sessionId)?.usedTokens ?? null
   }
 
   private async runTurnOnce(ctx: AgentTurnContext, forceTranscriptFallback: boolean): Promise<void> {
@@ -304,7 +320,7 @@ export class CodexDriver implements AgentDriver {
 
     try {
       const runStreamedStartedAt = performance.now()
-      const { events } = await thread.runStreamed(prompt, { signal: ctx.signal })
+      const { events } = await thread.runStreamed(input, { signal: ctx.signal })
       logMainPerfEvent('codex.runStreamed_ready', performance.now() - runStreamedStartedAt, {
         model: baseModel,
         effort,
@@ -367,6 +383,16 @@ export class CodexDriver implements AgentDriver {
       case 'thread.started':
         state.codexThreadId = event.thread_id
         break
+      case 'turn.completed': {
+        const usedTokens =
+          event.usage.input_tokens +
+          event.usage.cached_input_tokens
+        this.contextUsage.set(ctx.sessionRef.sessionId, {
+          usedTokens,
+          updatedAt: Date.now(),
+        })
+        break
+      }
       case 'item.started': {
         const item = event.item
         if (item.type === 'agent_message') {

@@ -1,6 +1,11 @@
 export const CONDUCTOR_IMAGE_ONLY_PROMPT =
   'Please inspect the attached image and respond to it.'
 
+/** Max decoded image size accepted by Conductor attach (20 MiB). */
+export const CONDUCTOR_MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+export const SUPPORTED_CONDUCTOR_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'] as const
+
 export const SUPPORTED_CONDUCTOR_IMAGE_TYPES = [
   { extension: 'png', mimeType: 'image/png' },
   { extension: 'jpg', mimeType: 'image/jpeg' },
@@ -25,6 +30,29 @@ export type ConductorComposerAttachment = ConductorImageAttachment
 const SUPPORTED_CONDUCTOR_IMAGE_MIME_TYPES = new Set(
   SUPPORTED_CONDUCTOR_IMAGE_TYPES.map((type) => type.mimeType),
 )
+
+const CONDUCTOR_IMAGE_MIME_TYPE_BY_EXTENSION = new Map(
+  SUPPORTED_CONDUCTOR_IMAGE_TYPES.map((type) => [type.extension, type.mimeType] as const),
+)
+
+export function inferConductorImageMimeType(
+  fileName: string,
+  mimeType?: string,
+): ConductorImageMimeType | undefined {
+  if (mimeType && isSupportedConductorImageMimeType(mimeType)) {
+    return mimeType
+  }
+
+  const extension = fileName.split('.').pop()?.trim().toLowerCase()
+  if (!extension) return undefined
+  return CONDUCTOR_IMAGE_MIME_TYPE_BY_EXTENSION.get(
+    extension as (typeof SUPPORTED_CONDUCTOR_IMAGE_TYPES)[number]['extension'],
+  )
+}
+
+export function formatConductorImageSizeLimit(): string {
+  return `${Math.round(CONDUCTOR_MAX_IMAGE_BYTES / (1024 * 1024))} MB`
+}
 
 export function isSupportedConductorImageMimeType(
   value: unknown,

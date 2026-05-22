@@ -90,6 +90,8 @@ export interface AgentDriver {
   markSessionInterrupted?(sessionId: string): void
   /** Releases per-session resources (child processes, agents). */
   closeSession(sessionId: string): void
+  /** Provider-reported input-side tokens for the latest completed turn, when available. */
+  getContextUsage?(sessionId: string): number | null
 }
 
 const now = (): string => new Date().toISOString()

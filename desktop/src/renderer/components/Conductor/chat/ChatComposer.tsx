@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
-import { ImageIcon, X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import type { AgentProvider, QueuedAgentMessage, QueuedAgentMessageMode } from '../../../../shared/agent-chat-types'
 import type { ConductorComposerAttachment } from '../../../../shared/conductor-attachments'
 import { hasEffortVariants, hasFastVariant, isFastModel } from '../../../../shared/conductor-model-utils'
@@ -7,13 +7,10 @@ import { normalizeThinkingLevel, isReasoningEffortActive, type ThinkingLevel } f
 import { ChatModelSelector } from './ChatModelSelector'
 import { EffortPill } from './EffortPill'
 import { FastToggle } from './FastToggle'
-import { PlanMapIcon } from './ConductorIcons'
+import { ComposerSendIcon, ComposerStopIcon, PlanMapIcon } from './ConductorIcons'
 import { ConductorMessageQueue } from './ConductorMessageQueue'
 import {
-  ContextPanel,
-  ContextRingButton,
-  useConductorContextUsage,
-  useContextPanelDismiss,
+  ContextUsageHover,
 } from './ContextWindowControl'
 import {
   CONDUCTOR_IMAGE_ACCEPT,
@@ -47,6 +44,7 @@ export function ChatComposer({
   onSetPlan,
   onHistoryUp,
   composerRef,
+  sessionId,
 }: {
   provider: AgentProvider
   model: string
@@ -68,17 +66,18 @@ export function ChatComposer({
   onSetPlan: (plan: boolean) => void
   onHistoryUp: () => void
   composerRef?: React.RefObject<ChatComposerHandle | null>
+  sessionId: string | null
 }) {
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<ConductorComposerAttachment[]>([])
+  const [attachError, setAttachError] = useState<string | null>(null)
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
-  const [contextOpen, setContextOpen] = useState(false)
   const [focused, setFocused] = useState(false)
   const [dragActive, setDragActive] = useState(false)
+  const [pickingImages, setPickingImages] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerInnerRef = useRef<HTMLDivElement | null>(null)
-  const { data: contextData, idle: contextIdle } = useConductorContextUsage()
   const modelLabel = `${provider} · ${model}`
   const showEffort = hasEffortVariants(model, provider)
   const showFast = hasFastVariant(model, provider)
@@ -86,9 +85,13 @@ export function ChatComposer({
   const effortLevel = normalizeThinkingLevel(thinkingLevel)
   const reasoningActive = isReasoningEffortActive(effortLevel)
   const runningHint = 'Enter · queue · ⌘↵ · steer · Esc · stop'
-  const showFocusHint = !focused && !contextOpen && !disabled && !running
-  const showRunningHint = running && !focused && !contextOpen && !disabled
+  const showFocusHint = !focused && !disabled && !running
+  const showRunningHint = running && !focused && !disabled
   const hasInput = text.trim().length > 0 || attachments.length > 0
+  const textareaPlaceholder =
+    attachments.length > 0
+      ? 'Describe what you want about the attached image…'
+      : 'Ask to make changes, @mention files, reference PRs with #, run /commands'
 
   const composerInnerClass = [
     styles.composerInner,
@@ -98,8 +101,6 @@ export function ChatComposer({
   ]
     .filter(Boolean)
     .join(' ')
-
-  useContextPanelDismiss(contextOpen, () => setContextOpen(false), composerInnerRef)
 
   const autoGrow = () => {
     const el = textareaRef.current
@@ -139,12 +140,14 @@ export function ChatComposer({
       setEditingQueueId(null)
       setText('')
       setAttachments([])
+      setAttachError(null)
       return
     }
 
     onSubmit(trimmed, running ? deliverAs ?? 'followUp' : undefined, attachments)
     setText('')
     setAttachments([])
+    setAttachError(null)
   }
 
   const handleEditQueuedMessage = (messageId: string) => {
@@ -153,6 +156,7 @@ export function ChatComposer({
     setEditingQueueId(messageId)
     setText(message.text)
     setAttachments([...(message.attachments ?? [])])
+    setAttachError(null)
     requestAnimationFrame(() => textareaRef.current?.focus())
   }
 
@@ -162,6 +166,7 @@ export function ChatComposer({
       setEditingQueueId(null)
       setText('')
       setAttachments([])
+      setAttachError(null)
     }
   }
 
@@ -174,34 +179,84 @@ export function ChatComposer({
     onReplaceQueue(next)
   }
 
+  const applyAttachmentResult = (
+    nextAttachments: readonly ConductorComposerAttachment[],
+    error?: string,
+  ) => {
+    if (nextAttachments.length > 0) {
+      setAttachments((current) => mergeConductorAttachments(current, nextAttachments))
+      setAttachError(error ?? null)
+      return
+    }
+    if (error) {
+      setAttachError(error)
+    }
+  }
+
   const mergeFiles = (files: readonly File[]) => {
     if (disabled || files.length === 0) return
-    void readConductorImageAttachmentsFromFiles(files).then((nextAttachments) => {
-      if (nextAttachments.length === 0) return
-      setAttachments((current) => mergeConductorAttachments(current, nextAttachments))
+    void readConductorImageAttachmentsFromFiles(files).then(({ attachments: nextAttachments, error }) => {
+      applyAttachmentResult(nextAttachments, error)
     })
   }
 
-  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+  const handlePickImages = async () => {
+    if (disabled || pickingImages) return
+    setPickingImages(true)
+    setAttachError(null)
+    try {
+      const result = await window.api.agentChat.pickImages()
+      applyAttachmentResult(result.attachments, result.error)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setAttachError(message || 'Could not open image picker.')
+      fileInputRef.current?.click()
+    } finally {
+      setPickingImages(false)
+    }
+  }
+
+  const handlePaste = (event: ClipboardEvent<HTMLElement>) => {
     const files = extractImageFilesFromClipboardData(event.clipboardData)
     if (files.length === 0) return
     event.preventDefault()
     mergeFiles(files)
   }
 
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+  const handleDrop = (event: DragEvent<HTMLElement>) => {
     if (!hasFilesInDataTransfer(event.dataTransfer)) return
     event.preventDefault()
+    event.stopPropagation()
     setDragActive(false)
     const files = extractImageFilesFromDataTransfer(event.dataTransfer)
     mergeFiles(files)
   }
 
-  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+  const handleDragOver = (event: DragEvent<HTMLElement>) => {
     if (!hasFilesInDataTransfer(event.dataTransfer)) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
     setDragActive(true)
+  }
+
+  const handleDragEnter = (event: DragEvent<HTMLElement>) => {
+    if (!hasFilesInDataTransfer(event.dataTransfer)) return
+    event.preventDefault()
+    setDragActive(true)
+  }
+
+  const handleDragLeave = (event: DragEvent<HTMLElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setDragActive(false)
+    }
+  }
+
+  const dragHandlers = {
+    onPasteCapture: handlePaste,
+    onDropCapture: handleDrop,
+    onDragOverCapture: handleDragOver,
+    onDragEnterCapture: handleDragEnter,
+    onDragLeaveCapture: handleDragLeave,
   }
 
   return (
@@ -211,19 +266,7 @@ export function ChatComposer({
         ref={composerInnerRef}
         data-plan={plan ? 'true' : undefined}
         data-reasoning={reasoningActive ? effortLevel : undefined}
-        onPaste={handlePaste}
-        onDragEnter={(event) => {
-          if (!hasFilesInDataTransfer(event.dataTransfer)) return
-          event.preventDefault()
-          setDragActive(true)
-        }}
-        onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-            setDragActive(false)
-          }
-        }}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
+        {...dragHandlers}
       >
         <input
           ref={fileInputRef}
@@ -238,9 +281,6 @@ export function ChatComposer({
             mergeFiles(files)
           }}
         />
-        {contextOpen && (
-          <ContextPanel data={contextData} idle={contextIdle} modelLabel={modelLabel} />
-        )}
         {queuedMessages.length > 0 ? (
           <ConductorMessageQueue
             messages={queuedMessages}
@@ -249,6 +289,11 @@ export function ChatComposer({
             onRemove={handleRemoveQueuedMessage}
             onMoveUp={handleMoveQueuedMessageUp}
           />
+        ) : null}
+        {attachError ? (
+          <div className={styles.composerAttachError} role="alert">
+            {attachError}
+          </div>
         ) : null}
         <div className={styles.composerInputBlock}>
           {showFocusHint ? <span className={styles.composerHint}>⌘L to focus</span> : null}
@@ -264,21 +309,22 @@ export function ChatComposer({
             ]
               .filter(Boolean)
               .join(' ')}
-            placeholder="Ask to make changes, @mention files, reference PRs with #, run /commands"
+            placeholder={textareaPlaceholder}
             rows={1}
             value={text}
             disabled={disabled}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onChange={(e) => setText(e.target.value)}
+            {...dragHandlers}
             onKeyDown={(e) => {
             if (e.key === 'Escape') {
-              if (contextOpen) {
-                e.preventDefault()
-                setContextOpen(false)
-              } else if (dragActive) {
+              if (dragActive) {
                 e.preventDefault()
                 setDragActive(false)
+              } else if (attachError) {
+                e.preventDefault()
+                setAttachError(null)
               } else if (editingQueueId) {
                 e.preventDefault()
                 setEditingQueueId(null)
@@ -338,16 +384,6 @@ export function ChatComposer({
         ) : null}
         <div className={styles.composerFooter}>
           <div className={styles.composerActionsLeft}>
-            <button
-              type="button"
-              className={`${styles.composerChip} ${styles.composerChipNeutral} ${styles.composerImageButton}`}
-              aria-label="Attach image"
-              title="Attach image"
-              disabled={disabled}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <ImageIcon size={15} strokeWidth={1.9} />
-            </button>
             <ChatModelSelector provider={provider} model={model} thinkingLevel={thinkingLevel} onSelect={onSetModel} />
             {showFast ? <FastToggle active={fastActive} onChange={onToggleFast} /> : null}
             {showEffort ? (
@@ -355,21 +391,36 @@ export function ChatComposer({
             ) : null}
             <button
               type="button"
-              className={`${styles.composerChip} ${plan ? styles.composerChipWarm : styles.composerChipNeutral} ${styles.planToggle}`}
+              className={[
+                styles.composerChip,
+                plan ? styles.composerChipWarm : styles.composerChipNeutral,
+                styles.planToggle,
+                plan ? '' : styles.planToggleIconOnly,
+              ]
+                .filter(Boolean)
+                .join(' ')}
               aria-pressed={plan}
-              title="Plan mode (Shift+Tab)"
+              data-plan-active={plan ? 'true' : undefined}
+              title={plan ? 'Plan mode on (Shift+Tab)' : 'Plan mode (Shift+Tab)'}
+              aria-label={plan ? 'Plan mode on. Click to disable.' : 'Enable plan mode'}
               onClick={() => onSetPlan(!plan)}
             >
               <PlanMapIcon />
-              Plan
+              {plan ? 'Plan' : null}
             </button>
           </div>
           <div className={styles.composerActionsRight}>
-            <ContextRingButton
-              percentage={contextData.percentage}
-              open={contextOpen}
-              onToggle={() => setContextOpen((v) => !v)}
-            />
+            <ContextUsageHover provider={provider} sessionId={sessionId} />
+            <button
+              type="button"
+              className={styles.composerAttachBtn}
+              aria-label="Attach image"
+              title="Attach an image, then describe what you want"
+              disabled={disabled || pickingImages}
+              onClick={() => void handlePickImages()}
+            >
+              <Plus size={18} strokeWidth={1.8} />
+            </button>
             {running ? (
               <button
                 type="button"
@@ -378,7 +429,7 @@ export function ChatComposer({
                 aria-label="Stop"
                 title="Stop (Esc)"
               >
-                <StopIcon />
+                <ComposerStopIcon />
               </button>
             ) : (
               <button
@@ -388,7 +439,7 @@ export function ChatComposer({
                 disabled={!hasInput || disabled}
                 aria-label="Send"
               >
-                <SendArrowIcon />
+                <ComposerSendIcon />
               </button>
             )}
           </div>
@@ -398,19 +449,3 @@ export function ChatComposer({
   )
 }
 
-function SendArrowIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M12 19V5" />
-      <path d="m5 12 7-7 7 7" />
-    </svg>
-  )
-}
-
-function StopIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <rect x="7" y="7" width="10" height="10" rx="2" />
-    </svg>
-  )
-}

@@ -1,6 +1,9 @@
 /// <reference lib="dom" />
 
 import {
+  CONDUCTOR_MAX_IMAGE_BYTES,
+  formatConductorImageSizeLimit,
+  inferConductorImageMimeType,
   SUPPORTED_CONDUCTOR_IMAGE_TYPES,
   type ConductorComposerAttachment,
   type ConductorImageAttachment,
@@ -9,31 +12,30 @@ import {
 
 type FileWithPath = File & { readonly path?: string }
 
-const SUPPORTED_CONDUCTOR_IMAGE_MIME_TYPES = new Set(
-  SUPPORTED_CONDUCTOR_IMAGE_TYPES.map((type) => type.mimeType),
-)
-const IMAGE_MIME_TYPE_BY_EXTENSION = new Map(
-  SUPPORTED_CONDUCTOR_IMAGE_TYPES.map((type) => [type.extension, type.mimeType] as const),
-)
-
-export const CONDUCTOR_IMAGE_ACCEPT = SUPPORTED_CONDUCTOR_IMAGE_TYPES
-  .map((type) => type.mimeType)
-  .join(',')
-
-function inferImageMimeType(file: Pick<File, 'name' | 'type'>): ConductorImageMimeType | undefined {
-  if (SUPPORTED_CONDUCTOR_IMAGE_MIME_TYPES.has(file.type as ConductorImageMimeType)) {
-    return file.type as ConductorImageMimeType
-  }
-
-  const extension = file.name.split('.').pop()?.trim().toLowerCase()
-  if (!extension) return undefined
-  return IMAGE_MIME_TYPE_BY_EXTENSION.get(
-    extension as (typeof SUPPORTED_CONDUCTOR_IMAGE_TYPES)[number]['extension'],
-  )
+export interface ReadConductorImageAttachmentsResult {
+  readonly attachments: ConductorImageAttachment[]
+  readonly rejectedCount: number
+  readonly error?: string
 }
 
-function isImageFile(file: Pick<File, 'name' | 'type'>): boolean {
-  return Boolean(inferImageMimeType(file))
+export const CONDUCTOR_IMAGE_ACCEPT = [
+  ...SUPPORTED_CONDUCTOR_IMAGE_TYPES.map((type) => type.mimeType),
+  ...SUPPORTED_CONDUCTOR_IMAGE_TYPES.map((type) => `.${type.extension}`),
+].join(',')
+
+function inferImageMimeType(
+  file: Pick<File, 'name' | 'type'>,
+  itemType?: string,
+): ConductorImageMimeType | undefined {
+  if (itemType) {
+    const fromItem = inferConductorImageMimeType('image.png', itemType)
+    if (fromItem) return fromItem
+  }
+  return inferConductorImageMimeType(file.name, file.type || undefined)
+}
+
+function isImageFile(file: Pick<File, 'name' | 'type'>, itemType?: string): boolean {
+  return Boolean(inferImageMimeType(file, itemType))
 }
 
 function fileSignature(file: FileWithPath): string {
@@ -65,13 +67,17 @@ export function extractImageFilesFromClipboardData(
 ): File[] {
   if (!clipboardData) return []
 
-  const itemFiles = Array.from(clipboardData.items ?? [])
+  const fromItems = Array.from(clipboardData.items ?? [])
     .filter((item) => item.kind === 'file')
-    .map((item) => item.getAsFile())
+    .map((item) => {
+      const file = item.getAsFile()
+      if (!file || !isImageFile(file, item.type)) return null
+      return file
+    })
     .filter((file): file is File => Boolean(file))
-    .filter(isImageFile)
-  const clipboardFiles = Array.from(clipboardData.files ?? []).filter(isImageFile)
-  return dedupeFiles([...itemFiles, ...clipboardFiles])
+
+  const fromFiles = Array.from(clipboardData.files ?? []).filter((file) => isImageFile(file))
+  return dedupeFiles([...fromItems, ...fromFiles])
 }
 
 export function extractImageFilesFromDataTransfer(
@@ -81,32 +87,93 @@ export function extractImageFilesFromDataTransfer(
 
   const itemFiles = Array.from(dataTransfer.items ?? [])
     .filter((item) => item.kind === 'file')
-    .map((item) => item.getAsFile())
+    .map((item) => {
+      const file = item.getAsFile()
+      if (!file || !isImageFile(file, item.type)) return null
+      return file
+    })
     .filter((file): file is File => Boolean(file))
-    .filter(isImageFile)
-  const transferFiles = Array.from(dataTransfer.files ?? []).filter(isImageFile)
+  const transferFiles = Array.from(dataTransfer.files ?? []).filter((file) => isImageFile(file))
   return dedupeFiles([...itemFiles, ...transferFiles])
 }
 
 export async function readConductorImageAttachmentsFromFiles(
   files: readonly File[],
-): Promise<ConductorComposerAttachment[]> {
-  const attachments = await Promise.all(dedupeFiles(files).map(readImageAttachmentFromFile))
-  return attachments.filter((attachment): attachment is ConductorImageAttachment => Boolean(attachment))
+): Promise<ReadConductorImageAttachmentsResult> {
+  const unique = dedupeFiles(files)
+  const attachments: ConductorImageAttachment[] = []
+  let rejectedCount = 0
+  let oversize = false
+  let unsupported = false
+  let readFailed = false
+
+  for (const file of unique) {
+    const mimeType = inferImageMimeType(file)
+    if (!mimeType) {
+      unsupported = true
+      rejectedCount += 1
+      continue
+    }
+
+    if (file.size > CONDUCTOR_MAX_IMAGE_BYTES) {
+      oversize = true
+      rejectedCount += 1
+      continue
+    }
+
+    const attachment = await readImageAttachmentFromFile(file, mimeType)
+    if (!attachment) {
+      readFailed = true
+      rejectedCount += 1
+      continue
+    }
+
+    attachments.push(attachment)
+  }
+
+  let error: string | undefined
+  if (rejectedCount > 0 && attachments.length === 0) {
+    if (readFailed) {
+      error = 'Could not read the selected image.'
+    } else if (oversize && unsupported) {
+      error = `Could not attach ${rejectedCount} file(s). Use PNG, JPEG, GIF, or WebP under ${formatConductorImageSizeLimit()}.`
+    } else if (oversize) {
+      error = `Image exceeds ${formatConductorImageSizeLimit()} limit.`
+    } else {
+      error = 'Unsupported image format. Use PNG, JPEG, GIF, or WebP.'
+    }
+  } else if (rejectedCount > 0) {
+    error = `${rejectedCount} file(s) skipped (unsupported format or over ${formatConductorImageSizeLimit()}).`
+  }
+
+  return { attachments, rejectedCount, error }
 }
 
-function readImageAttachmentFromFile(file: File): Promise<ConductorImageAttachment | null> {
+function readImageAttachmentFromFile(
+  file: File,
+  mimeType: ConductorImageMimeType,
+): Promise<ConductorImageAttachment | null> {
   return new Promise((resolve) => {
     const reader = new FileReader()
     reader.onload = () => {
       const dataUrl = reader.result as string
       const commaIndex = dataUrl.indexOf(',')
+      if (commaIndex < 0) {
+        resolve(null)
+        return
+      }
+      const data = dataUrl.slice(commaIndex + 1)
+      const decodedBytes = Math.floor((data.length * 3) / 4)
+      if (decodedBytes > CONDUCTOR_MAX_IMAGE_BYTES) {
+        resolve(null)
+        return
+      }
       resolve({
         id: crypto.randomUUID(),
         kind: 'image',
         name: file.name || 'pasted-image.png',
-        mimeType: inferImageMimeType(file) ?? 'image/png',
-        data: dataUrl.slice(commaIndex + 1),
+        mimeType,
+        data,
       })
     }
     reader.onerror = () => resolve(null)

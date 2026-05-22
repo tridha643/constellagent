@@ -1,7 +1,24 @@
-import { useEffect, type RefObject } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
+import { createPortal } from 'react-dom'
+import type { AgentProvider } from '../../../../shared/agent-chat-types'
 import type { ContextWindowData } from '../../../../shared/context-window-types'
-import { useAppStore } from '../../../store/app-store'
+import type { UsageLimitWindow, UsageLimitsData } from '../../../../shared/usage-limits-types'
+import {
+  formatLimitResetAt,
+  percentLeft,
+} from '../../../../shared/usage-limits-format'
+import { useConductorUsageLimits, useUsageLimitsPoller } from '../../../hooks/useUsageLimitsPoller'
+import { useConductorContextUsage } from '../../../hooks/useConductorContextUsage'
+import { CONDUCTOR_CONTEXT_IDLE } from '../../../../shared/context-window-utils'
 import styles from '../Conductor.module.css'
+
+export { CONDUCTOR_CONTEXT_IDLE }
 
 export function formatContextTokens(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
@@ -9,140 +26,264 @@ export function formatContextTokens(tokens: number): string {
   return String(tokens)
 }
 
-const RING_SIZE = 22
-const STROKE = 2
-const RADIUS = (RING_SIZE - STROKE) / 2
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS
+const ICON_RADIUS = 6.5
+const ICON_VIEWBOX = 16
+const ICON_CENTER = 8
+const ICON_STROKE_WIDTH = 1.5
 
-export const CONDUCTOR_CONTEXT_IDLE: ContextWindowData = {
-  usedTokens: 0,
-  contextWindowSize: 200_000,
-  percentage: 0,
-  model: '',
-  sessionId: '',
-  lastUpdated: 0,
-}
+const SHOW_DELAY = 200
+const HIDE_DELAY = 150
+const SKIP_WINDOW = 500
+const POPOVER_GAP = 8
+const EDGE_PAD = 8
 
-export function useConductorContextUsage(): { data: ContextWindowData; idle: boolean } {
-  const storeData = useAppStore((s) => s.contextWindowData)
-  return {
-    data: storeData ?? CONDUCTOR_CONTEXT_IDLE,
-    idle: !storeData,
-  }
-}
+let lastPopoverHidden = 0
 
-export function ContextRingButton({
-  percentage,
-  open,
-  onToggle,
+function ContextUsageIcon({
+  usedTokens,
+  maxTokens,
 }: {
-  percentage: number
-  open: boolean
-  onToggle: () => void
+  usedTokens: number
+  maxTokens: number
 }) {
-  const pct = Math.min(100, Math.max(0, percentage))
-  const offset = CIRCUMFERENCE - (pct / 100) * CIRCUMFERENCE
+  const circumference = 2 * Math.PI * ICON_RADIUS
+  const usedPercent = Math.min(usedTokens / Math.max(maxTokens, 1), 1)
+  const dashOffset = circumference * (1 - usedPercent)
 
   return (
-    <button
-      type="button"
-      className={`${styles.contextRingBtn} ${open ? styles.contextRingBtnOpen : ''}`}
-      aria-label={`Context window ${pct}% used`}
-      aria-expanded={open}
-      title="Context window"
-      onClick={onToggle}
+    <svg
+      aria-label="Model context usage"
+      className={styles.contextUsageIcon}
+      height={ICON_VIEWBOX}
+      role="img"
+      style={{ color: 'currentcolor' }}
+      viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
+      width={ICON_VIEWBOX}
     >
-      <svg
-        className={styles.contextRingSvg}
-        width={RING_SIZE}
-        height={RING_SIZE}
-        viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
-        aria-hidden
-      >
-        <circle
-          className={styles.contextRingTrack}
-          cx={RING_SIZE / 2}
-          cy={RING_SIZE / 2}
-          r={RADIUS}
-          strokeWidth={STROKE}
-          fill="none"
-        />
-        <circle
-          className={styles.contextRingArc}
-          cx={RING_SIZE / 2}
-          cy={RING_SIZE / 2}
-          r={RADIUS}
-          strokeWidth={STROKE}
-          fill="none"
-          strokeDasharray={CIRCUMFERENCE}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${RING_SIZE / 2} ${RING_SIZE / 2})`}
-        />
-      </svg>
-    </button>
+      <circle
+        cx={ICON_CENTER}
+        cy={ICON_CENTER}
+        fill="none"
+        opacity="0.25"
+        r={ICON_RADIUS}
+        stroke="currentColor"
+        strokeWidth={ICON_STROKE_WIDTH}
+      />
+      <circle
+        className={styles.contextUsageIconArc}
+        cx={ICON_CENTER}
+        cy={ICON_CENTER}
+        fill="none"
+        opacity="0.7"
+        r={ICON_RADIUS}
+        stroke="currentColor"
+        strokeDasharray={`${circumference} ${circumference}`}
+        strokeDashoffset={dashOffset}
+        strokeLinecap="round"
+        strokeWidth={ICON_STROKE_WIDTH}
+        style={{ transformOrigin: 'center', transform: 'rotate(-90deg)' }}
+      />
+    </svg>
   )
 }
 
-export function ContextPanel({
-  data,
-  idle,
-  modelLabel,
-}: {
-  data: ContextWindowData
-  idle: boolean
-  modelLabel: string
-}) {
-  const usedLabel = formatContextTokens(data.usedTokens)
-  const totalLabel = formatContextTokens(data.contextWindowSize)
-  const pct = Math.min(100, Math.max(0, data.percentage))
+function LimitSection({ window: limit }: { window: UsageLimitWindow }) {
+  const left = percentLeft(limit.usedPercent)
+  const resetLabel = formatLimitResetAt(limit.resetsAtMs)
 
   return (
-    <div
-      className={styles.contextPanel}
-      role="region"
-      aria-label="Context window usage"
-      data-conductor-context-panel
-    >
-      <div className={styles.contextPanelHeader}>
-        <span className={styles.contextPanelTitle}>Context</span>
-        <span className={styles.contextPanelCounts}>
-          {usedLabel}/{totalLabel}
-        </span>
+    <div className={styles.contextPopoverLimit}>
+      <div className={styles.contextPopoverLimitHeader}>
+        <span className={styles.contextPopoverLimitLabel}>{limit.label} limit</span>
+        <span className={styles.contextPopoverLimitPct}>{left.toFixed(0)}% left</span>
       </div>
-      <div className={styles.contextPanelBarTrack} aria-hidden>
-        <div className={styles.contextPanelBarFill} style={{ width: `${pct}%` }} />
+      <div className={styles.contextPopoverBarTrack} aria-hidden>
+        <div className={styles.contextPopoverBarFill} style={{ width: `${left}%` }} />
       </div>
-      <div className={styles.contextPanelFooter}>
-        <span className={styles.contextPanelLabel}>Window used</span>
-        <span className={styles.contextPanelPct}>{pct.toFixed(1)}%</span>
-      </div>
-      {idle && (
-        <p className={styles.contextPanelHint}>
-          Live usage for {modelLabel} sessions isn&apos;t wired yet — showing last known or empty window.
-        </p>
-      )}
+      {resetLabel ? (
+        <p className={styles.contextPopoverReset}>Resets {resetLabel}</p>
+      ) : null}
     </div>
   )
 }
 
-/** Click-outside / Escape to close the in-composer context panel. */
-export function useContextPanelDismiss(open: boolean, onClose: () => void, exceptRef: RefObject<HTMLElement | null>) {
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (exceptRef.current?.contains(t)) return
-      onClose()
+function ContextUsagePopoverContent({
+  data,
+  idle,
+  limits,
+}: {
+  data: ContextWindowData
+  idle: boolean
+  limits: UsageLimitsData | null
+}) {
+  const usedLabel = formatContextTokens(data.usedTokens)
+  const totalLabel = formatContextTokens(data.contextWindowSize)
+  const pct = Math.min(100, Math.max(0, data.percentage))
+  const limitRows = [limits?.primary, limits?.secondary].filter(
+    (row): row is UsageLimitWindow => row != null,
+  )
+
+  return (
+    <div className={styles.contextPopover} role="tooltip" aria-label="Context and usage limits">
+      <div className={styles.contextPopoverSection}>
+        <div className={styles.contextPopoverHeader}>
+          <span className={styles.contextPopoverTitle}>Context</span>
+          <span className={styles.contextPopoverCounts}>
+            {usedLabel}/{totalLabel}
+          </span>
+        </div>
+        <div className={styles.contextPopoverBarTrack} aria-hidden>
+          <div className={styles.contextPopoverBarFill} style={{ width: `${pct}%` }} />
+        </div>
+        <div className={styles.contextPopoverFooter}>
+          <span className={styles.contextPopoverLabel}>Window used</span>
+          <span className={styles.contextPopoverPct}>{pct.toFixed(1)}%</span>
+        </div>
+      </div>
+
+      {limitRows.length > 0 ? (
+        <>
+          <div className={styles.contextPopoverDivider} aria-hidden />
+          {limitRows.map((row) => (
+            <LimitSection key={row.label} window={row} />
+          ))}
+        </>
+      ) : null}
+
+      {idle ? (
+        <p className={styles.contextPopoverHint}>
+          Start a chat to track context window usage for this session.
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+export function ContextUsageHover({
+  provider,
+  sessionId,
+}: {
+  provider: AgentProvider
+  sessionId: string | null
+}) {
+  const { data, idle } = useConductorContextUsage(sessionId)
+  useUsageLimitsPoller(provider)
+  const { data: limits } = useConductorUsageLimits()
+
+  const [visible, setVisible] = useState(false)
+  const [entered, setEntered] = useState(false)
+  const [coords, setCoords] = useState({ x: 0, y: 0, bottom: 0 })
+  const wrapperRef = useRef<HTMLSpanElement | null>(null)
+  const popoverRef = useRef<HTMLDivElement | null>(null)
+  const showTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const hoveringRef = useRef(false)
+
+  const pct = Math.min(100, Math.max(0, data.percentage))
+
+  const clearTimers = useCallback(() => {
+    clearTimeout(showTimer.current)
+    clearTimeout(hideTimer.current)
+  }, [])
+
+  const scheduleHide = useCallback(() => {
+    clearTimeout(hideTimer.current)
+    hideTimer.current = setTimeout(() => {
+      if (!hoveringRef.current) {
+        if (visible) lastPopoverHidden = Date.now()
+        setEntered(false)
+        setVisible(false)
+      }
+    }, HIDE_DELAY)
+  }, [visible])
+
+  const show = useCallback(() => {
+    clearTimeout(hideTimer.current)
+    const shouldOpenInstantly = Date.now() - lastPopoverHidden < SKIP_WINDOW
+    const delay = shouldOpenInstantly ? 0 : SHOW_DELAY
+
+    showTimer.current = setTimeout(() => {
+      const el = wrapperRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      if (rect.width === 0 && rect.height === 0) return
+      setCoords({
+        x: rect.left + rect.width / 2,
+        y: rect.top - POPOVER_GAP,
+        bottom: rect.bottom,
+      })
+      setEntered(false)
+      setVisible(true)
+    }, delay)
+  }, [])
+
+  const onEnter = useCallback(() => {
+    hoveringRef.current = true
+    clearTimers()
+    show()
+  }, [clearTimers, show])
+
+  const onLeave = useCallback(() => {
+    hoveringRef.current = false
+    clearTimeout(showTimer.current)
+    scheduleHide()
+  }, [scheduleHide])
+
+  useEffect(() => () => clearTimers(), [clearTimers])
+
+  useLayoutEffect(() => {
+    if (!visible) return
+    const raf = requestAnimationFrame(() => setEntered(true))
+    return () => cancelAnimationFrame(raf)
+  }, [visible, coords.x, coords.y])
+
+  useLayoutEffect(() => {
+    if (!visible || !popoverRef.current) return
+    const tip = popoverRef.current
+    const rect = tip.getBoundingClientRect()
+    if (rect.left < EDGE_PAD) {
+      tip.style.left = `${coords.x + (EDGE_PAD - rect.left)}px`
+    } else if (rect.right > window.innerWidth - EDGE_PAD) {
+      tip.style.left = `${coords.x - (rect.right - window.innerWidth + EDGE_PAD)}px`
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open, onClose, exceptRef])
+  }, [visible, coords.x])
+
+  return (
+    <>
+      <span
+        ref={wrapperRef}
+        className={styles.contextRingWrap}
+        aria-label={`Context window ${pct}% used`}
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
+      >
+        <ContextUsageIcon
+          usedTokens={data.usedTokens}
+          maxTokens={data.contextWindowSize}
+        />
+      </span>
+      {visible
+        ? createPortal(
+            <div
+              ref={popoverRef}
+              className={styles.contextPopoverPortal}
+              style={{
+                left: coords.x,
+                top: coords.y,
+              }}
+              data-entered={entered}
+              onMouseEnter={onEnter}
+              onMouseLeave={onLeave}
+            >
+              <ContextUsagePopoverContent
+                data={data}
+                idle={idle}
+                limits={limits}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  )
 }
