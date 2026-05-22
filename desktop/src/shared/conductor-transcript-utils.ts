@@ -1,5 +1,7 @@
 import type { TranscriptMessage } from './pi/pi-desktop-state'
 
+const MAX_AGENT_CONTEXT_CHARS = 24_000
+
 function newId(): string {
   return globalThis.crypto.randomUUID()
 }
@@ -151,6 +153,37 @@ export function groupTranscriptIntoTurns(transcript: readonly TranscriptMessage[
   }
 
   return turns
+}
+
+/**
+ * Compact user/assistant transcript used to seed a newly-created SDK backend
+ * thread. Tool/activity rows are UI timeline detail and are intentionally
+ * omitted so the agent sees the durable conversation, not renderer chrome.
+ */
+export function formatTranscriptForAgentContext(
+  transcript: readonly TranscriptMessage[],
+  maxChars = MAX_AGENT_CONTEXT_CHARS,
+): string | undefined {
+  const parts: string[] = []
+
+  for (const item of transcript) {
+    if (item.kind !== 'message') continue
+    const text = item.text.trim()
+    if (!text) continue
+    const role = item.role === 'user'
+      ? item.conductorPlan === true
+        ? 'User (plan mode)'
+        : 'User'
+      : 'Assistant'
+    parts.push(`### ${role}\n${text}`)
+  }
+
+  if (parts.length === 0) return undefined
+
+  const joined = parts.join('\n\n')
+  if (joined.length <= maxChars) return joined
+
+  return `[Earlier conversation truncated]\n\n${joined.slice(-maxChars)}`
 }
 
 function truncatePreview(text: string, max = 72): string {

@@ -7,13 +7,19 @@
 import type { MonacoLanguageId } from '../utils/language-map'
 import { getLanguage } from '../utils/language-map'
 
-/** Spawn keys matching main-process `LSP_SERVERS[].language` in `lsp-config.ts`. */
-const LSP_LANGUAGES = new Set(['python', 'go', 'rust', 'typescript', 'prisma'] as const)
-
 const TS_JS_MONACO_LANGS = new Set(['typescript', 'typescriptreact', 'javascript', 'javascriptreact'])
 const LSP_MARKER_OWNER_PREFIX = 'lsp:'
 
 export type LspServerKey = 'python' | 'go' | 'rust' | 'typescript' | 'prisma'
+
+/** Spawn keys matching main-process `LSP_SERVERS[].language` in `lsp-config.ts`. */
+const LSP_LANGUAGES: ReadonlySet<LspServerKey> = new Set([
+  'python',
+  'go',
+  'rust',
+  'typescript',
+  'prisma',
+])
 
 interface LspDiagnostic {
   range: {
@@ -43,8 +49,8 @@ function clientKey(language: string, workspace: string): string {
   return `${language}:${workspace}`
 }
 
-export function isLspLanguage(language: string): boolean {
-  return LSP_LANGUAGES.has(language)
+export function isLspLanguage(language: string): language is LspServerKey {
+  return LSP_LANGUAGES.has(language as LspServerKey)
 }
 
 /** LSP process / WebSocket key for this file (e.g. all TS/JS Monaco langs share `typescript`). */
@@ -55,7 +61,7 @@ export function getLspServerKeyForPath(
   const lang = languageOverride ?? getLanguage(filePath)
   if (TS_JS_MONACO_LANGS.has(lang)) return 'typescript'
   if (lang === 'prisma' || filePath.toLowerCase().endsWith('.prisma')) return 'prisma'
-  if (LSP_LANGUAGES.has(lang)) return lang
+  if (isLspLanguage(lang)) return lang
   return null
 }
 

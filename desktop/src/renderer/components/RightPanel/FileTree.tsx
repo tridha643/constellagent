@@ -449,8 +449,12 @@ export function FileTree({ worktreePath, isActive }: Props) {
         const ancestorPath = `${segments.slice(0, i).join('/')}/`
         const ancestor = model.getItem(ancestorPath)
         if (!ancestor || !ancestor.isDirectory()) continue
-        if (!ancestor.isExpanded()) {
-          ancestor.expand()
+        const directory = ancestor as typeof ancestor & {
+          isExpanded(): boolean
+          expand(): void
+        }
+        if (!directory.isExpanded()) {
+          directory.expand()
           didExpand = true
         }
       }

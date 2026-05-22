@@ -3,7 +3,7 @@ import type { editor } from 'monaco-editor'
 /** Aligned with AppearanceThemeId in appearance.ts (kept local to avoid circular imports). */
 export type MonacoSyntaxThemeId = 'default' | 'absolutely'
 
-type MonacoRule = editor.IStandaloneThemeRule
+type MonacoRule = editor.ITokenThemeRule
 
 /**
  * Cursor / VS Code Dark+ adjacent palette for Monarch (syntactic) + semantic tokens.

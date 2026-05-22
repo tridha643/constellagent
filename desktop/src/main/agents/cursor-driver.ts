@@ -106,7 +106,8 @@ export class CursorDriver implements AgentDriver {
     const key = ctx.sessionRef.sessionId
     const effectiveModel = applyThinkingLevel(ctx.model, ctx.thinkingLevel)
     let state = this.sessions.get(key)
-    if (!state || state.model !== effectiveModel) {
+    const needsNewAgent = !state || state.model !== effectiveModel
+    if (needsNewAgent) {
       if (state) {
         await disposeCursorAgent(state.agent, state.run).catch(() => {})
       }
@@ -124,8 +125,15 @@ export class CursorDriver implements AgentDriver {
       state = { agent, model: effectiveModel, emittedText: '' }
       this.sessions.set(key, state)
     }
+    if (!state) {
+      throw new Error('Failed to create Cursor agent')
+    }
 
-    const prompt = buildAgentPrompt(ctx.text, ctx.plan)
+    const prompt = buildAgentPrompt(
+      ctx.text,
+      ctx.plan,
+      needsNewAgent ? ctx.previousTranscript : undefined,
+    )
     let run: Run
     try {
       run = await state.agent.send(prompt, { model: { id: effectiveModel } })

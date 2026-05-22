@@ -54,7 +54,7 @@ type RenderUnit =
       type: 'assistantGroup'
       key: string
       messages: Extract<TranscriptMessage, { kind: 'message' }>[]
-      /** Codex/Cursor tool rows for this turn (shown under the reply, before the footer). */
+      /** Codex/Cursor tool rows for this turn (shown above assistant prose). */
       tools: TimelineToolCall[]
     }
 
@@ -355,6 +355,9 @@ export const ChatTimeline = forwardRef<
         hideRole?: boolean
         isSegment?: boolean
         showFooter?: boolean
+        afterBody?: ReactNode
+        hideMarkdownTaskLists?: boolean
+        hideMarkdownFileEcho?: boolean
       },
     ): ReactNode => {
       const firstPaint = !seenIdsRef.current.has(message.id)
@@ -376,6 +379,9 @@ export const ChatTimeline = forwardRef<
           hideRole={options?.hideRole}
           isSegment={options?.isSegment}
           suppressIdleLoader={running}
+          afterBody={options?.afterBody}
+          hideMarkdownTaskLists={options?.hideMarkdownTaskLists}
+          hideMarkdownFileEcho={options?.hideMarkdownFileEcho}
         />
       )
     },
@@ -537,6 +543,7 @@ export const ChatTimeline = forwardRef<
               return renderTimelineRow(
                 unit.key,
                 <div className={styles.assistantGroup}>
+                  {turnTools}
                   {unit.messages.map((message, index) => (
                     <ErrorBoundary
                       key={message.id}
@@ -548,13 +555,11 @@ export const ChatTimeline = forwardRef<
                         hideRole: true,
                         isSegment: index > 0,
                         showFooter: isLastMessage(message.id),
-                        afterBody: isLastMessage(message.id) ? turnTools : undefined,
                         hideMarkdownTaskLists: isLastMessage(message.id) && hasTodoTools,
                         hideMarkdownFileEcho: isLastMessage(message.id) && hasFileTools,
                       })}
                     </ErrorBoundary>
                   ))}
-                  {unit.messages.length === 0 && turnTools}
                 </div>,
               )
             }
