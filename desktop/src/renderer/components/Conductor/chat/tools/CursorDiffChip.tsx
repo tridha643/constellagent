@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { useAppStore } from '../../../../store/app-store'
+import { getConductorChatTypographyStyle } from '../../../../theme/appearance'
 import { SharedFileIcon } from '../../../../utils/file-presentation'
 import { isMarkdownDocumentPath } from '../../../../utils/markdown-path'
 import { resolveToolFileAbsolutePath, toolFileBasename } from './tool-file-path'
@@ -82,6 +83,8 @@ function useDiffPopoverStyle(open: boolean, anchorRef: React.RefObject<HTMLButto
 }
 
 /** Bordered file chip; hover shows borderless diff popover with icon + filename header. */
+const conductorTypographyStyle = getConductorChatTypographyStyle()
+
 export function CursorDiffChip({ path, patch }: { path: string; patch: string }) {
   const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
   const worktreePath = useAppStore((s) => {
@@ -155,7 +158,7 @@ export function CursorDiffChip({ path, patch }: { path: string; patch: string })
             <div
               className={styles.cursorDiffPopover}
               data-state={phase}
-              style={popoverStyle}
+              style={{ ...conductorTypographyStyle, ...popoverStyle }}
               data-testid="conductor-diff-hover-popover"
               onMouseEnter={cancelClose}
               onMouseLeave={closePreview}

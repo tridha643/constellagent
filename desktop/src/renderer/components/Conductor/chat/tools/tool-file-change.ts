@@ -1,10 +1,18 @@
 import type { TimelineToolCall } from '../../../../../shared/pi/timeline-types'
-import { pathFromInput } from './tool-input-path'
+import { pathFromObjectInput } from './tool-input-path'
 import { asFileChangeOutput } from './diff-utils'
 
 export interface ToolFileEntry {
   readonly path: string
   readonly patch: string
+}
+
+const MUTATE_TOOL_PATTERN =
+  /(?:apply_patch|file_change|edit|edit_file|str_replace|search_replace|searchreplace|multi_edit|apply_diff|replace|patch|delete|delete_file|remove_file|write|write_file|create_file|touch)/
+
+/** Tool names (Codex + Cursor) that mutate files — mirrors agent-chat-host classification. */
+export function isMutateToolName(name: string): boolean {
+  return MUTATE_TOOL_PATTERN.test(name.toLowerCase())
 }
 
 function collectCodexChangePaths(value: unknown, out: string[]): void {
@@ -26,8 +34,11 @@ export function filesFromTool(tool: TimelineToolCall): readonly ToolFileEntry[] 
   const paths: string[] = []
   collectCodexChangePaths(tool.input, paths)
   collectCodexChangePaths(tool.output, paths)
-  const single = pathFromInput(tool.input)
-  if (single && !paths.includes(single)) paths.unshift(single)
+
+  if (isMutateToolName(tool.toolName)) {
+    const single = pathFromObjectInput(tool.input)
+    if (single && !paths.includes(single)) paths.unshift(single)
+  }
 
   if (paths.length === 0) return []
   return paths.map((path) => ({ path, patch: '' }))

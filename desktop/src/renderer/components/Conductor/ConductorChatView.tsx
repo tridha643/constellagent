@@ -25,6 +25,7 @@ import {
   syncConductorAuthKeys,
 } from '../../lib/conductor-sign-in'
 import { SharedFileIconDefs } from '../../utils/file-presentation'
+import { useConductorChatTypographyScope } from './useConductorChatTypographyScope'
 import styles from './Conductor.module.css'
 
 export type ConductorTab = Extract<Tab, { type: 'conductor' }>
@@ -51,6 +52,8 @@ export function ConductorChatView({
     (s) => s.settings.conductorDefaultThinkingLevel,
   )
   const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
+  const chatViewRef = useRef<HTMLDivElement | null>(null)
+  useConductorChatTypographyScope(chatViewRef)
 
   const agentSessionId = tab.agentSessionId ?? null
   const [draftProvider, setDraftProvider] = useState<AgentProvider>(() => {
@@ -280,7 +283,12 @@ export function ConductorChatView({
   }
 
   return (
-    <div className={styles.chatView} data-active={active} data-testid="conductor-chat-view">
+    <div
+      ref={chatViewRef}
+      className={styles.chatView}
+      data-active={active}
+      data-testid="conductor-chat-view"
+    >
       <SharedFileIconDefs appearanceThemeId={appearanceThemeId} />
       <ChatTimeline
         ref={timelineRef}

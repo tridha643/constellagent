@@ -4,6 +4,21 @@ import { getMonacoSyntaxRules } from './monaco-syntax-rules'
 
 export type AppearanceThemeId = 'default' | 'absolutely'
 
+/** Conductor chat pins Default typography only; color tokens follow Settings → Appearance. */
+export const CONDUCTOR_CHAT_TYPOGRAPHY_THEME_ID = 'default' satisfies AppearanceThemeId
+
+const CONDUCTOR_CHAT_TYPOGRAPHY_VAR_KEYS = ['--font-mono', '--font-ui', '--font-prose'] as const
+
+function conductorChatTypographyVars(themeId: AppearanceThemeId = CONDUCTOR_CHAT_TYPOGRAPHY_THEME_ID): Record<string, string> {
+  const { cssVars } = getAppearanceTheme(themeId)
+  const picked: Record<string, string> = {}
+  for (const key of CONDUCTOR_CHAT_TYPOGRAPHY_VAR_KEYS) {
+    const value = cssVars[key]
+    if (value !== undefined) picked[key] = value
+  }
+  return picked
+}
+
 interface ThemePreview {
   surface: string
   accent: string
@@ -427,10 +442,50 @@ export function getAppearanceMermaidThemeVariables(themeId: AppearanceThemeId) {
   return getAppearanceTheme(themeId).mermaidThemeVariables
 }
 
+export function applyAppearanceVarsToElement(
+  element: HTMLElement,
+  themeId: AppearanceThemeId,
+): void {
+  const { cssVars } = getAppearanceTheme(themeId)
+  for (const [key, value] of Object.entries(cssVars)) {
+    element.style.setProperty(key, value)
+  }
+}
+
+export function clearAppearanceVarsFromElement(
+  element: HTMLElement,
+  themeId: AppearanceThemeId,
+): void {
+  for (const key of Object.keys(getAppearanceTheme(themeId).cssVars)) {
+    element.style.removeProperty(key)
+  }
+}
+
+/** Inline style map for portaled Conductor UI (e.g. diff hover) outside `.chatView`. */
+export function getAppearanceVarsStyle(themeId: AppearanceThemeId): Record<string, string> {
+  return { ...getAppearanceTheme(themeId).cssVars }
+}
+
+/** Default sans/mono stacks on Conductor surfaces; does not override semantic color tokens. */
+export function applyConductorChatTypographyToElement(element: HTMLElement): void {
+  for (const [key, value] of Object.entries(conductorChatTypographyVars())) {
+    element.style.setProperty(key, value)
+  }
+}
+
+export function clearConductorChatTypographyFromElement(element: HTMLElement): void {
+  for (const key of CONDUCTOR_CHAT_TYPOGRAPHY_VAR_KEYS) {
+    element.style.removeProperty(key)
+  }
+}
+
+/** Typography-only inline map for portaled Conductor UI (colors inherit from :root). */
+export function getConductorChatTypographyStyle(): Record<string, string> {
+  return conductorChatTypographyVars()
+}
+
 export function applyAppearanceTheme(themeId: AppearanceThemeId, root: HTMLElement = document.documentElement) {
   const theme = getAppearanceTheme(themeId)
   root.dataset.appearanceTheme = theme.id
-  for (const [key, value] of Object.entries(theme.cssVars)) {
-    root.style.setProperty(key, value)
-  }
+  applyAppearanceVarsToElement(root, themeId)
 }
