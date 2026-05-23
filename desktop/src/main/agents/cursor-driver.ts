@@ -34,11 +34,13 @@ import {
 import { loadCursorSdkAgents } from './cursor-subagent-config'
 import { createCursorAskQuestionHandler } from './cursor-interaction-bridge'
 import { setCursorAskQuestionHandler } from './cursor-sdk-interaction-patch'
+import { cursorConductorLocalPermissions } from './conductor-sdk-cli-permissions'
 import type { ConductorComposerAttachment } from '../../shared/conductor-attachments'
 
 interface CursorSessionState {
   agent: SDKAgent
   model: string
+  plan: boolean
   /** Assistant text streamed so far this turn, for delta computation. */
   emittedText: string
   run?: Run
@@ -141,7 +143,8 @@ export class CursorDriver implements AgentDriver {
     const key = ctx.sessionRef.sessionId
     const effectiveModel = applyThinkingLevel(ctx.model, ctx.thinkingLevel)
     let state = this.sessions.get(key)
-    const needsNewAgent = !state || state.model !== effectiveModel
+    const needsNewAgent =
+      !state || state.model !== effectiveModel || state.plan !== ctx.plan
     if (needsNewAgent) {
       if (state) {
         await disposeCursorAgent(state.agent, state.run).catch(() => {})
@@ -153,13 +156,17 @@ export class CursorDriver implements AgentDriver {
         agent = await Agent.create({
           ...(apiKey ? { apiKey } : {}),
           model: { id: effectiveModel },
-          local: { cwd: ctx.workspacePath, settingSources: ['project'] },
+          local: {
+            cwd: ctx.workspacePath,
+            settingSources: ['project'],
+            ...cursorConductorLocalPermissions(ctx.plan),
+          },
           ...(Object.keys(agents).length > 0 ? { agents } : {}),
         })
       } catch (err) {
         throw toCursorUserError(err)
       }
-      state = { agent, model: effectiveModel, emittedText: '' }
+      state = { agent, model: effectiveModel, plan: ctx.plan, emittedText: '' }
       this.sessions.set(key, state)
     }
     if (!state) {
@@ -188,6 +195,7 @@ export class CursorDriver implements AgentDriver {
     }
     state.run = run
     state.model = effectiveModel
+    state.plan = ctx.plan
     state.emittedText = ''
     state.activeSubagentCallId = undefined
 
