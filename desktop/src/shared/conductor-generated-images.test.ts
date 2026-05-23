@@ -2,11 +2,30 @@ import { describe, expect, test } from 'bun:test'
 import { CONDUCTOR_MAX_IMAGE_BYTES } from './conductor-attachments'
 import {
   extractConductorGeneratedImages,
+  extractImagePathsFromText,
+  hasRenderableGeneratedImageOutput,
   isConductorGeneratedImageOutput,
   isConductorGeneratedImageToolName,
+  isGeneratedImageToolCall,
+  looksLikeGeneratedImageCompletionText,
+  turnTranscriptText,
 } from './conductor-generated-images'
 
 const tinyPng = 'iVBORw0KGgo='
+
+describe('extractImagePathsFromText', () => {
+  test('finds saved-as image paths in assistant prose', () => {
+    expect(
+      extractImagePathsFromText('Saved as `note-taking-app-icon.png`. If you want changes, say what to adjust.'),
+    ).toEqual(['note-taking-app-icon.png'])
+  })
+
+  test('finds written image paths in shell output', () => {
+    expect(extractImagePathsFromText('Wrote output to assets/hero-banner.webp')).toEqual([
+      'assets/hero-banner.webp',
+    ])
+  })
+})
 
 describe('extractConductorGeneratedImages', () => {
   test('extracts Cursor generateImage results', () => {
@@ -80,6 +99,64 @@ describe('extractConductorGeneratedImages', () => {
 
     expect(unsupported).toBeUndefined()
     expect(oversized).toBeUndefined()
+  })
+})
+
+describe('looksLikeGeneratedImageCompletionText', () => {
+  test('detects codex imagegen completion prose without a file path', () => {
+    expect(looksLikeGeneratedImageCompletionText('Generated a simple notebook image.')).toBe(true)
+    expect(looksLikeGeneratedImageCompletionText('Using the `imagegen` skill because this is a raster request.')).toBe(
+      true,
+    )
+    expect(looksLikeGeneratedImageCompletionText("I'll use the `imagegen` skill since this is a raster image generation request.")).toBe(
+      true,
+    )
+    expect(looksLikeGeneratedImageCompletionText('Read src/utils.ts')).toBe(false)
+  })
+})
+
+describe('turnTranscriptText', () => {
+  test('includes structured tool input and output', () => {
+    expect(
+      turnTranscriptText([
+        { kind: 'message', text: "I'll use the imagegen skill." },
+        { kind: 'tool', toolName: 'shell', input: 'imagegen --prompt notebook', output: 'Saved as ig_test.png' },
+      ]),
+    ).toContain('imagegen --prompt notebook')
+  })
+})
+
+describe('hasRenderableGeneratedImageOutput', () => {
+  test('requires image data or a file path', () => {
+    expect(
+      hasRenderableGeneratedImageOutput({
+        kind: 'generatedImages',
+        images: [{ kind: 'generatedImage', id: 'a', mimeType: 'image/png', data: tinyPng }],
+      }),
+    ).toBe(true)
+    expect(
+      hasRenderableGeneratedImageOutput({
+        kind: 'generatedImages',
+        images: [{ kind: 'generatedImage', id: 'a', mimeType: 'image/png', filePath: '/tmp/a.png' }],
+      }),
+    ).toBe(true)
+    expect(hasRenderableGeneratedImageOutput({ kind: 'generatedImages', images: [] })).toBe(false)
+  })
+})
+
+describe('isGeneratedImageToolCall', () => {
+  test('matches normalized image output and image tool names', () => {
+    expect(
+      isGeneratedImageToolCall({
+        toolName: 'shell',
+        output: {
+          kind: 'generatedImages',
+          images: [{ kind: 'generatedImage', id: 'a', mimeType: 'image/png', data: 'abc' }],
+        },
+      }),
+    ).toBe(true)
+    expect(isGeneratedImageToolCall({ toolName: 'generateImage', output: undefined })).toBe(true)
+    expect(isGeneratedImageToolCall({ toolName: 'read', output: 'done' })).toBe(false)
   })
 })
 

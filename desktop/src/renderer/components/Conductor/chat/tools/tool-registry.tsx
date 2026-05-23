@@ -17,7 +17,11 @@ import { SkillLoadTool } from './SkillLoadTool'
 import { isSkillLoadToolName } from '../../../../../shared/skill-tool-utils'
 import styles from '../../Conductor.module.css'
 import { GeneratedImageTool } from './GeneratedImageTool'
-import { isConductorGeneratedImageOutput } from '../../../../../shared/conductor-generated-images'
+import {
+  extractConductorGeneratedImages,
+  isGeneratedImageToolCall,
+  normalizeConductorGeneratedImageOutput,
+} from '../../../../../shared/conductor-generated-images'
 
 const diff = (tool: TimelineToolCall): ReactNode => <DiffTool tool={tool} />
 
@@ -119,12 +123,19 @@ export function ToolPart({ tool }: { tool: TimelineToolCall }) {
     )
   }
 
-  if (isConductorGeneratedImageOutput(tool.output)) {
+  if (isGeneratedImageToolCall(tool)) {
+    const generatedOutput =
+      normalizeConductorGeneratedImageOutput(tool.output) ??
+      extractConductorGeneratedImages(tool.output, {
+        toolName: tool.toolName,
+        input: tool.input,
+      })
+
     return (
       <ErrorBoundary
         fallback={<div className={styles.activityRow}>Couldn&apos;t render this generated image.</div>}
       >
-        <GeneratedImageTool tool={tool} />
+        <GeneratedImageTool tool={{ ...tool, output: generatedOutput ?? tool.output }} />
       </ErrorBoundary>
     )
   }

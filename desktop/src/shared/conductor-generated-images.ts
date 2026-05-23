@@ -14,7 +14,8 @@ export interface ConductorGeneratedImage {
   readonly kind: typeof CONDUCTOR_GENERATED_IMAGE_KIND
   readonly id: string
   readonly mimeType: ConductorImageMimeType
-  readonly data: string
+  /** Base64 payload when available; omitted when only a workspace path is known. */
+  readonly data?: string
   readonly name?: string
   readonly filePath?: string
   readonly prompt?: string
@@ -44,6 +45,11 @@ const MAX_EXTRACTED_IMAGES = 8
 const MAX_RECURSION_DEPTH = 7
 const IMAGE_DATA_URL_RE = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/s
 const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/
+const IMAGE_FILE_EXT_RE = /\.(?:png|jpe?g|gif|webp)(?:[?#].*)?$/i
+const SAVED_IMAGE_PATH_RE =
+  /saved(?:\s+as|\s+to)?\s+[`"']?([^\s`"']+\.(?:png|jpe?g|gif|webp))[`"']?/gi
+const WRITTEN_IMAGE_PATH_RE =
+  /(?:wrote|written|created|generated|output(?:ted)?)\s+(?:to\s+)?[`"']?([^\s`"']+\.(?:png|jpe?g|gif|webp))[`"']?/gi
 
 const IMAGE_TOOL_NAMES = new Set([
   'generateimage',
@@ -62,6 +68,22 @@ export function isConductorGeneratedImageToolName(toolName: string): boolean {
   return /(^|[._-])(generate[-_]?image|image[-_]?gen|image[-_]?generation)$/i.test(toolName)
 }
 
+/** Whether a timeline tool row should render as a post-turn generated image block. */
+export function isGeneratedImageToolCall(tool: {
+  readonly toolName: string
+  readonly output?: unknown
+  readonly input?: unknown
+}): boolean {
+  if (isConductorGeneratedImageOutput(tool.output)) return true
+  if (isConductorGeneratedImageToolName(tool.toolName)) return true
+  return (
+    extractConductorGeneratedImages(tool.output, {
+      toolName: tool.toolName,
+      input: tool.input,
+    }) !== undefined
+  )
+}
+
 export function isConductorGeneratedImageOutput(
   value: unknown,
 ): value is ConductorGeneratedImageOutput {
@@ -76,6 +98,82 @@ export function normalizeConductorGeneratedImageOutput(
   }
   const images = value.images.flatMap((image, index) => normalizeGeneratedImage(image, index))
   return images.length > 0 ? { kind: CONDUCTOR_GENERATED_IMAGES_KIND, images } : undefined
+}
+
+/** Pull likely generated-image paths from shell output or assistant prose. */
+export function extractImagePathsFromText(text: string): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const add = (raw: string | undefined): void => {
+    const trimmed = raw?.trim()
+    if (!trimmed || !IMAGE_FILE_EXT_RE.test(trimmed) || seen.has(trimmed)) return
+    seen.add(trimmed)
+    out.push(trimmed)
+  }
+
+  for (const pattern of [SAVED_IMAGE_PATH_RE, WRITTEN_IMAGE_PATH_RE]) {
+    pattern.lastIndex = 0
+    for (const match of text.matchAll(pattern)) {
+      add(match[1])
+      if (out.length >= MAX_EXTRACTED_IMAGES) return out
+    }
+  }
+
+  for (const match of text.matchAll(
+    /(?:^|[\s("'[\{,])([^\s"'[\],]+\.(?:png|jpe?g|gif|webp))(?=[\s"')\],]|$)/gi,
+  )) {
+    add(match[1])
+    if (out.length >= MAX_EXTRACTED_IMAGES) return out
+  }
+
+  return out
+}
+
+/** Heuristic: assistant or tool text indicates an image was produced this turn. */
+export function looksLikeGeneratedImageCompletionText(text: string): boolean {
+  const normalized = text.trim()
+  if (!normalized) return false
+  if (/\bimagegen\b/i.test(normalized)) return true
+  if (/\busing the [`"']?imagegen[`"']? skill\b/i.test(normalized)) return true
+  if (/\bgenerated\b[\s\S]{0,120}\bimage\b/i.test(normalized)) return true
+  if (/\bcreated\b[\s\S]{0,120}\bimage\b/i.test(normalized)) return true
+  if (extractImagePathsFromText(normalized).length > 0) return true
+  return false
+}
+
+function transcriptFieldText(value: unknown): string {
+  if (typeof value === 'string') return value.trim() ? value : ''
+  if (value == null) return ''
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return ''
+  }
+}
+
+export function turnTranscriptText(items: readonly { kind: string; text?: string; output?: unknown; input?: unknown; toolName?: string }[]): string {
+  const parts: string[] = []
+  for (const item of items) {
+    if (item.kind === 'message' && typeof item.text === 'string' && item.text.trim()) {
+      parts.push(item.text)
+    }
+    if (item.kind === 'tool') {
+      if (typeof item.toolName === 'string' && item.toolName.trim()) parts.push(item.toolName)
+      const inputText = transcriptFieldText(item.input)
+      const outputText = transcriptFieldText(item.output)
+      if (inputText) parts.push(inputText)
+      if (outputText) parts.push(outputText)
+    }
+  }
+  return parts.join('\n')
+}
+
+/** True when a tool row already carries image data or a resolvable file path. */
+export function hasRenderableGeneratedImageOutput(output: unknown): boolean {
+  const normalized = normalizeConductorGeneratedImageOutput(output)
+  if (!normalized) return false
+  return normalized.images.some((image) => Boolean(image.data?.length || image.filePath))
 }
 
 export function extractConductorGeneratedImages(
@@ -96,7 +194,7 @@ export function extractConductorGeneratedImages(
     if (images.length >= MAX_EXTRACTED_IMAGES) break
     const image = imageFromCandidate(candidate, images.length, options)
     if (!image) continue
-    const key = `${image.mimeType}:${image.data}`
+    const key = `${image.mimeType}:${image.data ?? image.filePath ?? ''}`
     if (seen.has(key)) continue
     seen.add(key)
     images.push(image)
@@ -134,6 +232,11 @@ function collectImageCandidates(
     const dataUrl = parseImageData(value)
     if (dataUrl) {
       candidates.push({ ...context, ...dataUrl })
+      return
+    }
+    for (const filePath of extractImagePathsFromText(value)) {
+      candidates.push({ ...context, data: '', filePath, name: fileNameFromPath(filePath) })
+      if (candidates.length >= MAX_EXTRACTED_IMAGES) return
     }
     return
   }
@@ -200,25 +303,36 @@ function imageFromCandidate(
   index: number,
   options: ConductorGeneratedImageExtractionOptions,
 ): ConductorGeneratedImage | undefined {
-  const parsed = parseImageData(candidate.data)
-  const data = normalizeBase64Data(parsed?.data ?? candidate.data)
-  if (!data || !isDecodedImageSizeAllowed(data)) return undefined
-
-  const mimeType = imageMimeType(parsed?.mimeType ?? candidate.mimeType, candidate.filePath ?? candidate.name, options.toolName)
-  if (!mimeType) return undefined
-
   const filePath = cleanString(candidate.filePath)
   const name = cleanString(candidate.name) ?? fileNameFromPath(filePath)
-  const prompt = cleanString(candidate.prompt)
-  const id = `generated-image-${hashString(`${mimeType}:${data}:${index}`)}`
+  const parsed = parseImageData(candidate.data)
+  const data = normalizeBase64Data(parsed?.data ?? candidate.data)
+  const mimeType = imageMimeType(parsed?.mimeType ?? candidate.mimeType, filePath ?? name, options.toolName)
+
+  if (data && isDecodedImageSizeAllowed(data)) {
+    if (!mimeType) return undefined
+    const id = `generated-image-${hashString(`${mimeType}:${data}:${index}`)}`
+    return {
+      kind: CONDUCTOR_GENERATED_IMAGE_KIND,
+      id,
+      mimeType,
+      data,
+      ...(name ? { name } : {}),
+      ...(filePath ? { filePath } : {}),
+      ...(cleanString(candidate.prompt) ? { prompt: cleanString(candidate.prompt) } : {}),
+      ...(options.provider ? { provider: options.provider } : {}),
+    }
+  }
+
+  if (!filePath || !mimeType) return undefined
+  const id = `generated-image-${hashString(`${mimeType}:${filePath}:${index}`)}`
   return {
     kind: CONDUCTOR_GENERATED_IMAGE_KIND,
     id,
     mimeType,
-    data,
     ...(name ? { name } : {}),
-    ...(filePath ? { filePath } : {}),
-    ...(prompt ? { prompt } : {}),
+    filePath,
+    ...(cleanString(candidate.prompt) ? { prompt: cleanString(candidate.prompt) } : {}),
     ...(options.provider ? { provider: options.provider } : {}),
   }
 }

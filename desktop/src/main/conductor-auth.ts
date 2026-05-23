@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ConductorAuthStatus } from '../shared/agent-chat-types'
+import { resetCursorModelCatalogCache } from './cursor-model-catalog'
 import { cliEnvWithStandardPath } from './cli-env'
 
 let cursorApiKeyFromSettings = ''
@@ -24,6 +25,7 @@ export function setConductorAuthKeys(cursorApiKey: string, openaiApiKey: string)
   cursorApiKeyFromSettings = cursorApiKey.trim()
   openaiApiKeyFromSettings = openaiApiKey.trim()
   invalidateCursorCliAuthCache()
+  resetCursorModelCatalogCache()
 }
 
 export function applyConductorAuthFromPersistedState(data: unknown): void {
