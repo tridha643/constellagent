@@ -13,6 +13,7 @@ import type {
 } from '../../store/types'
 import {
   normalizeConductorDefaultModelSetting,
+  normalizeConductorCodexWebSocketsSetting,
   normalizeConductorDefaultProviderSetting,
   normalizeConductorDefaultThinkingLevelSetting,
   NAVIGATION_PANEL_TYPES,
@@ -1205,9 +1206,9 @@ function ConductorSettingsSection({
   const updateSettings = useAppStore((s) => s.updateSettings)
 
   const refreshAuth = useCallback(() => {
-    void syncConductorAuthKeys(cursorApiKey, openaiApiKey)
+    void syncConductorAuthKeys(cursorApiKey, openaiApiKey, settings.conductorCodexWebSockets)
     void fetchConductorAuthStatus(true).then(setAuthStatus)
-  }, [cursorApiKey, openaiApiKey])
+  }, [cursorApiKey, openaiApiKey, settings.conductorCodexWebSockets])
 
   useEffect(() => {
     refreshAuth()
@@ -1289,6 +1290,20 @@ function ConductorSettingsSection({
           value: level,
           label: THINKING_LABELS[level],
         }))}
+      />
+      <SelectRow
+        label="Codex WebSockets"
+        description="Use Codex SDK WebSocket transport automatically for eligible Codex models, or force the standard CLI transport."
+        value={settings.conductorCodexWebSockets}
+        onChange={(v) =>
+          updateSettings({
+            conductorCodexWebSockets: normalizeConductorCodexWebSocketsSetting(v),
+          })
+        }
+        options={[
+          { value: 'auto', label: 'Auto' },
+          { value: 'off', label: 'Off' },
+        ]}
       />
 
       <div className={styles.row}>

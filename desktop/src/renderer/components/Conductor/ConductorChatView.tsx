@@ -55,6 +55,7 @@ export function ConductorChatView({
   const conductorDefaultThinkingLevelSetting = useAppStore(
     (s) => s.settings.conductorDefaultThinkingLevel,
   )
+  const conductorCodexWebSocketsSetting = useAppStore((s) => s.settings.conductorCodexWebSockets)
   const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
   const chatViewRef = useRef<HTMLDivElement | null>(null)
   useConductorChatTypographyScope(chatViewRef)
@@ -90,9 +91,13 @@ export function ConductorChatView({
   const timelineRef = useRef<ChatTimelineHandle | null>(null)
 
   useEffect(() => {
-    void syncConductorAuthKeys(conductorCursorApiKey, conductorOpenaiApiKey)
+    void syncConductorAuthKeys(
+      conductorCursorApiKey,
+      conductorOpenaiApiKey,
+      conductorCodexWebSocketsSetting,
+    )
     void fetchConductorAuthStatus(true).then(setAuthStatus)
-  }, [conductorCursorApiKey, conductorOpenaiApiKey])
+  }, [conductorCursorApiKey, conductorOpenaiApiKey, conductorCodexWebSocketsSetting])
 
   useEffect(() => {
     if (!cursorLoginStarted) return

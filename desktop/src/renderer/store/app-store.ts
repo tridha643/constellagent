@@ -20,6 +20,7 @@ import type {
 import {
   DEFAULT_SETTINGS,
   normalizeConductorDefaultModelSetting,
+  normalizeConductorCodexWebSocketsSetting,
   normalizeConductorDefaultProviderSetting,
   normalizeConductorDefaultThinkingLevelSetting,
   DEFAULT_SIDEBAR_ACTION_ORDER,
@@ -3069,6 +3070,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       conductorDefaultThinkingLevel: normalizeConductorDefaultThinkingLevelSetting(
         settingsMerged.conductorDefaultThinkingLevel,
       ),
+      conductorCodexWebSockets: normalizeConductorCodexWebSocketsSetting(
+        settingsMerged.conductorCodexWebSockets,
+      ),
       conflictResolverAgent: normalizeConflictResolverAgent(settingsMerged.conflictResolverAgent),
       conflictResolverModel: normalizeConflictResolverModel(settingsMerged.conflictResolverModel),
       piCommitMessageModel: normalizePiCommitMessageModel(settingsMerged.piCommitMessageModel),
@@ -3440,8 +3444,16 @@ export async function hydrateFromDisk(): Promise<void> {
     const data = await window.api.state.load()
     if (data) {
       useAppStore.getState().hydrateState(data)
-      const { conductorCursorApiKey, conductorOpenaiApiKey } = useAppStore.getState().settings
-      void syncConductorAuthKeys(conductorCursorApiKey, conductorOpenaiApiKey)
+      const {
+        conductorCursorApiKey,
+        conductorOpenaiApiKey,
+        conductorCodexWebSockets,
+      } = useAppStore.getState().settings
+      void syncConductorAuthKeys(
+        conductorCursorApiKey,
+        conductorOpenaiApiKey,
+        conductorCodexWebSockets,
+      )
       await normalizeProjectRepoAnchorsInStore()
       await syncExternalProjectStartupSettingsForProjects(useAppStore.getState().projects)
     }

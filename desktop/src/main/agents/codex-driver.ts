@@ -19,8 +19,10 @@ import {
   type ThreadOptions,
 } from '@openai/codex-sdk'
 import { checkCodexAuth, getOpenaiApiKey } from '../conductor-auth'
+import { getConductorCodexWebSocketsSetting } from '../conductor-settings'
 import { logMainPerfEvent } from '../perf'
 import { mapThinkingLevelToCodexEffort, parseModelEffort } from '../../shared/conductor-model-utils'
+import type { CodexWebSocketsSetting } from '../../shared/codex-websockets'
 import {
   computeTextDelta,
   evAssistantDelta,
@@ -40,6 +42,7 @@ interface CodexSessionState {
   model: string
   effort: ModelReasoningEffort
   plan: boolean
+  webSocketsEnabled: boolean
   readonly emittedByItem: Map<string, string>
   readonly lastToolUpdateByItem: Map<string, { text: string; emittedAt: number }>
 }
@@ -54,9 +57,13 @@ interface CodexSessionRecovery {
   model: string
   effort: ModelReasoningEffort
   plan: boolean
+  webSocketsEnabled: boolean
   /** After user interrupt or stale resume — next turn seeds Conductor transcript instead of CLI resume. */
   preferTranscriptFallback: boolean
 }
+
+type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexConfigObject
+type CodexConfigObject = { [key: string]: CodexConfigValue }
 
 const CODEX_IMAGE_EXTENSION_BY_MIME: Record<ConductorImageAttachment['mimeType'], string> = {
   'image/png': 'png',
@@ -152,6 +159,26 @@ export function codexSdkModelForConductorModel(model: string): string {
   return speedSuffix === 'fast' ? `${base}-fast` : base
 }
 
+export function isCodexWebSocketsEligibleModel(model: string): boolean {
+  const sdkModel = codexSdkModelForConductorModel(model).toLowerCase()
+  return sdkModel.includes('codex')
+}
+
+export function shouldUseCodexWebSockets(setting: CodexWebSocketsSetting, model: string): boolean {
+  return setting === 'auto' && isCodexWebSocketsEligibleModel(model)
+}
+
+export function codexConfigForWebSockets(webSocketsEnabled: boolean): CodexConfigObject | undefined {
+  if (!webSocketsEnabled) return undefined
+  return {
+    model_providers: {
+      openai: {
+        supports_websockets: true,
+      },
+    },
+  }
+}
+
 function threadOptionsForTurn(ctx: AgentTurnContext): ThreadOptions {
   const sdkModel = codexSdkModelForConductorModel(ctx.model)
   const effort = mapThinkingLevelToCodexEffort(ctx.thinkingLevel)
@@ -169,26 +196,35 @@ function configMatches(
   model: string,
   effort: ModelReasoningEffort,
   plan: boolean,
+  webSocketsEnabled: boolean,
 ): boolean {
-  return state.model === model && state.effort === effort && state.plan === plan
+  return (
+    state.model === model &&
+    state.effort === effort &&
+    state.plan === plan &&
+    state.webSocketsEnabled === webSocketsEnabled
+  )
 }
 
 export class CodexDriver implements AgentDriver {
   readonly provider = 'codex' as const
-  private codex: Codex | null = null
+  private codex: { client: Codex; webSocketsEnabled: boolean } | null = null
   private readonly sessions = new Map<string, CodexSessionState>()
   private readonly recovery = new Map<string, CodexSessionRecovery>()
   private readonly contextUsage = new Map<string, CodexContextUsage>()
 
-  private getCodex(): Codex {
-    if (!this.codex) {
+  private getCodex(webSocketsEnabled: boolean): Codex {
+    if (!this.codex || this.codex.webSocketsEnabled !== webSocketsEnabled) {
       const codexPathOverride = resolveCodexCliPath()
-      this.codex = new Codex({
+      const config = codexConfigForWebSockets(webSocketsEnabled)
+      const client = new Codex({
         ...(getOpenaiApiKey() ? { apiKey: getOpenaiApiKey() } : {}),
         ...(codexPathOverride ? { codexPathOverride } : {}),
+        ...(config ? { config } : {}),
       })
+      this.codex = { client, webSocketsEnabled }
     }
-    return this.codex
+    return this.codex.client
   }
 
   checkAuth(): string | null {
@@ -221,6 +257,7 @@ export class CodexDriver implements AgentDriver {
         model: state.model,
         effort: state.effort,
         plan: state.plan,
+        webSocketsEnabled: state.webSocketsEnabled,
         preferTranscriptFallback: true,
       })
     }
@@ -243,12 +280,16 @@ export class CodexDriver implements AgentDriver {
     const baseModel = options.model!
     const effort = options.modelReasoningEffort!
     const plan = ctx.plan
+    const webSocketsEnabled = shouldUseCodexWebSockets(
+      getConductorCodexWebSocketsSetting(),
+      baseModel,
+    )
 
     const existing = this.sessions.get(key)
     const recovery = this.recovery.get(key)
     const configChanged =
-      (existing && !configMatches(existing, baseModel, effort, plan)) ||
-      (recovery && !configMatches(recovery, baseModel, effort, plan))
+      (existing && !configMatches(existing, baseModel, effort, plan, webSocketsEnabled)) ||
+      (recovery && !configMatches(recovery, baseModel, effort, plan, webSocketsEnabled))
 
     let state: CodexSessionState
     let seedTranscript = forceTranscriptFallback
@@ -259,7 +300,7 @@ export class CodexDriver implements AgentDriver {
       existing.emittedByItem.clear()
     } else if (!forceTranscriptFallback && !configChanged && recovery?.codexThreadId && !recovery.preferTranscriptFallback) {
       // In-memory Thread lost but persisted session may still be resumable (~/.codex/sessions).
-      const thread = this.getCodex().resumeThread(recovery.codexThreadId, options)
+      const thread = this.getCodex(webSocketsEnabled).resumeThread(recovery.codexThreadId, options)
       this.recovery.delete(key)
       state = {
         thread,
@@ -267,13 +308,14 @@ export class CodexDriver implements AgentDriver {
         model: baseModel,
         effort,
         plan,
+        webSocketsEnabled,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
       }
       this.sessions.set(key, state)
     } else if (!forceTranscriptFallback && !configChanged && recovery?.codexThreadId && recovery.preferTranscriptFallback) {
       // Interrupted prior turn — do not resume a broken rollout; seed transcript on a fresh thread.
-      const thread = this.getCodex().startThread(options)
+      const thread = this.getCodex(webSocketsEnabled).startThread(options)
       seedTranscript = Boolean(ctx.previousTranscript?.length)
       this.recovery.delete(key)
       state = {
@@ -282,12 +324,13 @@ export class CodexDriver implements AgentDriver {
         model: baseModel,
         effort,
         plan,
+        webSocketsEnabled,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
       }
       this.sessions.set(key, state)
     } else {
-      const thread = this.getCodex().startThread(options)
+      const thread = this.getCodex(webSocketsEnabled).startThread(options)
       const hasPrior = Boolean(ctx.previousTranscript?.length)
       seedTranscript =
         forceTranscriptFallback ||
@@ -300,6 +343,7 @@ export class CodexDriver implements AgentDriver {
         model: baseModel,
         effort,
         plan,
+        webSocketsEnabled,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
       }
@@ -325,6 +369,7 @@ export class CodexDriver implements AgentDriver {
         model: baseModel,
         effort,
         seedTranscript,
+        webSocketsEnabled,
       })
       try {
         let firstEventAt: number | undefined
@@ -337,6 +382,7 @@ export class CodexDriver implements AgentDriver {
               model: baseModel,
               effort,
               eventType: event.type,
+              webSocketsEnabled,
             })
           }
           this.handleEvent(ctx, state, event)
@@ -345,6 +391,7 @@ export class CodexDriver implements AgentDriver {
           model: baseModel,
           effort,
           eventCount,
+          webSocketsEnabled,
         })
       } catch (err) {
         if (!isBenignCodexInterruptError(err, ctx.signal)) throw err

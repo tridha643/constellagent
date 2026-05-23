@@ -1,4 +1,5 @@
 import type { ConductorAuthStatus } from '../../shared/agent-chat-types'
+import type { CodexWebSocketsSetting } from '../../shared/codex-websockets'
 import type { AppState } from '../store/types'
 
 /** Where users create Cursor API keys for the SDK (see cursor.com/docs/api). */
@@ -12,9 +13,10 @@ type SignInStore = Pick<
 export async function syncConductorAuthKeys(
   cursorApiKey: string,
   openaiApiKey: string,
+  codexWebSockets?: CodexWebSocketsSetting,
 ): Promise<void> {
   try {
-    await window.api.agentChat.syncAuth({ cursorApiKey, openaiApiKey })
+    await window.api.agentChat.syncAuth({ cursorApiKey, openaiApiKey, codexWebSockets })
   } catch {
     // Main process not reloaded yet (dev ⌘R only refreshes renderer).
   }

@@ -3,9 +3,12 @@ import { readFileSync } from 'node:fs'
 import { buildAgentPrompt } from './agent-driver'
 import {
   buildCodexUserInput,
+  codexConfigForWebSockets,
   codexSdkModelForConductorModel,
+  isCodexWebSocketsEligibleModel,
   isBenignCodexInterruptError,
   isStaleCodexThreadError,
+  shouldUseCodexWebSockets,
 } from './codex-driver'
 
 describe('CodexDriver prompt seeding', () => {
@@ -56,6 +59,35 @@ describe('codexSdkModelForConductorModel', () => {
   test('strips conductor effort suffixes because Codex SDK receives effort separately', () => {
     expect(codexSdkModelForConductorModel('gpt-5.3-codex-high-fast')).toBe('gpt-5.3-codex-fast')
     expect(codexSdkModelForConductorModel('gpt-5.3-codex-high')).toBe('gpt-5.3-codex')
+  })
+})
+
+describe('Codex WebSocket config', () => {
+  test('recognizes Codex models after effort and speed suffix normalization', () => {
+    expect(isCodexWebSocketsEligibleModel('gpt-5.3-codex-high-fast')).toBe(true)
+    expect(isCodexWebSocketsEligibleModel('gpt-5.3-codex-spark-xhigh')).toBe(true)
+  })
+
+  test('does not enable WebSockets for non-Codex model ids', () => {
+    expect(isCodexWebSocketsEligibleModel('gpt-5.5')).toBe(false)
+    expect(isCodexWebSocketsEligibleModel('o3')).toBe(false)
+  })
+
+  test('uses WebSockets only when the setting is auto and the model is eligible', () => {
+    expect(shouldUseCodexWebSockets('auto', 'gpt-5.3-codex-high-fast')).toBe(true)
+    expect(shouldUseCodexWebSockets('off', 'gpt-5.3-codex-high-fast')).toBe(false)
+    expect(shouldUseCodexWebSockets('auto', 'gpt-5.5')).toBe(false)
+  })
+
+  test('builds the Codex CLI provider capability override only when enabled', () => {
+    expect(codexConfigForWebSockets(true)).toEqual({
+      model_providers: {
+        openai: {
+          supports_websockets: true,
+        },
+      },
+    })
+    expect(codexConfigForWebSockets(false)).toBeUndefined()
   })
 })
 
