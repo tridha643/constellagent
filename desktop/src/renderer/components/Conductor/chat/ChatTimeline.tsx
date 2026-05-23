@@ -68,6 +68,36 @@ function isAssistantMessage(item: TranscriptMessage): item is ChatMessageItem {
   return item.kind === 'message' && item.role === 'assistant'
 }
 
+function assistantMessageIdsInCanvasTurns(transcript: readonly TranscriptMessage[]): Set<string> {
+  const ids = new Set<string>()
+  let index = 0
+  while (index < transcript.length) {
+    const item = transcript[index]
+    if (item.kind !== 'message' || item.role !== 'user') {
+      index += 1
+      continue
+    }
+    index += 1
+    const turnBody: TranscriptMessage[] = []
+    while (index < transcript.length) {
+      const next = transcript[index]
+      if (next.kind === 'message' && next.role === 'user') break
+      turnBody.push(next)
+      index += 1
+    }
+    const hasCanvasTool = turnBody.some(
+      (turnItem) => turnItem.kind === 'tool' && isJsonCanvasToolName(turnItem.toolName),
+    )
+    if (!hasCanvasTool) continue
+    for (const turnItem of turnBody) {
+      if (turnItem.kind === 'message' && turnItem.role === 'assistant') {
+        ids.add(turnItem.id)
+      }
+    }
+  }
+  return ids
+}
+
 function isWorkingActivity(item: TranscriptMessage): boolean {
   return item.kind === 'activity' && item.label === WORKING_LABEL
 }
@@ -298,6 +328,10 @@ export const ChatTimeline = forwardRef<
   )
 
   const durationByMessageId = useMemo(() => buildTurnDurationMap(transcript), [transcript])
+  const suppressInlineCanvasByMessageId = useMemo(
+    () => assistantMessageIdsInCanvasTurns(transcript),
+    [transcript],
+  )
   const latestPlanApprovalMessageId = useMemo(
     () => (planActive && !running ? getLatestPlanApprovalMessageId(transcript) : null),
     [planActive, running, transcript],
@@ -518,6 +552,7 @@ export const ChatTimeline = forwardRef<
         afterBody?: ReactNode
         hideMarkdownTaskLists?: boolean
         hideMarkdownFileEcho?: boolean
+        suppressInlineCanvas?: boolean
       },
     ): ReactNode => {
       const firstPaint = !seenIdsRef.current.has(message.id)
@@ -551,6 +586,10 @@ export const ChatTimeline = forwardRef<
           afterBody={options?.afterBody}
           hideMarkdownTaskLists={options?.hideMarkdownTaskLists}
           hideMarkdownFileEcho={options?.hideMarkdownFileEcho}
+          suppressInlineCanvas={
+            options?.suppressInlineCanvas ??
+            suppressInlineCanvasByMessageId.has(message.id)
+          }
         />
       )
     },
@@ -563,6 +602,7 @@ export const ChatTimeline = forwardRef<
       approveDisabled,
       latestPlanApprovalMessageId,
       durationByMessageId,
+      suppressInlineCanvasByMessageId,
       running,
     ],
   )

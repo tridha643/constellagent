@@ -38,9 +38,10 @@ describe('CodexDriver prompt seeding', () => {
     expect(prompt).toContain('Current user request:\ncontinue and build the plan')
   })
 
-  test('uses canvas schema instructions instead of markdown when canvas mode is on', () => {
+  test('uses inline canvas instructions instead of markdown when canvas mode is on', () => {
     const prompt = buildAgentPrompt('build a dashboard', false, undefined, 'codex', true)
     expect(prompt).toContain('Canvas mode is active')
+    expect(prompt).toContain('inline generation')
     expect(prompt).not.toContain('GitHub-Flavored Markdown')
   })
 })
@@ -57,10 +58,11 @@ describe('CodexDriver streaming transport', () => {
     expect(source).not.toMatch(/thread\.runStreamed\(prompt/)
   })
 
-  test('passes outputSchema on canvas turns for native structured JSON', () => {
+  test('streams inline canvas text through assistant deltas', () => {
     const source = readFileSync(new URL('./codex-driver.ts', import.meta.url), 'utf8')
-    expect(source).toContain('outputSchema: renderJsonCanvasOutputSchema()')
-    expect(source).toContain('upsertSyntheticCanvasFromText')
+    expect(source).not.toContain('outputSchema: renderJsonCanvasOutputSchema()')
+    expect(source).not.toContain('upsertSyntheticCanvasFromText')
+    expect(source).toContain('evAssistantDelta')
   })
 })
 

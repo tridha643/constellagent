@@ -24,12 +24,6 @@ import {
 import { applyThinkingLevel } from '../../shared/conductor-model-utils'
 import { isSubagentTool } from '../../shared/conductor-subagent-utils'
 import {
-  finishSyntheticCanvasFromText,
-  syntheticCanvasCallId,
-  upsertSyntheticCanvasFromText,
-  type SyntheticCanvasStreamState,
-} from './json-canvas-bridge'
-import {
   subagentInteractionEffect,
   subagentTaskMessageText,
 } from './cursor-driver-deltas'
@@ -48,8 +42,6 @@ interface CursorSessionState {
   run?: Run
   /** Active subagent tool_call id for progress/thinking/task milestone updates. */
   activeSubagentCallId?: string
-  canvasCallId?: string
-  canvasStream?: SyntheticCanvasStreamState
 }
 
 /** gRPC/Connect "canceled" code — see connectrpc.com/docs/protocol#error-codes */
@@ -202,8 +194,6 @@ export class CursorDriver implements AgentDriver {
     state.plan = ctx.plan
     state.emittedText = ''
     state.activeSubagentCallId = undefined
-    state.canvasCallId = undefined
-    state.canvasStream = undefined
 
     const onAbort = (): void => {
       detachCursorRun(run)
@@ -230,14 +220,6 @@ export class CursorDriver implements AgentDriver {
 
       if (!ctx.signal.aborted && run.status === 'error') {
         throw new Error(cursorRunErrorMessage(run.result))
-      }
-
-      if (ctx.canvas && state.emittedText.trim()) {
-        const callId =
-          state.canvasCallId ??
-          syntheticCanvasCallId(ctx.sessionRef, run.id ?? 'cursor-turn')
-        const streamState = state.canvasStream ?? { started: false }
-        finishSyntheticCanvasFromText(ctx, state.emittedText, callId, streamState)
       }
     } finally {
       ctx.signal.removeEventListener('abort', onAbort)
@@ -272,17 +254,7 @@ export class CursorDriver implements AgentDriver {
         const { delta, emitted } = computeTextDelta(state.emittedText, text)
         if (delta) {
           state.emittedText = emitted
-          if (ctx.canvas) {
-            const callId =
-              state.canvasCallId ??
-              syntheticCanvasCallId(ctx.sessionRef, state.run?.id ?? 'cursor-turn')
-            state.canvasCallId = callId
-            const streamState = state.canvasStream ?? { started: false }
-            state.canvasStream = streamState
-            upsertSyntheticCanvasFromText(ctx, state.emittedText, callId, streamState)
-          } else {
-            ctx.emit(evAssistantDelta(ctx.sessionRef, delta))
-          }
+          ctx.emit(evAssistantDelta(ctx.sessionRef, delta))
         }
         break
       }

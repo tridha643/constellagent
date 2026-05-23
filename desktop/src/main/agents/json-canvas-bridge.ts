@@ -1,3 +1,8 @@
+/**
+ * @deprecated Legacy bridge for synthetic `render_json_canvas` tool rows.
+ * Active generation uses json-render inline SpecStream in assistant text;
+ * keep for tests and historical transcript compatibility only.
+ */
 import { randomUUID } from 'node:crypto'
 import type { SessionRef } from '@pi-gui/session-driver'
 import {

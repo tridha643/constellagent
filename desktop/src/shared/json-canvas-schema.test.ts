@@ -86,6 +86,7 @@ describe('json-canvas-schema', () => {
 
   it('detects canvas intent from natural language', () => {
     expect(detectCanvasIntent('render something using the canvas')).toBe(true)
+    expect(detectCanvasIntent('render something')).toBe(true)
     expect(detectCanvasIntent('build a dashboard from Linear issues')).toBe(true)
     expect(detectCanvasIntent('fix this TypeScript error')).toBe(false)
   })
