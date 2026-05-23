@@ -687,6 +687,10 @@
   gap: 10px;
 }
 
+.jsonCanvasBlock .generatedImage {
+  max-height: min(420px, 55vh);
+}
+
 .generatedImageFigure {
   min-width: 0;
   margin: 0;

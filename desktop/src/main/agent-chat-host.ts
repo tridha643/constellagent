@@ -10,6 +10,7 @@ import {
   applyTimelineEvent,
   type TimelineRuntimeState,
 } from './pi-timeline'
+import { makeToolItem } from './pi-app-store-utils'
 import { AgentChatStore } from './agent-chat-store'
 import { GitService } from './git-service'
 import { evToolFinished, type AgentDriver } from './agents/agent-driver'
@@ -33,6 +34,18 @@ import {
 } from '../shared/context-window-utils'
 import { detectCanvasIntent } from '../shared/json-canvas-schema'
 import { syncConductorCanvasSkill } from './conductor-canvas-skill'
+import {
+  isConductorGeneratedImageOutput,
+  isGeneratedImageToolCall,
+  hasRenderableGeneratedImageOutput,
+  looksLikeGeneratedImageCompletionText,
+  turnTranscriptText,
+  type ConductorGeneratedImageOutput,
+} from '../shared/conductor-generated-images'
+import {
+  loadGeneratedImagesForTurn,
+  resolveConductorGeneratedImagesWithFiles,
+} from './conductor-generated-image-files'
 import type { ContextWindowData } from '../shared/context-window-types'
 import type {
   AgentChatSessionState,
@@ -331,6 +344,7 @@ export class AgentChatHost {
       }
       applyTimelineEvent(this.transcriptCache, this.snapshotEvent(ref, state, 'runCompleted', 'idle'), this.timelineState)
       this.update(sessionId, { status: 'idle', runPhase: 'idle', blockingQuestion: null })
+      void this.afterRunCompleted(this.currentState(sessionId) ?? state)
       this.clearTurnAbort(sessionId)
       await this.processQueueAfterTurn(sessionId)
     } catch (err) {
@@ -451,6 +465,14 @@ export class AgentChatHost {
       // SDKs stream only changed paths (Codex) or opaque args (Cursor), never line
       // content, so reconstruct real green/red diffs from the workspace git repo.
       void this.attachFileChangeDiff(state, event.callId, event.output)
+      void this.attachGeneratedImages(state, event.callId, event.output)
+    }
+    if (event.type === 'runCompleted') {
+      const completedAt = Date.parse(event.timestamp)
+      void this.afterRunCompleted(
+        state,
+        Number.isFinite(completedAt) ? completedAt - 15 * 60 * 1000 : undefined,
+      )
     }
     this.broadcastTranscript(state)
   }
@@ -501,6 +523,186 @@ export class AgentChatHost {
     }
   }
 
+  /** Hydrate generated-image tool rows from workspace files or inline payloads. */
+  private async attachGeneratedImages(
+    state: AgentChatSessionState,
+    callId: string,
+    output: unknown,
+  ): Promise<void> {
+    try {
+      const key = sessionKey(this.refOf(state))
+      const transcript = this.transcriptCache.get(key)
+      if (!transcript) return
+      const tool = transcript.find((item) => item.kind === 'tool' && item.callId === callId)
+      if (!tool || tool.kind !== 'tool') return
+
+      const resolved = await resolveConductorGeneratedImagesWithFiles(
+        isConductorGeneratedImageOutput(tool.output) ? tool.output : output,
+        {
+          workspacePath: state.workspacePath,
+          toolName: tool.toolName,
+          input: tool.input,
+          provider: state.provider,
+          sinceMs: this.turnStartedAtMs(state),
+        },
+      )
+      if (resolved) {
+        this.updateToolGeneratedImages(state, callId, resolved)
+      }
+    } catch {
+      // best-effort — image rendering must never fail a run
+    }
+  }
+
+  /** Poll after turn completion — Codex imagegen may land on disk after the SDK stream ends. */
+  private async afterRunCompleted(
+    state: AgentChatSessionState,
+    sinceMsFallback?: number,
+  ): Promise<void> {
+    const retryDelaysMs = [0, 800, 2000, 4000]
+    let shouldRetry = false
+
+    for (const delayMs of retryDelaysMs) {
+      if (delayMs > 0) {
+        if (!shouldRetry) return
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      }
+
+      const attached = await this.attachGeneratedImagesFromAssistant(state, sinceMsFallback)
+      if (attached) return
+
+      if (!shouldRetry) {
+        shouldRetry = this.currentTurnLooksLikeGeneratedImage(state)
+      }
+    }
+  }
+
+  private currentTurnLooksLikeGeneratedImage(state: AgentChatSessionState): boolean {
+    const key = sessionKey(this.refOf(state))
+    const transcript = this.transcriptCache.get(key)
+    if (!transcript) return false
+
+    let lastUserIndex = -1
+    for (let index = transcript.length - 1; index >= 0; index -= 1) {
+      const item = transcript[index]
+      if (item.kind === 'message' && item.role === 'user') {
+        lastUserIndex = index
+        break
+      }
+    }
+
+    const turnSlice = transcript.slice(lastUserIndex >= 0 ? lastUserIndex + 1 : 0)
+    return looksLikeGeneratedImageCompletionText(turnTranscriptText(turnSlice))
+  }
+
+  /** When the assistant mentions a saved image path, add a post-turn image block. */
+  private async attachGeneratedImagesFromAssistant(
+    state: AgentChatSessionState,
+    sinceMsFallback?: number,
+  ): Promise<boolean> {
+    try {
+      const key = sessionKey(this.refOf(state))
+      const transcript = this.transcriptCache.get(key)
+      if (!transcript) return false
+
+      let lastUserIndex = -1
+      let lastAssistantIndex = -1
+      for (let index = transcript.length - 1; index >= 0; index -= 1) {
+        const item = transcript[index]
+        if (item.kind === 'message' && item.role === 'user' && lastUserIndex < 0) {
+          lastUserIndex = index
+        }
+        if (item.kind === 'message' && item.role === 'assistant' && lastAssistantIndex < 0) {
+          lastAssistantIndex = index
+        }
+        if (lastUserIndex >= 0 && lastAssistantIndex >= 0) break
+      }
+      if (lastAssistantIndex < 0) return false
+
+      const turnSlice = transcript.slice(lastUserIndex >= 0 ? lastUserIndex + 1 : 0)
+      if (
+        turnSlice.some(
+          (item) =>
+            item.kind === 'tool' &&
+            isGeneratedImageToolCall(item) &&
+            hasRenderableGeneratedImageOutput(item.output),
+        )
+      ) {
+        return true
+      }
+
+      const message = transcript[lastAssistantIndex]
+      if (message.kind !== 'message' || message.role !== 'assistant') return false
+
+      const sinceMs = this.turnStartedAtMs(state) ?? sinceMsFallback
+      const generated = await loadGeneratedImagesForTurn(
+        turnTranscriptText(turnSlice),
+        state.workspacePath,
+        {
+          provider: state.provider,
+          sinceMs,
+        },
+      )
+      if (!generated) return false
+
+      const callId = `generated-image:${message.id}`
+      const current = this.transcriptCache.get(key)
+      if (!current) return false
+      if (current.some((item) => item.kind === 'tool' && item.callId === callId)) return true
+
+      const tool = makeToolItem(
+        callId,
+        'generateImage',
+        'success',
+        generated.images.length === 1 ? 'Generated image' : `Generated ${generated.images.length} images`,
+        {
+          detail: generated.images[0]?.prompt ?? generated.images[0]?.name ?? generated.images[0]?.filePath,
+          output: generated,
+        },
+      )
+
+      const next = [...current]
+      next.splice(lastAssistantIndex + 1, 0, tool)
+      this.transcriptCache.set(key, next)
+      this.flushTranscript(this.currentState(state.sessionId) ?? state)
+      return true
+    } catch {
+      // best-effort
+      return false
+    }
+  }
+
+  private turnStartedAtMs(state: AgentChatSessionState): number | undefined {
+    const metrics = this.timelineState.runMetricsBySession.get(sessionKey(this.refOf(state)))
+    if (!metrics?.startedAt) return undefined
+    const parsed = Date.parse(metrics.startedAt)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+
+  private updateToolGeneratedImages(
+    state: AgentChatSessionState,
+    callId: string,
+    output: ConductorGeneratedImageOutput,
+  ): void {
+    const key = sessionKey(this.refOf(state))
+    const current = this.transcriptCache.get(key)
+    if (!current) return
+    const idx = current.findIndex((item) => item.kind === 'tool' && item.callId === callId)
+    if (idx < 0) return
+    const target = current[idx]
+    if (target.kind !== 'tool') return
+
+    const next = [...current]
+    next[idx] = {
+      ...target,
+      label: output.images.length === 1 ? 'Generated image' : `Generated ${output.images.length} images`,
+      detail: output.images[0]?.prompt ?? output.images[0]?.name ?? output.images[0]?.filePath,
+      output,
+    }
+    this.transcriptCache.set(key, next)
+    this.flushTranscript(this.currentState(state.sessionId) ?? state)
+  }
+
   /**
    * User-initiated stop: record the run duration (so the footer can show it) and a
    * Stopped marker the renderer turns into an INTERRUPTED BY USER pill.
@@ -519,6 +721,7 @@ export class AgentChatHost {
       this.timelineState,
     )
     this.update(state.sessionId, { status: 'idle', runPhase: 'idle', blockingQuestion: null })
+    void this.afterRunCompleted(this.currentState(state.sessionId) ?? state)
   }
 
   private setBlockingQuestion(

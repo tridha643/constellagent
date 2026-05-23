@@ -10,7 +10,15 @@ import {
   type SDKMessage,
   type TextBlock,
 } from '@cursor/sdk'
+import {
+  getCursorModelCatalog,
+  withCursorSdkModelValidationBypass,
+} from '../cursor-model-catalog'
 import { checkCursorAuth, getCursorApiKey, hasCursorCliLogin } from '../conductor-auth'
+import {
+  isCursorSdkModelValidationError,
+  shouldBypassCursorSdkModelValidation,
+} from '../../shared/cursor-sdk-model'
 import {
   computeTextDelta,
   evAssistantDelta,
@@ -116,6 +124,73 @@ function cursorRunErrorMessage(raw: string | undefined): string {
   return detail || 'Cursor run failed'
 }
 
+async function createCursorSdkAgent(
+  effectiveModel: string,
+  ctx: AgentTurnContext,
+  agents: NonNullable<Parameters<typeof Agent.create>[0]['agents']>,
+): Promise<SDKAgent> {
+  const apiKey = getCursorApiKey()
+  const catalog = await getCursorModelCatalog()
+  const bypassValidation = shouldBypassCursorSdkModelValidation(effectiveModel, {
+    apiKey,
+    hasCliLogin: hasCursorCliLogin(),
+    catalog,
+  })
+
+  const buildOptions = (includeApiKey: boolean) => ({
+    ...(includeApiKey && apiKey ? { apiKey } : {}),
+    model: { id: effectiveModel },
+    local: {
+      cwd: ctx.workspacePath,
+      settingSources: ['project' as const],
+      ...cursorConductorLocalPermissions(ctx.plan),
+    },
+    ...(Object.keys(agents).length > 0 ? { agents } : {}),
+  })
+
+  try {
+    return await withCursorSdkModelValidationBypass(bypassValidation, () =>
+      Agent.create(buildOptions(!bypassValidation)),
+    )
+  } catch (err) {
+    if (!bypassValidation && isCursorSdkModelValidationError(err) && hasCursorCliLogin()) {
+      return withCursorSdkModelValidationBypass(true, () => Agent.create(buildOptions(false)))
+    }
+    throw err
+  }
+}
+
+async function sendCursorSdkMessage(
+  agent: SDKAgent,
+  message: string | SDKUserMessage,
+  effectiveModel: string,
+  onDelta: (update: InteractionUpdate) => void,
+): Promise<Run> {
+  const apiKey = getCursorApiKey()
+  const catalog = await getCursorModelCatalog()
+  const bypassValidation = shouldBypassCursorSdkModelValidation(effectiveModel, {
+    apiKey,
+    hasCliLogin: hasCursorCliLogin(),
+    catalog,
+  })
+
+  const sendOptions = {
+    model: { id: effectiveModel },
+    onDelta: ({ update }: { update: InteractionUpdate }) => {
+      onDelta(update)
+    },
+  }
+
+  try {
+    return await withCursorSdkModelValidationBypass(bypassValidation, () => agent.send(message, sendOptions))
+  } catch (err) {
+    if (!bypassValidation && isCursorSdkModelValidationError(err) && hasCursorCliLogin()) {
+      return withCursorSdkModelValidationBypass(true, () => agent.send(message, sendOptions))
+    }
+    throw err
+  }
+}
+
 export function buildCursorUserMessage(
   text: string,
   attachments: readonly ConductorComposerAttachment[] | undefined,
@@ -145,20 +220,10 @@ export class CursorDriver implements AgentDriver {
       if (state) {
         await disposeCursorAgent(state.agent, state.run).catch(() => {})
       }
-      const apiKey = getCursorApiKey()
       const agents = await loadCursorSdkAgents(ctx.workspacePath)
       let agent: SDKAgent
       try {
-        agent = await Agent.create({
-          ...(apiKey ? { apiKey } : {}),
-          model: { id: effectiveModel },
-          local: {
-            cwd: ctx.workspacePath,
-            settingSources: ['project'],
-            ...cursorConductorLocalPermissions(ctx.plan),
-          },
-          ...(Object.keys(agents).length > 0 ? { agents } : {}),
-        })
+        agent = await createCursorSdkAgent(effectiveModel, ctx, agents)
       } catch (err) {
         throw toCursorUserError(err)
       }
@@ -180,11 +245,8 @@ export class CursorDriver implements AgentDriver {
     setCursorAskQuestionHandler(ctx.plan ? createCursorAskQuestionHandler(ctx) : null)
     let run: Run
     try {
-      run = await state.agent.send(message, {
-        model: { id: effectiveModel },
-        onDelta: ({ update }) => {
-          this.handleInteractionUpdate(ctx, state!, update)
-        },
+      run = await sendCursorSdkMessage(state.agent, message, effectiveModel, (update) => {
+        this.handleInteractionUpdate(ctx, state!, update)
       })
     } catch (err) {
       throw toCursorUserError(err)

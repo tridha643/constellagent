@@ -25,6 +25,7 @@ import { TurnSummary } from './TurnSummary'
 import { SubagentCallCard } from './SubagentCallCard'
 import { ToolPart } from './tools/tool-registry'
 import { isJsonCanvasToolName } from '../../../../shared/json-canvas-schema'
+import { isGeneratedImageToolCall } from '../../../../shared/conductor-generated-images'
 import { turnHasFileTools, turnHasTodoTools } from './tools/turn-tool-flags'
 import { TurnHistoryRail, type TurnHistoryRailHandle } from './TurnHistoryRail'
 import { getLatestPlanApprovalMessageId } from './plan-approval'
@@ -107,28 +108,39 @@ function isHiddenTranscriptItem(item: TranscriptMessage): boolean {
 }
 
 function isCollapsibleTool(item: TranscriptMessage): boolean {
-  return item.kind === 'tool' && !isSubagentToolCall(item) && !isJsonCanvasToolName(item.toolName)
+  return item.kind === 'tool' && !isSubagentToolCall(item) && !isPostTurnArtifactTool(item)
 }
 
-function partitionCanvasTools(tools: readonly TimelineToolCall[]): {
+function isPostTurnArtifactTool(item: TranscriptMessage): boolean {
+  return (
+    item.kind === 'tool' &&
+    (isJsonCanvasToolName(item.toolName) || isGeneratedImageToolCall(item))
+  )
+}
+
+function partitionTurnArtifacts(tools: readonly TimelineToolCall[]): {
   canvasTools: TimelineToolCall[]
+  generatedImageTools: TimelineToolCall[]
   otherTools: TimelineToolCall[]
 } {
   const canvasTools: TimelineToolCall[] = []
+  const generatedImageTools: TimelineToolCall[] = []
   const otherTools: TimelineToolCall[] = []
   for (const tool of tools) {
     if (isJsonCanvasToolName(tool.toolName)) {
       canvasTools.push(tool)
+    } else if (isGeneratedImageToolCall(tool)) {
+      generatedImageTools.push(tool)
     } else {
       otherTools.push(tool)
     }
   }
-  return { canvasTools, otherTools }
+  return { canvasTools, generatedImageTools, otherTools }
 }
 
 function isVisibleTurnToolRow(item: TranscriptMessage, running: boolean): boolean {
   if (item.kind !== 'tool' || isSubagentToolCall(item)) return true
-  if (isJsonCanvasToolName(item.toolName)) return true
+  if (isPostTurnArtifactTool(item)) return true
   if (!running) return true
   return item.status !== 'running'
 }
@@ -367,7 +379,7 @@ export const ChatTimeline = forwardRef<
   }, [transcript, lastUserIndex])
 
   const tickerTurnTools = useMemo(
-    () => currentTurnTools.filter((tool) => !isJsonCanvasToolName(tool.toolName)),
+    () => currentTurnTools.filter((tool) => !isPostTurnArtifactTool(tool)),
     [currentTurnTools],
   )
 
@@ -413,12 +425,12 @@ export const ChatTimeline = forwardRef<
       const toolRows = visibleNonAssistantBody.filter(
         (item): item is TimelineToolCall => item.kind === 'tool' && !isSubagentToolCall(item),
       )
-      const { canvasTools, otherTools } = partitionCanvasTools(toolRows)
+      const { canvasTools, generatedImageTools, otherTools } = partitionTurnArtifacts(toolRows)
       const otherBody = visibleNonAssistantBody.filter(
         (item) =>
           item.kind !== 'tool' ||
           isSubagentToolCall(item) ||
-          isJsonCanvasToolName(item.toolName),
+          isPostTurnArtifactTool(item),
       )
       const messageCount = assistants.length
       const pushPlain = (item: TranscriptMessage) => result.push({ type: 'item', item })
@@ -439,11 +451,14 @@ export const ChatTimeline = forwardRef<
         pushTurnAssistantGroup(result, assistants, userItem.id, otherTools, pushPlain)
       }
       for (const item of otherBody) {
-        if (item.kind === 'tool' && isJsonCanvasToolName(item.toolName)) continue
+        if (item.kind === 'tool' && isPostTurnArtifactTool(item)) continue
         pushPlain(item)
       }
       for (const canvas of canvasTools) {
         pushPlain(canvas)
+      }
+      for (const imageTool of generatedImageTools) {
+        pushPlain(imageTool)
       }
       for (const activity of workingActivity) {
         pushPlain(activity)
@@ -682,7 +697,7 @@ export const ChatTimeline = forwardRef<
         running &&
         item.status === 'running' &&
         currentTurnToolIds.has(item.id) &&
-        !isJsonCanvasToolName(item.toolName)
+        !isPostTurnArtifactTool(item)
       ) {
         return null
       }
