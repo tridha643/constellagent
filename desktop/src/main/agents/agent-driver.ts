@@ -17,7 +17,8 @@ export type { AgentProvider }
 
 /**
  * Instruction prepended to the user's prompt when the composer Plan toggle is
- * on. Codex additionally runs in a read-only sandbox for plan turns.
+ * on. Codex additionally runs in a read-only sandbox for plan turns; working turns use
+ * danger-full-access with approvalPolicy never (see conductor-sdk-cli-permissions.ts).
  */
 export const PLAN_PROMPT_PREFIX =
   'Operate in planning mode. Think through the problem and produce a clear, step-by-step implementation plan before changing anything. Do not edit files or run mutating commands in this turn — outline the plan only.'

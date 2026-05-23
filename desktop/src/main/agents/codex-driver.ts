@@ -41,6 +41,7 @@ import {
   syntheticCanvasCallId,
   tryEmitSyntheticCanvasFromText,
 } from './json-canvas-bridge'
+import { codexConductorThreadPermissions } from './conductor-sdk-cli-permissions'
 
 interface CodexSessionState {
   thread: Thread
@@ -216,7 +217,7 @@ function threadOptionsForTurn(ctx: AgentTurnContext): ThreadOptions {
     modelReasoningEffort: effort,
     workingDirectory: ctx.workspacePath,
     skipGitRepoCheck: true,
-    ...(ctx.plan ? { sandboxMode: 'read-only' as const } : {}),
+    ...codexConductorThreadPermissions(ctx.plan),
   }
 }
 
