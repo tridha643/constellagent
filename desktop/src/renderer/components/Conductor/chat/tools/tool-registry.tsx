@@ -16,6 +16,8 @@ import { isJsonCanvasToolName } from '../../../../../shared/json-canvas-schema'
 import { SkillLoadTool } from './SkillLoadTool'
 import { isSkillLoadToolName } from '../../../../../shared/skill-tool-utils'
 import styles from '../../Conductor.module.css'
+import { GeneratedImageTool } from './GeneratedImageTool'
+import { isConductorGeneratedImageOutput } from '../../../../../shared/conductor-generated-images'
 
 const diff = (tool: TimelineToolCall): ReactNode => <DiffTool tool={tool} />
 
@@ -113,6 +115,16 @@ export function ToolPart({ tool }: { tool: TimelineToolCall }) {
         fallback={<div className={styles.activityRow}>Couldn&apos;t render this skill load.</div>}
       >
         <SkillLoadTool tool={tool} />
+      </ErrorBoundary>
+    )
+  }
+
+  if (isConductorGeneratedImageOutput(tool.output)) {
+    return (
+      <ErrorBoundary
+        fallback={<div className={styles.activityRow}>Couldn&apos;t render this generated image.</div>}
+      >
+        <GeneratedImageTool tool={tool} />
       </ErrorBoundary>
     )
   }
