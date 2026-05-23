@@ -1,4 +1,5 @@
 import { pathFromInput, queryFromInput } from './tool-input-path'
+import { isSkillLoadToolName } from '../../../../../shared/skill-tool-utils'
 
 function hasShellInput(input: unknown): boolean {
   if (typeof input === 'string') return input.trim().length > 0
@@ -19,6 +20,7 @@ export function classifyToolRegistryKey(
   if (hasFileChangeOutput) return 'apply_patch'
 
   const name = toolName.toLowerCase()
+  if (isSkillLoadToolName(name)) return 'load_skill'
   if (name === 'todowrite' || name === 'todo_list' || name === 'todo') return 'todowrite'
   const path = pathFromInput(input)
   const query = queryFromInput(input)

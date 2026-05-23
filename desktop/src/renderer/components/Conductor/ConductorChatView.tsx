@@ -82,7 +82,6 @@ export function ConductorChatView({
     ).thinkingLevel
   })
   const [draftPlan, setDraftPlan] = useState(false)
-  const [draftCanvas, setDraftCanvas] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [dismissedError, setDismissedError] = useState<string | null>(null)
   const [authStatus, setAuthStatus] = useState<ConductorAuthStatus | null>(null)
@@ -117,7 +116,6 @@ export function ConductorChatView({
   const model = controller.state?.model ?? draftModel
   const thinkingLevel = normalizeThinkingLevel(controller.state?.thinkingLevel ?? draftThinkingLevel)
   const plan = controller.state?.plan ?? draftPlan
-  const canvas = controller.state?.canvas ?? draftCanvas
   const running = controller.state?.status === 'running'
   const awaitingUser = controller.state?.runPhase === 'awaitingUser'
   const blockingQuestion = controller.state?.blockingQuestion ?? null
@@ -212,7 +210,6 @@ export function ConductorChatView({
       model: nextModel,
       title,
       plan,
-      canvas,
       thinkingLevel: nextThinkingLevel ?? thinkingLevel,
     })
     setConductorTabSessionBinding(tab.id, created.sessionId, title ?? tab.title)
@@ -279,14 +276,6 @@ export function ConductorChatView({
     setSubmitError(null)
     if (agentSessionId) {
       controller.setPlan(nextPlan)
-    }
-  }
-
-  const handleSetCanvas = (nextCanvas: boolean) => {
-    setDraftCanvas(nextCanvas)
-    setSubmitError(null)
-    if (agentSessionId) {
-      controller.setCanvas(nextCanvas)
     }
   }
 
@@ -447,7 +436,6 @@ export function ConductorChatView({
         model={model}
         thinkingLevel={thinkingLevel}
         plan={plan}
-        canvas={canvas}
         running={running}
         disabled={!worktreePath || awaitingUser}
         queuedMessages={controller.state?.queuedMessages ?? []}
@@ -458,7 +446,6 @@ export function ConductorChatView({
         onSetThinkingLevel={handleSetThinkingLevel}
         onToggleFast={handleToggleFast}
         onSetPlan={handleSetPlan}
-        onSetCanvas={handleSetCanvas}
         onHistoryUp={() => timelineRef.current?.openHistory()}
         composerRef={composerRef}
         sessionId={agentSessionId}

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test'
 import {
+  assertCodexCompatibleJsonSchema,
+  assertCodexStrictSchema,
+  detectCanvasIntent,
+  normalizeCanvasOutput,
   parseRenderJsonCanvasFromText,
   parseRenderJsonCanvasParams,
   renderJsonCanvasOutputSchema,
@@ -20,6 +24,20 @@ const validPayload = {
   },
 }
 
+const flatCodexPayload = {
+  title: 'Revenue',
+  description: '',
+  root: 'card-1',
+  elementsJson: JSON.stringify({
+    'card-1': {
+      type: 'Card',
+      props: { title: 'Revenue' },
+      children: ['m1'],
+    },
+    m1: { type: 'Metric', props: { label: 'Total', value: '$100' } },
+  }),
+}
+
 describe('json-canvas-schema', () => {
   it('validates a well-formed canvas payload', () => {
     expect(parseRenderJsonCanvasParams(validPayload)).toEqual(validPayload)
@@ -38,9 +56,28 @@ describe('json-canvas-schema', () => {
     expect(parseRenderJsonCanvasFromText(JSON.stringify(validPayload))).toEqual(validPayload)
   })
 
-  it('exports an OpenAI-compatible output schema object', () => {
+  it('normalizes flat Codex output into RenderJsonCanvasParams', () => {
+    expect(normalizeCanvasOutput(flatCodexPayload)).toEqual(validPayload)
+  })
+
+  it('parses flat Codex JSON from assistant text', () => {
+    expect(parseRenderJsonCanvasFromText(JSON.stringify(flatCodexPayload))).toEqual(validPayload)
+  })
+
+  it('exports a flat strict-safe Codex output schema', () => {
     const schema = renderJsonCanvasOutputSchema()
-    expect(schema).toBeTruthy()
-    expect(typeof schema).toBe('object')
+    expect(schema.type).toBe('object')
+    expect(schema.properties).toBeTruthy()
+    expect(schema['$schema']).toBeUndefined()
+    expect(() => assertCodexCompatibleJsonSchema(schema)).not.toThrow()
+    expect(() => assertCodexStrictSchema(schema)).not.toThrow()
+    const props = schema.properties as Record<string, unknown>
+    expect(Object.keys(props).sort()).toEqual(['description', 'elementsJson', 'root', 'title'])
+  })
+
+  it('detects canvas intent from natural language', () => {
+    expect(detectCanvasIntent('render something using the canvas')).toBe(true)
+    expect(detectCanvasIntent('build a dashboard from Linear issues')).toBe(true)
+    expect(detectCanvasIntent('fix this TypeScript error')).toBe(false)
   })
 })

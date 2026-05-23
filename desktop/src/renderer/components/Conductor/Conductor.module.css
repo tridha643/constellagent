@@ -3013,18 +3013,6 @@
   cursor: default;
 }
 
-.composerInnerCanvas {
-  border-color: color-mix(in srgb, var(--accent-blue, #7eb8b8) 42%, var(--border-subtle));
-}
-
-.composerInnerCanvas.composerInnerPlan::after {
-  opacity: 0.55;
-}
-
-.canvasToggle {
-  flex-shrink: 0;
-}
-
 .jsonCanvasBlock {
   display: flex;
   flex-direction: column;
