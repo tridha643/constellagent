@@ -652,6 +652,8 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT_CHAT_REPLACE_QUEUE, sessionId, messages),
     setModel: (sessionId: string, model: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_SET_MODEL, sessionId, model),
     setPlan: (sessionId: string, plan: boolean) => ipcRenderer.invoke(IPC.AGENT_CHAT_SET_PLAN, sessionId, plan),
+    setCanvas: (sessionId: string, canvas: boolean) =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_SET_CANVAS, sessionId, canvas),
     setThinkingLevel: (sessionId: string, thinkingLevel: import('../shared/conductor-thinking').ThinkingLevel) =>
       ipcRenderer.invoke(IPC.AGENT_CHAT_SET_THINKING_LEVEL, sessionId, thinkingLevel),
     cancel: (sessionId: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_CANCEL, sessionId),

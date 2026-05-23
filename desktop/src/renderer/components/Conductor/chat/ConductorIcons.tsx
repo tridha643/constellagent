@@ -82,6 +82,18 @@ export function PlanMapIcon({ size = 14 }: { size?: number }) {
   )
 }
 
+/** Layout grid for canvas mode. */
+export function CanvasGridIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={STROKE} aria-hidden>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+    </svg>
+  )
+}
+
 /** Brain/loop motif for reasoning effort cycling. */
 export function ReasoningIcon({ size = 14 }: { size?: number }) {
   return (

@@ -24,6 +24,10 @@ import {
 import { applyThinkingLevel } from '../../shared/conductor-model-utils'
 import { isSubagentTool } from '../../shared/conductor-subagent-utils'
 import {
+  syntheticCanvasCallId,
+  tryEmitSyntheticCanvasFromText,
+} from './json-canvas-bridge'
+import {
   subagentInteractionEffect,
   subagentTaskMessageText,
 } from './cursor-driver-deltas'
@@ -167,6 +171,7 @@ export class CursorDriver implements AgentDriver {
       ctx.plan,
       needsNewAgent ? ctx.previousTranscript : undefined,
       'cursor',
+      ctx.canvas,
     )
     const message = buildCursorUserMessage(prompt, ctx.attachments)
     setCursorAskQuestionHandler(ctx.plan ? createCursorAskQuestionHandler(ctx) : null)
@@ -212,6 +217,14 @@ export class CursorDriver implements AgentDriver {
       if (!ctx.signal.aborted && run.status === 'error') {
         throw new Error(cursorRunErrorMessage(run.result))
       }
+
+      if (ctx.canvas && state.emittedText.trim()) {
+        tryEmitSyntheticCanvasFromText(
+          ctx,
+          state.emittedText,
+          syntheticCanvasCallId(ctx.sessionRef, run.id ?? 'cursor-turn'),
+        )
+      }
     } finally {
       ctx.signal.removeEventListener('abort', onAbort)
       setCursorAskQuestionHandler(null)
@@ -245,7 +258,9 @@ export class CursorDriver implements AgentDriver {
         const { delta, emitted } = computeTextDelta(state.emittedText, text)
         if (delta) {
           state.emittedText = emitted
-          ctx.emit(evAssistantDelta(ctx.sessionRef, delta))
+          if (!ctx.canvas) {
+            ctx.emit(evAssistantDelta(ctx.sessionRef, delta))
+          }
         }
         break
       }

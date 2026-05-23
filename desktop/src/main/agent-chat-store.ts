@@ -18,6 +18,7 @@ export interface StoredSession {
   readonly model: string
   readonly thinkingLevel: ThinkingLevel
   readonly plan: boolean
+  readonly canvas: boolean
   readonly status: 'idle' | 'running' | 'failed'
   readonly runPhase?: AgentChatSessionState['runPhase']
   readonly blockingQuestion?: AgentChatSessionState['blockingQuestion']
@@ -74,6 +75,17 @@ export class AgentChatStore {
     )
     await this.addThinkingLevelColumn()
     await this.addQueuedMessagesColumn()
+    await this.addCanvasColumn()
+  }
+
+  private async addCanvasColumn(): Promise<void> {
+    const client = this.client
+    if (!client) return
+    try {
+      await client.execute(`ALTER TABLE sessions ADD COLUMN canvas INTEGER NOT NULL DEFAULT 0`)
+    } catch {
+      // Column already exists — idempotent migration.
+    }
   }
 
   private async addQueuedMessagesColumn(): Promise<void> {
@@ -102,8 +114,8 @@ export class AgentChatStore {
     await this.ensure()
     await this.client?.execute({
       sql: `INSERT INTO sessions
-              (session_id, workspace_id, workspace_path, title, provider, model, thinking_level, plan, status, queued_messages_json, error, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (session_id, workspace_id, workspace_path, title, provider, model, thinking_level, plan, canvas, status, queued_messages_json, error, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id) DO UPDATE SET
               workspace_id = excluded.workspace_id,
               workspace_path = excluded.workspace_path,
@@ -112,6 +124,7 @@ export class AgentChatStore {
               model = excluded.model,
               thinking_level = excluded.thinking_level,
               plan = excluded.plan,
+              canvas = excluded.canvas,
               status = excluded.status,
               queued_messages_json = excluded.queued_messages_json,
               error = excluded.error,
@@ -125,6 +138,7 @@ export class AgentChatStore {
         session.model,
         session.thinkingLevel,
         session.plan ? 1 : 0,
+        session.canvas ? 1 : 0,
         session.status,
         safeJsonStringify(session.queuedMessages),
         session.error ?? null,
@@ -201,6 +215,7 @@ function rowToSession(row: Record<string, unknown>): StoredSession {
       row.thinking_level == null ? undefined : String(row.thinking_level),
     ),
     plan: Number(row.plan) === 1,
+    canvas: row.canvas == null ? false : Number(row.canvas) === 1,
     status: String(row.status) as StoredSession['status'],
     queuedMessages: parseQueuedMessagesJson(row.queued_messages_json),
     error: row.error == null ? undefined : String(row.error),

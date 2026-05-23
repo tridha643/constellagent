@@ -11,6 +11,7 @@ import { GrepTool, ListTool, WebSearchTool } from './InlineTools'
 import { asFileChangeOutput } from './diff-utils'
 import { registerToolEntry, resolveToolEntry } from './resolve-tool-entry'
 import { filesFromTool, isMutateToolName } from './tool-file-change'
+import { JsonCanvasTool, isJsonCanvasToolName } from './JsonCanvasTool'
 import styles from '../../Conductor.module.css'
 
 const diff = (tool: TimelineToolCall): ReactNode => <DiffTool tool={tool} />
@@ -72,10 +73,32 @@ for (const name of ['askquestion', 'ask_question']) {
   })
 }
 
+registerToolEntry('render_json_canvas', {
+  render: (tool) => <JsonCanvasTool tool={tool} />,
+  container: 'block',
+})
+
+for (const name of ['json_canvas', 'constellagent.render_json_canvas']) {
+  registerToolEntry(name, {
+    render: (tool) => <JsonCanvasTool tool={tool} />,
+    container: 'block',
+  })
+}
+
 /** Dispatches a tool row to its registered renderer; suppresses `todoread`. */
 export function ToolPart({ tool }: { tool: TimelineToolCall }) {
   const name = tool.toolName.toLowerCase()
   if (name === 'todoread') return null
+
+  if (isJsonCanvasToolName(tool.toolName)) {
+    return (
+      <ErrorBoundary
+        fallback={<div className={styles.activityRow}>Couldn&apos;t render this canvas.</div>}
+      >
+        <JsonCanvasTool tool={tool} />
+      </ErrorBoundary>
+    )
+  }
 
   const resolved = resolveToolEntry(tool)
   const hasStructuredFileChange = Boolean(asFileChangeOutput(tool.output))
