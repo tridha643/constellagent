@@ -7,11 +7,19 @@ export function MessageFooter({
   copyText,
   onFork,
   forkDisabled,
+  showApprove,
+  onApprovePlan,
+  approveDisabled,
+  approveShortcutLabel = '⌘⇧↵',
   durationLabel,
 }: {
   copyText: string
-  onFork: () => void
+  onFork?: () => void
   forkDisabled?: boolean
+  showApprove?: boolean
+  onApprovePlan?: () => void
+  approveDisabled?: boolean
+  approveShortcutLabel?: string
   durationLabel?: string
 }) {
   const [copied, setCopied] = useState(false)
@@ -61,21 +69,38 @@ export function MessageFooter({
         disabled={!copyText.trim()}
       >
         <IconSwap active={copied} a={<CheckIcon />} b={<CopyIcon />} size={14} variant="soft" />
+        <span>{copied ? 'Copied' : copyFailed ? 'Failed' : 'Copy'}</span>
       </button>
       {durationLabel && (
         <span className={styles.messageFooterDuration}>
           {durationLabel} <span aria-hidden>·</span>
         </span>
       )}
-      <button
-        type="button"
-        className={styles.messageFooterBtn}
-        aria-label="Fork chat from here"
-        onClick={onFork}
-        disabled={forkDisabled}
-      >
-        <ForkIcon />
-      </button>
+      {onFork ? (
+        <button
+          type="button"
+          className={styles.messageFooterBtn}
+          aria-label="Hand off from here"
+          onClick={onFork}
+          disabled={forkDisabled}
+        >
+          <ForkIcon />
+          <span>Hand off</span>
+        </button>
+      ) : null}
+      {showApprove && onApprovePlan ? (
+        <button
+          type="button"
+          className={styles.messageFooterApprove}
+          aria-label="Approve plan and continue"
+          title={`Approve plan and continue (${approveShortcutLabel})`}
+          onClick={onApprovePlan}
+          disabled={approveDisabled}
+        >
+          <span>Approve</span>
+          <span className={styles.messageFooterShortcut}>{approveShortcutLabel}</span>
+        </button>
+      ) : null}
     </div>
   )
 }
