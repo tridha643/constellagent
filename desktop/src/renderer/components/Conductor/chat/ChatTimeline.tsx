@@ -22,6 +22,7 @@ import { MuloadLoader } from './MuloadLoader'
 import { ActivityTicker } from './ActivityTicker'
 import { MarkdownBody } from './MarkdownBody'
 import { TurnSummary } from './TurnSummary'
+import { TurnFileChangeChips } from './TurnFileChangeChips'
 import { SubagentCallCard } from './SubagentCallCard'
 import { ToolPart } from './tools/tool-registry'
 import { isJsonCanvasToolName } from '../../../../shared/json-canvas-schema'
@@ -29,6 +30,7 @@ import { isGeneratedImageToolCall } from '../../../../shared/conductor-generated
 import { turnHasFileTools, turnHasTodoTools } from './tools/turn-tool-flags'
 import { TurnHistoryRail, type TurnHistoryRailHandle } from './TurnHistoryRail'
 import { getLatestPlanApprovalMessageId } from './plan-approval'
+import { fileChangesFromTools, type ToolFileChange } from './tools/tool-file-change'
 
 const WORKING_LABEL = 'Working…'
 const STOPPED_LABEL = 'Stopped'
@@ -53,7 +55,13 @@ type RenderUnit =
       messageCount: number
       failedToolCount: number
       toolSummary: string
+      fileChanges: readonly ToolFileChange[]
       isPlan: boolean
+    }
+  | {
+      type: 'turnFileChips'
+      key: string
+      fileChanges: readonly ToolFileChange[]
     }
   | {
       type: 'assistantGroup'
@@ -435,6 +443,8 @@ export const ChatTimeline = forwardRef<
       const messageCount = assistants.length
       const pushPlain = (item: TranscriptMessage) => result.push({ type: 'item', item })
       const shouldCollapseTurn = otherTools.length > 0
+      const fileChanges = fileChangesFromTools(otherTools)
+      const showCompletedFileChips = fileChanges.length > 0 && !(isLatestTurn && running)
       if (shouldCollapseTurn) {
         result.push({
           type: 'turnGroup',
@@ -444,6 +454,7 @@ export const ChatTimeline = forwardRef<
           messageCount,
           failedToolCount: toolRows.filter((tool) => tool.status === 'error').length,
           toolSummary: buildToolSummary(toolRows),
+          fileChanges,
           isPlan: planActive,
         })
         pushTurnAssistantGroup(result, assistants, userItem.id, [], pushPlain)
@@ -459,6 +470,13 @@ export const ChatTimeline = forwardRef<
       }
       for (const imageTool of generatedImageTools) {
         pushPlain(imageTool)
+      }
+      if (showCompletedFileChips) {
+        result.push({
+          type: 'turnFileChips',
+          key: `${userItem.id}:files`,
+          fileChanges,
+        })
       }
       for (const activity of workingActivity) {
         pushPlain(activity)
@@ -797,6 +815,12 @@ export const ChatTimeline = forwardRef<
                 </div>,
               )
             }
+            if (unit.type === 'turnFileChips') {
+              return renderTimelineRow(
+                unit.key,
+                <TurnFileChangeChips changes={unit.fileChanges} />,
+              )
+            }
             const isExpanded = expandedTurnKeys.has(unit.key)
             return (
               <div key={unit.key} className={styles.turnSummaryEdge}>
@@ -805,6 +829,7 @@ export const ChatTimeline = forwardRef<
                   messageCount={unit.messageCount}
                   failedToolCount={unit.failedToolCount}
                   toolSummary={unit.toolSummary}
+                  fileChanges={unit.fileChanges}
                   isPlan={unit.isPlan}
                   open={isExpanded}
                   onOpenChange={(open) => setTurnExpanded(unit.key, open)}

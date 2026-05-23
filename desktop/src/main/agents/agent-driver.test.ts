@@ -45,4 +45,12 @@ describe('agent-driver prompt construction', () => {
     expect(prompt).toContain('Previous conversation context')
     expect(prompt).toContain('Current user request:\nrevise the plan')
   })
+
+  test('plan mode tells agents to render plans in chat without file writes', () => {
+    const prompt = buildAgentPrompt('plan the change', true)
+
+    expect(prompt).toContain('Do not edit, create, delete, rename, format, or save files anywhere.')
+    expect(prompt).toContain('Do not write plan files.')
+    expect(prompt).toContain('Return the plan directly in the Conductor chat response')
+  })
 })

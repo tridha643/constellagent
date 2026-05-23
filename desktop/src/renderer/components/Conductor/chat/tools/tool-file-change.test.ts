@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { TimelineToolCall } from '../../../../../shared/pi/timeline-types'
-import { filesFromTool, isMutateToolName } from './tool-file-change'
+import { fileChangesFromTools, filesFromTool, isMutateToolName } from './tool-file-change'
 
 function tool(overrides: Partial<TimelineToolCall> & Pick<TimelineToolCall, 'toolName'>): TimelineToolCall {
   return {
@@ -52,6 +52,25 @@ describe('filesFromTool', () => {
     ])
   })
 
+  it('preserves Codex apply_patch operation kinds', () => {
+    expect(
+      fileChangesFromTools([
+        tool({
+          toolName: 'apply_patch',
+          input: [
+            { path: 'src/a.ts', kind: 'update' },
+            { path: 'src/b.ts', kind: 'add' },
+            { path: 'src/c.ts', kind: 'delete' },
+          ],
+        }),
+      ]),
+    ).toEqual([
+      { path: 'src/a.ts', patch: '', operation: 'edit' },
+      { path: 'src/b.ts', patch: '', operation: 'write' },
+      { path: 'src/c.ts', patch: '', operation: 'delete' },
+    ])
+  })
+
   it('returns mutate-tool object path input', () => {
     expect(filesFromTool(tool({ toolName: 'edit', input: { path: 'src/foo.ts' } }))).toEqual([
       { path: 'src/foo.ts', patch: '' },
@@ -70,5 +89,18 @@ describe('filesFromTool', () => {
         }),
       ),
     ).toEqual([{ path: 'vite.config.ts', patch: '+export default {}\n' }])
+  })
+
+  it('dedupes repeated paths and keeps the strongest operation', () => {
+    expect(
+      fileChangesFromTools([
+        tool({ toolName: 'edit', input: { path: 'src/a.ts' } }),
+        tool({ toolName: 'write', input: { path: 'src/b.ts' } }),
+        tool({ toolName: 'delete_file', input: { path: 'src/a.ts' } }),
+      ]),
+    ).toEqual([
+      { path: 'src/a.ts', patch: '', operation: 'delete' },
+      { path: 'src/b.ts', patch: '', operation: 'write' },
+    ])
   })
 })

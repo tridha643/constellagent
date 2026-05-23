@@ -150,11 +150,11 @@ async function createCursorSdkAgent(
 
   try {
     return await withCursorSdkModelValidationBypass(bypassValidation, () =>
-      Agent.create(buildOptions(!bypassValidation)),
+      Agent.create(buildOptions(true)),
     )
   } catch (err) {
     if (!bypassValidation && isCursorSdkModelValidationError(err) && hasCursorCliLogin()) {
-      return withCursorSdkModelValidationBypass(true, () => Agent.create(buildOptions(false)))
+      return withCursorSdkModelValidationBypass(true, () => Agent.create(buildOptions(true)))
     }
     throw err
   }
