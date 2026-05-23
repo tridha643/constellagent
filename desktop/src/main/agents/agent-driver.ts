@@ -78,7 +78,7 @@ export interface AgentTurnContext {
   readonly model: string
   readonly thinkingLevel: ThinkingLevel
   readonly plan: boolean
-  /** When true, drivers request structured canvas JSON instead of markdown prose. */
+  /** When true, drivers use json-render inline mode (prose + SpecStream JSONL in assistant text). */
   readonly canvas: boolean
   readonly text: string
   readonly attachments?: readonly ConductorComposerAttachment[]

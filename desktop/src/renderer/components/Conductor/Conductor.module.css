@@ -11,6 +11,11 @@
     var(--conductor-chip-warm-border) 70%,
     var(--conductor-chip-fg)
   );
+  --conductor-composer-canvas-accent: color-mix(
+    in srgb,
+    var(--accent-blue, #7eb8b8) 72%,
+    var(--conductor-chip-fg)
+  );
   --conductor-chip-neutral-bg: color-mix(in srgb, var(--surface-3) 88%, var(--surface-2));
   --conductor-chip-neutral-border: color-mix(in srgb, var(--border-subtle) 90%, transparent);
   position: absolute;
@@ -966,6 +971,15 @@
   border: 1px solid color-mix(in srgb, var(--accent-blue, #7eb8b8) 68%, var(--border-default));
 }
 
+.composerInnerCanvas {
+  border-color: color-mix(in srgb, var(--conductor-composer-canvas-accent) 42%, var(--border-subtle));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--conductor-composer-canvas-accent) 18%, transparent);
+}
+
+.composerInnerCanvas.composerInnerDragActive {
+  border-color: color-mix(in srgb, var(--accent-blue, #7eb8b8) 68%, var(--border-default));
+}
+
 .composerInnerReasoning:not(.composerInnerPlan) {
   border-color: color-mix(in srgb, var(--conductor-effort-accent) 28%, var(--border-subtle));
 }
@@ -1413,6 +1427,7 @@
 
 .effortPillIconOnly,
 .planToggleIconOnly,
+.canvasToggleIconOnly,
 .fastToggleIconOnly {
   padding: 5px 7px;
 }
@@ -1482,6 +1497,10 @@
 }
 
 .planToggle svg {
+  display: block;
+}
+
+.canvasToggle svg {
   display: block;
 }
 
@@ -3038,6 +3057,11 @@
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-secondary);
+}
+
+.jsonCanvasRenderer {
+  color: var(--text-primary);
+  font-size: 13px;
 }
 
 .jsonCanvasCard {

@@ -174,5 +174,15 @@ export function useConductorSession(sessionId: string | null): ConductorSessionC
     [sessionId],
   )
 
-  return { state, transcript, submit, cancel, replaceQueue, setModel, setPlan, setThinkingLevel, respondBlockingQuestion }
+  return {
+    state,
+    transcript,
+    submit,
+    cancel,
+    replaceQueue,
+    setModel,
+    setPlan,
+    setThinkingLevel,
+    respondBlockingQuestion,
+  }
 }

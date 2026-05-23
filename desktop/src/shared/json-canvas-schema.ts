@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { JSON_CANVAS_INLINE_PROMPT } from './json-canvas-catalog'
 
 /** json-render element map — validated loosely so models can emit catalog types. */
 export const JsonRenderSpecSchema = z
@@ -34,18 +35,9 @@ export function isJsonCanvasToolName(toolName: string): boolean {
   return normalized === RENDER_JSON_CANVAS_TOOL_NAME || normalized.endsWith(`.${RENDER_JSON_CANVAS_TOOL_NAME}`)
 }
 
-const CATALOG_COMPONENT_HINTS = [
-  'Card — optional title, default slot for children',
-  'Stack — vertical layout (gap: sm | md | lg)',
-  'Text — body copy (variant: body | caption | heading)',
-  'Metric — label + value pair',
-  'Badge — short status label',
-  'Divider — horizontal rule',
-] as const
-
 /**
  * Flat Codex structured-output schema — strict-safe (no nested additionalProperties).
- * Model returns `elementsJson` as a stringified element map; host normalizes to RenderJsonCanvasParams.
+ * Legacy standalone-mode schema; inline SpecStream turns stream JSONL in assistant text instead.
  */
 export function renderJsonCanvasOutputSchema(): Record<string, unknown> {
   return {
@@ -120,6 +112,8 @@ export function detectCanvasIntent(text: string): boolean {
     /\brender[\s\S]{0,40}\b(?:dashboard|chart|table|visuali[sz]ation|report|graph|metrics?)\b/i,
     /\b(?:show|display|visuali[sz]e)\b[\s\S]{0,40}\b(?:dashboard|chart|table|visual|report|canvas)\b/i,
     /\b(?:build|create|make)\b[\s\S]{0,40}\b(?:dashboard|visual(?:ization)?|canvas)\b/i,
+    /\b(?:render|show|display|draw|build|make|create)\s+(?:something|anything)\b/i,
+    /\brender\s+(?:a|an|the)\s+(?:ui|view|layout|screen|panel|card|widget|component|status|summary|report|dashboard|chart|table|visual)\b/i,
   ]
 
   return patterns.some((pattern) => pattern.test(normalized))
@@ -250,68 +244,10 @@ export function parsePartialRenderJsonCanvasFromText(text: string): RenderJsonCa
   return null
 }
 
-export function buildJsonCanvasPromptSuffix(provider: 'codex' | 'cursor'): string {
-  const codexFlatHint = JSON.stringify(
-    {
-      title: 'Optional dashboard title (empty string if none)',
-      description: 'Optional one-line summary (empty string if none)',
-      root: 'root-id',
-      elementsJson: JSON.stringify({
-        'root-id': {
-          type: 'Card',
-          props: { title: 'Example' },
-          children: ['metric-1'],
-        },
-        'metric-1': {
-          type: 'Metric',
-          props: { label: 'Total', value: '42' },
-        },
-      }),
-    },
-    null,
-    2,
-  )
-
-  const cursorNestedHint = JSON.stringify(
-    {
-      title: 'Optional dashboard title',
-      description: 'Optional one-line summary',
-      canvas: {
-        root: 'root-id',
-        elements: {
-          'root-id': {
-            type: 'Card',
-            props: { title: 'Example' },
-            children: ['metric-1'],
-          },
-          'metric-1': {
-            type: 'Metric',
-            props: { label: 'Total', value: '42' },
-          },
-        },
-      },
-    },
-    null,
-    2,
-  )
-
-  const lines = [
-    'Canvas mode is active. Produce a visual layout as structured JSON only.',
-    provider === 'codex'
-      ? 'Respond with a single JSON object matching this flat shape (no markdown prose, no code fences):'
-      : 'Respond with a single JSON object matching this shape (no markdown prose, no code fences):',
-    provider === 'codex' ? codexFlatHint : cursorNestedHint,
-    `Allowed component types: ${CATALOG_COMPONENT_HINTS.map((h) => h.split(' — ')[0]).join(', ')}.`,
-    provider === 'codex'
-      ? 'Put the element map in elementsJson as a JSON string; root is the root element id.'
-      : 'Put the json-render spec in the "canvas" field with "root" and "elements".',
-  ]
-
-  if (provider === 'cursor') {
-    lines.push('Output ONLY the JSON object — no explanation before or after.')
-  } else {
-    lines.push('Codex will validate your response against the output schema.')
-  }
-
-  return lines.join('\n')
+export function buildJsonCanvasPromptSuffix(_provider: 'codex' | 'cursor'): string {
+  return [
+    'Canvas mode is active. Use json-render inline generation: respond conversationally when helpful, then emit SpecStream JSONL patch lines (one patch object per line).',
+    'Do not wrap JSONL patches in markdown code fences unless using a ```spec fence as documented.',
+    JSON_CANVAS_INLINE_PROMPT,
+  ].join('\n\n')
 }
