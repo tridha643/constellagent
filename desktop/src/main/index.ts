@@ -13,6 +13,7 @@ import { NotificationWatcher } from './notification-watcher'
 import { emitAutomationEvent } from './automation-event-bus'
 import { composioWebhookService } from './composio-webhook-service'
 import { applyConductorAuthFromPersistedState } from './conductor-auth'
+import { applyConductorSettingsFromPersistedState } from './conductor-settings'
 import { isBenignConnectTransportError } from './agents/cursor-driver'
 
 process.on('unhandledRejection', (reason) => {
@@ -225,6 +226,7 @@ app.whenReady().then(() => {
       const persisted = JSON.parse(readFileSync(fp, 'utf-8'))
       composioWebhookService.applyFromPersistedState(persisted)
       applyConductorAuthFromPersistedState(persisted)
+      applyConductorSettingsFromPersistedState(persisted)
     }
   } catch (err) {
     console.warn('[composio] initial webhook settings not applied', err)

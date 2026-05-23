@@ -23,6 +23,11 @@ import {
   normalizeConductorDefaultProvider,
   normalizeConductorDefaultThinkingLevel,
 } from '../../shared/conductor-model-utils'
+import {
+  DEFAULT_CODEX_WEBSOCKETS_SETTING,
+  normalizeCodexWebSocketsSetting,
+  type CodexWebSocketsSetting,
+} from '../../shared/codex-websockets'
 
 /** Used with `waitFor`: how long / how to wait after the dependency before starting this command */
 export type WaitCondition =
@@ -454,6 +459,10 @@ export function normalizeConductorDefaultThinkingLevelSetting(v: unknown): Think
   return normalizeConductorDefaultThinkingLevel(v) ?? 'medium'
 }
 
+export function normalizeConductorCodexWebSocketsSetting(v: unknown): CodexWebSocketsSetting {
+  return normalizeCodexWebSocketsSetting(v)
+}
+
 /** Pi model id for commit/PR-adjacent generation; empty means app default (composer-2-fast). */
 export function normalizePiCommitMessageModel(v: unknown): string {
   if (typeof v !== 'string') return ''
@@ -512,6 +521,8 @@ export interface Settings {
   conductorDefaultModel: string
   /** Starting reasoning effort for new unsent Conductor chats. */
   conductorDefaultThinkingLevel: ThinkingLevel
+  /** Codex SDK transport preference; auto only enables WebSockets for eligible Codex models. */
+  conductorCodexWebSockets: CodexWebSocketsSetting
   /** Ordered projects shown in the Linear panel updates bar. */
   linearProjectUpdateBar: LinearProjectUpdateBarEntry[]
   /** Project ids highlighted in the Linear panel Projects list. */
@@ -590,6 +601,7 @@ export const DEFAULT_SETTINGS: Settings = {
   conductorDefaultProvider: DEFAULT_CONDUCTOR_PROVIDER,
   conductorDefaultModel: defaultConductorModel(DEFAULT_CONDUCTOR_PROVIDER),
   conductorDefaultThinkingLevel: 'medium',
+  conductorCodexWebSockets: DEFAULT_CODEX_WEBSOCKETS_SETTING,
   linearProjectUpdateBar: [],
   linearFavoriteProjectIds: [],
   linearWorkspaceToolbarTool: 'search',

@@ -63,6 +63,11 @@ import {
   getConductorAuthStatus,
   setConductorAuthKeys,
 } from './conductor-auth'
+import {
+  applyConductorSettingsFromPersistedState,
+  setConductorCodexWebSocketsSetting,
+} from './conductor-settings'
+import type { CodexWebSocketsSetting } from '../shared/codex-websockets'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 import { type ComposioWebhookSettings, isComposioAutomationAgent } from '../shared/composio-types'
 import { composioWebhookService } from './composio-webhook-service'
@@ -1601,6 +1606,7 @@ export function registerIpcHandlers(): void {
     await saveJsonFile(stateFilePath(), data)
     composioWebhookService.applyFromPersistedState(data)
     applyConductorAuthFromPersistedState(data)
+    applyConductorSettingsFromPersistedState(data)
   })
 
   // Synchronous save for beforeunload — guarantees state is written before window closes
@@ -1610,6 +1616,7 @@ export function registerIpcHandlers(): void {
       writeFileSync(stateFilePath(), JSON.stringify(data, null, 2), 'utf-8')
       composioWebhookService.applyFromPersistedState(data)
       applyConductorAuthFromPersistedState(data)
+      applyConductorSettingsFromPersistedState(data)
       event.returnValue = true
     } catch {
       event.returnValue = false
@@ -1985,8 +1992,9 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle(
     IPC.CONDUCTOR_AUTH_SYNC,
-    async (_e, input: { cursorApiKey?: string; openaiApiKey?: string }) => {
+    async (_e, input: { cursorApiKey?: string; openaiApiKey?: string; codexWebSockets?: CodexWebSocketsSetting }) => {
       setConductorAuthKeys(input?.cursorApiKey ?? '', input?.openaiApiKey ?? '')
+      setConductorCodexWebSocketsSetting(input?.codexWebSockets)
     },
   )
 }

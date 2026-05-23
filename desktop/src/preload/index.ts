@@ -37,6 +37,7 @@ import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 import type { GithubCloneRepoSuggestion } from '../shared/github-clone-suggestions'
 import type { ComposioAutomationDefinition, ComposioAutomationAgent, ComposioNgrokStatus, ComposioWebhookSettings } from '../shared/composio-types'
+import type { CodexWebSocketsSetting } from '../shared/codex-websockets'
 import type { SpotlightStatus } from '../shared/spotlight-types'
 
 /** Linear GraphQL via main process (renderer fetch hits CORS). Exposed on `api` and `api.app`. */
@@ -660,7 +661,7 @@ const api = {
     ) => ipcRenderer.invoke(IPC.AGENT_CHAT_RESPOND_BLOCKING_QUESTION, sessionId, response),
     deleteSession: (sessionId: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_DELETE_SESSION, sessionId),
     getAuthStatus: (force?: boolean) => ipcRenderer.invoke(IPC.AGENT_CHAT_GET_AUTH_STATUS, force),
-    syncAuth: (input: { cursorApiKey: string; openaiApiKey: string }) =>
+    syncAuth: (input: { cursorApiKey: string; openaiApiKey: string; codexWebSockets?: CodexWebSocketsSetting }) =>
       ipcRenderer.invoke(IPC.CONDUCTOR_AUTH_SYNC, input),
     onStateChanged: (listener: (state: AgentChatSessionState) => void) => {
       const handle = (_event: Electron.IpcRendererEvent, state: AgentChatSessionState) => listener(state)
