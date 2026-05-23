@@ -50,7 +50,6 @@ export interface ConductorSessionController {
   replaceQueue: (messages: readonly QueuedAgentMessage[]) => void
   setModel: (model: string) => void
   setPlan: (plan: boolean) => void
-  setCanvas: (canvas: boolean) => void
   setThinkingLevel: (level: ThinkingLevel) => void
   respondBlockingQuestion: (response: ConductorBlockingQuestionResponse) => void
 }
@@ -158,15 +157,6 @@ export function useConductorSession(sessionId: string | null): ConductorSessionC
     [sessionId],
   )
 
-  const setCanvas = useCallback(
-    (canvas: boolean) => {
-      if (!sessionId) return
-      setState((prev) => (prev ? { ...prev, canvas, error: undefined } : prev))
-      void window.api.agentChat.setCanvas(sessionId, canvas).catch(() => {})
-    },
-    [sessionId],
-  )
-
   const setThinkingLevel = useCallback(
     (thinkingLevel: ThinkingLevel) => {
       if (!sessionId) return
@@ -184,5 +174,5 @@ export function useConductorSession(sessionId: string | null): ConductorSessionC
     [sessionId],
   )
 
-  return { state, transcript, submit, cancel, replaceQueue, setModel, setPlan, setCanvas, setThinkingLevel, respondBlockingQuestion }
+  return { state, transcript, submit, cancel, replaceQueue, setModel, setPlan, setThinkingLevel, respondBlockingQuestion }
 }

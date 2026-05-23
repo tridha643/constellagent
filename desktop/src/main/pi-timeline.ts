@@ -17,6 +17,7 @@ import {
   subagentToolLabel,
 } from "../shared/conductor-subagent-utils";
 import { safeJsonStringify, toJsonSafe } from "../shared/json-safe";
+import { isSkillLoadToolName, skillDisplayFromToolInput } from "../shared/skill-tool-utils";
 
 export interface RunMetrics {
   readonly startedAt: string;
@@ -300,6 +301,10 @@ function clearRunState(
 
 function toolLabel(toolName: string, input: unknown): string {
   const normalized = toolName.toLowerCase()
+  if (isSkillLoadToolName(normalized)) {
+    const { label } = skillDisplayFromToolInput(input)
+    return `Loaded ${label} skill`
+  }
   if (normalized === 'render_json_canvas' || normalized.endsWith('.render_json_canvas')) {
     if (isRecord(input) && typeof input.title === 'string' && input.title.trim()) {
       return `Canvas: ${input.title.trim()}`

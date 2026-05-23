@@ -12,6 +12,8 @@ import { asFileChangeOutput } from './diff-utils'
 import { registerToolEntry, resolveToolEntry } from './resolve-tool-entry'
 import { filesFromTool, isMutateToolName } from './tool-file-change'
 import { JsonCanvasTool, isJsonCanvasToolName } from './JsonCanvasTool'
+import { SkillLoadTool } from './SkillLoadTool'
+import { isSkillLoadToolName } from '../../../../../shared/skill-tool-utils'
 import styles from '../../Conductor.module.css'
 
 const diff = (tool: TimelineToolCall): ReactNode => <DiffTool tool={tool} />
@@ -66,6 +68,10 @@ for (const name of ['grep', 'search', 'ripgrep', 'rg', 'codebase_search', 'find'
 registerToolEntry('web_search', { render: (tool) => <WebSearchTool tool={tool} />, container: 'inline' })
 registerToolEntry('todowrite', { render: (tool) => <TodoTool tool={tool} />, container: 'block' })
 
+for (const name of ['skill', 'load_skill', 'skill_load']) {
+  registerToolEntry(name, { render: (tool) => <SkillLoadTool tool={tool} />, container: 'inline' })
+}
+
 for (const name of ['askquestion', 'ask_question']) {
   registerToolEntry(name, {
     render: (tool) => <CursorFallbackRow tool={tool} />,
@@ -96,6 +102,16 @@ export function ToolPart({ tool }: { tool: TimelineToolCall }) {
         fallback={<div className={styles.activityRow}>Couldn&apos;t render this canvas.</div>}
       >
         <JsonCanvasTool tool={tool} />
+      </ErrorBoundary>
+    )
+  }
+
+  if (isSkillLoadToolName(tool.toolName)) {
+    return (
+      <ErrorBoundary
+        fallback={<div className={styles.activityRow}>Couldn&apos;t render this skill load.</div>}
+      >
+        <SkillLoadTool tool={tool} />
       </ErrorBoundary>
     )
   }
