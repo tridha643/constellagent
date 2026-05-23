@@ -299,6 +299,13 @@ function clearRunState(
 }
 
 function toolLabel(toolName: string, input: unknown): string {
+  const normalized = toolName.toLowerCase()
+  if (normalized === 'render_json_canvas' || normalized.endsWith('.render_json_canvas')) {
+    if (isRecord(input) && typeof input.title === 'string' && input.title.trim()) {
+      return `Canvas: ${input.title.trim()}`
+    }
+    return 'Rendered canvas'
+  }
   const detail = inputLabel(input);
   if (looksLikeSearch(toolName, input)) {
     return detail ? `Searched ${detail}` : `Searched with ${toolName}`;

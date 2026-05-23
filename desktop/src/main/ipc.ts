@@ -1964,6 +1964,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.AGENT_CHAT_SET_PLAN, async (_e, sessionId: string, plan: boolean) =>
     agentChatHost.setPlan(sessionId, plan),
   )
+  ipcMain.handle(IPC.AGENT_CHAT_SET_CANVAS, async (_e, sessionId: string, canvas: boolean) =>
+    agentChatHost.setCanvas(sessionId, canvas),
+  )
   ipcMain.handle(
     IPC.AGENT_CHAT_SET_THINKING_LEVEL,
     async (_e, sessionId: string, thinkingLevel: import('../shared/conductor-thinking').ThinkingLevel) =>

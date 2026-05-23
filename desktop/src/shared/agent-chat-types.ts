@@ -35,6 +35,7 @@ export interface AgentChatSessionState {
   readonly model: string
   readonly thinkingLevel: ThinkingLevel
   readonly plan: boolean
+  readonly canvas: boolean
   readonly status: AgentChatStatus
   readonly runPhase?: AgentChatRunPhase
   readonly blockingQuestion?: ConductorBlockingQuestion | null
@@ -51,6 +52,7 @@ export interface CreateAgentChatSessionInput {
   readonly model: string
   readonly title?: string
   readonly plan?: boolean
+  readonly canvas?: boolean
   readonly thinkingLevel?: ThinkingLevel
 }
 

@@ -36,6 +36,11 @@ import {
   type AgentTurnContext,
 } from './agent-driver'
 import type { ConductorImageAttachment } from '../../shared/conductor-attachments'
+import { renderJsonCanvasOutputSchema } from '../../shared/json-canvas-schema'
+import {
+  syntheticCanvasCallId,
+  tryEmitSyntheticCanvasFromText,
+} from './json-canvas-bridge'
 
 interface CodexSessionState {
   thread: Thread
@@ -47,6 +52,8 @@ interface CodexSessionState {
   webSocketsEnabled: boolean
   readonly emittedByItem: Map<string, string>
   readonly lastToolUpdateByItem: Map<string, { text: string; emittedAt: number }>
+  /** Set when canvas mode successfully emitted a synthetic tool row this turn. */
+  canvasHandled?: boolean
 }
 
 interface CodexContextUsage {
@@ -375,19 +382,24 @@ export class CodexDriver implements AgentDriver {
 
     const thread = state.thread
     state.lastToolUpdateByItem.clear()
+    state.canvasHandled = false
 
     const prompt = buildAgentPrompt(
       ctx.text,
       plan,
       seedTranscript && ctx.previousTranscript?.length ? ctx.previousTranscript : undefined,
       'codex',
+      ctx.canvas,
     )
     const imageInput = await writeCodexImageAttachments(ctx.attachments)
     const input = buildCodexUserInput(prompt, imageInput.inputPaths)
+    const turnOptions = ctx.canvas
+      ? { signal: ctx.signal, outputSchema: renderJsonCanvasOutputSchema() }
+      : { signal: ctx.signal }
 
     try {
       const runStreamedStartedAt = performance.now()
-      const { events } = await thread.runStreamed(input, { signal: ctx.signal })
+      const { events } = await thread.runStreamed(input, turnOptions)
       logMainPerfEvent('codex.runStreamed_ready', performance.now() - runStreamedStartedAt, {
         model: baseModel,
         effort,
@@ -440,6 +452,7 @@ export class CodexDriver implements AgentDriver {
     itemId: string,
     text: string,
   ): void {
+    if (ctx.canvas) return
     const prev = state.emittedByItem.get(itemId) ?? ''
     const { delta, emitted } = computeTextDelta(prev, text)
     if (delta) {
@@ -480,7 +493,21 @@ export class CodexDriver implements AgentDriver {
       case 'item.completed': {
         const item = event.item
         if (item.type === 'agent_message' || item.type === 'reasoning') {
-          this.emitAgentMessageText(ctx, state, item.id, item.text ?? '')
+          if (
+            ctx.canvas &&
+            item.type === 'agent_message' &&
+            event.type === 'item.completed' &&
+            !state.canvasHandled
+          ) {
+            const emitted = tryEmitSyntheticCanvasFromText(
+              ctx,
+              item.text ?? '',
+              syntheticCanvasCallId(ctx.sessionRef, item.id),
+            )
+            if (emitted) state.canvasHandled = true
+          } else {
+            this.emitAgentMessageText(ctx, state, item.id, item.text ?? '')
+          }
           break
         }
         if (item.type === 'todo_list') {

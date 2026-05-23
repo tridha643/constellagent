@@ -270,6 +270,7 @@ export const IPC = {
   AGENT_CHAT_REPLACE_QUEUE: 'agent-chat:replace-queue',
   AGENT_CHAT_SET_MODEL: 'agent-chat:set-model',
   AGENT_CHAT_SET_PLAN: 'agent-chat:set-plan',
+  AGENT_CHAT_SET_CANVAS: 'agent-chat:set-canvas',
   AGENT_CHAT_SET_THINKING_LEVEL: 'agent-chat:set-thinking-level',
   AGENT_CHAT_CANCEL: 'agent-chat:cancel',
   AGENT_CHAT_RESPOND_BLOCKING_QUESTION: 'agent-chat:respond-blocking-question',

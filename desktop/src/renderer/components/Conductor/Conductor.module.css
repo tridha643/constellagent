@@ -3012,3 +3012,133 @@
   opacity: 0.35;
   cursor: default;
 }
+
+.composerInnerCanvas {
+  border-color: color-mix(in srgb, var(--accent-blue, #7eb8b8) 42%, var(--border-subtle));
+}
+
+.composerInnerCanvas.composerInnerPlan::after {
+  opacity: 0.55;
+}
+
+.canvasToggle {
+  flex-shrink: 0;
+}
+
+.jsonCanvasBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-2, #1a1a1a) 88%, transparent);
+}
+
+.jsonCanvasBlockTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.jsonCanvasBlockDescription {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.jsonCanvasCard {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.jsonCanvasCardTitle {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.jsonCanvasCardBody {
+  padding: 10px 12px;
+}
+
+.jsonCanvasStack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jsonCanvasStackSm {
+  gap: 4px;
+}
+
+.jsonCanvasStackLg {
+  gap: 14px;
+}
+
+.jsonCanvasText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.jsonCanvasTextCaption {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.jsonCanvasTextHeading {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.jsonCanvasMetric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.jsonCanvasMetricLabel {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.jsonCanvasMetricValue {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.jsonCanvasBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: color-mix(in srgb, var(--accent-blue, #7eb8b8) 18%, var(--surface-2));
+  color: var(--text-primary);
+}
+
+.jsonCanvasDivider {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 4px 0;
+}
+
+.jsonCanvasError {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent-red, #e07070) 35%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-red, #e07070) 8%, var(--surface-1));
+  font-size: 12px;
+  color: var(--text-secondary);
+}

@@ -11,6 +11,7 @@ import type { ConductorComposerAttachment } from '../../shared/conductor-attachm
 import type { ThinkingLevel } from '../../shared/conductor-thinking'
 import type { TranscriptMessage } from '../../shared/pi/pi-desktop-state'
 import { formatTranscriptForAgentContext } from '../../shared/conductor-transcript-utils'
+import { buildJsonCanvasPromptSuffix } from '../../shared/json-canvas-schema'
 
 export type { AgentProvider }
 
@@ -34,14 +35,20 @@ export const CONDUCTOR_MARKDOWN_FORMAT_PREFIX =
 const CONDUCTOR_CONTEXT_PROMPT_PREFIX =
   'Previous conversation context from this Conductor chat is below. Use it as the authoritative thread history, including any plan the assistant already produced.'
 
-/** Builds the user prompt sent to agent drivers (format hint + optional plan mode/context). */
+/** Builds the user prompt sent to agent drivers (format hint + optional plan/canvas mode/context). */
 export function buildAgentPrompt(
   text: string,
   plan: boolean,
   previousTranscript?: readonly TranscriptMessage[],
   provider?: AgentProvider,
+  canvas = false,
 ): string {
-  const parts = [CONDUCTOR_MARKDOWN_FORMAT_PREFIX]
+  const parts: string[] = []
+  if (canvas && provider) {
+    parts.push(buildJsonCanvasPromptSuffix(provider))
+  } else {
+    parts.push(CONDUCTOR_MARKDOWN_FORMAT_PREFIX)
+  }
   if (plan) {
     parts.push(PLAN_PROMPT_PREFIX)
     if (provider === 'cursor') parts.push(PLAN_PROMPT_CURSOR_ASK)
@@ -65,6 +72,8 @@ export interface AgentTurnContext {
   readonly model: string
   readonly thinkingLevel: ThinkingLevel
   readonly plan: boolean
+  /** When true, drivers request structured canvas JSON instead of markdown prose. */
+  readonly canvas: boolean
   readonly text: string
   readonly attachments?: readonly ConductorComposerAttachment[]
   /** Prior persisted UI transcript for seeding newly-created backend SDK state. */

@@ -103,6 +103,7 @@ export class AgentChatHost {
       model: input.model,
       thinkingLevel: input.thinkingLevel ?? thinkingLevelFromModel(input.model),
       plan: input.plan ?? false,
+      canvas: input.canvas ?? false,
       status: 'idle',
       runPhase: 'idle',
       blockingQuestion: null,
@@ -141,6 +142,7 @@ export class AgentChatHost {
       provider: source.state.provider,
       model: source.state.model,
       plan: source.state.plan,
+      canvas: source.state.canvas,
       thinkingLevel: source.state.thinkingLevel,
       title,
     })
@@ -305,6 +307,7 @@ export class AgentChatHost {
         model: state.model,
         thinkingLevel: state.thinkingLevel,
         plan: state.plan,
+        canvas: state.canvas,
         text: promptText,
         attachments: normalizedAttachments,
         previousTranscript,
@@ -356,6 +359,11 @@ export class AgentChatHost {
   async setPlan(sessionId: string, plan: boolean): Promise<void> {
     await this.ensureSession(sessionId)
     this.update(sessionId, { plan, error: undefined })
+  }
+
+  async setCanvas(sessionId: string, canvas: boolean): Promise<void> {
+    await this.ensureSession(sessionId)
+    this.update(sessionId, { canvas, error: undefined })
   }
 
   async setThinkingLevel(sessionId: string, thinkingLevel: AgentChatSessionState['thinkingLevel']): Promise<void> {
@@ -635,7 +643,7 @@ export class AgentChatHost {
     const model = speedSuffix ? `${base}-fast` : base
     const thinkingLevel =
       inferred !== 'medium' ? inferred : normalizeThinkingLevel(stored.thinkingLevel)
-    return { ...stored, model, thinkingLevel, queuedMessages: stored.queuedMessages ?? [], runPhase: stored.runPhase ?? 'idle', blockingQuestion: stored.blockingQuestion ?? null }
+    return { ...stored, model, thinkingLevel, canvas: stored.canvas ?? false, queuedMessages: stored.queuedMessages ?? [], runPhase: stored.runPhase ?? 'idle', blockingQuestion: stored.blockingQuestion ?? null }
   }
 
   private async rehydrate(sessionId: string): Promise<AgentChatSessionState | null> {

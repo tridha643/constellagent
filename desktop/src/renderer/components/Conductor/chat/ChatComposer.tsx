@@ -7,7 +7,7 @@ import { normalizeThinkingLevel, isReasoningEffortActive, type ThinkingLevel } f
 import { ChatModelSelector } from './ChatModelSelector'
 import { EffortPill } from './EffortPill'
 import { FastToggle } from './FastToggle'
-import { ComposerSendIcon, ComposerStopIcon, PlanMapIcon } from './ConductorIcons'
+import { ComposerSendIcon, ComposerStopIcon, CanvasGridIcon, PlanMapIcon } from './ConductorIcons'
 import { ConductorMessageQueue } from './ConductorMessageQueue'
 import {
   ContextUsageHover,
@@ -32,6 +32,7 @@ export function ChatComposer({
   model,
   thinkingLevel,
   plan,
+  canvas,
   running,
   disabled,
   queuedMessages,
@@ -42,6 +43,7 @@ export function ChatComposer({
   onSetThinkingLevel,
   onToggleFast,
   onSetPlan,
+  onSetCanvas,
   onHistoryUp,
   composerRef,
   sessionId,
@@ -50,6 +52,7 @@ export function ChatComposer({
   model: string
   thinkingLevel: ThinkingLevel
   plan: boolean
+  canvas: boolean
   running: boolean
   disabled?: boolean
   queuedMessages: readonly QueuedAgentMessage[]
@@ -64,6 +67,7 @@ export function ChatComposer({
   onSetThinkingLevel: (level: ThinkingLevel) => void
   onToggleFast: (fast: boolean) => void
   onSetPlan: (plan: boolean) => void
+  onSetCanvas: (canvas: boolean) => void
   onHistoryUp: () => void
   composerRef?: React.RefObject<ChatComposerHandle | null>
   sessionId: string | null
@@ -96,6 +100,7 @@ export function ChatComposer({
   const composerInnerClass = [
     styles.composerInner,
     plan ? styles.composerInnerPlan : '',
+    canvas ? styles.composerInnerCanvas : '',
     reasoningActive ? styles.composerInnerReasoning : '',
     dragActive ? styles.composerInnerDragActive : '',
   ]
@@ -265,6 +270,7 @@ export function ChatComposer({
         className={composerInnerClass}
         ref={composerInnerRef}
         data-plan={plan ? 'true' : undefined}
+        data-canvas={canvas ? 'true' : undefined}
         data-reasoning={reasoningActive ? effortLevel : undefined}
         {...dragHandlers}
       >
@@ -389,6 +395,25 @@ export function ChatComposer({
             {showEffort ? (
               <EffortPill provider={provider} level={effortLevel} onChange={onSetThinkingLevel} />
             ) : null}
+            <button
+              type="button"
+              className={[
+                styles.composerChip,
+                canvas ? styles.composerChipWarm : styles.composerChipNeutral,
+                styles.canvasToggle,
+                canvas ? '' : styles.planToggleIconOnly,
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              aria-pressed={canvas}
+              data-canvas-active={canvas ? 'true' : undefined}
+              title={canvas ? 'Canvas mode on' : 'Canvas mode — structured visual output'}
+              aria-label={canvas ? 'Canvas mode on. Click to disable.' : 'Enable canvas mode'}
+              onClick={() => onSetCanvas(!canvas)}
+            >
+              <CanvasGridIcon />
+              {canvas ? 'Canvas' : null}
+            </button>
             <button
               type="button"
               className={[
