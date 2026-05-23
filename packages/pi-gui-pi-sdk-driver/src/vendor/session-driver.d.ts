@@ -127,6 +127,7 @@ declare module "@pi-gui/session-driver" {
     readonly callId: string;
     readonly text?: string;
     readonly progress?: number;
+    readonly output?: unknown;
   }
 
   export interface ToolFinishedEvent extends SessionEventBase {

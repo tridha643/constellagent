@@ -24,6 +24,7 @@ import { MarkdownBody } from './MarkdownBody'
 import { TurnSummary } from './TurnSummary'
 import { SubagentCallCard } from './SubagentCallCard'
 import { ToolPart } from './tools/tool-registry'
+import { isJsonCanvasToolName } from '../../../../shared/json-canvas-schema'
 import { turnHasFileTools, turnHasTodoTools } from './tools/turn-tool-flags'
 import { TurnHistoryRail, type TurnHistoryRailHandle } from './TurnHistoryRail'
 import { getLatestPlanApprovalMessageId } from './plan-approval'
@@ -76,7 +77,30 @@ function isHiddenTranscriptItem(item: TranscriptMessage): boolean {
 }
 
 function isCollapsibleTool(item: TranscriptMessage): boolean {
-  return item.kind === 'tool' && !isSubagentToolCall(item)
+  return item.kind === 'tool' && !isSubagentToolCall(item) && !isJsonCanvasToolName(item.toolName)
+}
+
+function partitionCanvasTools(tools: readonly TimelineToolCall[]): {
+  canvasTools: TimelineToolCall[]
+  otherTools: TimelineToolCall[]
+} {
+  const canvasTools: TimelineToolCall[] = []
+  const otherTools: TimelineToolCall[] = []
+  for (const tool of tools) {
+    if (isJsonCanvasToolName(tool.toolName)) {
+      canvasTools.push(tool)
+    } else {
+      otherTools.push(tool)
+    }
+  }
+  return { canvasTools, otherTools }
+}
+
+function isVisibleTurnToolRow(item: TranscriptMessage, running: boolean): boolean {
+  if (item.kind !== 'tool' || isSubagentToolCall(item)) return true
+  if (isJsonCanvasToolName(item.toolName)) return true
+  if (!running) return true
+  return item.status !== 'running'
 }
 
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
@@ -308,16 +332,21 @@ export const ChatTimeline = forwardRef<
     return tools
   }, [transcript, lastUserIndex])
 
+  const tickerTurnTools = useMemo(
+    () => currentTurnTools.filter((tool) => !isJsonCanvasToolName(tool.toolName)),
+    [currentTurnTools],
+  )
+
   const currentTurnToolIds = useMemo(
     () => new Set(currentTurnTools.map((tool) => tool.id)),
     [currentTurnTools],
   )
   const tickerCompleted = useMemo(
-    () => currentTurnTools.filter((tool) => tool.status !== 'running'),
-    [currentTurnTools],
+    () => tickerTurnTools.filter((tool) => tool.status !== 'running'),
+    [tickerTurnTools],
   )
-  const runningLabel = currentTurnTools.find((tool) => tool.status === 'running')?.label
-  const runningTool = currentTurnTools.find((tool) => tool.status === 'running')
+  const runningLabel = tickerTurnTools.find((tool) => tool.status === 'running')?.label
+  const runningTool = tickerTurnTools.find((tool) => tool.status === 'running')
   // Collapse a completed turn's TOOL rows behind a disclosure — never its
   // messages. Assistant/user prose always stays visible (collapsing it would
   // hide earlier answers).
@@ -326,8 +355,6 @@ export const ChatTimeline = forwardRef<
     const n = transcript.length
     let i = 0
     const isUser = (item: TranscriptMessage) => item.kind === 'message' && item.role === 'user'
-    const isCollapsibleTool = (item: TranscriptMessage): item is TimelineToolCall =>
-      item.kind === 'tool' && !isSubagentToolCall(item)
 
     while (i < n && !isUser(transcript[i])) {
       result.push({ type: 'item', item: transcript[i] })
@@ -346,26 +373,27 @@ export const ChatTimeline = forwardRef<
       const { items: bodyItems, workingActivity } = partitionTurnBody(body)
       const isLatestTurn = i >= n
       const { assistants, rest: nonAssistantBody } = splitTurnAssistants(bodyItems)
-      const visibleNonAssistantBody =
-        isLatestTurn && running
-          ? nonAssistantBody.filter(
-              (item) =>
-                !isCollapsibleTool(item) ||
-                (item.kind === 'tool' && item.status !== 'running'),
-            )
-          : nonAssistantBody
-      const toolRows = visibleNonAssistantBody.filter(isCollapsibleTool)
-      const otherBody = visibleNonAssistantBody.filter((item) => !isCollapsibleTool(item))
+      const visibleNonAssistantBody = isLatestTurn
+        ? nonAssistantBody.filter((item) => isVisibleTurnToolRow(item, running))
+        : nonAssistantBody
+      const toolRows = visibleNonAssistantBody.filter(
+        (item): item is TimelineToolCall => item.kind === 'tool' && !isSubagentToolCall(item),
+      )
+      const { canvasTools, otherTools } = partitionCanvasTools(toolRows)
+      const otherBody = visibleNonAssistantBody.filter(
+        (item) =>
+          item.kind !== 'tool' ||
+          isSubagentToolCall(item) ||
+          isJsonCanvasToolName(item.toolName),
+      )
       const messageCount = assistants.length
       const pushPlain = (item: TranscriptMessage) => result.push({ type: 'item', item })
-      // Completed non-subagent tool rows collapse by default, including the
-      // latest completed turn. Running tools stay in the live ticker.
-      const shouldCollapseTurn = toolRows.length > 0
+      const shouldCollapseTurn = otherTools.length > 0
       if (shouldCollapseTurn) {
         result.push({
           type: 'turnGroup',
           key: `${userItem.id}:group`,
-          items: toolRows,
+          items: otherTools,
           toolCount: toolRows.length,
           messageCount,
           failedToolCount: toolRows.filter((tool) => tool.status === 'error').length,
@@ -374,10 +402,14 @@ export const ChatTimeline = forwardRef<
         })
         pushTurnAssistantGroup(result, assistants, userItem.id, [], pushPlain)
       } else {
-        pushTurnAssistantGroup(result, assistants, userItem.id, toolRows, pushPlain)
+        pushTurnAssistantGroup(result, assistants, userItem.id, otherTools, pushPlain)
       }
       for (const item of otherBody) {
+        if (item.kind === 'tool' && isJsonCanvasToolName(item.toolName)) continue
         pushPlain(item)
+      }
+      for (const canvas of canvasTools) {
+        pushPlain(canvas)
       }
       for (const activity of workingActivity) {
         pushPlain(activity)
@@ -555,7 +587,7 @@ export const ChatTimeline = forwardRef<
           return <ToolPart tool={item} />
         case 'activity':
           if (item.label === WORKING_LABEL) {
-            return currentTurnTools.length > 0 ? (
+            return tickerTurnTools.length > 0 ? (
               <ActivityTicker
                 items={tickerCompleted}
                 activeTool={runningTool}
@@ -593,6 +625,7 @@ export const ChatTimeline = forwardRef<
       thinkingLevel,
       runningSubagentIndexById,
       currentTurnTools.length,
+      tickerTurnTools.length,
       tickerCompleted,
       running,
       runStartedAt,
@@ -608,7 +641,8 @@ export const ChatTimeline = forwardRef<
         item.kind === 'tool' &&
         running &&
         item.status === 'running' &&
-        currentTurnToolIds.has(item.id)
+        currentTurnToolIds.has(item.id) &&
+        !isJsonCanvasToolName(item.toolName)
       ) {
         return null
       }

@@ -18,6 +18,7 @@ import {
 } from "../shared/conductor-subagent-utils";
 import { safeJsonStringify, toJsonSafe } from "../shared/json-safe";
 import { isSkillLoadToolName, skillDisplayFromToolInput } from "../shared/skill-tool-utils";
+import { RENDER_JSON_CANVAS_TOOL_NAME } from "../shared/json-canvas-schema";
 
 export interface RunMetrics {
   readonly startedAt: string;
@@ -165,9 +166,23 @@ export function applyTimelineEvent(
       }
       break;
     }
-    case "toolUpdated":
-      upsertToolRow(transcript, event.callId, undefined, "running", undefined, event.text ?? progressLabel(event.progress));
-      break;
+    case "toolUpdated": {
+      const canvasLabel =
+        event.output !== undefined && isRecord(event.output) && typeof event.output.title === 'string'
+          ? toolLabel(RENDER_JSON_CANVAS_TOOL_NAME, event.output)
+          : undefined
+      upsertToolRow(
+        transcript,
+        event.callId,
+        undefined,
+        "running",
+        canvasLabel,
+        event.text ?? progressLabel(event.progress),
+        event.output,
+        event.output,
+      )
+      break
+    }
     case "toolFinished": {
       const existing = transcript.find(
         (item) => item.kind === "tool" && item.callId === event.callId,

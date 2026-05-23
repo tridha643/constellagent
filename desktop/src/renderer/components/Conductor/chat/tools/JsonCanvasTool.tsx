@@ -1,10 +1,15 @@
 import type { TimelineToolCall } from '../../../../../shared/pi/timeline-types'
-import { normalizeCanvasOutput } from '../../../../../shared/json-canvas-schema'
+import {
+  isJsonCanvasToolName,
+  normalizeCanvasOutput,
+} from '../../../../../shared/json-canvas-schema'
 import { JsonCanvasBlock } from '../JsonCanvasBlock'
 import styles from '../../Conductor.module.css'
 
+export { isJsonCanvasToolName }
+
 function paramsFromTool(tool: TimelineToolCall) {
-  return normalizeCanvasOutput(tool.input) ?? normalizeCanvasOutput(tool.output)
+  return normalizeCanvasOutput(tool.output) ?? normalizeCanvasOutput(tool.input)
 }
 
 function canvasErrorDetail(tool: TimelineToolCall): string {
@@ -34,7 +39,16 @@ function canvasErrorDetail(tool: TimelineToolCall): string {
 
 export function JsonCanvasTool({ tool }: { tool: TimelineToolCall }) {
   const params = paramsFromTool(tool)
+  const streaming = tool.status === 'running'
+
   if (!params) {
+    if (streaming) {
+      return (
+        <div className={styles.jsonCanvasBlock} data-testid="json-canvas-loading">
+          <div className={styles.jsonCanvasBlockTitle}>Building canvas…</div>
+        </div>
+      )
+    }
     return (
       <div className={styles.jsonCanvasError} data-testid="json-canvas-error">
         Could not render canvas — {canvasErrorDetail(tool)}
@@ -43,11 +57,11 @@ export function JsonCanvasTool({ tool }: { tool: TimelineToolCall }) {
   }
 
   return (
-    <JsonCanvasBlock title={params.title} description={params.description} canvas={params.canvas} />
+    <JsonCanvasBlock
+      title={params.title}
+      description={params.description}
+      canvas={params.canvas}
+      streaming={streaming}
+    />
   )
-}
-
-export function isJsonCanvasToolName(toolName: string): boolean {
-  const normalized = toolName.toLowerCase()
-  return normalized === 'render_json_canvas' || normalized.endsWith('.render_json_canvas')
 }

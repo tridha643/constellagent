@@ -11,17 +11,22 @@ import type { ConductorComposerAttachment } from '../../shared/conductor-attachm
 import type { ThinkingLevel } from '../../shared/conductor-thinking'
 import type { TranscriptMessage } from '../../shared/pi/pi-desktop-state'
 import { formatTranscriptForAgentContext } from '../../shared/conductor-transcript-utils'
+import { AGENT_PLAN_DIRS_LABEL } from '../../shared/agent-plan-path'
 import { buildJsonCanvasPromptSuffix } from '../../shared/json-canvas-schema'
 
 export type { AgentProvider }
 
 /**
  * Instruction prepended to the user's prompt when the composer Plan toggle is
- * on. Codex additionally runs in a read-only sandbox for plan turns; working turns use
- * danger-full-access with approvalPolicy never (see conductor-sdk-cli-permissions.ts).
+ * on. Codex plan turns use CODEX_PLAN_THREAD_PERMISSIONS (workspace-write + network);
+ * working turns use CODEX_WORKING_THREAD_PERMISSIONS (fully unrestricted).
  */
-export const PLAN_PROMPT_PREFIX =
-  'Operate in planning mode. Think through the problem and produce a clear, step-by-step implementation plan before changing anything. Do not edit files or run mutating commands in this turn — outline the plan only.'
+export const PLAN_PROMPT_PREFIX = [
+  'Operate in planning mode. Investigate freely with read-only tools, shell commands, MCP tools, and network CLIs (e.g. nia sources summary, nia search query, gh issue view, git log, curl, npm view).',
+  `You may create or edit markdown plan files only under these workspace directories: ${AGENT_PLAN_DIRS_LABEL}.`,
+  'Do not edit, create, delete, or rename any other workspace paths. Do not run mutating package manager, git, deploy, or index commands unless they are strictly read-only.',
+  'Produce a clear step-by-step implementation plan before implementing anything outside those plan directories.',
+].join(' ')
 
 export const PLAN_PROMPT_CURSOR_ASK =
   'When important scope or behavior is still unclear, use the native AskQuestion tool to ask 3-4 strong multiple-choice questions first (2-4 options each, include tradeoffs, mark a recommended default when confident).'
@@ -119,8 +124,13 @@ export function evToolStarted(
   return { type: 'toolStarted', sessionRef, timestamp: now(), callId, toolName, input }
 }
 
-export function evToolUpdated(sessionRef: SessionRef, callId: string, text?: string): ToolUpdatedEvent {
-  return { type: 'toolUpdated', sessionRef, timestamp: now(), callId, text }
+export function evToolUpdated(
+  sessionRef: SessionRef,
+  callId: string,
+  text?: string,
+  output?: unknown,
+): ToolUpdatedEvent {
+  return { type: 'toolUpdated', sessionRef, timestamp: now(), callId, text, output }
 }
 
 export function evToolFinished(
