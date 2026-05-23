@@ -26,6 +26,7 @@ import { SubagentCallCard } from './SubagentCallCard'
 import { ToolPart } from './tools/tool-registry'
 import { turnHasFileTools, turnHasTodoTools } from './tools/turn-tool-flags'
 import { TurnHistoryRail, type TurnHistoryRailHandle } from './TurnHistoryRail'
+import { getLatestPlanApprovalMessageId } from './plan-approval'
 
 const WORKING_LABEL = 'Working…'
 const STOPPED_LABEL = 'Stopped'
@@ -200,6 +201,8 @@ export const ChatTimeline = forwardRef<
     onSelectHistoryTurn?: (messageId: string, refillComposer: boolean) => void
     onFork?: (messageId: string) => void
     forkDisabled?: boolean
+    onApprovePlan?: (messageId: string) => void
+    approveDisabled?: boolean
     provider?: AgentProvider
     model?: string
     thinkingLevel?: ThinkingLevel
@@ -213,6 +216,8 @@ export const ChatTimeline = forwardRef<
     onSelectHistoryTurn,
     onFork,
     forkDisabled,
+    onApprovePlan,
+    approveDisabled,
     provider,
     model,
     thinkingLevel,
@@ -269,6 +274,10 @@ export const ChatTimeline = forwardRef<
   )
 
   const durationByMessageId = useMemo(() => buildTurnDurationMap(transcript), [transcript])
+  const latestPlanApprovalMessageId = useMemo(
+    () => (planActive && !running ? getLatestPlanApprovalMessageId(transcript) : null),
+    [planActive, running, transcript],
+  )
 
   const runningSubagentIndexById = useMemo(() => {
     const map = new Map<string, number>()
@@ -490,6 +499,15 @@ export const ChatTimeline = forwardRef<
             options?.showFooter === false || message.role !== 'assistant' ? undefined : onFork
           }
           forkDisabled={forkDisabled}
+          onApprovePlan={
+            options?.showFooter === false ||
+            message.role !== 'assistant' ||
+            message.id !== latestPlanApprovalMessageId
+              ? undefined
+              : onApprovePlan
+          }
+          approveDisabled={approveDisabled}
+          showApprove={message.id === latestPlanApprovalMessageId}
           durationLabel={
             options?.showFooter === false || message.role !== 'assistant'
               ? undefined
@@ -509,6 +527,9 @@ export const ChatTimeline = forwardRef<
       highlightMessageId,
       onFork,
       forkDisabled,
+      onApprovePlan,
+      approveDisabled,
+      latestPlanApprovalMessageId,
       durationByMessageId,
       running,
     ],

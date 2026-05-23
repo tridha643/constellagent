@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import {
   CONDUCTOR_PROVIDER_LABELS,
@@ -20,6 +20,7 @@ import {
 import type { Tab } from '../../store/types'
 import { ChatTimeline, type ChatTimelineHandle } from './chat/ChatTimeline'
 import { ChatComposer, type ChatComposerHandle } from './chat/ChatComposer'
+import { APPROVE_PLAN_MESSAGE, getLatestPlanApprovalMessageId } from './chat/plan-approval'
 import { ConductorAskQuestionModal } from './chat/ConductorAskQuestionModal'
 import { useConductorSession } from './use-agent-chat'
 import {
@@ -87,6 +88,7 @@ export function ConductorChatView({
   const [cursorLoginStarted, setCursorLoginStarted] = useState(false)
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
   const [forking, setForking] = useState(false)
+  const [approvingPlan, setApprovingPlan] = useState(false)
   const composerRef = useRef<ChatComposerHandle | null>(null)
   const timelineRef = useRef<ChatTimelineHandle | null>(null)
 
@@ -117,6 +119,10 @@ export function ConductorChatView({
   const running = controller.state?.status === 'running'
   const awaitingUser = controller.state?.runPhase === 'awaitingUser'
   const blockingQuestion = controller.state?.blockingQuestion ?? null
+  const latestPlanApprovalMessageId = useMemo(
+    () => (plan && !running ? getLatestPlanApprovalMessageId(controller.transcript) : null),
+    [plan, running, controller.transcript],
+  )
 
   useEffect(() => {
     if (running) {
@@ -292,6 +298,41 @@ export function ConductorChatView({
     }
   }
 
+  const handleApprovePlan = useCallback(
+    async (messageId: string) => {
+      if (!agentSessionId || running || approvingPlan) return
+      if (messageId !== latestPlanApprovalMessageId) return
+      setSubmitError(null)
+      setApprovingPlan(true)
+      try {
+        await window.api.agentChat.submit(agentSessionId, APPROVE_PLAN_MESSAGE)
+        composerRef.current?.focus()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        setSubmitError(formatChatError(message))
+      } finally {
+        setApprovingPlan(false)
+      }
+    },
+    [agentSessionId, running, approvingPlan, latestPlanApprovalMessageId, formatChatError],
+  )
+
+  useEffect(() => {
+    if (!active || !latestPlanApprovalMessageId || running || approvingPlan) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || !e.metaKey || !e.shiftKey || e.defaultPrevented) return
+      const target = e.target
+      if (target instanceof Element) {
+        if (target.closest('[role="listbox"], [role="dialog"]')) return
+        if (target.closest('[data-conductor-context-panel]')) return
+      }
+      e.preventDefault()
+      void handleApprovePlan(latestPlanApprovalMessageId)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [active, latestPlanApprovalMessageId, running, approvingPlan, handleApprovePlan])
+
   const handleSelectHistoryTurn = (messageId: string, refillComposer: boolean) => {
     timelineRef.current?.scrollToMessage(messageId)
     if (refillComposer) {
@@ -319,6 +360,8 @@ export function ConductorChatView({
         onSelectHistoryTurn={handleSelectHistoryTurn}
         onFork={handleForkFromMessage}
         forkDisabled={forking}
+        onApprovePlan={handleApprovePlan}
+        approveDisabled={running || approvingPlan}
         provider={provider}
         model={model}
         thinkingLevel={thinkingLevel}

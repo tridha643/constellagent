@@ -59,8 +59,12 @@ async function openConductorTab(window: Page): Promise<void> {
 }
 
 /** Creates a Conductor session for the active workspace and opens a bound conductor tab. */
-async function createAndSelectSession(window: Page, title: string): Promise<string> {
-  return await window.evaluate(async (sessionTitle: string) => {
+async function createAndSelectSession(
+  window: Page,
+  title: string,
+  options?: { plan?: boolean },
+): Promise<string> {
+  return await window.evaluate(async ({ sessionTitle, plan }: { sessionTitle: string; plan?: boolean }) => {
     const store = (window as unknown as { __store: { getState: () => any } }).__store.getState()
     const wsId = store.activeWorkspaceId
     const ws = store.workspaces.find((w: any) => w.id === wsId)
@@ -71,10 +75,11 @@ async function createAndSelectSession(window: Page, title: string): Promise<stri
       provider: 'codex',
       model: 'gpt-5-codex',
       title: sessionTitle,
+      plan,
     })
     store.openConductorSessionTab(created.sessionId, sessionTitle)
     return created.sessionId
-  }, title)
+  }, { sessionTitle: title, plan: options?.plan })
 }
 
 /** Pushes a crafted transcript to the renderer through the same IPC channel the host uses. */
@@ -594,6 +599,84 @@ test.describe('Conductor chat view', () => {
     await expect(firstBox).not.toBeChecked()
     await firstBox.click({ force: true })
     await expect(firstBox).toBeChecked()
+  })
+
+  test('shows and submits the plan approval footer only for completed plan messages', async () => {
+    const repoPath = createTestRepo('conductor-plan-approval')
+    await setupWorkspace(window, repoPath)
+
+    const nonPlanSessionId = await createAndSelectSession(window, `non-plan-${Date.now()}`)
+    await injectTranscript(app, nonPlanSessionId, [
+      { kind: 'message', id: 'np-u1', role: 'user', text: 'answer directly', createdAt: nowIso() },
+      { kind: 'message', id: 'np-a1', role: 'assistant', text: 'Direct answer.', createdAt: nowIso() },
+    ])
+    await expect(window.getByText('Direct answer.')).toBeVisible({ timeout: 5000 })
+    await expect(window.getByRole('button', { name: 'Approve plan and continue' })).toHaveCount(0)
+
+    const planSessionId = await createAndSelectSession(window, `plan-approval-${Date.now()}`, {
+      plan: true,
+    })
+    await injectTranscript(app, planSessionId, [
+      { kind: 'message', id: 'p-u1', role: 'user', text: 'make a plan', createdAt: nowIso() },
+      {
+        kind: 'message',
+        id: 'p-a1',
+        role: 'assistant',
+        text: '## Plan\n- [ ] First step',
+        createdAt: nowIso(),
+      },
+    ])
+
+    await expect(window.getByRole('button', { name: 'Copy message' })).toBeVisible({ timeout: 5000 })
+    await expect(window.getByRole('button', { name: 'Hand off from here' })).toBeVisible()
+    const approve = window.getByRole('button', { name: 'Approve plan and continue' })
+    await expect(approve).toBeVisible()
+    await expect(approve).toContainText('Approve')
+    await expect(approve).toContainText('⌘⇧↵')
+
+    const session = await window.evaluate(async (sid: string) => {
+      return await (
+        window as unknown as { api: { agentChat: { getSession: (id: string) => Promise<{ state: Record<string, unknown> } | null> } } }
+      ).api.agentChat.getSession(sid)
+    }, planSessionId)
+    expect(session?.state).toBeTruthy()
+    await app.evaluate(
+      ({ BrowserWindow }, { state }) => {
+        const payload = { ...state, status: 'running' }
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('agent-chat:state-changed', payload)
+        }
+      },
+      { state: session!.state },
+    )
+    await expect(approve).toHaveCount(0)
+    await app.evaluate(
+      ({ BrowserWindow }, { state }) => {
+        const payload = { ...state, status: 'idle' }
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('agent-chat:state-changed', payload)
+        }
+      },
+      { state: session!.state },
+    )
+    await expect(approve).toBeVisible({ timeout: 5000 })
+
+    await approve.click()
+    await expect
+      .poll(async () =>
+        window.evaluate(async (sid: string) => {
+          const sessionAfterSubmit = await (
+            window as unknown as { api: { agentChat: { getSession: (id: string) => Promise<{ transcript: Array<{ kind: string; role?: string; text?: string }> } | null> } } }
+          ).api.agentChat.getSession(sid)
+          return sessionAfterSubmit?.transcript.some(
+            (item) =>
+              item.kind === 'message' &&
+              item.role === 'user' &&
+              item.text === 'Approved. Please proceed with implementation.',
+          )
+        }, planSessionId),
+      )
+      .toBe(true)
   })
 
   test('renders the live activity ticker for the active turn', async () => {

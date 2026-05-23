@@ -21,6 +21,9 @@ export function ChatMessage({
   highlighted,
   onFork,
   forkDisabled,
+  onApprovePlan,
+  approveDisabled,
+  showApprove,
   durationLabel,
   hideRole,
   isSegment,
@@ -35,6 +38,9 @@ export function ChatMessage({
   highlighted?: boolean
   onFork?: (messageId: string) => void
   forkDisabled?: boolean
+  onApprovePlan?: (messageId: string) => void
+  approveDisabled?: boolean
+  showApprove?: boolean
   durationLabel?: string
   /** Hide the role label — used for continuation segments in a grouped assistant turn. */
   hideRole?: boolean
@@ -61,7 +67,11 @@ export function ChatMessage({
   const showBraille =
     !isUser && isStreaming && message.text.trim().length === 0 && !suppressIdleLoader
   const showFooter =
-    !isUser && !isStreaming && !showBraille && message.text.trim().length > 0 && onFork
+    !isUser &&
+    !isStreaming &&
+    !showBraille &&
+    message.text.trim().length > 0 &&
+    (onFork || onApprovePlan)
   const imageAttachments =
     message.attachments?.filter((attachment) => attachment.kind === 'image') ?? []
 
@@ -140,8 +150,11 @@ export function ChatMessage({
           {showFooter ? (
             <MessageFooter
               copyText={message.text}
-              onFork={() => onFork(message.id)}
+              onFork={onFork ? () => onFork(message.id) : undefined}
               forkDisabled={forkDisabled}
+              showApprove={showApprove}
+              onApprovePlan={onApprovePlan ? () => onApprovePlan(message.id) : undefined}
+              approveDisabled={approveDisabled}
               durationLabel={durationLabel}
             />
           ) : null}
