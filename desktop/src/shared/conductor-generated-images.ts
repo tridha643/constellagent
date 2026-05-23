@@ -133,12 +133,12 @@ export function extractImagePathsFromText(text: string): string[] {
 export function looksLikeGeneratedImageCompletionText(text: string): boolean {
   const normalized = text.trim()
   if (!normalized) return false
-  if (/\bimagegen\b/i.test(normalized)) return true
-  if (/\busing the [`"']?imagegen[`"']? skill\b/i.test(normalized)) return true
-  if (/\bgenerated\b[\s\S]{0,120}\bimage\b/i.test(normalized)) return true
-  if (/\bcreated\b[\s\S]{0,120}\bimage\b/i.test(normalized)) return true
-  if (extractImagePathsFromText(normalized).length > 0) return true
-  return false
+  return invokesImagegenSkill(normalized)
+}
+
+/** True only when the Codex imagegen skill/tool is part of the turn context. */
+export function invokesImagegenSkill(text: string): boolean {
+  return /\bimage[_-]?gen\b/i.test(text) || /\busing the [`"']?imagegen[`"']? skill\b/i.test(text)
 }
 
 function transcriptFieldText(value: unknown): string {
@@ -173,7 +173,7 @@ export function turnTranscriptText(items: readonly { kind: string; text?: string
 export function hasRenderableGeneratedImageOutput(output: unknown): boolean {
   const normalized = normalizeConductorGeneratedImageOutput(output)
   if (!normalized) return false
-  return normalized.images.some((image) => Boolean(image.data?.length || image.filePath))
+  return normalized.images.some((image) => Boolean(image.data?.length || renderableFilePath(image.filePath)))
 }
 
 export function extractConductorGeneratedImages(
@@ -418,6 +418,11 @@ function fileNameFromPath(filePath: string | undefined): string | undefined {
 
 function normalizeToolName(toolName: string): string {
   return toolName.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function renderableFilePath(filePath: string | undefined): boolean {
+  if (!filePath) return false
+  return /^file:/i.test(filePath) || filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath)
 }
 
 function hashString(value: string): string {

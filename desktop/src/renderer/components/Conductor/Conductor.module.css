@@ -342,6 +342,28 @@
   padding: 1px 0;
 }
 
+.turnFileChips {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.turnFileChipsCompact {
+  margin-top: 0;
+  gap: 6px;
+}
+
+.turnFileChipRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .turnSummaryEdge {
   box-sizing: border-box;
   width: 100%;
@@ -1630,10 +1652,13 @@
 /* model selector */
 .modelSelector {
   position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
 .modelButton {
   /* chip look applied via composerChip + composerChipNeutral in JSX */
+  width: fit-content;
 }
 
 .modelButton svg {
@@ -1643,6 +1668,8 @@
 }
 
 .modelButtonLabel {
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2353,7 +2380,7 @@
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2361,7 +2388,6 @@
 .diffStatBadgeDel {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
   padding: 1px 6px;
   border-radius: 6px;
   font-size: 11px;

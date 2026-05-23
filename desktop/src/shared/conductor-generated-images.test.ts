@@ -103,14 +103,15 @@ describe('extractConductorGeneratedImages', () => {
 })
 
 describe('looksLikeGeneratedImageCompletionText', () => {
-  test('detects codex imagegen completion prose without a file path', () => {
-    expect(looksLikeGeneratedImageCompletionText('Generated a simple notebook image.')).toBe(true)
+  test('only detects codex imagegen completion prose', () => {
+    expect(looksLikeGeneratedImageCompletionText('Generated a simple notebook image.')).toBe(false)
     expect(looksLikeGeneratedImageCompletionText('Using the `imagegen` skill because this is a raster request.')).toBe(
       true,
     )
     expect(looksLikeGeneratedImageCompletionText("I'll use the `imagegen` skill since this is a raster image generation request.")).toBe(
       true,
     )
+    expect(looksLikeGeneratedImageCompletionText('Saved as screenshot.png')).toBe(false)
     expect(looksLikeGeneratedImageCompletionText('Read src/utils.ts')).toBe(false)
   })
 })
@@ -140,6 +141,12 @@ describe('hasRenderableGeneratedImageOutput', () => {
         images: [{ kind: 'generatedImage', id: 'a', mimeType: 'image/png', filePath: '/tmp/a.png' }],
       }),
     ).toBe(true)
+    expect(
+      hasRenderableGeneratedImageOutput({
+        kind: 'generatedImages',
+        images: [{ kind: 'generatedImage', id: 'a', mimeType: 'image/png', filePath: 'screenshot.png' }],
+      }),
+    ).toBe(false)
     expect(hasRenderableGeneratedImageOutput({ kind: 'generatedImages', images: [] })).toBe(false)
   })
 })

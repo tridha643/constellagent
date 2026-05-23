@@ -7,12 +7,11 @@ type CodexConductorThreadPermissions = Pick<
 >
 
 /**
- * Plan toggle ON — workspace-write + network (Codex SDK maps `networkAccessEnabled` to
- * `sandbox_workspace_write.network_access` only; read-only ignores it and blocks CLIs like nia).
- * Non-plan file edits are blocked by PLAN_PROMPT_PREFIX (only agent plan dirs are writable).
+ * Plan toggle ON — read-only. Plans are rendered in Conductor chat and no files
+ * should be written for plan-mode turns.
  */
 export const CODEX_PLAN_THREAD_PERMISSIONS = {
-  sandboxMode: 'workspace-write' satisfies SandboxMode,
+  sandboxMode: 'read-only' satisfies SandboxMode,
   networkAccessEnabled: true,
   approvalPolicy: 'never' satisfies ApprovalMode,
 } satisfies CodexConductorThreadPermissions
@@ -29,9 +28,9 @@ export function codexConductorThreadPermissions(plan: boolean): CodexConductorTh
   return plan ? CODEX_PLAN_THREAD_PERMISSIONS : CODEX_WORKING_THREAD_PERMISSIONS
 }
 
-/** Cursor plan — sandbox off so network CLIs work; file scope enforced via PLAN_PROMPT_PREFIX. */
+/** Cursor plan — enable local sandbox so plan-mode turns cannot write workspace files. */
 export const CURSOR_PLAN_LOCAL_PERMISSIONS = {
-  sandboxOptions: { enabled: false } satisfies SandboxOptions,
+  sandboxOptions: { enabled: true } satisfies SandboxOptions,
 }
 
 /** Cursor working — sandbox off for unrestricted approvalMode. */

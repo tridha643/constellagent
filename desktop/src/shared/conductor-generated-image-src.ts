@@ -1,5 +1,9 @@
 import type { ConductorGeneratedImage } from './conductor-generated-images'
 
+function isAbsoluteLocalPath(path: string): boolean {
+  return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)
+}
+
 function filePathToFileUrl(path: string): string {
   const normalized = path.replace(/\\/g, '/')
   const encoded = normalized
@@ -16,5 +20,6 @@ export function conductorGeneratedImageSrc(image: ConductorGeneratedImage): stri
   }
   if (!image.filePath) return undefined
   if (/^file:/i.test(image.filePath)) return image.filePath
+  if (!isAbsoluteLocalPath(image.filePath)) return undefined
   return filePathToFileUrl(image.filePath)
 }

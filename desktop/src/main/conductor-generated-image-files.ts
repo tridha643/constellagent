@@ -10,6 +10,8 @@ import {
 import {
   extractConductorGeneratedImages,
   extractImagePathsFromText,
+  invokesImagegenSkill,
+  isConductorGeneratedImageToolName,
   looksLikeGeneratedImageCompletionText,
   type ConductorGeneratedImage,
   type ConductorGeneratedImageExtractionOptions,
@@ -19,6 +21,7 @@ import {
 export interface ResolveConductorGeneratedImagesOptions extends ConductorGeneratedImageExtractionOptions {
   readonly workspacePath: string
   readonly sinceMs?: number
+  readonly limit?: number
 }
 
 const IMAGE_FILE_NAME_RE = /\.(?:png|jpe?g|gif|webp)$/i
@@ -33,21 +36,28 @@ export async function resolveConductorGeneratedImagesWithFiles(
   output: unknown,
   options: ResolveConductorGeneratedImagesOptions,
 ): Promise<ConductorGeneratedImageOutput | undefined> {
+  const outputText = turnOutputText(output)
+  if (!isCodexImagegenSource(outputText, options)) return undefined
+
   const extracted = extractConductorGeneratedImages(output, options)
   if (!extracted) return undefined
 
   const images = await hydrateGeneratedImages(extracted.images, options.workspacePath)
-  return images.length > 0 ? { kind: 'generatedImages', images } : undefined
+  if (images.length > 0) return { kind: 'generatedImages', images }
+
+  return loadLatestCodexGeneratedImages({ ...options, limit: options.limit ?? 1 })
 }
 
 export async function loadGeneratedImagesFromText(
   text: string,
   workspacePath: string,
-  options: ConductorGeneratedImageExtractionOptions & { sinceMs?: number } = {},
+  options: ConductorGeneratedImageExtractionOptions & { sinceMs?: number; limit?: number } = {},
 ): Promise<ConductorGeneratedImageOutput | undefined> {
+  if (!isCodexImagegenSource(text, options)) return undefined
+
   const paths = extractImagePathsFromText(text)
   const images: ConductorGeneratedImage[] = []
-  for (const [index, filePath] of paths.entries()) {
+  for (const [index, filePath] of paths.slice(0, options.limit ?? 1).entries()) {
     const loaded = await loadGeneratedImageFromPath(filePath, workspacePath, options, index)
     if (loaded) images.push(loaded)
   }
@@ -55,22 +65,19 @@ export async function loadGeneratedImagesFromText(
     return { kind: 'generatedImages', images }
   }
 
-  if (looksLikeGeneratedImageCompletionText(text)) {
-    return loadLatestCodexGeneratedImages(options)
-  }
-  return undefined
+  return loadLatestCodexGeneratedImages({ ...options, limit: options.limit ?? 1 })
 }
 
 export async function loadGeneratedImagesForTurn(
   turnText: string,
   workspacePath: string,
-  options: ConductorGeneratedImageExtractionOptions & { sinceMs?: number } = {},
+  options: ConductorGeneratedImageExtractionOptions & { sinceMs?: number; limit?: number } = {},
 ): Promise<ConductorGeneratedImageOutput | undefined> {
   const fromText = await loadGeneratedImagesFromText(turnText, workspacePath, options)
   if (fromText) return fromText
 
-  if (looksLikeGeneratedImageCompletionText(turnText)) {
-    return loadLatestCodexGeneratedImages(options)
+  if (isCodexImagegenSource(turnText, options)) {
+    return loadLatestCodexGeneratedImages({ ...options, limit: options.limit ?? 1 })
   }
   return undefined
 }
@@ -78,7 +85,7 @@ export async function loadGeneratedImagesForTurn(
 export async function loadLatestCodexGeneratedImages(
   options: ConductorGeneratedImageExtractionOptions & { sinceMs?: number; limit?: number } = {},
 ): Promise<ConductorGeneratedImageOutput | undefined> {
-  const files = await findLatestCodexGeneratedImageFiles(options.sinceMs, options.limit ?? 4)
+  const files = await findLatestCodexGeneratedImageFiles(options.sinceMs, options.limit ?? 1)
   if (files.length === 0) return undefined
 
   const images: ConductorGeneratedImage[] = []
@@ -91,7 +98,7 @@ export async function loadLatestCodexGeneratedImages(
 
 export async function findLatestCodexGeneratedImageFiles(
   sinceMs?: number,
-  limit = 4,
+  limit = 1,
 ): Promise<string[]> {
   const root = join(resolveCodexHome(), 'generated_images')
   if (!existsSync(root)) return []
@@ -156,7 +163,7 @@ async function loadGeneratedImageFromPath(
   seed?: ConductorGeneratedImage,
 ): Promise<ConductorGeneratedImage | undefined> {
   const absolutePath = resolveGeneratedImagePath(pathRef, workspacePath)
-  if (!absolutePath) return seed
+  if (!absolutePath) return isRenderableGeneratedImageFilePath(seed?.filePath) ? seed : undefined
 
   try {
     const buffer = await readFile(absolutePath)
@@ -186,6 +193,29 @@ async function loadGeneratedImageFromPath(
   } catch {
     return seed?.filePath ? { ...seed, filePath: absolutePath } : undefined
   }
+}
+
+function turnOutputText(output: unknown): string {
+  if (typeof output === 'string') return output
+  try {
+    return JSON.stringify(output)
+  } catch {
+    return ''
+  }
+}
+
+function isCodexImagegenSource(
+  text: string,
+  options: ConductorGeneratedImageExtractionOptions,
+): boolean {
+  if (options.provider === 'cursor') return false
+  if (options.toolName && isConductorGeneratedImageToolName(options.toolName)) return true
+  return invokesImagegenSkill(text) || looksLikeGeneratedImageCompletionText(text)
+}
+
+function isRenderableGeneratedImageFilePath(filePath: string | undefined): boolean {
+  if (!filePath) return false
+  return /^file:/i.test(filePath) || isAbsolute(filePath)
 }
 
 export function resolveGeneratedImagePath(pathRef: string, workspacePath: string): string | undefined {

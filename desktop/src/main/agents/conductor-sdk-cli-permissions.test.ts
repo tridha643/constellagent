@@ -10,9 +10,9 @@ import {
 } from './conductor-sdk-cli-permissions'
 
 describe('CODEX_PLAN_THREAD_PERMISSIONS', () => {
-  test('uses workspace-write sandbox with network for investigation CLIs', () => {
+  test('uses read-only sandbox for chat-rendered plans', () => {
     assert.deepEqual(CODEX_PLAN_THREAD_PERMISSIONS, {
-      sandboxMode: 'workspace-write',
+      sandboxMode: 'read-only',
       networkAccessEnabled: true,
       approvalPolicy: 'never',
     })
@@ -40,7 +40,7 @@ describe('codexConductorThreadPermissions', () => {
 })
 
 describe('cursorConductorLocalPermissions', () => {
-  test('disables sandbox in plan mode for network CLI access', () => {
+  test('enables sandbox in plan mode to block file writes', () => {
     assert.deepEqual(cursorConductorLocalPermissions(true), CURSOR_PLAN_LOCAL_PERMISSIONS)
   })
 

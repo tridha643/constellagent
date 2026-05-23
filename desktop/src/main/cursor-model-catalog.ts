@@ -19,6 +19,11 @@ const EMPTY_CATALOG: CursorModelCatalog = {
 
 let catalogCache: { at: number; catalog: CursorModelCatalog } | null = null
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __constellagentCursorBypassModelValidation: boolean | undefined
+}
+
 function normalizeModelId(value: string): string {
   return value.trim().toLowerCase()
 }
@@ -92,16 +97,16 @@ export function resetCursorModelCatalogCache(): void {
 export async function withCursorSdkModelValidationBypass<T>(bypass: boolean, fn: () => Promise<T>): Promise<T> {
   if (!bypass) return fn()
 
-  const previousEnvKey = process.env.CURSOR_API_KEY
-  if (previousEnvKey) delete process.env.CURSOR_API_KEY
+  const previous = globalThis.__constellagentCursorBypassModelValidation
+  globalThis.__constellagentCursorBypassModelValidation = true
 
   try {
     return await fn()
   } finally {
-    if (previousEnvKey !== undefined) {
-      process.env.CURSOR_API_KEY = previousEnvKey
+    if (previous === undefined) {
+      delete globalThis.__constellagentCursorBypassModelValidation
     } else {
-      delete process.env.CURSOR_API_KEY
+      globalThis.__constellagentCursorBypassModelValidation = previous
     }
   }
 }
