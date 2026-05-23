@@ -6,8 +6,9 @@
  * Conductor are therefore Cursor-only unless a future SDK item type is added.
  */
 import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   Codex,
@@ -20,6 +21,7 @@ import {
 } from '@openai/codex-sdk'
 import { checkCodexAuth, getOpenaiApiKey } from '../conductor-auth'
 import { getConductorCodexWebSocketsSetting } from '../conductor-settings'
+import { cliEnvWithStandardPath } from '../cli-env'
 import { logMainPerfEvent } from '../perf'
 import { mapThinkingLevelToCodexEffort, parseModelEffort } from '../../shared/conductor-model-utils'
 import type { CodexWebSocketsSetting } from '../../shared/codex-websockets'
@@ -143,15 +145,35 @@ export function isBenignCodexInterruptError(err: unknown, signal: AbortSignal): 
 }
 
 /** Prefer a `codex` on PATH so we do not require @openai/codex optional vendor binaries at app load. */
-function resolveCodexCliPath(): string | undefined {
-  try {
-    const lookup = process.platform === 'win32' ? 'where' : 'which'
-    const out = execFileSync(lookup, ['codex'], { encoding: 'utf8' })
-    const line = out.trim().split(/\r?\n/)[0]?.trim()
-    return line || undefined
-  } catch {
-    return undefined
+export function resolveCodexCliPath(): string | undefined {
+  const env = cliEnvWithStandardPath()
+  const executable = process.platform === 'win32' ? 'codex.exe' : 'codex'
+  const candidates = [
+    'codex',
+    join(homedir(), '.local', 'bin', executable),
+    join(homedir(), '.npm-global', 'bin', executable),
+    '/opt/homebrew/bin/codex',
+    '/usr/local/bin/codex',
+  ]
+  for (const candidate of candidates) {
+    if (candidate !== 'codex' && existsSync(candidate)) return candidate
+    try {
+      const lookup = process.platform === 'win32' ? 'where' : 'which'
+      const out = execFileSync(lookup, [candidate], { encoding: 'utf8', env, timeout: 5000 })
+      const line = out.trim().split(/\r?\n/)[0]?.trim()
+      if (line) return line
+    } catch {
+      // try next candidate
+    }
   }
+  return undefined
+}
+
+export function codexSdkEnv(): Record<string, string> {
+  const env = cliEnvWithStandardPath()
+  return Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  )
 }
 
 export function codexSdkModelForConductorModel(model: string): string {
@@ -219,6 +241,7 @@ export class CodexDriver implements AgentDriver {
       const config = codexConfigForWebSockets(webSocketsEnabled)
       const client = new Codex({
         ...(getOpenaiApiKey() ? { apiKey: getOpenaiApiKey() } : {}),
+        env: codexSdkEnv(),
         ...(codexPathOverride ? { codexPathOverride } : {}),
         ...(config ? { config } : {}),
       })

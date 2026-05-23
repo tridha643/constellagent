@@ -1,6 +1,11 @@
 const EXTERNAL_PROTOCOL_RE = /^[a-z][a-z0-9+.-]*:/i
 const IMAGE_EXT_RE = /\.(?:png|jpe?g|gif|webp|avif|svg)(?:[?#].*)?$/i
-const FILE_EXT_RE = /\.(?:tsx?|mjsx?|jsx?|css|json|mdx?|md|txt|csv|tsv|log|less|scss|html|svg|png|jpe?g|gif|webp|avif|rs|go|py|lock|toml|ya?ml|wasm|mjs|cjs|vue|svelte|mts|cts|ini|cfg|conf|env|patch|sql|proto|graphql|gql|gradle|kt|kts|swift|rb|php|dart|nix|zig|h|hpp|cc|cpp|cxx|cs|fs|fsx|scala|sbt|dockerignore|gitattributes|editorconfig)(?:[?#].*)?$/i
+const FILE_EXT_PATTERN = String.raw`(?:tsx?|mjsx?|jsx?|css|json|mdx?|md|txt|csv|tsv|log|less|scss|html|svg|png|jpe?g|gif|webp|avif|rs|go|py|lock|toml|ya?ml|wasm|mjs|cjs|vue|svelte|mts|cts|ini|cfg|conf|env|patch|sql|proto|graphql|gql|gradle|kt|kts|swift|rb|php|dart|nix|zig|h|hpp|cc|cpp|cxx|cs|fs|fsx|scala|sbt|dockerignore|gitattributes|editorconfig)`
+const FILE_EXT_RE = new RegExp(String.raw`\.${FILE_EXT_PATTERN}(?:[?#].*)?$`, 'i')
+const BARE_FILE_REFERENCE_RE = new RegExp(
+  String.raw`(^|[\s([{<>"'])((?:(?:\.{1,2}|~)?[\\/]|[A-Za-z]:[\\/])?(?:[A-Za-z0-9_@+.-]+[\\/])*[A-Za-z0-9_@+.-]+\.${FILE_EXT_PATTERN}(?::\d+(?::\d+)?)?(?:#[A-Za-z0-9_.:-]+)?)`,
+  'gi',
+)
 
 export interface MarkdownFileTarget {
   href: string
@@ -8,6 +13,12 @@ export interface MarkdownFileTarget {
   absolutePath: string
   displayPath: string
   lineNumber?: number
+}
+
+export interface MarkdownFileReferenceRange {
+  from: number
+  to: number
+  path: string
 }
 
 function stripWrappingAngles(value: string): string {
@@ -41,6 +52,20 @@ export function markdownDirname(path: string | undefined): string | undefined {
   const normalized = path.replace(/\\/g, '/')
   const index = normalized.lastIndexOf('/')
   return index > 0 ? normalized.slice(0, index) : undefined
+}
+
+export function findMarkdownFileReferences(text: string): MarkdownFileReferenceRange[] {
+  const ranges: MarkdownFileReferenceRange[] = []
+  BARE_FILE_REFERENCE_RE.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = BARE_FILE_REFERENCE_RE.exec(text))) {
+    const boundary = match[1] ?? ''
+    const path = match[2]
+    if (!path || !isLikelyMarkdownFilePath(path)) continue
+    const from = match.index + boundary.length
+    ranges.push({ from, to: from + path.length, path })
+  }
+  return ranges
 }
 
 function normalizeSlashes(path: string): string {

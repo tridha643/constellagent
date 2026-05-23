@@ -2,15 +2,15 @@
 .chatView {
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
   --conductor-composer-radius: 10px;
-  --conductor-composer-plan-dash-color: color-mix(
-    in srgb,
-    var(--border-strong) 55%,
-    var(--text-tertiary)
-  );
   --conductor-effort-accent: #d4a574;
   --conductor-chip-fg: #dcc9b8;
   --conductor-chip-warm-bg: color-mix(in srgb, #5c4033 48%, var(--surface-2));
   --conductor-chip-warm-border: color-mix(in srgb, #8b6354 42%, transparent);
+  --conductor-composer-plan-dash-color: color-mix(
+    in srgb,
+    var(--conductor-chip-warm-border) 70%,
+    var(--conductor-chip-fg)
+  );
   --conductor-chip-neutral-bg: color-mix(in srgb, var(--surface-3) 88%, var(--surface-2));
   --conductor-chip-neutral-border: color-mix(in srgb, var(--border-subtle) 90%, transparent);
   position: absolute;
@@ -669,16 +669,189 @@
 }
 
 .brailleGlyph {
+  position: relative;
   display: inline-block;
-  width: 1.1em;
-  text-align: center;
-  font-size: 1.05em;
+  width: 4.2ch;
+  text-align: left;
+  font-size: 1em;
   line-height: 1;
+  letter-spacing: 0.04em;
+  color: transparent;
+}
+
+.brailleGlyph::before {
+  content: '⠁⠂⠄⡀';
+  position: absolute;
+  inset: 0;
+  color: var(--text-secondary);
 }
 
 .brailleElapsed {
   font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
+}
+
+.brailleGlyphWave::before {
+  animation: brailleWaveFrames 880ms steps(8, end) infinite;
+}
+
+.brailleGlyphScan::before {
+  animation: brailleScanFrames 1100ms steps(8, end) infinite;
+}
+
+.brailleGlyphPulse::before {
+  animation: braillePulseFrames 1400ms steps(8, end) infinite;
+}
+
+.brailleGlyphRipple::before {
+  animation: brailleRippleFrames 1050ms steps(8, end) infinite;
+}
+
+@keyframes brailleWaveFrames {
+  0% {
+    content: '⠁⠂⠄⡀';
+  }
+
+  12.5% {
+    content: '⠂⠄⡀⢀';
+  }
+
+  25% {
+    content: '⠄⡀⢀⠠';
+  }
+
+  37.5% {
+    content: '⡀⢀⠠⠐';
+  }
+
+  50% {
+    content: '⢀⠠⠐⠈';
+  }
+
+  62.5% {
+    content: '⠠⠐⠈⠁';
+  }
+
+  75% {
+    content: '⠐⠈⠁⠂';
+  }
+
+  87.5%,
+  100% {
+    content: '⠈⠁⠂⠄';
+  }
+}
+
+@keyframes brailleScanFrames {
+  0% {
+    content: '⠉⠁⠁⠁';
+  }
+
+  12.5% {
+    content: '⠈⠉⠁⠁';
+  }
+
+  25% {
+    content: '⠁⠈⠉⠁';
+  }
+
+  37.5% {
+    content: '⠁⠁⠈⠉';
+  }
+
+  50% {
+    content: '⠁⠁⠁⠙';
+  }
+
+  62.5% {
+    content: '⠁⠁⠙⠁';
+  }
+
+  75% {
+    content: '⠁⠙⠁⠁';
+  }
+
+  87.5%,
+  100% {
+    content: '⠙⠁⠁⠁';
+  }
+}
+
+@keyframes braillePulseFrames {
+  0% {
+    content: '⠁⠁⠁⠁';
+  }
+
+  12.5% {
+    content: '⠂⠂⠂⠂';
+  }
+
+  25% {
+    content: '⠆⠆⠆⠆';
+  }
+
+  37.5% {
+    content: '⠇⠇⠇⠇';
+  }
+
+  50% {
+    content: '⡇⡇⡇⡇';
+  }
+
+  62.5% {
+    content: '⠇⠇⠇⠇';
+  }
+
+  75% {
+    content: '⠆⠆⠆⠆';
+  }
+
+  87.5%,
+  100% {
+    content: '⠂⠂⠂⠂';
+  }
+}
+
+@keyframes brailleRippleFrames {
+  0% {
+    content: '⠁⠂⠂⠁';
+  }
+
+  12.5% {
+    content: '⠂⠄⠄⠂';
+  }
+
+  25% {
+    content: '⠄⡀⡀⠄';
+  }
+
+  37.5% {
+    content: '⡀⢀⢀⡀';
+  }
+
+  50% {
+    content: '⢀⠠⠠⢀';
+  }
+
+  62.5% {
+    content: '⠠⠐⠐⠠';
+  }
+
+  75% {
+    content: '⠐⠈⠈⠐';
+  }
+
+  87.5%,
+  100% {
+    content: '⠈⠁⠁⠈';
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brailleGlyph::before {
+    content: '⠁⠂⠄⡀';
+    animation: none;
+  }
 }
 
 .activityRow {
@@ -750,15 +923,47 @@
 .composerInnerPlan::after {
   content: '';
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  border: 1px dashed var(--conductor-composer-plan-dash-color);
+  inset: -2px;
+  border-radius: calc(var(--conductor-composer-radius) + 2px);
+  --composer-plan-dash-thickness: 2px;
+  --composer-plan-dash-length: 7px;
+  --composer-plan-dash-gap: 8px;
+  --composer-plan-dash-period: calc(
+    var(--composer-plan-dash-length) + var(--composer-plan-dash-gap)
+  );
+  background:
+    linear-gradient(
+        90deg,
+        var(--conductor-composer-plan-dash-color) 0 var(--composer-plan-dash-length),
+        transparent var(--composer-plan-dash-length) var(--composer-plan-dash-period)
+      )
+      0 0 / var(--composer-plan-dash-period) var(--composer-plan-dash-thickness) repeat-x,
+    linear-gradient(
+        90deg,
+        var(--conductor-composer-plan-dash-color) 0 var(--composer-plan-dash-length),
+        transparent var(--composer-plan-dash-length) var(--composer-plan-dash-period)
+      )
+      0 100% / var(--composer-plan-dash-period) var(--composer-plan-dash-thickness) repeat-x,
+    linear-gradient(
+        180deg,
+        var(--conductor-composer-plan-dash-color) 0 var(--composer-plan-dash-length),
+        transparent var(--composer-plan-dash-length) var(--composer-plan-dash-period)
+      )
+      0 0 / var(--composer-plan-dash-thickness) var(--composer-plan-dash-period) repeat-y,
+    linear-gradient(
+        180deg,
+        var(--conductor-composer-plan-dash-color) 0 var(--composer-plan-dash-length),
+        transparent var(--composer-plan-dash-length) var(--composer-plan-dash-period)
+      )
+      100% 0 / var(--composer-plan-dash-thickness) var(--composer-plan-dash-period) repeat-y;
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+  background-clip: border-box;
   pointer-events: none;
 }
 
 .composerInnerPlan.composerInnerDragActive::after {
-  border-style: solid;
-  border-color: color-mix(in srgb, var(--accent-blue, #7eb8b8) 68%, var(--border-default));
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--accent-blue, #7eb8b8) 68%, var(--border-default));
 }
 
 .composerInnerReasoning:not(.composerInnerPlan) {

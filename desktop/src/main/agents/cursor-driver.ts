@@ -10,7 +10,7 @@ import {
   type SDKMessage,
   type TextBlock,
 } from '@cursor/sdk'
-import { checkCursorAuth, getCursorApiKey, CURSOR_SDK_API_KEY_MESSAGE } from '../conductor-auth'
+import { checkCursorAuth, getCursorApiKey, hasCursorCliLogin } from '../conductor-auth'
 import {
   computeTextDelta,
   evAssistantDelta,
@@ -105,7 +105,12 @@ function detachCursorRun(run: Run): void {
 function cursorRunErrorMessage(raw: string | undefined): string {
   const detail = raw?.trim()
   if (detail && detail !== 'Cursor run error') return detail
-  if (!getCursorApiKey()) return CURSOR_SDK_API_KEY_MESSAGE
+  if (!getCursorApiKey() && !hasCursorCliLogin()) {
+    return 'Cursor is not signed in. Run `cursor-agent login` in a terminal or add your API key in Settings -> Conductor.'
+  }
+  if (!getCursorApiKey()) {
+    return 'Cursor local agent failed. Confirm `cursor-agent status` is authenticated, then try again.'
+  }
   return detail || 'Cursor run failed'
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   CURSOR_SDK_API_KEY_MESSAGE,
   checkCursorAuth,
+  cursorAuthMessageForState,
   parseCursorCliAuthJson,
   setConductorAuthKeys,
 } from './conductor-auth'
@@ -31,18 +32,24 @@ describe('parseCursorCliAuthJson', () => {
 })
 
 describe('checkCursorAuth', () => {
+  it('passes when cursor-agent CLI login is authenticated', () => {
+    expect(cursorAuthMessageForState(false, true)).toBeNull()
+  })
+
+  it('fails when neither Cursor API key nor CLI login is available', () => {
+    expect(cursorAuthMessageForState(false, false)).toBe(CURSOR_SDK_API_KEY_MESSAGE)
+  })
+
   it('passes when a Cursor API key is configured', () => {
     setConductorAuthKeys('cursor_test_key', '')
     expect(checkCursorAuth()).toBeNull()
     setConductorAuthKeys('', '')
   })
 
-  it('requires an API key even when cursor-agent CLI is logged in', () => {
+  it('uses the shared auth message for the live environment when unavailable', () => {
     setConductorAuthKeys('', '')
-    // Force CLI snapshot without shelling out — use parse helper contract only in unit tests.
-    // When no key is set, checkCursorAuth must not treat CLI login as SDK-ready.
     const msg = checkCursorAuth()
-    if (msg === null) return // machine has CURSOR_API_KEY in env — skip assertion
-    expect(msg === CURSOR_SDK_API_KEY_MESSAGE || msg.includes('not signed in')).toBe(true)
+    if (msg === null) return
+    expect(msg).toBe(CURSOR_SDK_API_KEY_MESSAGE)
   })
 })
