@@ -57,13 +57,24 @@ export function JsonCanvasBlock({
   title,
   description,
   canvas,
+  streaming = false,
 }: {
   title?: string
   description?: string
   canvas: JsonRenderSpec
+  streaming?: boolean
 }) {
   return (
-    <div className={styles.jsonCanvasBlock}>
+    <div
+      className={[
+        styles.jsonCanvasBlock,
+        streaming ? styles.jsonCanvasBlockStreaming : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      data-testid="json-canvas-block"
+      data-streaming={streaming ? 'true' : 'false'}
+    >
       {title ? <div className={styles.jsonCanvasBlockTitle}>{title}</div> : null}
       {description ? <div className={styles.jsonCanvasBlockDescription}>{description}</div> : null}
       <JSONUIProvider registry={registry} initialState={canvas.state ?? {}}>

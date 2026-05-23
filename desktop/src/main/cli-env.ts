@@ -7,6 +7,7 @@ import { join } from 'path'
  * often omits Homebrew, nvm, and ~/.local/bin, so `execFile('pi', …)` would miss the real binary.
  */
 const CLI_PATH_PREFIXES: readonly string[] = [
+  join(homedir(), '.bun', 'bin'),
   join(homedir(), '.local', 'bin'),
   '/opt/homebrew/bin',
   '/usr/local/bin',

@@ -60,7 +60,7 @@ describe('CodexDriver streaming transport', () => {
   test('passes outputSchema on canvas turns for native structured JSON', () => {
     const source = readFileSync(new URL('./codex-driver.ts', import.meta.url), 'utf8')
     expect(source).toContain('outputSchema: renderJsonCanvasOutputSchema()')
-    expect(source).toContain('tryEmitSyntheticCanvasFromText')
+    expect(source).toContain('upsertSyntheticCanvasFromText')
   })
 })
 

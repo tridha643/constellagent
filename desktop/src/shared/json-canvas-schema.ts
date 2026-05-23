@@ -29,6 +29,11 @@ export type RenderJsonCanvasParams = z.infer<typeof RenderJsonCanvasParamsSchema
 
 export const RENDER_JSON_CANVAS_TOOL_NAME = 'render_json_canvas'
 
+export function isJsonCanvasToolName(toolName: string): boolean {
+  const normalized = toolName.toLowerCase()
+  return normalized === RENDER_JSON_CANVAS_TOOL_NAME || normalized.endsWith(`.${RENDER_JSON_CANVAS_TOOL_NAME}`)
+}
+
 const CATALOG_COMPONENT_HINTS = [
   'Card — optional title, default slot for children',
   'Stack — vertical layout (gap: sm | md | lg)',
@@ -159,6 +164,58 @@ export function normalizeCanvasOutput(raw: unknown): RenderJsonCanvasParams | nu
   return null
 }
 
+function stripPartialJsonFence(text: string): string {
+  const trimmed = text.trim()
+  const openFence = trimmed.match(/^```(?:json_canvas|json)?\s*\n?([\s\S]*)$/i)
+  if (openFence) return openFence[1]!.replace(/```\s*$/, '').trim()
+  return trimmed
+}
+
+function jsonRepairSuffixes(raw: string): string[] {
+  const suffixes = new Set<string>([''])
+  let braces = 0
+  let brackets = 0
+  let inString = false
+  let escape = false
+
+  for (const ch of raw) {
+    if (escape) {
+      escape = false
+      continue
+    }
+    if (inString) {
+      if (ch === '\\') escape = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+    if (ch === '{') braces += 1
+    if (ch === '}') braces = Math.max(0, braces - 1)
+    if (ch === '[') brackets += 1
+    if (ch === ']') brackets = Math.max(0, brackets - 1)
+  }
+
+  let close = ''
+  if (inString) close += '"'
+  close += ']'.repeat(brackets)
+  close += '}'.repeat(braces)
+  if (close) suffixes.add(close)
+  if (inString && close.startsWith('"')) {
+    suffixes.add(`${close}"}`)
+    suffixes.add(`${close}"}}`)
+  }
+
+  return [...suffixes]
+}
+
+function hasRenderableCanvas(params: RenderJsonCanvasParams): boolean {
+  const { root, elements } = params.canvas
+  return Boolean(root && elements[root])
+}
+
 /** Parse JSON text (optionally wrapped in markdown fences) into canvas params. */
 export function parseRenderJsonCanvasFromText(text: string): RenderJsonCanvasParams | null {
   const trimmed = text.trim()
@@ -172,6 +229,25 @@ export function parseRenderJsonCanvasFromText(text: string): RenderJsonCanvasPar
   } catch {
     return null
   }
+}
+
+/** Best-effort parse for in-flight canvas JSON (streaming assistant output). */
+export function parsePartialRenderJsonCanvasFromText(text: string): RenderJsonCanvasParams | null {
+  const full = parseRenderJsonCanvasFromText(text)
+  if (full) return full
+
+  const candidate = stripPartialJsonFence(text)
+  if (!candidate.startsWith('{')) return null
+
+  for (const suffix of jsonRepairSuffixes(candidate)) {
+    try {
+      const parsed = normalizeCanvasOutput(JSON.parse(candidate + suffix))
+      if (parsed && hasRenderableCanvas(parsed)) return parsed
+    } catch {
+      // keep trying repaired suffixes
+    }
+  }
+  return null
 }
 
 export function buildJsonCanvasPromptSuffix(provider: 'codex' | 'cursor'): string {

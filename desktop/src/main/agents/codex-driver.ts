@@ -38,8 +38,10 @@ import {
 import type { ConductorImageAttachment } from '../../shared/conductor-attachments'
 import { renderJsonCanvasOutputSchema } from '../../shared/json-canvas-schema'
 import {
+  finishSyntheticCanvasFromText,
   syntheticCanvasCallId,
-  tryEmitSyntheticCanvasFromText,
+  upsertSyntheticCanvasFromText,
+  type SyntheticCanvasStreamState,
 } from './json-canvas-bridge'
 import { codexConductorThreadPermissions } from './conductor-sdk-cli-permissions'
 
@@ -55,6 +57,8 @@ interface CodexSessionState {
   readonly lastToolUpdateByItem: Map<string, { text: string; emittedAt: number }>
   /** Set when canvas mode successfully emitted a synthetic tool row this turn. */
   canvasHandled?: boolean
+  canvasCallId?: string
+  canvasStream?: SyntheticCanvasStreamState
 }
 
 interface CodexContextUsage {
@@ -384,6 +388,8 @@ export class CodexDriver implements AgentDriver {
     const thread = state.thread
     state.lastToolUpdateByItem.clear()
     state.canvasHandled = false
+    state.canvasCallId = undefined
+    state.canvasStream = undefined
 
     const prompt = buildAgentPrompt(
       ctx.text,
@@ -494,17 +500,17 @@ export class CodexDriver implements AgentDriver {
       case 'item.completed': {
         const item = event.item
         if (item.type === 'agent_message' || item.type === 'reasoning') {
-          if (
-            ctx.canvas &&
-            item.type === 'agent_message' &&
-            event.type === 'item.completed' &&
-            !state.canvasHandled
-          ) {
-            const emitted = tryEmitSyntheticCanvasFromText(
-              ctx,
-              item.text ?? '',
-              syntheticCanvasCallId(ctx.sessionRef, item.id),
-            )
+          if (ctx.canvas && item.type === 'agent_message') {
+            const callId =
+              state.canvasCallId ?? syntheticCanvasCallId(ctx.sessionRef, item.id)
+            state.canvasCallId = callId
+            const streamState = state.canvasStream ?? { started: false }
+            state.canvasStream = streamState
+            const text = item.text ?? ''
+            const emitted =
+              event.type === 'item.completed'
+                ? finishSyntheticCanvasFromText(ctx, text, callId, streamState)
+                : upsertSyntheticCanvasFromText(ctx, text, callId, streamState)
             if (emitted) state.canvasHandled = true
           } else {
             this.emitAgentMessageText(ctx, state, item.id, item.text ?? '')

@@ -4,6 +4,7 @@ import {
   assertCodexStrictSchema,
   detectCanvasIntent,
   normalizeCanvasOutput,
+  parsePartialRenderJsonCanvasFromText,
   parseRenderJsonCanvasFromText,
   parseRenderJsonCanvasParams,
   renderJsonCanvasOutputSchema,
@@ -73,6 +74,14 @@ describe('json-canvas-schema', () => {
     expect(() => assertCodexStrictSchema(schema)).not.toThrow()
     const props = schema.properties as Record<string, unknown>
     expect(Object.keys(props).sort()).toEqual(['description', 'elementsJson', 'root', 'title'])
+  })
+
+  it('parses partial nested canvas JSON while streaming', () => {
+    const partial =
+      '{"title":"Revenue","canvas":{"root":"card-1","elements":{"card-1":{"type":"Card","props":{"title":"Revenue"},"children":["m1"]},"m1":{"type":"Metric","props":{"label":"Total","value":"$'
+    const parsed = parsePartialRenderJsonCanvasFromText(partial)
+    expect(parsed?.canvas.root).toBe('card-1')
+    expect(parsed?.canvas.elements['card-1']?.type).toBe('Card')
   })
 
   it('detects canvas intent from natural language', () => {

@@ -3024,6 +3024,10 @@
   background: color-mix(in srgb, var(--surface-2, #1a1a1a) 88%, transparent);
 }
 
+.jsonCanvasBlockStreaming {
+  border-color: color-mix(in srgb, var(--accent, #d4a574) 35%, var(--border-subtle));
+}
+
 .jsonCanvasBlockTitle {
   font-size: 13px;
   font-weight: 600;

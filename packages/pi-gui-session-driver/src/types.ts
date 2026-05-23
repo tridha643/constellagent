@@ -164,6 +164,8 @@ export interface ToolUpdatedEvent extends SessionEventBase {
   readonly callId: string;
   readonly text?: string;
   readonly progress?: number;
+  /** Structured tool payload updates (e.g. streaming canvas JSON). */
+  readonly output?: unknown;
 }
 
 export interface ToolFinishedEvent extends SessionEventBase {
