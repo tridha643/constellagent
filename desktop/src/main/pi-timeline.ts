@@ -19,6 +19,10 @@ import {
 import { safeJsonStringify, toJsonSafe } from "../shared/json-safe";
 import { isSkillLoadToolName, skillDisplayFromToolInput } from "../shared/skill-tool-utils";
 import { RENDER_JSON_CANVAS_TOOL_NAME } from "../shared/json-canvas-schema";
+import {
+  extractConductorGeneratedImages,
+  isConductorGeneratedImageToolName,
+} from "../shared/conductor-generated-images";
 
 export interface RunMetrics {
   readonly startedAt: string;
@@ -188,6 +192,13 @@ export function applyTimelineEvent(
         (item) => item.kind === "tool" && item.callId === event.callId,
       );
       const existingTool = existing?.kind === "tool" ? existing : undefined;
+      const generatedImages =
+        event.success && existingTool
+          ? extractConductorGeneratedImages(event.output, {
+              toolName: existingTool.toolName,
+              input: existingTool.input,
+            })
+          : undefined;
       const subagentFinish =
         existingTool && (existingTool.variant === "subagent" || isSubagentTool(existingTool.toolName))
           ? {
@@ -199,10 +210,10 @@ export function applyTimelineEvent(
         event.callId,
         undefined,
         event.success ? "success" : "error",
+        generatedImages ? generatedImageLabel(generatedImages.images.length) : undefined,
+        generatedImages ? generatedImageDetail(generatedImages) : detailFromOutput(event.output),
         undefined,
-        detailFromOutput(event.output),
-        undefined,
-        event.output,
+        generatedImages ?? event.output,
         subagentFinish,
       );
       break;
@@ -320,6 +331,10 @@ function toolLabel(toolName: string, input: unknown): string {
     const { label } = skillDisplayFromToolInput(input)
     return `Loaded ${label} skill`
   }
+  if (isConductorGeneratedImageToolName(toolName)) {
+    const detail = inputLabel(input)
+    return detail ? `Generating image: ${detail}` : 'Generating image'
+  }
   if (normalized === 'render_json_canvas' || normalized.endsWith('.render_json_canvas')) {
     if (isRecord(input) && typeof input.title === 'string' && input.title.trim()) {
       return `Canvas: ${input.title.trim()}`
@@ -366,6 +381,15 @@ function detailFromOutput(output: unknown): string | undefined {
     return undefined;
   }
   return truncate(safeJsonStringify(output));
+}
+
+function generatedImageLabel(count: number): string {
+  return count === 1 ? 'Generated image' : `Generated ${count} images`
+}
+
+function generatedImageDetail(output: ReturnType<typeof extractConductorGeneratedImages>): string | undefined {
+  const first = output?.images[0]
+  return first?.prompt ?? first?.name ?? first?.filePath
 }
 
 function looksLikeSearch(toolName: string, input: unknown): boolean {
@@ -420,7 +444,7 @@ function inputLabel(input: unknown): string | undefined {
     return undefined;
   }
 
-  const candidates = ["path", "filePath", "query", "q", "url", "command", "text", "title"];
+  const candidates = ["path", "filePath", "query", "q", "url", "command", "text", "title", "description", "prompt"];
   for (const key of candidates) {
     const value = input[key];
     if (typeof value === "string" && value.trim()) {
