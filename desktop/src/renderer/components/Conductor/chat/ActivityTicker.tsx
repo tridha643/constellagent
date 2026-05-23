@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { TimelineToolCall } from '../../../../shared/pi/timeline-types'
-import { BrailleLoader } from './BrailleLoader'
+import { MuloadLoader } from './MuloadLoader'
 import { ToolPart } from './tools/tool-registry'
 import styles from '../Conductor.module.css'
 
@@ -63,7 +63,7 @@ export function ActivityTicker({
       ) : null}
       {running && (
         <div className={styles.tickerStatus}>
-          <BrailleLoader startedAt={startedAt} />
+          <MuloadLoader startedAt={startedAt} />
           {longRunHint ? (
             <span className={styles.longRunHint}>Still running — Esc to stop</span>
           ) : runningLabel && !activeTool ? (

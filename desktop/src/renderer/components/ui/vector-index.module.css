@@ -1,0 +1,10 @@
+@keyframes vector-index {
+  0%, 100% { opacity: 0.16; }
+  8%       { opacity: 1; }
+  20%      { opacity: 0.16; }
+}
+
+.loader :global(.dot) {
+  animation: vector-index calc(2.4s / var(--speed, 1)) linear infinite;
+  animation-delay: calc(var(--diag, 0) * 220ms / var(--speed, 1));
+}

@@ -18,7 +18,7 @@ import { buildTurnDurationMap, parseWorkedForLabel } from '../../../../shared/co
 import { getAssistantStreamMessageId } from '../../../pi-gui/transcript-stream'
 import { ErrorBoundary } from '../../ErrorBoundary/ErrorBoundary'
 import { ChatMessage } from './ChatMessage'
-import { BrailleLoader } from './BrailleLoader'
+import { MuloadLoader } from './MuloadLoader'
 import { ActivityTicker } from './ActivityTicker'
 import { MarkdownBody } from './MarkdownBody'
 import { TurnSummary } from './TurnSummary'
@@ -637,7 +637,7 @@ export const ChatTimeline = forwardRef<
               />
             ) : (
               <div className={styles.workingRow}>
-                <BrailleLoader startedAt={runStartedAt} />
+                <MuloadLoader startedAt={runStartedAt} />
               </div>
             )
           }

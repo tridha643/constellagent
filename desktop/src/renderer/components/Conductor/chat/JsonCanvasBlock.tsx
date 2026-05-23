@@ -1,8 +1,6 @@
 import type { Spec } from '@json-render/core'
 import { JSONUIProvider, Renderer } from '@json-render/react'
-import { JsonRenderDevtools } from '@json-render/devtools-react'
 import type { JsonRenderSpec } from '../../../../shared/json-canvas-schema'
-import { jsonCanvasCatalog } from '../../../../shared/json-canvas-catalog'
 import { jsonCanvasRegistry } from './json-canvas-registry'
 import styles from '../Conductor.module.css'
 
@@ -45,9 +43,6 @@ export function JsonCanvasBlock({
               registry={jsonCanvasRegistry}
               loading={streaming}
             />
-            {process.env.NODE_ENV === 'development' && canRender ? (
-              <JsonRenderDevtools spec={toSpec(canvas)} catalog={jsonCanvasCatalog} />
-            ) : null}
           </JSONUIProvider>
         </div>
       ) : null}

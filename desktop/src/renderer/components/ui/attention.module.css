@@ -1,0 +1,10 @@
+@keyframes attention {
+  0%, 100% { opacity: 0.16; }
+  12%      { opacity: 1; }
+  30%      { opacity: 0.16; }
+}
+
+.loader :global(.dot) {
+  animation: attention calc(1.8s / var(--speed, 1)) linear infinite;
+  animation-delay: calc(var(--row, 0) * 280ms / var(--speed, 1));
+}

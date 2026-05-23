@@ -5,6 +5,8 @@
 @import "tailwindcss";
 @import './design-tokens.css';
 @import '../theme/file-tree-icon-bridge.css';
+@import '../components/ui/loaders/grid.css';
+@import '../components/ui/loaders/reduced-motion.css';
 @import "streamdown/styles.css";
 @import "katex/dist/katex.min.css";
 
@@ -45,6 +47,7 @@
    ═══════════════════════════════════════════════════════ */
 
 :root {
+  --color-dot: var(--text-secondary);
   --background: #111111;
   --foreground: #eeeeee;
   --muted: #212121;

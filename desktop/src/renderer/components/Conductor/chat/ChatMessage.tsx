@@ -9,7 +9,7 @@ import {
 } from '../../../../shared/json-canvas-inline'
 import MarkdownStream, { type MarkdownStreamHandle } from '../../../lib/prosemark/MarkdownStream'
 import { useMarkdownSurfaceContext } from '../../../hooks/useMarkdownSurfaceContext'
-import { BrailleLoader } from './BrailleLoader'
+import { MuloadLoader } from './MuloadLoader'
 import { MarkdownBody } from '../../Markdown/MarkdownBody'
 import { JsonCanvasBlock } from './JsonCanvasBlock'
 import { MessageFooter } from './MessageFooter'
@@ -186,7 +186,7 @@ export function ChatMessage({
         </div>
       ) : showBraille ? (
         <div className={styles.messageBody}>
-          <BrailleLoader />
+          <MuloadLoader />
         </div>
       ) : (
         <>

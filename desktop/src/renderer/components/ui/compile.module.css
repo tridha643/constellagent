@@ -1,0 +1,10 @@
+@keyframes compile {
+  0%, 100% { opacity: 0.16; }
+  6%       { opacity: 1; }
+  16%      { opacity: 0.16; }
+}
+
+.loader :global(.dot) {
+  animation: compile calc(2s / var(--speed, 1)) linear infinite;
+  animation-delay: calc(var(--rev-row, 0) * 200ms / var(--speed, 1));
+}

@@ -1,0 +1,19 @@
+@keyframes webhook {
+  0%, 100% {
+    opacity: 0.16;
+    transform: translateZ(0) scale(1);
+  }
+  18% {
+    opacity: 1;
+    transform: translateZ(0) scale(1.12);
+  }
+  40% {
+    opacity: 0.16;
+    transform: translateZ(0) scale(1);
+  }
+}
+
+.loader :global(.dot) {
+  animation: webhook calc(2.4s / var(--speed, 1)) cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  animation-delay: calc(var(--dist, 0) * 320ms / var(--speed, 1));
+}

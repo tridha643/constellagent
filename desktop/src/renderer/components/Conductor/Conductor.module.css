@@ -663,200 +663,25 @@
   padding: var(--space-1) 0;
 }
 
-.brailleLoader {
+.muloadLoader {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-4);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--text-secondary);
   user-select: none;
 }
 
-.brailleGlyph {
-  position: relative;
-  display: inline-block;
-  width: 4.2ch;
-  text-align: left;
-  font-size: 1em;
-  line-height: 1;
-  letter-spacing: 0.04em;
-  color: transparent;
+.muloadGlyph {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
 }
 
-.brailleGlyph::before {
-  content: '⠁⠂⠄⡀';
-  position: absolute;
-  inset: 0;
-  color: var(--text-secondary);
-}
-
-.brailleElapsed {
+.muloadElapsed {
   font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
-}
-
-.brailleGlyphWave::before {
-  animation: brailleWaveFrames 880ms steps(8, end) infinite;
-}
-
-.brailleGlyphScan::before {
-  animation: brailleScanFrames 1100ms steps(8, end) infinite;
-}
-
-.brailleGlyphPulse::before {
-  animation: braillePulseFrames 1400ms steps(8, end) infinite;
-}
-
-.brailleGlyphRipple::before {
-  animation: brailleRippleFrames 1050ms steps(8, end) infinite;
-}
-
-@keyframes brailleWaveFrames {
-  0% {
-    content: '⠁⠂⠄⡀';
-  }
-
-  12.5% {
-    content: '⠂⠄⡀⢀';
-  }
-
-  25% {
-    content: '⠄⡀⢀⠠';
-  }
-
-  37.5% {
-    content: '⡀⢀⠠⠐';
-  }
-
-  50% {
-    content: '⢀⠠⠐⠈';
-  }
-
-  62.5% {
-    content: '⠠⠐⠈⠁';
-  }
-
-  75% {
-    content: '⠐⠈⠁⠂';
-  }
-
-  87.5%,
-  100% {
-    content: '⠈⠁⠂⠄';
-  }
-}
-
-@keyframes brailleScanFrames {
-  0% {
-    content: '⠉⠁⠁⠁';
-  }
-
-  12.5% {
-    content: '⠈⠉⠁⠁';
-  }
-
-  25% {
-    content: '⠁⠈⠉⠁';
-  }
-
-  37.5% {
-    content: '⠁⠁⠈⠉';
-  }
-
-  50% {
-    content: '⠁⠁⠁⠙';
-  }
-
-  62.5% {
-    content: '⠁⠁⠙⠁';
-  }
-
-  75% {
-    content: '⠁⠙⠁⠁';
-  }
-
-  87.5%,
-  100% {
-    content: '⠙⠁⠁⠁';
-  }
-}
-
-@keyframes braillePulseFrames {
-  0% {
-    content: '⠁⠁⠁⠁';
-  }
-
-  12.5% {
-    content: '⠂⠂⠂⠂';
-  }
-
-  25% {
-    content: '⠆⠆⠆⠆';
-  }
-
-  37.5% {
-    content: '⠇⠇⠇⠇';
-  }
-
-  50% {
-    content: '⡇⡇⡇⡇';
-  }
-
-  62.5% {
-    content: '⠇⠇⠇⠇';
-  }
-
-  75% {
-    content: '⠆⠆⠆⠆';
-  }
-
-  87.5%,
-  100% {
-    content: '⠂⠂⠂⠂';
-  }
-}
-
-@keyframes brailleRippleFrames {
-  0% {
-    content: '⠁⠂⠂⠁';
-  }
-
-  12.5% {
-    content: '⠂⠄⠄⠂';
-  }
-
-  25% {
-    content: '⠄⡀⡀⠄';
-  }
-
-  37.5% {
-    content: '⡀⢀⢀⡀';
-  }
-
-  50% {
-    content: '⢀⠠⠠⢀';
-  }
-
-  62.5% {
-    content: '⠠⠐⠐⠠';
-  }
-
-  75% {
-    content: '⠐⠈⠈⠐';
-  }
-
-  87.5%,
-  100% {
-    content: '⠈⠁⠁⠈';
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .brailleGlyph::before {
-    content: '⠁⠂⠄⡀';
-    animation: none;
-  }
 }
 
 .activityRow {
