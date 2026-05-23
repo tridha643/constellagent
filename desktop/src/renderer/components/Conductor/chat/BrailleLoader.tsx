@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
 import styles from '../Conductor.module.css'
 
-/** Classic Braille spinner frames (Unicode block U+2800). */
-const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const
-const FRAME_MS = 80
 const TICK_MS = 100
+const PATTERN_SECONDS = 5
+
+const BRAILLE_PATTERN_CLASSES = [
+  styles.brailleGlyphWave,
+  styles.brailleGlyphScan,
+  styles.brailleGlyphPulse,
+  styles.brailleGlyphRipple,
+]
 
 function formatElapsedSeconds(seconds: number): string {
-  if (seconds < 10) return `${seconds.toFixed(1)}s`
-  return `${Math.round(seconds)}s`
+  return `${seconds.toFixed(1)}s`
 }
 
 /** Conductor-style Braille motion + elapsed timer while a turn is in flight. */
@@ -19,15 +23,7 @@ export function BrailleLoader({
   startedAt?: number | null
   className?: string
 }) {
-  const [frame, setFrame] = useState(0)
   const [elapsed, setElapsed] = useState(0)
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setFrame((f) => (f + 1) % FRAMES.length)
-    }, FRAME_MS)
-    return () => window.clearInterval(id)
-  }, [])
 
   useEffect(() => {
     const origin = startedAt ?? Date.now()
@@ -37,10 +33,12 @@ export function BrailleLoader({
     return () => window.clearInterval(id)
   }, [startedAt])
 
+  const patternClass = BRAILLE_PATTERN_CLASSES[Math.floor(elapsed / PATTERN_SECONDS) % BRAILLE_PATTERN_CLASSES.length]
+
   return (
     <span className={`${styles.brailleLoader} ${className ?? ''}`} role="status" aria-live="polite">
-      <span className={styles.brailleGlyph} aria-hidden>
-        {FRAMES[frame]}
+      <span className={`${styles.brailleGlyph} ${patternClass}`} aria-hidden>
+        ⠁⠂⠄⡀
       </span>
       <span className={styles.brailleElapsed}>{formatElapsedSeconds(elapsed)}</span>
     </span>

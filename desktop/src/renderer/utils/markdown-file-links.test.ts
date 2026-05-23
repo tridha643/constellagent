@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test'
-import { filePathToFileUrl, resolveMarkdownFileTarget, resolveMarkdownImageSrc } from './markdown-file-links'
+import {
+  filePathToFileUrl,
+  findMarkdownFileReferences,
+  resolveMarkdownFileTarget,
+  resolveMarkdownImageSrc,
+} from './markdown-file-links'
 
 describe('markdown-file-links', () => {
   it('resolves repo-relative markdown links to absolute file targets', () => {
@@ -26,5 +31,16 @@ describe('markdown-file-links', () => {
 
   it('encodes absolute paths as file urls', () => {
     expect(filePathToFileUrl('/repo/assets/hero image.png')).toBe('file:///repo/assets/hero%20image.png')
+  })
+
+  it('finds high-confidence bare file references in prose', () => {
+    expect(findMarkdownFileReferences('Touched desktop/src/main/conductor-auth.ts and BrailleLoader.tsx.')).toEqual([
+      { from: 8, to: 42, path: 'desktop/src/main/conductor-auth.ts' },
+      { from: 47, to: 64, path: 'BrailleLoader.tsx' },
+    ])
+  })
+
+  it('ignores urls and ordinary dotted words', () => {
+    expect(findMarkdownFileReferences('See https://example.com/src/App.tsx and version 1.2.3.')).toEqual([])
   })
 })

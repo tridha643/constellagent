@@ -10,6 +10,11 @@ import {
   resolvePlanToolPath,
   savePlanFile,
 } from './utils.js'
+import {
+  evaluatePlanModeMcpToolCall,
+  formatMcpToolDenial,
+  isBuiltInPlanModeTool,
+} from './tool-policy.js'
 
 const PLAN_MODE_TOOLS = ['read', 'bash', 'grep', 'find', 'ls', 'write', 'edit', 'askUserQuestion']
 const FALLBACK_NORMAL_TOOLS = ['read', 'bash', 'edit', 'write']
@@ -39,6 +44,10 @@ function getTextContent(message: AssistantMessage): string {
 
 function currentModelId(ctx: ExtensionContext): string | null {
   return ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : null
+}
+
+function planModeTools(previousTools: readonly string[] | null): string[] {
+  return [...new Set([...(previousTools ?? []), ...PLAN_MODE_TOOLS])]
 }
 
 function extractLatestClarifications(messages: AgentMessage[]): string | null {
@@ -93,7 +102,7 @@ export default function piConstell(pi: ExtensionAPI): void {
     if (planModeEnabled) return
     planModeEnabled = true
     previousTools = pi.getActiveTools()
-    pi.setActiveTools(PLAN_MODE_TOOLS)
+    pi.setActiveTools(planModeTools(previousTools))
     ctx.ui.notify('pi-constell-plan enabled. Start with a strong clarification round before the active plan file becomes writable.', 'info')
     updateStatus(ctx)
     persistState()
@@ -193,6 +202,15 @@ export default function piConstell(pi: ExtensionAPI): void {
         }
       }
     }
+
+    if (!isBuiltInPlanModeTool(event.toolName)) {
+      const decision = evaluatePlanModeMcpToolCall(event.toolName, event)
+      if (!decision.allowed) {
+        const reason = formatMcpToolDenial(decision)
+        ctx.ui.notify(reason, 'warning')
+        return { block: true, reason }
+      }
+    }
   })
 
   pi.on('before_agent_start', async (event, ctx) => {
@@ -280,7 +298,7 @@ export default function piConstell(pi: ExtensionAPI): void {
 
     if (planModeEnabled) {
       previousTools = pi.getActiveTools()
-      pi.setActiveTools(PLAN_MODE_TOOLS)
+      pi.setActiveTools(planModeTools(previousTools))
     }
 
     updateStatus(ctx)

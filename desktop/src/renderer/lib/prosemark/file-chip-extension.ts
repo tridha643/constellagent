@@ -4,6 +4,7 @@ import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, typ
 import type { SyntaxNodeRef } from "@lezer/common";
 import { getFilePresentation } from "../../utils/file-presentation";
 import {
+  findMarkdownFileReferences,
   isLikelyMarkdownFilePath,
   markdownBasename,
   resolveMarkdownFileTarget,
@@ -24,6 +25,17 @@ export const markdownFileChipOptionsFacet = Facet.define<MarkdownFileChipOptions
     return values.reduce<MarkdownFileChipOptions>((acc, value) => ({ ...acc, ...value }), {});
   },
 });
+
+interface FileChipDecoration {
+  from: number;
+  to: number;
+  decoration: Decoration;
+}
+
+interface BlockedRange {
+  from: number;
+  to: number;
+}
 
 function nodeText(view: EditorView, node: SyntaxNodeRef): string | undefined {
   return view.state.doc.sliceString(node.from, node.to);
@@ -83,7 +95,7 @@ export function inlineCodePathFromNode(state: EditorState, node: SyntaxNodeRef):
 }
 
 function addFileChipDecoration(
-  builder: RangeSetBuilder<Decoration>,
+  decorations: FileChipDecoration[],
   view: EditorView,
   node: SyntaxNodeRef,
   href: string,
@@ -95,13 +107,39 @@ function addFileChipDecoration(
   const raw = nodeText(view, node) ?? "";
   const chipLabel = label ?? markdownBasename(target.displayPath);
   const resolvedLabel = chipLabel === raw ? markdownBasename(target.displayPath) : chipLabel;
-  builder.add(
-    node.from,
-    node.to,
-    Decoration.replace({
+  decorations.push({
+    from: node.from,
+    to: node.to,
+    decoration: Decoration.replace({
       widget: new FileChipWidget(target, resolvedLabel, options),
     }),
-  );
+  });
+}
+
+function addBareFileChipDecoration(
+  decorations: FileChipDecoration[],
+  from: number,
+  to: number,
+  path: string,
+  options: MarkdownFileChipOptions,
+): void {
+  const target = resolveMarkdownFileTarget(path, options);
+  if (!target) return;
+  decorations.push({
+    from,
+    to,
+    decoration: Decoration.replace({
+      widget: new FileChipWidget(target, markdownBasename(target.displayPath), options),
+    }),
+  });
+}
+
+function rangesOverlap(a: BlockedRange, b: BlockedRange): boolean {
+  return a.from < b.to && b.from < a.to;
+}
+
+function isBlocked(range: BlockedRange, blockedRanges: readonly BlockedRange[]): boolean {
+  return blockedRanges.some((blocked) => rangesOverlap(range, blocked));
 }
 
 class FileChipWidget extends WidgetType {
@@ -167,6 +205,8 @@ class FileChipWidget extends WidgetType {
 }
 
 function fileChipDecorations(view: EditorView): DecorationSet {
+  const decorations: FileChipDecoration[] = [];
+  const blockedRanges: BlockedRange[] = [];
   const builder = new RangeSetBuilder<Decoration>();
   const options = view.state.facet(markdownFileChipOptionsFacet);
 
@@ -175,18 +215,50 @@ function fileChipDecorations(view: EditorView): DecorationSet {
       from,
       to,
       enter: (node) => {
+        if (
+          node.name === "Link" ||
+          node.name === "Image" ||
+          node.name === "InlineCode" ||
+          node.name === "FencedCode" ||
+          node.name === "CodeBlock"
+        ) {
+          blockedRanges.push({ from: node.from, to: node.to });
+        }
         if (node.name === "Link") {
           const href = linkHref(view, node);
-          addFileChipDecoration(builder, view, node, href ?? "", linkLabel(view, node), options);
+          addFileChipDecoration(decorations, view, node, href ?? "", linkLabel(view, node), options);
           return;
         }
         if (node.name === "InlineCode") {
           const path = inlineCodeText(view, node);
           if (!path || !isLikelyMarkdownFilePath(path)) return;
-          addFileChipDecoration(builder, view, node, path, markdownBasename(path), options);
+          addFileChipDecoration(decorations, view, node, path, markdownBasename(path), options);
         }
       },
     });
+  }
+
+  const seenLines = new Set<number>();
+  for (const { from, to } of view.visibleRanges) {
+    let pos = from;
+    while (pos <= to) {
+      const line = view.state.doc.lineAt(pos);
+      if (!seenLines.has(line.from)) {
+        seenLines.add(line.from);
+        for (const reference of findMarkdownFileReferences(line.text)) {
+          const refRange = { from: line.from + reference.from, to: line.from + reference.to };
+          if (isBlocked(refRange, blockedRanges)) continue;
+          addBareFileChipDecoration(decorations, refRange.from, refRange.to, reference.path, options);
+        }
+      }
+      if (line.to >= to) break;
+      pos = line.to + 1;
+    }
+  }
+
+  decorations.sort((a, b) => a.from - b.from || a.to - b.to);
+  for (const item of decorations) {
+    builder.add(item.from, item.to, item.decoration);
   }
 
   return builder.finish();

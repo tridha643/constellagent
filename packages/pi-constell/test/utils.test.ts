@@ -12,6 +12,10 @@ import {
   savePlanFile,
   slugifyPlanTitle,
 } from '../extensions/utils.js'
+import {
+  evaluatePlanModeMcpToolCall,
+  formatMcpToolDenial,
+} from '../extensions/tool-policy.js'
 
 async function removeIfExists(path: string): Promise<void> {
   await rm(path, { force: true }).catch(() => {})
@@ -20,10 +24,64 @@ async function removeIfExists(path: string): Promise<void> {
 test('isSafeCommand blocks destructive shell commands', () => {
   assert.equal(isSafeCommand('ls -la'), true)
   assert.equal(isSafeCommand('git status'), true)
+  assert.equal(isSafeCommand('npm view pi-constell-plan version'), true)
+  assert.equal(isSafeCommand('pnpm list --depth 0'), true)
   assert.equal(isSafeCommand('pi -h'), true)
   assert.equal(isSafeCommand('rm -rf src'), false)
+  assert.equal(isSafeCommand('npm install'), false)
   assert.equal(isSafeCommand('npm publish'), false)
+  assert.equal(isSafeCommand('sendblue send +15555555555 "done"'), false)
+  assert.equal(isSafeCommand('gh pr create --title test'), false)
+  assert.equal(isSafeCommand('curl -X POST https://example.com'), false)
   assert.equal(isSafeCommand('pi /plan'), false)
+})
+
+test('evaluatePlanModeMcpToolCall allows read/search/inspect MCP tools', () => {
+  assert.deepEqual(
+    evaluatePlanModeMcpToolCall('mcp__cachebro__read_file', {
+      toolName: 'mcp__cachebro__read_file',
+      input: { path: 'README.md' },
+    }),
+    {
+      allowed: true,
+      classification: 'read',
+      serverName: 'cachebro',
+      toolName: 'read_file',
+      reason: 'Plan mode allows read MCP tools.',
+    },
+  )
+
+  assert.equal(evaluatePlanModeMcpToolCall('linear.search').classification, 'search')
+  assert.equal(evaluatePlanModeMcpToolCall('docs.inspect_page').classification, 'inspect')
+})
+
+test('evaluatePlanModeMcpToolCall uses MCP annotations when present', () => {
+  const readOnly = evaluatePlanModeMcpToolCall('custom.fetch_context', {
+    toolName: 'custom.fetch_context',
+    annotations: { readOnlyHint: true },
+  })
+  assert.equal(readOnly.allowed, true)
+  assert.equal(readOnly.classification, 'read')
+
+  const destructive = evaluatePlanModeMcpToolCall('cachebro.read_file', {
+    toolName: 'cachebro.read_file',
+    annotations: { destructiveHint: true },
+  })
+  assert.equal(destructive.allowed, false)
+  assert.equal(destructive.classification, 'destructive')
+})
+
+test('evaluatePlanModeMcpToolCall denies mutating and unknown MCP tools with UI-ready reasons', () => {
+  const deniedWrite = evaluatePlanModeMcpToolCall('mcp__filesystem__write_file')
+  assert.equal(deniedWrite.allowed, false)
+  assert.equal(deniedWrite.classification, 'write')
+  assert.match(formatMcpToolDenial(deniedWrite), /filesystem/)
+  assert.match(formatMcpToolDenial(deniedWrite), /write_file/)
+  assert.match(formatMcpToolDenial(deniedWrite), /Work mode/)
+
+  const deniedUnknown = evaluatePlanModeMcpToolCall('mcp__opaque__frobnicate')
+  assert.equal(deniedUnknown.allowed, false)
+  assert.equal(deniedUnknown.classification, 'unknown')
 })
 
 test('derivePlanTitle prefers a specific heading', () => {

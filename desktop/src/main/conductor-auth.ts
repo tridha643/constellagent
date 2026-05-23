@@ -110,9 +110,9 @@ export function hasCursorCliLogin(): boolean {
   return getCursorCliAuthSnapshot().authenticated
 }
 
-/** Conductor chat uses @cursor/sdk, which requires an API key — not cursor-agent OAuth alone. */
+/** Cursor cloud API keys are optional for local Conductor chat when cursor-agent is authenticated. */
 export const CURSOR_SDK_API_KEY_MESSAGE =
-  'Conductor chat uses the Cursor SDK and needs an API key (Settings → Conductor or CURSOR_API_KEY). cursor-agent login signs in the CLI only.'
+  'Cursor is not signed in. Run `cursor-agent login` in a terminal or add your API key in Settings → Conductor.'
 
 export function getCursorApiKey(): string | undefined {
   const fromSettings = cursorApiKeyFromSettings
@@ -132,10 +132,13 @@ export function hasCodexCliLogin(): boolean {
   return existsSync(join(homedir(), '.codex', 'auth.json'))
 }
 
+export function cursorAuthMessageForState(hasApiKey: boolean, hasCliLogin: boolean): string | null {
+  if (hasApiKey || hasCliLogin) return null
+  return CURSOR_SDK_API_KEY_MESSAGE
+}
+
 export function checkCursorAuth(): string | null {
-  if (getCursorApiKey()) return null
-  if (hasCursorCliLogin()) return CURSOR_SDK_API_KEY_MESSAGE
-  return 'Cursor is not signed in. Run `cursor-agent login` in a terminal or add your API key in Settings → Conductor.'
+  return cursorAuthMessageForState(Boolean(getCursorApiKey()), hasCursorCliLogin())
 }
 
 export function checkCodexAuth(): string | null {
@@ -151,12 +154,12 @@ export function getConductorAuthStatus(forceRefresh = false): ConductorAuthStatu
   const codexLogin = hasCodexCliLogin()
 
   const cliDetail = cliAuth.authenticated
-    ? `Signed in to cursor-agent${cliAuth.email ? ` (${cliAuth.email})` : ''} — add an API key below for Conductor chat`
+    ? `Signed in via \`cursor-agent login\`${cliAuth.email ? ` (${cliAuth.email})` : ''}`
     : undefined
 
   return {
     cursor: {
-      ready: Boolean(cursorKey),
+      ready: Boolean(cursorKey || cliAuth.authenticated),
       detail: cursorKey
         ? 'API key configured'
         : cliDetail ??

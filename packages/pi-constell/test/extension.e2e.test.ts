@@ -145,6 +145,59 @@ test('plan mode allows help commands but still blocks mutating shell commands', 
   assert.match(blockedMutating?.reason ?? '', /read-only shell commands/)
 })
 
+test('plan mode keeps MCP tools visible and gates them before execution', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
+  const api = new FakeAPI()
+  api.activeTools = ['read', 'bash', 'edit', 'write', 'mcp__cachebro__read_file', 'mcp__cachebro__write_file']
+  piConstell(api as any)
+  const ctx = createCtx({ cwd })
+
+  await api.commands.get('plan')!.handler('', ctx)
+  assert.ok(api.activeTools.includes('mcp__cachebro__read_file'))
+  assert.ok(api.activeTools.includes('mcp__cachebro__write_file'))
+  assert.ok(api.activeTools.includes('askUserQuestion'))
+
+  const [allowedRead] = await emit(api, 'tool_call', {
+    toolName: 'mcp__cachebro__read_file',
+    input: { path: 'README.md' },
+  }, ctx)
+  assert.equal(allowedRead, undefined)
+
+  const [blockedWrite] = await emit(api, 'tool_call', {
+    toolName: 'mcp__cachebro__write_file',
+    input: { path: 'README.md', content: 'changed' },
+  }, ctx)
+  assert.equal(blockedWrite?.block, true)
+  assert.match(blockedWrite?.reason ?? '', /MCP tool "write_file"/)
+  assert.match(blockedWrite?.reason ?? '', /server "cachebro"/)
+  assert.match(blockedWrite?.reason ?? '', /Work mode/)
+  assert.ok(ctx._notifications.some((message: string) => message.includes('MCP tool "write_file"')))
+})
+
+test('plan mode denies unknown MCP tools unless read-only metadata is present', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
+  const api = new FakeAPI()
+  api.activeTools = ['read', 'bash', 'edit', 'write', 'mcp__opaque__frobnicate', 'mcp__opaque__fetch_context']
+  piConstell(api as any)
+  const ctx = createCtx({ cwd })
+
+  await api.commands.get('plan')!.handler('', ctx)
+
+  const [blockedUnknown] = await emit(api, 'tool_call', {
+    toolName: 'mcp__opaque__frobnicate',
+    input: {},
+  }, ctx)
+  assert.equal(blockedUnknown?.block, true)
+  assert.match(blockedUnknown?.reason ?? '', /without read-only metadata/)
+
+  const [allowedAnnotated] = await emit(api, 'tool_call', {
+    toolName: 'mcp__opaque__fetch_context',
+    input: {},
+    annotations: { readOnlyHint: true },
+  }, ctx)
+  assert.equal(allowedAnnotated, undefined)
+})
+
 test('plan mode requires askUserQuestion before plan writing or auto-save', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'pi-constell-e2e-'))
   const api = new FakeAPI()
@@ -382,6 +435,6 @@ test('session restore reapplies accepted plan mode state', async () => {
   })
 
   await emit(api, 'session_start', {}, ctx)
-  assert.deepEqual(api.activeTools, ['read', 'bash', 'grep', 'find', 'ls', 'write', 'edit', 'askUserQuestion'])
+  assert.deepEqual(api.activeTools, ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls', 'askUserQuestion'])
   assert.match(ctx._statuses.get('pi-constell-plan') ?? '', /restore-\d+\.md · clarify first/)
 })

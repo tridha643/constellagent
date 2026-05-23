@@ -4,6 +4,7 @@ import { buildAgentPrompt } from './agent-driver'
 import {
   buildCodexUserInput,
   codexConfigForWebSockets,
+  codexSdkEnv,
   codexSdkModelForConductorModel,
   isCodexWebSocketsEligibleModel,
   isBenignCodexInterruptError,
@@ -48,6 +49,15 @@ describe('CodexDriver streaming transport', () => {
     const source = readFileSync(new URL('./codex-driver.ts', import.meta.url), 'utf8')
     expect(source).toContain('thread.runStreamed(input')
     expect(source).not.toMatch(/thread\.runStreamed\(prompt/)
+  })
+})
+
+describe('CodexDriver CLI environment', () => {
+  test('builds a string-only SDK env with PATH for spawning the user CLI', () => {
+    const env = codexSdkEnv()
+    expect(typeof env.PATH).toBe('string')
+    expect(env.PATH.length).toBeGreaterThan(0)
+    expect(Object.values(env).every((value) => typeof value === 'string')).toBe(true)
   })
 })
 
