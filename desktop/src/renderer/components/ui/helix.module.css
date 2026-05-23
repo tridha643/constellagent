@@ -1,0 +1,11 @@
+@keyframes helix {
+  0%, 100% { opacity: 0.1; }
+  30%      { opacity: 0.95; }
+  50%      { opacity: 0.3; }
+  80%      { opacity: 0.95; }
+}
+
+.loader :global(.dot) {
+  animation: helix calc(2.6s / var(--speed, 1)) cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+  animation-delay: calc(var(--angle, 0) * -2.6s / var(--speed, 1));
+}

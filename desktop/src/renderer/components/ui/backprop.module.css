@@ -1,0 +1,15 @@
+@keyframes bp-flash {
+  0%, 100% { opacity: 0; }
+  10%      { opacity: 0.84; }
+  22%      { opacity: 0; }
+}
+
+.loader :global(.dot) {
+  animation:
+    bp-flash calc(2.8s / var(--speed, 1)) linear infinite,
+    bp-flash calc(2.8s / var(--speed, 1)) linear infinite;
+  animation-delay:
+    calc(var(--col, 0) * 240ms / var(--speed, 1)),
+    calc((1.4s + var(--rev, 0) * 240ms) / var(--speed, 1));
+  animation-composition: add;
+}

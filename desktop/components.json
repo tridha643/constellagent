@@ -19,6 +19,12 @@
     "hooks": "@/hooks"
   },
   "registries": {
-    "@tool-ui": "https://www.tool-ui.com/r/{name}.json"
+    "@tool-ui": "https://www.tool-ui.com/r/{name}.json",
+    "@muload": {
+      "url": "https://muload.dev/r/{name}.json",
+      "headers": {
+        "Authorization": "Bearer ${MULOAD_LICENSE_KEY}"
+      }
+    }
   }
 }

@@ -1,0 +1,12 @@
+@keyframes drift {
+  0%, 100% { opacity: 0.06; }
+  20%      { opacity: 0.3; }
+  40%      { opacity: 0.95; }
+  60%      { opacity: 0.3; }
+  80%      { opacity: 0.06; }
+}
+
+.loader :global(.dot) {
+  animation: drift calc(3.2s / var(--speed, 1)) cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation-delay: calc(var(--diag, 0) * 240ms / var(--speed, 1));
+}
