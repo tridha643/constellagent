@@ -87,6 +87,8 @@ export const PLAN_MODEL_PRESETS: Record<PlanAgent, ModelPreset[]> = {
     { label: 'Auto', cliModel: 'auto' },
     { label: 'Composer 2 Fast', cliModel: 'composer-2-fast' },
     { label: 'Composer 2', cliModel: 'composer-2' },
+    { label: 'Composer 2.5 Fast', cliModel: 'composer-2.5-fast' },
+    { label: 'Composer 2.5', cliModel: 'composer-2.5' },
     { label: 'Composer 1.5', cliModel: 'composer-1.5' },
     { label: 'GPT-5.3 Codex Low', cliModel: 'gpt-5.3-codex-low' },
     { label: 'GPT-5.3 Codex Low Fast', cliModel: 'gpt-5.3-codex-low-fast' },
