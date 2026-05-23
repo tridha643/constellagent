@@ -115,6 +115,11 @@ describe('hasFastVariant', () => {
     expect(hasFastVariant('composer-2', 'cursor')).toBe(true)
     expect(hasFastVariant('composer-2-fast', 'cursor')).toBe(true)
   })
+
+  test('composer-2.5 supports fast toggle on cursor', () => {
+    expect(hasFastVariant('composer-2.5', 'cursor')).toBe(true)
+    expect(hasFastVariant('composer-2.5-fast', 'cursor')).toBe(true)
+  })
 })
 
 describe('setModelFast', () => {
