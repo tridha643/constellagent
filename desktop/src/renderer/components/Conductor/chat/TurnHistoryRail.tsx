@@ -93,7 +93,6 @@ export const TurnHistoryRail = forwardRef<
       className={railStyles.host}
       data-testid="conductor-turn-rail"
       style={{ width: RAIL_INSET + POPOVER_WIDTH }}
-      aria-hidden={!open}
     >
       <div
         ref={railZoneRef}
@@ -139,6 +138,7 @@ export const TurnHistoryRail = forwardRef<
           data-instant={instant || undefined}
           role="menu"
           aria-label="Previous messages"
+          aria-hidden={!open}
           onMouseEnter={() => {
             setInstant(false)
             setOpen(true)

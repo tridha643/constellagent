@@ -865,6 +865,7 @@ export const ChatTimeline = forwardRef<
               return renderTimelineRow(
                 unit.key,
                 <div className={styles.assistantGroup}>
+                  <div className={styles.messageRole}>Assistant</div>
                   {turnTools}
                   {unit.messages.map((message, index) => (
                     <ErrorBoundary

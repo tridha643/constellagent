@@ -26,7 +26,11 @@ import {
   cloneTranscriptWithNewIds,
   sliceTranscriptForFork,
 } from '../shared/conductor-transcript-utils'
-import { thinkingLevelFromModel, parseModelEffort } from '../shared/conductor-model-utils'
+import {
+  normalizeConductorDefaultProvider,
+  thinkingLevelFromModel,
+  parseModelEffort,
+} from '../shared/conductor-model-utils'
 import { normalizeThinkingLevel } from '../shared/conductor-thinking'
 import {
   cloneConductorImageAttachments,
@@ -218,7 +222,7 @@ export class AgentChatHost {
     transcript: readonly TranscriptMessage[],
   ): ContextWindowData {
     const estimated = estimateTokensFromTranscript(transcript)
-    const sdkUsed = this.drivers[state.provider].getContextUsage?.(state.sessionId) ?? null
+    const sdkUsed = this.drivers[state.provider]?.getContextUsage?.(state.sessionId) ?? null
     const usedTokens = sdkUsed != null ? Math.max(sdkUsed, estimated) : estimated
     return buildContextWindowData({
       usedTokens,
@@ -321,6 +325,10 @@ export class AgentChatHost {
     this.flushTranscript(state)
 
     const driver = this.drivers[state.provider]
+    if (!driver) {
+      this.failRun(state, ref, `Unsupported agent provider: ${String(state.provider)}`)
+      return
+    }
     const authError = driver.checkAuth()
     if (authError) {
       this.failRun(state, ref, authError)
@@ -464,13 +472,13 @@ export class AgentChatHost {
     const session = this.sessions.get(sessionId)
     if (session) {
       session.abort?.abort()
-      this.drivers[session.state.provider].closeSession(sessionId)
+      this.drivers[session.state.provider]?.closeSession(sessionId)
       this.dropSessionRuntime(sessionId, this.refOf(session.state))
       this.sessions.delete(sessionId)
     } else {
       const stored = await this.store.getSession(sessionId)
       if (stored) {
-        this.drivers[stored.provider].closeSession(sessionId)
+        this.drivers[stored.provider]?.closeSession(sessionId)
         this.dropSessionRuntime(sessionId, {
           workspaceId: stored.workspaceId,
           sessionId: stored.sessionId,
@@ -483,7 +491,7 @@ export class AgentChatHost {
   dispose(): void {
     for (const [sessionId, session] of this.sessions) {
       session.abort?.abort()
-      this.drivers[session.state.provider].closeSession(sessionId)
+      this.drivers[session.state.provider]?.closeSession(sessionId)
     }
     this.sessions.clear()
     this.turnTelemetry.clear()
@@ -911,6 +919,7 @@ export class AgentChatHost {
       inferred !== 'medium' ? inferred : normalizeThinkingLevel(stored.thinkingLevel)
     return {
       ...stored,
+      provider: normalizeConductorDefaultProvider(stored.provider),
       model,
       thinkingLevel,
       canvas: stored.canvas ?? false,

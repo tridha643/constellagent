@@ -37,11 +37,10 @@ export function CursorDiffRow({
       unlocked={unlocked && patch.trim().length > 0}
       unlockedPanel={<CursorDiffCode patch={patch} />}
     >
-      <div className={styles.cursorToolRowMain}>
+      <div className={styles.cursorToolRowMain} data-testid="diff-inline-row">
         <button
           type="button"
           className={styles.cursorToolRowHit}
-          data-testid="diff-inline-row"
           onClick={onRowClick}
           aria-expanded={unlocked}
         >
