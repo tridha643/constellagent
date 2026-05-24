@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { buildAgentPrompt } from './agent-driver'
 import {
+<<<<<<< Updated upstream
   buildCodexUserInput,
   codexConfigForWebSockets,
   codexSdkEnv,
@@ -10,6 +11,12 @@ import {
   isBenignCodexInterruptError,
   isStaleCodexThreadError,
   shouldUseCodexWebSockets,
+=======
+  applyCodexToolHook,
+  buildCodexUserInput,
+  isBenignCodexInterruptError,
+  isStaleCodexThreadError,
+>>>>>>> Stashed changes
 } from './codex-driver'
 
 describe('CodexDriver prompt seeding', () => {
@@ -49,7 +56,7 @@ describe('CodexDriver prompt seeding', () => {
 describe('CodexDriver streaming transport', () => {
   test('keeps the Codex turn on runStreamed', () => {
     const source = readFileSync(new URL('./codex-driver.ts', import.meta.url), 'utf8')
-    expect(source).toContain('thread.runStreamed(')
+    expect(source).toContain('thread.runStreamed(input,')
   })
 
   test('passes structured input (with local_image) to runStreamed, not prompt alone', () => {
@@ -158,5 +165,74 @@ describe('buildCodexUserInput', () => {
       { type: 'text', text: 'look' },
       { type: 'local_image', path: '/tmp/a.png' },
     ])
+  })
+})
+
+describe('applyCodexToolHook', () => {
+  const item = {
+    id: 'call-1',
+    type: 'mcp_tool_call',
+    server: 'assets',
+    tool: 'image_gen',
+    arguments: { prompt: 'button' },
+    status: 'in_progress',
+  } as const
+
+  test('passes through tool emissions when no hook is registered', () => {
+    expect(
+      applyCodexToolHook({
+        phase: 'started',
+        callId: item.id,
+        toolName: 'assets.image_gen',
+        item,
+        input: item.arguments,
+      }),
+    ).toEqual({
+      toolName: 'assets.image_gen',
+      input: { prompt: 'button' },
+      output: undefined,
+      success: undefined,
+    })
+  })
+
+  test('lets app hooks reshape SDK tool rows for image generation display', () => {
+    const emission = applyCodexToolHook(
+      {
+        phase: 'started',
+        callId: item.id,
+        toolName: 'assets.image_gen',
+        item,
+        input: item.arguments,
+      },
+      (event) => ({
+        toolName: 'image_gen',
+        input: {
+          ...(event.input as Record<string, unknown>),
+          prompt: `${String((event.input as { prompt?: unknown }).prompt)}, UI asset style`,
+        },
+      }),
+    )
+
+    expect(emission).toEqual({
+      toolName: 'image_gen',
+      input: { prompt: 'button, UI asset style' },
+      output: undefined,
+      success: undefined,
+    })
+  })
+
+  test('lets app hooks suppress noisy tool rows', () => {
+    expect(
+      applyCodexToolHook(
+        {
+          phase: 'started',
+          callId: item.id,
+          toolName: 'assets.image_gen',
+          item,
+          input: item.arguments,
+        },
+        () => ({ suppress: true }),
+      ),
+    ).toBeNull()
   })
 })

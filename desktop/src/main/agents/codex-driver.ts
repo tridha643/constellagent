@@ -72,8 +72,41 @@ interface CodexSessionRecovery {
   preferTranscriptFallback: boolean
 }
 
+<<<<<<< Updated upstream
 type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexConfigObject
 type CodexConfigObject = { [key: string]: CodexConfigValue }
+=======
+export interface CodexToolHookEvent {
+  readonly phase: 'started' | 'updated' | 'finished'
+  readonly callId: string
+  readonly toolName: string
+  readonly item: ThreadItem
+  readonly input?: unknown
+  readonly output?: unknown
+  readonly success?: boolean
+}
+
+export interface CodexToolHookResult {
+  readonly toolName?: string
+  readonly input?: unknown
+  readonly output?: unknown
+  readonly success?: boolean
+  readonly suppress?: boolean
+}
+
+export type CodexToolHook = (event: CodexToolHookEvent) => CodexToolHookResult | void
+
+export interface CodexDriverHooks {
+  readonly onToolEvent?: CodexToolHook
+}
+
+interface CodexToolEmission {
+  readonly toolName: string
+  readonly input?: unknown
+  readonly output?: unknown
+  readonly success?: boolean
+}
+>>>>>>> Stashed changes
 
 const CODEX_IMAGE_EXTENSION_BY_MIME: Record<ConductorImageAttachment['mimeType'], string> = {
   'image/png': 'png',
@@ -88,6 +121,20 @@ export function buildCodexUserInput(prompt: string, imagePaths: readonly string[
     { type: 'text', text: prompt },
     ...imagePaths.map((path) => ({ type: 'local_image' as const, path })),
   ]
+}
+
+export function applyCodexToolHook(
+  event: CodexToolHookEvent,
+  hook?: CodexToolHook,
+): CodexToolEmission | null {
+  const result = hook?.(event)
+  if (result?.suppress) return null
+  return {
+    toolName: result?.toolName ?? event.toolName,
+    input: 'input' in (result ?? {}) ? result?.input : event.input,
+    output: 'output' in (result ?? {}) ? result?.output : event.output,
+    success: 'success' in (result ?? {}) ? result?.success : event.success,
+  }
 }
 
 async function writeCodexImageAttachments(
@@ -243,8 +290,15 @@ export class CodexDriver implements AgentDriver {
   private readonly recovery = new Map<string, CodexSessionRecovery>()
   private readonly contextUsage = new Map<string, CodexContextUsage>()
 
+<<<<<<< Updated upstream
   private getCodex(webSocketsEnabled: boolean): Codex {
     if (!this.codex || this.codex.webSocketsEnabled !== webSocketsEnabled) {
+=======
+  constructor(private readonly hooks: CodexDriverHooks = {}) {}
+
+  private getCodex(): Codex {
+    if (!this.codex) {
+>>>>>>> Stashed changes
       const codexPathOverride = resolveCodexCliPath()
       const config = codexConfigForWebSockets(webSocketsEnabled)
       const client = new Codex({
@@ -401,7 +455,11 @@ export class CodexDriver implements AgentDriver {
 
     try {
       const runStreamedStartedAt = performance.now()
+<<<<<<< Updated upstream
       const { events } = await thread.runStreamed(input, turnOptions)
+=======
+      const { events } = await thread.runStreamed(input, { signal: ctx.signal })
+>>>>>>> Stashed changes
       logMainPerfEvent('codex.runStreamed_ready', performance.now() - runStreamedStartedAt, {
         model: baseModel,
         effort,
@@ -462,6 +520,49 @@ export class CodexDriver implements AgentDriver {
     }
   }
 
+  private emitToolStarted(
+    ctx: AgentTurnContext,
+    item: ThreadItem,
+    toolName: string,
+    input?: unknown,
+  ): void {
+    const emission = applyCodexToolHook(
+      { phase: 'started', callId: item.id, toolName, item, input },
+      this.hooks.onToolEvent,
+    )
+    if (!emission) return
+    ctx.emit(evToolStarted(ctx.sessionRef, item.id, emission.toolName, emission.input))
+  }
+
+  private emitToolUpdated(
+    ctx: AgentTurnContext,
+    item: ThreadItem,
+    toolName: string,
+    output?: unknown,
+  ): void {
+    const emission = applyCodexToolHook(
+      { phase: 'updated', callId: item.id, toolName, item, output },
+      this.hooks.onToolEvent,
+    )
+    if (!emission) return
+    ctx.emit(evToolUpdated(ctx.sessionRef, item.id, String(emission.output ?? '')))
+  }
+
+  private emitToolFinished(
+    ctx: AgentTurnContext,
+    item: ThreadItem,
+    toolName: string,
+    success: boolean,
+    output?: unknown,
+  ): void {
+    const emission = applyCodexToolHook(
+      { phase: 'finished', callId: item.id, toolName, item, success, output },
+      this.hooks.onToolEvent,
+    )
+    if (!emission) return
+    ctx.emit(evToolFinished(ctx.sessionRef, item.id, emission.success ?? success, emission.output))
+  }
+
   private handleEvent(ctx: AgentTurnContext, state: CodexSessionState, event: ThreadEvent): void {
     switch (event.type) {
       case 'thread.started':
@@ -490,7 +591,7 @@ export class CodexDriver implements AgentDriver {
         }
         const descriptor = toolDescriptor(item)
         if (descriptor) {
-          ctx.emit(evToolStarted(ctx.sessionRef, item.id, descriptor.toolName, descriptor.input))
+          this.emitToolStarted(ctx, item, descriptor.toolName, descriptor.input)
         }
         break
       }
@@ -506,9 +607,9 @@ export class CodexDriver implements AgentDriver {
           break
         }
         if (item.type === 'todo_list') {
-          ctx.emit(evToolStarted(ctx.sessionRef, item.id, 'todowrite', item.items))
+          this.emitToolStarted(ctx, item, 'todowrite', item.items)
           if (event.type === 'item.completed') {
-            ctx.emit(evToolFinished(ctx.sessionRef, item.id, true, item.items))
+            this.emitToolFinished(ctx, item, 'todowrite', true, item.items)
           }
           break
         }
@@ -516,19 +617,19 @@ export class CodexDriver implements AgentDriver {
           if (event.type === 'item.updated' && item.status === 'in_progress') {
             const streamed = item.aggregated_output?.trim()
             if (streamed && shouldEmitToolUpdate(state, item.id, truncateShellOutput(streamed))) {
-              ctx.emit(evToolUpdated(ctx.sessionRef, item.id, truncateShellOutput(streamed)))
+              this.emitToolUpdated(ctx, item, 'shell', truncateShellOutput(streamed))
             }
           }
           const terminal = item.status === 'completed' || item.status === 'failed'
           if (terminal) {
-            ctx.emit(evToolFinished(ctx.sessionRef, item.id, toolSucceeded(item), summarizeItem(item)))
+            this.emitToolFinished(ctx, item, 'shell', toolSucceeded(item), summarizeItem(item))
           }
           break
         }
         if (event.type === 'item.completed') {
           const descriptor = toolDescriptor(item)
           if (descriptor) {
-            ctx.emit(evToolFinished(ctx.sessionRef, item.id, toolSucceeded(item), summarizeItem(item)))
+            this.emitToolFinished(ctx, item, descriptor.toolName, toolSucceeded(item), summarizeItem(item))
           }
         }
         break
