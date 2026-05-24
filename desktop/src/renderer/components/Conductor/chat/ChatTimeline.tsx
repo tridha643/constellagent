@@ -31,10 +31,15 @@ import { turnHasFileTools, turnHasTodoTools } from './tools/turn-tool-flags'
 import { TurnHistoryRail, type TurnHistoryRailHandle } from './TurnHistoryRail'
 import { getLatestPlanApprovalMessageId } from './plan-approval'
 import { fileChangesFromTools, type ToolFileChange } from './tools/tool-file-change'
+import {
+  CHAT_TIMELINE_NEAR_BOTTOM_PX,
+  isNearScrollBottom,
+  isWheelScrollAwayFromBottom,
+} from './chat-timeline-scroll'
+import { getPreferredScrollBehavior } from '../../../utils/preferred-scroll-behavior'
 
 const WORKING_LABEL = 'Working…'
 const STOPPED_LABEL = 'Stopped'
-const NEAR_BOTTOM_PX = 80
 const HIGHLIGHT_MS = 2000
 const COPY_TOAST_MS = 1200
 
@@ -316,6 +321,7 @@ export const ChatTimeline = forwardRef<
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const turnHistoryRailRef = useRef<TurnHistoryRailHandle | null>(null)
   const pinnedRef = useRef(true)
+  const scrollPinRafRef = useRef<number | null>(null)
   const [showJump, setShowJump] = useState(false)
   const [copyToast, setCopyToast] = useState(false)
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null)
@@ -572,25 +578,67 @@ export const ChatTimeline = forwardRef<
   const isNearBottom = useCallback((): boolean => {
     const el = scrollRef.current
     if (!el) return true
-    return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX
+    return isNearScrollBottom(el.scrollHeight, el.scrollTop, el.clientHeight, CHAT_TIMELINE_NEAR_BOTTOM_PX)
   }, [])
 
   const onScroll = useCallback(() => {
-    pinnedRef.current = isNearBottom()
-    setShowJump(!pinnedRef.current)
+    const near = isNearBottom()
+    pinnedRef.current = near
+    setShowJump((previous) => {
+      const next = !near
+      return previous === next ? previous : next
+    })
   }, [isNearBottom])
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
-    el.scrollTop = el.scrollHeight
+    el.scrollTo({ top: el.scrollHeight, behavior: getPreferredScrollBehavior() })
     pinnedRef.current = true
     setShowJump(false)
   }, [])
 
+  const schedulePinToBottomScroll = useCallback(() => {
+    if (!pinnedRef.current) return
+    if (scrollPinRafRef.current != null) return
+    scrollPinRafRef.current = requestAnimationFrame(() => {
+      scrollPinRafRef.current = null
+      const el = scrollRef.current
+      if (el && pinnedRef.current) {
+        el.scrollTop = el.scrollHeight
+      }
+    })
+  }, [])
+
   useLayoutEffect(() => {
-    if (pinnedRef.current) scrollToBottom()
-  }, [transcript, scrollToBottom])
+    schedulePinToBottomScroll()
+  }, [transcript, schedulePinToBottomScroll])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+
+    const onWheel = (event: WheelEvent) => {
+      if (!isWheelScrollAwayFromBottom(event.deltaY)) return
+      pinnedRef.current = false
+      setShowJump((previous) => (previous ? previous : true))
+    }
+
+    el.addEventListener('wheel', onWheel, { passive: true, capture: true })
+    return () => {
+      el.removeEventListener('wheel', onWheel, { capture: true })
+    }
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (scrollPinRafRef.current != null) {
+        cancelAnimationFrame(scrollPinRafRef.current)
+        scrollPinRafRef.current = null
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     const seen = seenIdsRef.current
