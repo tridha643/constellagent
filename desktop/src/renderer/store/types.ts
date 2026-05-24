@@ -436,6 +436,24 @@ export function normalizeLinearIssueCodingModel(v: unknown): string {
   return typeof v === 'string' ? v : ''
 }
 
+export type LinearIssueLaunchTarget = 'terminal' | 'conductor'
+
+export function normalizeLinearIssueLaunchTarget(v: unknown): LinearIssueLaunchTarget {
+  return v === 'conductor' ? 'conductor' : 'terminal'
+}
+
+export function normalizeLinearIssueConductorProvider(v: unknown): AgentProvider {
+  return normalizeConductorDefaultProvider(v)
+}
+
+export function normalizeLinearIssueConductorModel(v: unknown): string {
+  return normalizeConductorDefaultModel(v)
+}
+
+export function normalizeLinearIssueConductorThinkingLevel(v: unknown): ThinkingLevel {
+  return normalizeConductorDefaultThinkingLevel(v) ?? 'medium'
+}
+
 export function normalizeConflictResolverAgent(v: unknown): AgentType {
   if (typeof v === 'string' && (LINEAR_ISSUE_CODING_AGENTS as readonly string[]).includes(v)) {
     return v as AgentType
@@ -555,6 +573,22 @@ export interface Settings {
    * Value can be a preset id or custom string (same as plan build).
    */
   linearIssueCodingModel: string
+  /** Surface that opens after creating a worktree from a Linear issue. */
+  linearIssueLaunchTarget: LinearIssueLaunchTarget
+  /** When true, Linear Conductor launches reuse global Conductor defaults. */
+  linearIssueConductorUseDefaults: boolean
+  /** Override Conductor provider for Linear launches when useDefaults is false. */
+  linearIssueConductorProvider: AgentProvider
+  /** Override Conductor model for Linear launches when useDefaults is false. */
+  linearIssueConductorModel: string
+  /** Override reasoning effort for Linear Conductor launches when useDefaults is false. */
+  linearIssueConductorThinkingLevel: ThinkingLevel
+  /** Start Linear Conductor sessions in plan mode. */
+  linearIssueConductorPlan: boolean
+  /** Start Linear Conductor sessions in canvas mode. */
+  linearIssueConductorCanvas: boolean
+  /** Close Linear overlay after launching from an issue. */
+  linearIssueClosePanelOnLaunch: boolean
   /**
    * CLI launched when `git push` after a commit hits a non-fast-forward and the auto fetch+rebase
    * runs into content conflicts. The agent resolves the rebase mid-flight; the user re-clicks Commit
@@ -615,6 +649,14 @@ export const DEFAULT_SETTINGS: Settings = {
   linearCopyCreatedIssueToClipboard: true,
   linearIssueCodingAgent: 'claude-code',
   linearIssueCodingModel: '',
+  linearIssueLaunchTarget: 'terminal',
+  linearIssueConductorUseDefaults: true,
+  linearIssueConductorProvider: DEFAULT_CONDUCTOR_PROVIDER,
+  linearIssueConductorModel: defaultConductorModel(DEFAULT_CONDUCTOR_PROVIDER),
+  linearIssueConductorThinkingLevel: 'medium',
+  linearIssueConductorPlan: true,
+  linearIssueConductorCanvas: false,
+  linearIssueClosePanelOnLaunch: true,
   conflictResolverAgent: 'claude-code',
   conflictResolverModel: '',
   piCommitMessageModel: '',

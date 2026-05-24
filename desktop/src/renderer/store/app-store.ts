@@ -27,6 +27,10 @@ import {
   DEFAULT_SIDE_PANEL_LAYOUT,
   normalizeLinearIssueCodingAgent,
   normalizeLinearIssueCodingModel,
+  normalizeLinearIssueLaunchTarget,
+  normalizeLinearIssueConductorProvider,
+  normalizeLinearIssueConductorModel,
+  normalizeLinearIssueConductorThinkingLevel,
   normalizeConflictResolverAgent,
   normalizeConflictResolverModel,
   normalizePiCommitMessageModel,
@@ -47,7 +51,9 @@ import {
 import { buildAdHocAgentCommand, planAgentToPtyAgentType } from '../../shared/plan-build-command'
 import { AGENT_PLAN_DIRS_LABEL } from '../utils/agent-plan-dirs'
 import { GEMINI_TAB_LABEL, isGeminiIdleOscTitle } from '../../shared/gemini-tab-title'
-import { syncConductorAuthKeys } from '../lib/conductor-sign-in'
+import { syncConductorAuthKeys, fetchConductorAuthStatus, isConductorProviderReady } from '../lib/conductor-sign-in'
+import { resolveLinearConductorLaunchConfig } from '../linear/linear-launch-config'
+import { CONDUCTOR_PROVIDER_LABELS } from '../../shared/agent-chat-types'
 import {
   getAllPtyIds,
   splitLeaf,
@@ -1578,10 +1584,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const settings = get().settings
-    const agent = normalizeLinearIssueCodingAgent(settings.linearIssueCodingAgent)
-    const model =
-      normalizeLinearIssueCodingModel(settings.linearIssueCodingModel).trim() || null
-
+    const launchTarget = normalizeLinearIssueLaunchTarget(settings.linearIssueLaunchTarget)
     const wtName = linearIssueWorktreeDirectoryName(issue)
     const branch = linearIssueAgentBranchName(issue)
     const repoPath = project.repoPath
@@ -1634,22 +1637,93 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
 
     const prompt = formatLinearIssueAgentPrompt(issue)
-    const { command } = buildAdHocAgentCommand(agent, model, prompt)
-    const agentType = planAgentToPtyAgentType(agent)
+
+    const closePanelsIfConfigured = () => {
+      if (settings.linearIssueClosePanelOnLaunch !== false) {
+        set({
+          settingsOpen: false,
+          automationsOpen: false,
+          linearPanelOpen: false,
+          linearQuickOpenVisible: false,
+        })
+      }
+    }
 
     try {
-      await get().launchAgentTerminalWithCommand({
-        workspaceId: wsId,
-        worktreePath,
-        title: `${issue.identifier} · agent`,
-        command,
-        agentType: agentType as AgentType,
-      })
-      addToast({
-        id: crypto.randomUUID(),
-        type: 'info',
-        message: `Agent running in new workspace for ${issue.identifier}`,
-      })
+      if (launchTarget === 'conductor') {
+        await syncConductorAuthKeys(
+          settings.conductorCursorApiKey,
+          settings.conductorOpenaiApiKey,
+          settings.conductorCodexWebSockets,
+        )
+        const config = resolveLinearConductorLaunchConfig(settings)
+        const authStatus = await fetchConductorAuthStatus(true)
+        if (!isConductorProviderReady(authStatus, config.provider)) {
+          addToast({
+            id: crypto.randomUUID(),
+            type: 'error',
+            message: `${CONDUCTOR_PROVIDER_LABELS[config.provider]} is not ready. Configure sign-in or API keys in Settings → Conductor.`,
+          })
+          return
+        }
+
+        const tabId = crypto.randomUUID()
+        const tabTitle = `${issue.identifier} · agent`
+        get().addTab({
+          id: tabId,
+          workspaceId: wsId,
+          type: 'conductor',
+          title: tabTitle,
+        })
+
+        const created = await window.api.agentChat.createSession({
+          workspaceId: wsId,
+          workspacePath: worktreePath,
+          provider: config.provider,
+          model: config.model,
+          thinkingLevel: config.thinkingLevel,
+          plan: config.plan,
+          canvas: config.canvas,
+          title: issue.identifier,
+        })
+
+        get().setConductorTabSessionBinding(tabId, created.sessionId, issue.identifier)
+
+        try {
+          await window.api.agentChat.submit(created.sessionId, prompt)
+        } catch (submitErr) {
+          const msg =
+            submitErr instanceof Error ? submitErr.message : 'Failed to submit kickoff prompt'
+          addToast({ id: crypto.randomUUID(), type: 'error', message: msg })
+        }
+
+        closePanelsIfConfigured()
+        addToast({
+          id: crypto.randomUUID(),
+          type: 'info',
+          message: `Conductor running in new workspace for ${issue.identifier}`,
+        })
+      } else {
+        const agent = normalizeLinearIssueCodingAgent(settings.linearIssueCodingAgent)
+        const model =
+          normalizeLinearIssueCodingModel(settings.linearIssueCodingModel).trim() || null
+        const { command } = buildAdHocAgentCommand(agent, model, prompt)
+        const agentType = planAgentToPtyAgentType(agent)
+
+        await get().launchAgentTerminalWithCommand({
+          workspaceId: wsId,
+          worktreePath,
+          title: `${issue.identifier} · agent`,
+          command,
+          agentType: agentType as AgentType,
+        })
+        closePanelsIfConfigured()
+        addToast({
+          id: crypto.randomUUID(),
+          type: 'info',
+          message: `Agent running in new workspace for ${issue.identifier}`,
+        })
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to start agent'
       addToast({ id: crypto.randomUUID(), type: 'error', message: msg })
@@ -3061,6 +3135,23 @@ export const useAppStore = create<AppState>((set, get) => ({
         settingsMerged.linearIssueCodingAgent,
       ),
       linearIssueCodingModel: normalizeLinearIssueCodingModel(settingsMerged.linearIssueCodingModel),
+      linearIssueLaunchTarget: normalizeLinearIssueLaunchTarget(
+        settingsMerged.linearIssueLaunchTarget,
+      ),
+      linearIssueConductorUseDefaults:
+        settingsMerged.linearIssueConductorUseDefaults !== false,
+      linearIssueConductorProvider: normalizeLinearIssueConductorProvider(
+        settingsMerged.linearIssueConductorProvider,
+      ),
+      linearIssueConductorModel: normalizeLinearIssueConductorModel(
+        settingsMerged.linearIssueConductorModel,
+      ),
+      linearIssueConductorThinkingLevel: normalizeLinearIssueConductorThinkingLevel(
+        settingsMerged.linearIssueConductorThinkingLevel,
+      ),
+      linearIssueConductorPlan: settingsMerged.linearIssueConductorPlan !== false,
+      linearIssueConductorCanvas: settingsMerged.linearIssueConductorCanvas === true,
+      linearIssueClosePanelOnLaunch: settingsMerged.linearIssueClosePanelOnLaunch !== false,
       conductorDefaultProvider: normalizeConductorDefaultProviderSetting(
         settingsMerged.conductorDefaultProvider,
       ),

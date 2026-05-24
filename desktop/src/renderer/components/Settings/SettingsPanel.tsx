@@ -19,6 +19,10 @@ import {
   NAVIGATION_PANEL_TYPES,
   normalizeLinearIssueCodingAgent,
   normalizeLinearIssueCodingModel,
+  normalizeLinearIssueLaunchTarget,
+  normalizeLinearIssueConductorProvider,
+  normalizeLinearIssueConductorModel,
+  normalizeLinearIssueConductorThinkingLevel,
   normalizeConflictResolverAgent,
   normalizeConflictResolverModel,
   normalizeLinearIssueScope,
@@ -233,12 +237,13 @@ function NumberRow({ label, description, value, onChange, min = 8, max = 32 }: {
   )
 }
 
-function SelectRow({ label, description, value, onChange, options }: {
+function SelectRow({ label, description, value, onChange, options, disabled }: {
   label: string
   description: string
   value: string
   onChange: (v: string) => void
   options: { value: string; label: string }[]
+  disabled?: boolean
 }) {
   return (
     <div className={styles.row}>
@@ -249,6 +254,7 @@ function SelectRow({ label, description, value, onChange, options }: {
       <select
         className={styles.textInput}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
       >
         {options.map((o) => (
@@ -1250,6 +1256,9 @@ function ConductorSettingsSection({
         <code>cursor-agent login</code> signs in the CLI (terminals and plan build). <strong>Conductor chat</strong> uses the Cursor SDK and needs an API key below (or <code>CURSOR_API_KEY</code>). <strong>Codex</strong> uses the OpenAI Codex CLI — sign in with{' '}
         <code>codex login</code> or an OpenAI API key. Keys are stored locally in app settings (same file as Linear).
       </div>
+      <div className={styles.sectionHint}>
+        Linear issue launches can reuse these defaults — configure under Settings → Linear → Issue → launch target.
+      </div>
       <SelectRow
         label="Default provider"
         description="Used for brand-new Conductor chats before you switch providers inside a thread."
@@ -1417,6 +1426,30 @@ function LinearSettingsSection({
   const [testing, setTesting] = useState(false)
 
   const issueAgent = normalizeLinearIssueCodingAgent(settings.linearIssueCodingAgent)
+  const launchTarget = normalizeLinearIssueLaunchTarget(settings.linearIssueLaunchTarget)
+  const conductorLaunchProvider = normalizeLinearIssueConductorProvider(
+    settings.linearIssueConductorProvider,
+  )
+  const conductorLaunchModelPresets = PLAN_MODEL_PRESETS[conductorLaunchProvider]
+  const normalizedConductorLaunchModel = normalizeLinearIssueConductorModel(
+    settings.linearIssueConductorModel,
+  )
+  const conductorLaunchModelOptions = useMemo(() => {
+    const presetIds = new Set(conductorLaunchModelPresets.map((preset) => preset.cliModel))
+    const opts = conductorLaunchModelPresets.map((preset) => ({
+      value: preset.cliModel,
+      label: `${preset.label} (${preset.cliModel})`,
+    }))
+    if (normalizedConductorLaunchModel && !presetIds.has(normalizedConductorLaunchModel)) {
+      opts.push({
+        value: normalizedConductorLaunchModel,
+        label: `${normalizedConductorLaunchModel} (custom)`,
+      })
+    }
+    return opts
+  }, [conductorLaunchModelPresets, normalizedConductorLaunchModel])
+  const conductorLaunchModelSelectValue =
+    normalizedConductorLaunchModel || defaultConductorModel(conductorLaunchProvider)
   const modelPresets = PLAN_MODEL_PRESETS[issueAgent as PlanAgent]
   const modelSelectOptions = useMemo(() => {
     const modelVal = normalizeLinearIssueCodingModel(settings.linearIssueCodingModel).trim()
@@ -1544,28 +1577,115 @@ function LinearSettingsSection({
         }
       />
       <SelectRow
-        label="Issue → coding agent"
-        description="CLI used when you open a Linear issue in a new worktree (Issues table icon or “Open agent” on the ticket-created toast). Uses the currently open workspace’s project as the git repo."
-        value={issueAgent}
+        label="Issue → launch target"
+        description="What opens after creating a worktree from a Linear issue (Issues rocket or Tickets “Open agent”)."
+        value={launchTarget}
         onChange={(v) =>
-          updateSettings({ linearIssueCodingAgent: normalizeLinearIssueCodingAgent(v) })
+          updateSettings({ linearIssueLaunchTarget: normalizeLinearIssueLaunchTarget(v) })
         }
-        options={BUILD_HARNESS_OPTIONS.map((o) => ({
-          value: o.agent,
-          label: o.label,
-        }))}
+        options={[
+          { value: 'terminal', label: 'Terminal CLI' },
+          { value: 'conductor', label: 'Conductor chat' },
+        ]}
       />
-      <SelectRow
-        label="Issue → agent model"
-        description="Passed to the agent as --model when not “CLI default”. Same ids as plan builds."
-        value={modelSelectValue}
-        onChange={(v) =>
-          updateSettings({
-            linearIssueCodingModel:
-              v === '__default' ? '' : normalizeLinearIssueCodingModel(v),
-          })
-        }
-        options={modelSelectOptions}
+      {launchTarget === 'conductor' ? (
+        <>
+          <ToggleRow
+            label="Use Conductor defaults"
+            description="When on, provider/model/effort come from Settings → Conductor. When off, use the overrides below."
+            value={settings.linearIssueConductorUseDefaults}
+            onChange={(v) => updateSettings({ linearIssueConductorUseDefaults: v })}
+          />
+          <SelectRow
+            label="Issue → Conductor provider"
+            description="Provider for Linear Conductor launches when not using Conductor defaults."
+            value={conductorLaunchProvider}
+            onChange={(v) => {
+              const nextProvider = normalizeLinearIssueConductorProvider(v)
+              updateSettings({
+                linearIssueConductorProvider: nextProvider,
+                linearIssueConductorModel: defaultConductorModel(nextProvider),
+              })
+            }}
+            options={[
+              { value: 'cursor', label: 'Cursor' },
+              { value: 'codex', label: 'Codex' },
+            ]}
+            disabled={settings.linearIssueConductorUseDefaults}
+          />
+          <SelectRow
+            label="Issue → Conductor model"
+            description="Starting model for Linear Conductor launches when not using Conductor defaults."
+            value={conductorLaunchModelSelectValue}
+            onChange={(v) =>
+              updateSettings({
+                linearIssueConductorModel: normalizeLinearIssueConductorModel(v),
+              })
+            }
+            options={conductorLaunchModelOptions}
+            disabled={settings.linearIssueConductorUseDefaults}
+          />
+          <SelectRow
+            label="Issue → Conductor reasoning effort"
+            description="Starting effort for Linear Conductor launches when not using Conductor defaults."
+            value={settings.linearIssueConductorThinkingLevel}
+            onChange={(v) =>
+              updateSettings({
+                linearIssueConductorThinkingLevel: normalizeLinearIssueConductorThinkingLevel(v),
+              })
+            }
+            options={THINKING_LEVELS.map((level) => ({
+              value: level,
+              label: THINKING_LABELS[level],
+            }))}
+            disabled={settings.linearIssueConductorUseDefaults}
+          />
+          <ToggleRow
+            label="Start in plan mode"
+            description="Open Linear Conductor sessions with plan mode enabled (good fit for the read-only kickoff prompt)."
+            value={settings.linearIssueConductorPlan}
+            onChange={(v) => updateSettings({ linearIssueConductorPlan: v })}
+          />
+          <ToggleRow
+            label="Start in canvas mode"
+            description="Open Linear Conductor sessions with canvas mode enabled."
+            value={settings.linearIssueConductorCanvas}
+            onChange={(v) => updateSettings({ linearIssueConductorCanvas: v })}
+          />
+        </>
+      ) : (
+        <>
+          <SelectRow
+            label="Issue → coding agent"
+            description="CLI used when you open a Linear issue in a new worktree (Issues table icon or “Open agent” on the ticket-created toast). Uses the currently open workspace’s project as the git repo."
+            value={issueAgent}
+            onChange={(v) =>
+              updateSettings({ linearIssueCodingAgent: normalizeLinearIssueCodingAgent(v) })
+            }
+            options={BUILD_HARNESS_OPTIONS.map((o) => ({
+              value: o.agent,
+              label: o.label,
+            }))}
+          />
+          <SelectRow
+            label="Issue → agent model"
+            description="Passed to the agent as --model when not “CLI default”. Same ids as plan builds."
+            value={modelSelectValue}
+            onChange={(v) =>
+              updateSettings({
+                linearIssueCodingModel:
+                  v === '__default' ? '' : normalizeLinearIssueCodingModel(v),
+              })
+            }
+            options={modelSelectOptions}
+          />
+        </>
+      )}
+      <ToggleRow
+        label="Close Linear panel on launch"
+        description="After launching from an issue, close the Linear overlay and focus the new workspace."
+        value={settings.linearIssueClosePanelOnLaunch}
+        onChange={(v) => updateSettings({ linearIssueClosePanelOnLaunch: v })}
       />
       <ConflictResolverAgentRows />
     </>

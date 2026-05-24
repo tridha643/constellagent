@@ -1,4 +1,4 @@
-import type { ConductorAuthStatus } from '../../shared/agent-chat-types'
+import type { ConductorAuthStatus, AgentProvider } from '../../shared/agent-chat-types'
 import type { CodexWebSocketsSetting } from '../../shared/codex-websockets'
 import type { AppState } from '../store/types'
 
@@ -28,6 +28,13 @@ export async function fetchConductorAuthStatus(force = false): Promise<Conductor
   } catch {
     return null
   }
+}
+
+export function isConductorProviderReady(
+  status: ConductorAuthStatus | null,
+  provider: AgentProvider,
+): boolean {
+  return status?.[provider]?.ready === true
 }
 
 export function openCursorApiKeyDocs(): void {
