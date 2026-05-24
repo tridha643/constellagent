@@ -21,9 +21,9 @@ function SkillChipIcon() {
 }
 
 /** Inline pill shown when a harness skill is invoked from the Conductor chat composer. */
-export function ConductorSkillChip({ name }: { name: string }) {
+export function ConductorSkillChip({ name, title }: { name: string; title?: string }) {
   return (
-    <span className={styles.conductorSkillChip} title={`/${name}`} data-testid="conductor-skill-chip">
+    <span className={styles.conductorSkillChip} title={title ?? `/${name}`} data-testid="conductor-skill-chip">
       <SkillChipIcon />
       <span className={styles.conductorSkillChipLabel}>{name}</span>
     </span>

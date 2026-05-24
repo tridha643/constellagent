@@ -55,10 +55,17 @@ describe("segmentMessageForInlineChips", () => {
     expect(s.some((x) => x.kind === "file" && x.path.includes("/Users/out.ts"))).toBe(true);
   });
 
-  it("does not chip inside inline backticks", () => {
+  it("does not chip file paths inside inline backticks", () => {
     const s = segmentMessageForInlineChips("see `desktop/src/foo.ts` and desktop/src/bar.ts");
     expect(s.some((x) => x.kind === "text" && x.text.includes("desktop/src/foo.ts"))).toBe(true);
     expect(s.some((x) => x.kind === "file" && x.path.includes("foo.ts"))).toBe(false);
     expect(s.some((x) => x.kind === "file" && x.path.includes("bar.ts"))).toBe(true);
+  });
+
+  it("chips harness skill ids inside inline backticks", () => {
+    const s = segmentMessageForInlineChips("I'll use the `composio-cli` skill for this.");
+    const skills = s.filter((x) => x.kind === "skillSlash");
+    expect(skills).toEqual([{ kind: "skillSlash", slash: "/composio-cli", name: "composio-cli" }]);
+    expect(s.some((x) => x.kind === "text" && x.text.includes("`composio-cli`"))).toBe(false);
   });
 });

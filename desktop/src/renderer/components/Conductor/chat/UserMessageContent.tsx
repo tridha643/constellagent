@@ -4,8 +4,10 @@ import {
   segmentMessageForInlineChips,
   type MessageSegment,
 } from '../../../pi-gui/message-inline-segments'
+import { markdownBasename } from '../../../utils/markdown-file-links'
 import { MarkdownBody } from '../../Markdown/MarkdownBody'
 import { ConductorSkillChip } from './ConductorSkillChip'
+import { FilePathChip } from './FilePathChip'
 import styles from '../Conductor.module.css'
 
 function segmentToNode(segment: MessageSegment, index: number): ReactNode {
@@ -14,6 +16,16 @@ function segmentToNode(segment: MessageSegment, index: number): ReactNode {
       return segment.text.trim() ? (
         <MarkdownBody key={`t-${index}`} content={segment.text} inline />
       ) : null
+    case 'file':
+      return <FilePathChip key={`f-${index}`} path={segment.path} />
+    case 'skillFile':
+      return (
+        <ConductorSkillChip
+          key={`sf-${index}`}
+          name={markdownBasename(segment.path)}
+          title={segment.path}
+        />
+      )
     case 'skillSlash':
       if (isConductorHostSlashName(segment.name)) {
         return <MarkdownBody key={`h-${index}`} content={segment.slash} inline />
@@ -24,16 +36,14 @@ function segmentToNode(segment: MessageSegment, index: number): ReactNode {
   }
 }
 
-function hasSkillInvocationChip(segments: readonly MessageSegment[]): boolean {
-  return segments.some(
-    (segment) => segment.kind === 'skillSlash' && !isConductorHostSlashName(segment.name),
-  )
+function hasInlineSegmentChips(segments: readonly MessageSegment[]): boolean {
+  return segments.some((segment) => segment.kind !== 'text')
 }
 
-/** User message body with inline skill-invocation chips for harness `/skill` commands. */
+/** User message body with inline file/skill chips for paths and harness `/skill` commands. */
 export function UserMessageContent({ text }: { text: string }) {
   const segments = useMemo(() => segmentMessageForInlineChips(text), [text])
-  const showSkillChips = hasSkillInvocationChip(segments)
+  const showSkillChips = hasInlineSegmentChips(segments)
 
   if (!showSkillChips) {
     return <MarkdownBody content={text} />

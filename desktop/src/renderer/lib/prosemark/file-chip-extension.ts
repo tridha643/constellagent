@@ -1,5 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
-import { Facet, RangeSetBuilder, type EditorState, type Extension } from "@codemirror/state";
+import { Facet, RangeSetBuilder, type EditorState, type Extension, Prec } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import type { SyntaxNodeRef } from "@lezer/common";
 import { getFilePresentation } from "../../utils/file-presentation";
@@ -12,6 +12,10 @@ import {
 } from "../../utils/markdown-file-links";
 import type { AppearanceThemeId } from "../../theme/appearance";
 import { shouldRebuildProsemarkDecorations } from "./decoration-sync";
+import {
+  findMarkdownSkillSlashReferences,
+  isLikelySkillIdentifier,
+} from "../../../shared/skill-tool-utils";
 
 export interface MarkdownFileChipOptions {
   baseDir?: string;
@@ -142,6 +146,85 @@ function isBlocked(range: BlockedRange, blockedRanges: readonly BlockedRange[]):
   return blockedRanges.some((blocked) => rangesOverlap(range, blocked));
 }
 
+function addBareSkillChipDecoration(
+  decorations: FileChipDecoration[],
+  from: number,
+  to: number,
+  name: string,
+): void {
+  decorations.push({
+    from,
+    to,
+    decoration: Decoration.replace({
+      widget: new SkillChipWidget(name),
+    }),
+  });
+}
+
+function addSkillChipDecoration(
+  decorations: FileChipDecoration[],
+  node: SyntaxNodeRef,
+  name: string,
+): void {
+  decorations.push({
+    from: node.from,
+    to: node.to,
+    decoration: Decoration.replace({
+      widget: new SkillChipWidget(name),
+    }),
+  });
+}
+
+class SkillChipWidget extends WidgetType {
+  constructor(private readonly name: string) {
+    super();
+  }
+
+  eq(other: SkillChipWidget): boolean {
+    return other.name === this.name;
+  }
+
+  toDOM(): HTMLElement {
+    const chip = document.createElement("span");
+    chip.className = "cm-skill-chip";
+    chip.title = `/${this.name}`;
+    chip.setAttribute("data-testid", "markdown-skill-chip");
+    chip.setAttribute("contenteditable", "false");
+
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("aria-hidden", "true");
+    icon.setAttribute("class", "cm-skill-chip-icon");
+    icon.setAttribute("viewBox", "0 0 16 16");
+    icon.setAttribute("width", "12");
+    icon.setAttribute("height", "12");
+    icon.setAttribute("fill", "none");
+    icon.setAttribute("stroke", "currentColor");
+    const frame = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    frame.setAttribute(
+      "d",
+      "M3 2.5h10a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1Z",
+    );
+    frame.setAttribute("stroke-width", "1.2");
+    const lines = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    lines.setAttribute("d", "M5 5.5h6M5 8h4");
+    lines.setAttribute("stroke-width", "1.2");
+    lines.setAttribute("stroke-linecap", "round");
+    icon.append(frame, lines);
+    chip.appendChild(icon);
+
+    const text = document.createElement("span");
+    text.className = "cm-skill-chip-label";
+    text.textContent = this.name;
+    chip.appendChild(text);
+
+    return chip;
+  }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
 class FileChipWidget extends WidgetType {
   constructor(
     private readonly target: MarkdownFileTarget,
@@ -231,8 +314,14 @@ function fileChipDecorations(view: EditorView): DecorationSet {
         }
         if (node.name === "InlineCode") {
           const path = inlineCodeText(view, node);
-          if (!path || !isLikelyMarkdownFilePath(path)) return;
-          addFileChipDecoration(decorations, view, node, path, markdownBasename(path), options);
+          if (!path) return;
+          if (isLikelyMarkdownFilePath(path)) {
+            addFileChipDecoration(decorations, view, node, path, markdownBasename(path), options);
+            return;
+          }
+          if (isLikelySkillIdentifier(path)) {
+            addSkillChipDecoration(decorations, node, path);
+          }
         }
       },
     });
@@ -249,6 +338,11 @@ function fileChipDecorations(view: EditorView): DecorationSet {
           const refRange = { from: line.from + reference.from, to: line.from + reference.to };
           if (isBlocked(refRange, blockedRanges)) continue;
           addBareFileChipDecoration(decorations, refRange.from, refRange.to, reference.path, options);
+        }
+        for (const reference of findMarkdownSkillSlashReferences(line.text)) {
+          const refRange = { from: line.from + reference.from, to: line.from + reference.to };
+          if (isBlocked(refRange, blockedRanges)) continue;
+          addBareSkillChipDecoration(decorations, refRange.from, refRange.to, reference.name);
         }
       }
       if (line.to >= to) break;
@@ -267,23 +361,25 @@ function fileChipDecorations(view: EditorView): DecorationSet {
 export function markdownFileChipExtension(options: MarkdownFileChipOptions): Extension {
   return [
     markdownFileChipOptionsFacet.of(options),
-    ViewPlugin.fromClass(
-      class {
-        decorations: DecorationSet;
+    Prec.high(
+      ViewPlugin.fromClass(
+        class {
+          decorations: DecorationSet;
 
-        constructor(view: EditorView) {
-          this.decorations = fileChipDecorations(view);
-        }
-
-        update(update: ViewUpdate) {
-          if (shouldRebuildProsemarkDecorations(update)) {
-            this.decorations = fileChipDecorations(update.view);
+          constructor(view: EditorView) {
+            this.decorations = fileChipDecorations(view);
           }
-        }
-      },
-      {
-        decorations: (value) => value.decorations,
-      },
+
+          update(update: ViewUpdate) {
+            if (shouldRebuildProsemarkDecorations(update)) {
+              this.decorations = fileChipDecorations(update.view);
+            }
+          }
+        },
+        {
+          decorations: (value) => value.decorations,
+        },
+      ),
     ),
   ];
 }

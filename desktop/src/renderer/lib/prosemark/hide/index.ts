@@ -4,6 +4,7 @@ import type { InlineContext, MarkdownConfig } from "@lezer/markdown";
 import { markdownTags } from "../markdown/tags";
 import { stateWORDAt } from "../utils";
 import { markdownFileChipOptionsFacet, linkHrefFromNode, inlineCodePathFromNode } from "../file-chip-extension";
+import { isLikelySkillIdentifier } from "../../../../shared/skill-tool-utils";
 import { isLikelyMarkdownFilePath, resolveMarkdownFileTarget } from "../../../utils/markdown-file-links";
 
 export { hideExtension } from "./core";
@@ -53,7 +54,9 @@ const defaultHidableSpecs: HidableNodeSpec[] = [
     nodeName: "InlineCode",
     predicate: (state, node) => {
       const path = inlineCodePathFromNode(state, node);
-      if (!path || !isLikelyMarkdownFilePath(path)) return true;
+      if (!path) return true;
+      if (isLikelySkillIdentifier(path)) return false;
+      if (!isLikelyMarkdownFilePath(path)) return true;
       const options = state.facet(markdownFileChipOptionsFacet);
       return !resolveMarkdownFileTarget(path, options);
     },

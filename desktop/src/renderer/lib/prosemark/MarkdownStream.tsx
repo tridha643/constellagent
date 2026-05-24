@@ -21,6 +21,7 @@ import {
 import { darkTheme } from "./syntaxHighlighting";
 import { tableDecorations } from "./table-decorations";
 import { mermaidDecorations } from "./mermaid/mermaid-decorations";
+import { filePathListDecorations } from "./file-path-list/file-path-list-decorations";
 import { htmlBlockDecorations, htmlBlockParserExtension } from "./html-block-decorations";
 import { dragFreezeExtensions } from "./drag-selection-gate";
 import { markdownFileChipExtension, type MarkdownFileChipOptions } from "./file-chip-extension";
@@ -162,6 +163,7 @@ function buildExtensions(options: MarkdownFileChipOptions): Extension[] {
     ),
     tableDecorations(),
     mermaidDecorations(),
+    filePathListDecorations(),
     htmlBlockDecorations(),
     dragFreezeExtensions,
     prosemarkDecorationSync,

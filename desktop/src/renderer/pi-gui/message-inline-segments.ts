@@ -1,8 +1,10 @@
 /**
  * Splits PI Chat message text into plain markdown chunks and inline chip hits
- * (file paths, SKILL.md paths, slash-style skills) for Cursor-like pills.
- * Fenced ``` code blocks and inline `code` spans are left as plain text (no chips inside).
+ * (file paths, SKILL.md paths, slash-style skills, `skill-id` backticks) for Cursor-like pills.
+ * Fenced ``` code blocks and non-skill inline `code` spans are left as plain text.
  */
+
+import { isLikelySkillIdentifier } from "../../shared/skill-tool-utils";
 
 export type MessageSegment =
   | { kind: "text"; text: string }
@@ -230,7 +232,12 @@ export function segmentMessageForInlineChips(input: string): MessageSegment[] {
 
     for (const piece of splitOutInlineCode(block.text)) {
       if (piece.code) {
-        out.push({ kind: "text", text: piece.text });
+        const inner = piece.text.slice(1, -1);
+        if (isLikelySkillIdentifier(inner)) {
+          out.push({ kind: "skillSlash", slash: `/${inner}`, name: inner });
+        } else {
+          out.push({ kind: "text", text: piece.text });
+        }
         globalOffset += piece.text.length;
         continue;
       }

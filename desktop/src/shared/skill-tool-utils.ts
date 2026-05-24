@@ -1,5 +1,39 @@
 /** Shared helpers for native SDK skill-load tool rows in Conductor. */
 
+import { isConductorHostSlashName } from './conductor-composer-commands'
+
+const SKILL_IDENTIFIER_RE = /^[a-z][a-z0-9_-]*$/i
+
+/** Inline \`composio-cli\`-style tokens in markdown (not file paths or shell snippets). */
+export function isLikelySkillIdentifier(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed || trimmed.length < 2 || trimmed.length > 64) return false
+  if (/[\s/\\]/.test(trimmed) || trimmed.startsWith('$')) return false
+  if (/\.[a-z0-9]{1,12}$/i.test(trimmed)) return false
+  if (!SKILL_IDENTIFIER_RE.test(trimmed)) return false
+  return !isConductorHostSlashName(trimmed)
+}
+
+export interface MarkdownSkillSlashReference {
+  from: number
+  to: number
+  name: string
+}
+
+/** Bare `/skill-name` tokens in prose (mirrors pi-gui message-inline-segments). */
+export function findMarkdownSkillSlashReferences(text: string): MarkdownSkillSlashReference[] {
+  const re = /(?:^|[\s([{`'"])\/([a-z][a-z0-9_-]{0,63})(?=\s|$|[.,;:!?)}\]`'"])/g
+  const out: MarkdownSkillSlashReference[] = []
+  let match: RegExpExecArray | null
+  while ((match = re.exec(text))) {
+    const name = match[1]
+    if (!name || isConductorHostSlashName(name)) continue
+    const from = match.index + match[0].indexOf('/')
+    out.push({ from, to: from + name.length + 1, name })
+  }
+  return out
+}
+
 export function isSkillLoadToolName(toolName: string): boolean {
   const normalized = toolName.toLowerCase()
   if (normalized === 'skill' || normalized === 'load_skill' || normalized === 'skill_load') {
