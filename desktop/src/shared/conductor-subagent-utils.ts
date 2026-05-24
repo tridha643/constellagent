@@ -1,4 +1,4 @@
-const SUBAGENT_TOOL_PATTERN = /^(task|taskcreate|subagent|explore)$/i
+const SUBAGENT_TOOL_PATTERN = /^(task|taskcreate|subagent|explore|spawn_agent)$/i
 
 export interface SubagentMetadata {
   readonly variant: 'subagent'
@@ -127,6 +127,72 @@ export function mergeSubagentResultMetadata(
   const base = parseSubagentMetadata(existingMetadata) ?? { variant: 'subagent' as const }
   const result = parseSubagentResult(output)
   return JSON.stringify({ ...base, ...result })
+}
+
+/** Parses Codex collab `spawn_agent` prompt text (plain or JSON) for subagent card metadata. */
+export function parseCodexSpawnPrompt(prompt?: string): {
+  title: string
+  statusHint?: string
+  subagentType?: string
+} {
+  const trimmed = prompt?.trim()
+  if (!trimmed) return { title: 'Subagent' }
+
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown
+      if (isRecord(parsed)) {
+        const subagentType =
+          typeof parsed.agent_type === 'string'
+            ? parsed.agent_type.trim()
+            : typeof parsed.agentType === 'string'
+              ? parsed.agentType.trim()
+              : undefined
+        const message =
+          typeof parsed.message === 'string'
+            ? parsed.message.trim()
+            : typeof parsed.prompt === 'string'
+              ? parsed.prompt.trim()
+              : undefined
+        if (message || subagentType) {
+          const title = message ? firstLine(message) : subagentType ?? 'Subagent'
+          return {
+            title,
+            statusHint: message ? firstLine(message) : undefined,
+            ...(subagentType ? { subagentType } : {}),
+          }
+        }
+      }
+    } catch {
+      // fall through to plain-text parsing
+    }
+  }
+
+  return {
+    title: firstLine(trimmed),
+    statusHint: firstLine(trimmed),
+  }
+}
+
+export function collabAgentStatusLabel(status: string): string {
+  switch (status) {
+    case 'pending_init':
+      return 'Starting…'
+    case 'running':
+      return 'Running…'
+    case 'completed':
+      return 'Completed'
+    case 'errored':
+      return 'Failed'
+    case 'shutdown':
+      return 'Stopped'
+    case 'interrupted':
+      return 'Interrupted'
+    case 'not_found':
+      return 'Not found'
+    default:
+      return 'Working…'
+  }
 }
 
 export function parseSubagentMetadata(metadata: string | undefined): SubagentMetadata | null {

@@ -662,21 +662,25 @@ test.describe('Conductor chat view', () => {
     await expect(approve).toBeVisible({ timeout: 5000 })
 
     await approve.click()
+    await expect(window.getByRole('button', { name: 'Plan mode on. Click to disable.' })).toHaveCount(0)
     await expect
       .poll(async () =>
         window.evaluate(async (sid: string) => {
           const sessionAfterSubmit = await (
-            window as unknown as { api: { agentChat: { getSession: (id: string) => Promise<{ transcript: Array<{ kind: string; role?: string; text?: string }> } | null> } } }
+            window as unknown as { api: { agentChat: { getSession: (id: string) => Promise<{ state: { plan?: boolean }; transcript: Array<{ kind: string; role?: string; text?: string }> } | null> } } }
           ).api.agentChat.getSession(sid)
-          return sessionAfterSubmit?.transcript.some(
-            (item) =>
-              item.kind === 'message' &&
-              item.role === 'user' &&
-              item.text === 'Approved. Please proceed with implementation.',
-          )
+          return {
+            planOff: sessionAfterSubmit?.state.plan === false,
+            approved: sessionAfterSubmit?.transcript.some(
+              (item) =>
+                item.kind === 'message' &&
+                item.role === 'user' &&
+                item.text === 'Approved. Please proceed with implementation.',
+            ),
+          }
         }, planSessionId),
       )
-      .toBe(true)
+      .toEqual({ planOff: true, approved: true })
   })
 
   test('renders the live activity ticker for the active turn', async () => {

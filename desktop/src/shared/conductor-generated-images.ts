@@ -69,19 +69,31 @@ export function isConductorGeneratedImageToolName(toolName: string): boolean {
 }
 
 /** Whether a timeline tool row should render as a post-turn generated image block. */
-export function isGeneratedImageToolCall(tool: {
-  readonly toolName: string
-  readonly output?: unknown
-  readonly input?: unknown
-}): boolean {
-  if (isConductorGeneratedImageOutput(tool.output)) return true
-  if (isConductorGeneratedImageToolName(tool.toolName)) return true
-  return (
-    extractConductorGeneratedImages(tool.output, {
-      toolName: tool.toolName,
-      input: tool.input,
-    }) !== undefined
-  )
+export function isGeneratedImageToolCall(
+  tool: {
+    readonly toolName: string
+    readonly output?: unknown
+    readonly input?: unknown
+    readonly status?: 'running' | 'success' | 'error'
+  },
+  options: { readonly userRequestedImages?: boolean } = {},
+): boolean {
+  if (!options.userRequestedImages) return false
+
+  if (isConductorGeneratedImageOutput(tool.output)) {
+    return hasRenderableGeneratedImageOutput(tool.output)
+  }
+
+  if (!isConductorGeneratedImageToolName(tool.toolName)) return false
+
+  // Image-generation tools may stream before output arrives.
+  if (tool.status === 'running') return true
+
+  const extracted = extractConductorGeneratedImages(tool.output, {
+    toolName: tool.toolName,
+    input: tool.input,
+  })
+  return extracted !== undefined && hasRenderableGeneratedImageOutput(extracted)
 }
 
 export function isConductorGeneratedImageOutput(
@@ -129,6 +141,39 @@ export function extractImagePathsFromText(text: string): string[] {
   return out
 }
 
+/** Heuristic: user explicitly asked for raster image generation this turn. */
+export function userRequestedGeneratedImages(text: string): boolean {
+  const normalized = text.trim()
+  if (!normalized) return false
+
+  if (
+    /\b(do not|don't|stop|without|no|never|fix|disable|prevent|suppress)\b[\s\S]{0,48}\b(generate|create|make|use|render)\b[\s\S]{0,48}\b(image|icon|logo|photo|picture|mockup|illustration|banner|thumbnail|avatar)\b/i.test(
+      normalized,
+    )
+  ) {
+    return false
+  }
+  if (/\bfix\b[\s\S]{0,40}\bimage\b/i.test(normalized)) return false
+
+  if (/\bimagegen\b/i.test(normalized)) return true
+  if (
+    /\b(generate|create|make|draw|render|produce|design)\b[\s\S]{0,32}\b(icon|logo|image|mockup|photo|picture|illustration|banner|thumbnail|avatar|artwork|raster)\b/i.test(
+      normalized,
+    )
+  ) {
+    return true
+  }
+  if (
+    /\b(icon|logo|mockup|photo|picture|illustration|banner|thumbnail|avatar|artwork)\b[\s\S]{0,24}\b(for|of)\b/i.test(
+      normalized,
+    )
+  ) {
+    return true
+  }
+  if (/\braster\s+(image|asset|icon|mockup)\b/i.test(normalized)) return true
+  return false
+}
+
 /** Heuristic: assistant or tool text indicates an image was produced this turn. */
 export function looksLikeGeneratedImageCompletionText(text: string): boolean {
   const normalized = text.trim()
@@ -169,11 +214,18 @@ export function turnTranscriptText(items: readonly { kind: string; text?: string
   return parts.join('\n')
 }
 
-/** True when a tool row already carries image data or a resolvable file path. */
+/** True when a tool row already carries inline image bytes ready for <img src>. */
 export function hasRenderableGeneratedImageOutput(output: unknown): boolean {
   const normalized = normalizeConductorGeneratedImageOutput(output)
   if (!normalized) return false
-  return normalized.images.some((image) => Boolean(image.data?.length || renderableFilePath(image.filePath)))
+  return normalized.images.some((image) => hasInlineGeneratedImageData(image.data))
+}
+
+export function hasInlineGeneratedImageData(data: string | undefined): boolean {
+  if (!data?.length) return false
+  const normalized = normalizeBase64Data(data)
+  if (!normalized) return false
+  return isDecodedImageSizeAllowed(normalized)
 }
 
 export function extractConductorGeneratedImages(
@@ -185,7 +237,7 @@ export function extractConductorGeneratedImages(
 
   const context = contextFromInput(options.input)
   const candidates: ImageCandidate[] = []
-  collectImageCandidates(value, context, candidates, 0, new Set())
+  collectImageCandidates(value, context, candidates, 0, new Set(), options)
   if (candidates.length === 0) return undefined
 
   const seen = new Set<string>()
@@ -225,6 +277,7 @@ function collectImageCandidates(
   candidates: ImageCandidate[],
   depth: number,
   visited: Set<object>,
+  options: ConductorGeneratedImageExtractionOptions,
 ): void {
   if (candidates.length >= MAX_EXTRACTED_IMAGES || depth > MAX_RECURSION_DEPTH) return
 
@@ -234,16 +287,18 @@ function collectImageCandidates(
       candidates.push({ ...context, ...dataUrl })
       return
     }
-    for (const filePath of extractImagePathsFromText(value)) {
-      candidates.push({ ...context, data: '', filePath, name: fileNameFromPath(filePath) })
-      if (candidates.length >= MAX_EXTRACTED_IMAGES) return
+    if (shouldExtractImagePathsFromText(options)) {
+      for (const filePath of extractImagePathsFromText(value)) {
+        candidates.push({ ...context, data: '', filePath, name: fileNameFromPath(filePath) })
+        if (candidates.length >= MAX_EXTRACTED_IMAGES) return
+      }
     }
     return
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      collectImageCandidates(item, context, candidates, depth + 1, visited)
+      collectImageCandidates(item, context, candidates, depth + 1, visited, options)
       if (candidates.length >= MAX_EXTRACTED_IMAGES) return
     }
     return
@@ -263,7 +318,7 @@ function collectImageCandidates(
   const preferredKeys = ['result', 'value', 'content', 'structured_content', 'structuredContent', 'output', 'data', 'image']
   for (const key of preferredKeys) {
     if (key in value) {
-      collectImageCandidates(value[key], nextContext, candidates, depth + 1, visited)
+      collectImageCandidates(value[key], nextContext, candidates, depth + 1, visited, options)
       if (candidates.length >= MAX_EXTRACTED_IMAGES) return
     }
   }
@@ -271,9 +326,13 @@ function collectImageCandidates(
   for (const [key, child] of Object.entries(value)) {
     if (preferredKeys.includes(key)) continue
     if (!mayContainImage(key, child)) continue
-    collectImageCandidates(child, nextContext, candidates, depth + 1, visited)
+    collectImageCandidates(child, nextContext, candidates, depth + 1, visited, options)
     if (candidates.length >= MAX_EXTRACTED_IMAGES) return
   }
+}
+
+function shouldExtractImagePathsFromText(options: ConductorGeneratedImageExtractionOptions): boolean {
+  return Boolean(options.toolName && isConductorGeneratedImageToolName(options.toolName))
 }
 
 function directCandidate(value: Record<string, unknown>, context: ImageCandidate): ImageCandidate | undefined {

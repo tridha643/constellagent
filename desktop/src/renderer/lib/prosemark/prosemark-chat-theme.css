@@ -6,6 +6,38 @@
  * prose typography without editor chrome (margin hashes, page inset, gutters).
  */
 
+/* Writer.computer mermaid canvas token bridge — maps upstream CSS var names
+   to Constellagent tokens without editing mermaid-canvas.css. */
+.prosemark-chat,
+.cm-mermaid-fullscreen {
+  --bg-base: var(--surface-0, #111111);
+  --fg-base: var(--text-primary, #eeeeee);
+  --border-color: var(--border-default, #2e2e2e);
+  --surface-card: var(--surface-2, #212121);
+  --surface-subtle: var(--surface-3, #2a2a2a);
+  --accent: var(--accent-blue, #7B93BD);
+  --contrast: 1;
+  --text-error: var(--accent-red, #BF616A);
+}
+
+/* Ensure mermaid SVGs inherit theme tokens and keep secondary labels readable. */
+.prosemark-chat .cm-mermaid-canvas,
+.cm-mermaid-fullscreen .cm-mermaid-canvas {
+  --bg-base: var(--surface-0, #111111);
+  --fg-base: var(--text-primary, #eeeeee);
+}
+
+.prosemark-chat .cm-mermaid-canvas-stage svg,
+.cm-mermaid-fullscreen .cm-mermaid-canvas-stage svg {
+  --_text-sec: var(--muted, color-mix(in srgb, var(--fg) 82%, var(--bg)));
+  --_text-muted: var(--muted, color-mix(in srgb, var(--fg) 78%, var(--bg)));
+  --_text-faint: color-mix(in srgb, var(--fg) 62%, var(--bg));
+}
+
+.dark .cm-mermaid-canvas-editor {
+  background-color: color-mix(in srgb, black calc(var(--contrast) * 24%), transparent);
+}
+
 .prosemark-chat .cm-editor {
   --font: var(--font-prose);
   --pm-header-mark-color: var(--text-tertiary);
