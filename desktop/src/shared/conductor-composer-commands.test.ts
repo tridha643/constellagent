@@ -100,6 +100,11 @@ describe('isHarnessSlashCommand', () => {
     expect(isHarnessSlashCommand('/compact')).toBe(true)
   })
 
+  test('rejects skill-like slash text so it can render as a chat chip', () => {
+    expect(isHarnessSlashCommand('/caveman')).toBe(false)
+    expect(isHarnessSlashCommand('/caveman please be terse')).toBe(false)
+  })
+
   test('rejects multiline input', () => {
     expect(isHarnessSlashCommand('/compact\nmore')).toBe(false)
   })

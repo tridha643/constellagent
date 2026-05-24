@@ -1,4 +1,5 @@
 import type { TranscriptMessage } from './pi/pi-desktop-state'
+import type { SessionExtensionUiStateRecord } from './pi/pi-desktop-state'
 import type { ThinkingLevel } from './conductor-thinking'
 import type {
   AgentChatRunPhase,
@@ -6,11 +7,12 @@ import type {
 } from './conductor-ask-question-types'
 import type { ConductorComposerAttachment } from './conductor-attachments'
 
-export type AgentProvider = 'codex' | 'cursor'
+export type AgentProvider = 'codex' | 'cursor' | 'pi'
 
 export const CONDUCTOR_PROVIDER_LABELS: Record<AgentProvider, string> = {
   cursor: 'Cursor',
   codex: 'Codex',
+  pi: 'Pi',
 }
 export type AgentChatStatus = 'idle' | 'running' | 'failed'
 
@@ -23,6 +25,11 @@ export interface QueuedAgentMessage {
   readonly attachments?: readonly ConductorComposerAttachment[]
   readonly createdAt: string
   readonly updatedAt: string
+}
+
+export interface AgentChatProviderSessionRef {
+  readonly workspaceId: string
+  readonly sessionId: string
 }
 
 /** Serializable session state broadcast to the renderer (no transcript). */
@@ -39,6 +46,10 @@ export interface AgentChatSessionState {
   readonly status: AgentChatStatus
   readonly runPhase?: AgentChatRunPhase
   readonly blockingQuestion?: ConductorBlockingQuestion | null
+  /** Provider-native session backing this Conductor session when ids differ. */
+  readonly providerSession?: AgentChatProviderSessionRef
+  /** Pi extension dialogs/widgets/TUI state surfaced in Conductor. */
+  readonly piExtensionUi?: SessionExtensionUiStateRecord | null
   readonly queuedMessages: readonly QueuedAgentMessage[]
   readonly error?: string
   readonly createdAt: string
@@ -93,4 +104,5 @@ export interface AgentProviderAuthStatus {
 export interface ConductorAuthStatus {
   readonly cursor: AgentProviderAuthStatus
   readonly codex: AgentProviderAuthStatus
+  readonly pi: AgentProviderAuthStatus
 }

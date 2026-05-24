@@ -68,4 +68,17 @@ describe('agent-driver prompt construction', () => {
     expect(buildAgentPrompt('/compact', false)).toBe('/compact')
     expect(buildAgentPrompt('/add-dir src/lib', false)).toBe('/add-dir src/lib')
   })
+
+  test('wraps skill-like slash text instead of treating it as an immediate command', () => {
+    const prompt = buildAgentPrompt('/caveman', false)
+
+    expect(prompt).toContain('GitHub-Flavored Markdown')
+    expect(prompt).toEndWith('\n\n/caveman')
+  })
+
+  test('passes Pi slash commands through as raw runtime commands', () => {
+    expect(buildAgentPrompt('/ask-user-question align on scope', false, undefined, 'pi')).toBe(
+      '/ask-user-question align on scope',
+    )
+  })
 })

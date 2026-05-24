@@ -10,9 +10,9 @@ interface McpServerRow {
 }
 
 function mcpDocsUrl(provider: AgentProvider): string {
-  return provider === 'cursor'
-    ? 'https://docs.cursor.com/context/mcp'
-    : 'https://developers.openai.com/codex/mcp'
+  if (provider === 'cursor') return 'https://docs.cursor.com/context/mcp'
+  if (provider === 'pi') return 'https://github.com/mariozechner/pi'
+  return 'https://developers.openai.com/codex/mcp'
 }
 
 export function ConductorMcpStatusPanel({

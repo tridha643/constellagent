@@ -1954,6 +1954,9 @@ export function registerIpcHandlers(): void {
     const { pickConductorImageAttachments } = await import('./conductor-image-picker')
     return pickConductorImageAttachments()
   })
+  ipcMain.handle(IPC.AGENT_CHAT_LIST_PI_MODELS, async (_e, workspacePath: string) =>
+    agentChatHost.listPiModels(workspacePath),
+  )
   ipcMain.handle(
     IPC.AGENT_CHAT_REPLACE_QUEUE,
     async (_e, sessionId: string, messages: import('../shared/agent-chat-types').QueuedAgentMessage[]) =>
@@ -1987,6 +1990,16 @@ export function registerIpcHandlers(): void {
       sessionId: string,
       response: import('../shared/conductor-ask-question-types').ConductorBlockingQuestionResponse,
     ) => agentChatHost.respondBlockingQuestion(sessionId, response),
+  )
+  ipcMain.handle(
+    IPC.AGENT_CHAT_RESPOND_PI_HOST_UI,
+    async (_e, sessionId: string, response: HostUiResponse) =>
+      agentChatHost.respondPiHostUi(sessionId, response),
+  )
+  ipcMain.handle(
+    IPC.AGENT_CHAT_PI_EXTENSION_TUI_INPUT,
+    async (_e, sessionId: string, data: string) =>
+      agentChatHost.sendPiExtensionTuiInput(sessionId, data),
   )
   ipcMain.handle(IPC.AGENT_CHAT_DELETE_SESSION, async (_e, sessionId: string) =>
     agentChatHost.deleteSession(sessionId),

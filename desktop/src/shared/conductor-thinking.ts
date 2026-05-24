@@ -27,6 +27,13 @@ export const CURSOR_THINKING_LEVELS: readonly ThinkingLevel[] = [
   'xhigh',
 ] as const
 
+export const PI_THINKING_LEVELS: readonly ThinkingLevel[] = [
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+] as const
+
 export const THINKING_LABELS: Record<ThinkingLevel, string> = {
   minimal: 'Off',
   low: 'Low',
@@ -36,6 +43,7 @@ export const THINKING_LABELS: Record<ThinkingLevel, string> = {
 }
 
 export function thinkingLevelsForProvider(provider: AgentProvider): readonly ThinkingLevel[] {
+  if (provider === 'pi') return PI_THINKING_LEVELS
   return provider === 'codex' ? CODEX_THINKING_LEVELS : CURSOR_THINKING_LEVELS
 }
 

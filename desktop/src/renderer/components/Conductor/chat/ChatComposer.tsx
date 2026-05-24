@@ -614,7 +614,13 @@ export function ChatComposer({
         ) : null}
         <div className={styles.composerFooter}>
           <div className={styles.composerActionsLeft}>
-            <ChatModelSelector provider={provider} model={model} thinkingLevel={thinkingLevel} onSelect={onSetModel} />
+            <ChatModelSelector
+              provider={provider}
+              model={model}
+              thinkingLevel={thinkingLevel}
+              workspacePath={workspacePath}
+              onSelect={onSetModel}
+            />
             {showFast ? <FastToggle active={fastActive} onChange={onToggleFast} /> : null}
             {showEffort ? (
               <EffortPill provider={provider} level={effortLevel} onChange={onSetThinkingLevel} />
@@ -679,4 +685,3 @@ export function ChatComposer({
     </div>
   )
 }
-

@@ -5,7 +5,11 @@ import type { TranscriptMessage } from '../shared/pi/pi-desktop-state'
 import type { AgentProvider } from './agents/agent-driver'
 import type { ThinkingLevel } from '../shared/conductor-thinking'
 import { normalizeThinkingLevel } from '../shared/conductor-thinking'
-import type { AgentChatSessionState, QueuedAgentMessage } from '../shared/agent-chat-types'
+import type {
+  AgentChatProviderSessionRef,
+  AgentChatSessionState,
+  QueuedAgentMessage,
+} from '../shared/agent-chat-types'
 import { safeJsonStringify } from '../shared/json-safe'
 import { parseQueuedMessagesJson } from './agent-chat-queue'
 
@@ -22,6 +26,8 @@ export interface StoredSession {
   readonly status: 'idle' | 'running' | 'failed'
   readonly runPhase?: AgentChatSessionState['runPhase']
   readonly blockingQuestion?: AgentChatSessionState['blockingQuestion']
+  readonly providerSession?: AgentChatProviderSessionRef
+  readonly piExtensionUi?: AgentChatSessionState['piExtensionUi']
   readonly queuedMessages: readonly QueuedAgentMessage[]
   readonly error?: string
   readonly createdAt: string
@@ -76,6 +82,17 @@ export class AgentChatStore {
     await this.addThinkingLevelColumn()
     await this.addQueuedMessagesColumn()
     await this.addCanvasColumn()
+    await this.addProviderSessionColumn()
+  }
+
+  private async addProviderSessionColumn(): Promise<void> {
+    const client = this.client
+    if (!client) return
+    try {
+      await client.execute(`ALTER TABLE sessions ADD COLUMN provider_session_json TEXT`)
+    } catch {
+      // Column already exists — idempotent migration.
+    }
   }
 
   private async addCanvasColumn(): Promise<void> {
@@ -114,8 +131,8 @@ export class AgentChatStore {
     await this.ensure()
     await this.client?.execute({
       sql: `INSERT INTO sessions
-              (session_id, workspace_id, workspace_path, title, provider, model, thinking_level, plan, canvas, status, queued_messages_json, error, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (session_id, workspace_id, workspace_path, title, provider, model, thinking_level, plan, canvas, status, provider_session_json, queued_messages_json, error, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id) DO UPDATE SET
               workspace_id = excluded.workspace_id,
               workspace_path = excluded.workspace_path,
@@ -126,6 +143,7 @@ export class AgentChatStore {
               plan = excluded.plan,
               canvas = excluded.canvas,
               status = excluded.status,
+              provider_session_json = excluded.provider_session_json,
               queued_messages_json = excluded.queued_messages_json,
               error = excluded.error,
               updated_at = excluded.updated_at`,
@@ -140,6 +158,7 @@ export class AgentChatStore {
         session.plan ? 1 : 0,
         session.canvas ? 1 : 0,
         session.status,
+        session.providerSession ? safeJsonStringify(session.providerSession) : null,
         safeJsonStringify(session.queuedMessages),
         session.error ?? null,
         session.createdAt,
@@ -218,8 +237,23 @@ function rowToSession(row: Record<string, unknown>): StoredSession {
     canvas: row.canvas == null ? false : Number(row.canvas) === 1,
     status: String(row.status) as StoredSession['status'],
     queuedMessages: parseQueuedMessagesJson(row.queued_messages_json),
+    providerSession: parseProviderSessionJson(row.provider_session_json),
     error: row.error == null ? undefined : String(row.error),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
+  }
+}
+
+function parseProviderSessionJson(value: unknown): AgentChatProviderSessionRef | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  try {
+    const parsed = JSON.parse(value) as Partial<AgentChatProviderSessionRef>
+    if (typeof parsed.workspaceId !== 'string' || typeof parsed.sessionId !== 'string') {
+      return undefined
+    }
+    if (!parsed.workspaceId.trim() || !parsed.sessionId.trim()) return undefined
+    return { workspaceId: parsed.workspaceId, sessionId: parsed.sessionId }
+  } catch {
+    return undefined
   }
 }

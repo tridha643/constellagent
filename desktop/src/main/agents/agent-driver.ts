@@ -1,5 +1,6 @@
 import type {
   AssistantDeltaEvent,
+  HostUiResponse,
   SessionDriverEvent,
   SessionRef,
   ToolFinishedEvent,
@@ -10,6 +11,7 @@ import type { AgentProvider } from '../../shared/agent-chat-types'
 import type { ConductorComposerAttachment } from '../../shared/conductor-attachments'
 import type { ThinkingLevel } from '../../shared/conductor-thinking'
 import type { TranscriptMessage } from '../../shared/pi/pi-desktop-state'
+import type { ModelPreset } from '../../shared/plan-build-command'
 import { formatTranscriptForAgentContext } from '../../shared/conductor-transcript-utils'
 import { buildJsonCanvasPromptSuffix } from '../../shared/json-canvas-schema'
 import { isHarnessSlashCommand } from '../../shared/conductor-composer-commands'
@@ -18,8 +20,8 @@ export type { AgentProvider }
 
 /**
  * Instruction prepended to the user's prompt when the composer Plan toggle is
- * on. Codex plan turns use CODEX_PLAN_THREAD_PERMISSIONS (read-only);
- * working turns use CODEX_WORKING_THREAD_PERMISSIONS (fully unrestricted).
+ * on. Plan mode is a behavioral prompt/UI state; SDK permissions are configured
+ * separately in conductor-sdk-cli-permissions.
  */
 export const PLAN_PROMPT_PREFIX = [
   'Operate in Conductor planning mode. Investigate with read-only tools, shell commands, MCP tools, and network CLIs only when they do not mutate files or external state.',
@@ -53,11 +55,14 @@ export function buildAgentPrompt(
   provider?: AgentProvider,
   canvas = false,
 ): string {
+  if (provider === 'pi' && isSingleLineSlashCommand(text)) {
+    return text.trim()
+  }
   if (isHarnessSlashCommand(text)) {
     return text.trim()
   }
   const parts: string[] = []
-  if (canvas && provider) {
+  if (canvas && provider && provider !== 'pi') {
     parts.push(buildJsonCanvasPromptSuffix(provider))
   } else {
     parts.push(CONDUCTOR_MARKDOWN_FORMAT_PREFIX)
@@ -78,6 +83,11 @@ export function buildAgentPrompt(
   return parts.join('\n\n')
 }
 
+function isSingleLineSlashCommand(text: string): boolean {
+  const trimmed = text.trim()
+  return trimmed.startsWith('/') && !/\n/.test(trimmed) && /^\/[^\s]+(?:\s+\S+)*$/.test(trimmed)
+}
+
 /** Context handed to a driver for a single conversational turn. */
 export interface AgentTurnContext {
   readonly sessionRef: SessionRef
@@ -91,6 +101,9 @@ export interface AgentTurnContext {
   readonly attachments?: readonly ConductorComposerAttachment[]
   /** Prior persisted UI transcript for seeding newly-created backend SDK state. */
   readonly previousTranscript?: readonly TranscriptMessage[]
+  readonly providerSession?: { readonly workspaceId: string; readonly sessionId: string }
+  setProviderSession?(providerSession: { readonly workspaceId: string; readonly sessionId: string }): void
+  setPiExtensionUi?(ui: import('../../shared/pi/pi-desktop-state').SessionExtensionUiStateRecord | null): void
   /** Aborts the in-flight run when the user cancels. */
   readonly signal: AbortSignal
   /** Emit a streaming event (assistant text / tool activity) for the timeline. */
@@ -114,6 +127,12 @@ export interface AgentDriver {
   closeSession(sessionId: string): void
   /** Provider-reported input-side tokens for the latest completed turn, when available. */
   getContextUsage?(sessionId: string): number | null
+  respondHostUi?(sessionId: string, response: HostUiResponse): Promise<void>
+  sendExtensionTuiInput?(sessionId: string, data: string): void
+  getPiExtensionUi?(
+    sessionId: string,
+  ): import('../../shared/pi/pi-desktop-state').SessionExtensionUiStateRecord | null
+  listModelsForWorkspace?(workspacePath: string): Promise<readonly ModelPreset[]>
 }
 
 const now = (): string => new Date().toISOString()

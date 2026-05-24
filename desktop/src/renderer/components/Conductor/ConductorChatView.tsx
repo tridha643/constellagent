@@ -27,6 +27,7 @@ import { ConductorMcpStatusPanel } from './chat/ConductorMcpStatusPanel'
 import { ConductorMcpTerminalBanner } from './chat/ConductorMcpTerminalBanner'
 import { APPROVE_PLAN_MESSAGE, getLatestPlanApprovalMessageId } from './chat/plan-approval'
 import { ConductorAskQuestionModal } from './chat/ConductorAskQuestionModal'
+import { ExtensionDialog, ExtensionTuiOverlay } from '../../pi-gui/extension-session-ui'
 import { useConductorSession } from './use-agent-chat'
 import {
   fetchConductorAuthStatus,
@@ -37,6 +38,8 @@ import {
 import { SharedFileIconDefs } from '../../utils/file-presentation'
 import { useConductorChatTypographyScope } from './useConductorChatTypographyScope'
 import styles from './Conductor.module.css'
+import '../../pi-gui/pi-gui-thread.css'
+import '../../pi-gui/pi-gui-constellagent-bridge.css'
 
 export type ConductorTab = Extract<Tab, { type: 'conductor' }>
 
@@ -135,6 +138,8 @@ export function ConductorChatView({
   const running = controller.state?.status === 'running'
   const awaitingUser = controller.state?.runPhase === 'awaitingUser'
   const blockingQuestion = controller.state?.blockingQuestion ?? null
+  const piExtensionUi = provider === 'pi' ? controller.state?.piExtensionUi : null
+  const topPiExtensionDialog = piExtensionUi?.pendingDialogs?.[0]
   const latestPlanApprovalMessageId = useMemo(
     () => (plan && !running ? getLatestPlanApprovalMessageId(controller.transcript) : null),
     [plan, running, controller.transcript],
@@ -570,7 +575,7 @@ export function ConductorChatView({
               >
                 Sign in with Cursor
               </button>
-            ) : (
+            ) : provider === 'codex' ? (
               <button
                 type="button"
                 className={styles.authSignInBtn}
@@ -581,7 +586,7 @@ export function ConductorChatView({
               >
                 Sign in with Codex
               </button>
-            )}
+            ) : null}
             <button
               type="button"
               className={styles.authNoticeLink}
@@ -600,6 +605,22 @@ export function ConductorChatView({
           }}
           onCancel={() => {
             void controller.cancel()
+          }}
+        />
+      ) : null}
+      {agentSessionId && topPiExtensionDialog ? (
+        <ExtensionDialog
+          dialog={topPiExtensionDialog}
+          onRespond={(response) => {
+            void window.api.agentChat.respondPiHostUi(agentSessionId, response)
+          }}
+        />
+      ) : null}
+      {agentSessionId && !topPiExtensionDialog && piExtensionUi?.tuiCustom ? (
+        <ExtensionTuiOverlay
+          model={piExtensionUi.tuiCustom}
+          onInputData={(data) => {
+            void window.api.agentChat.sendPiExtensionTuiInput(agentSessionId, data)
           }}
         />
       ) : null}

@@ -2,8 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { AgentProvider } from '../../../../shared/agent-chat-types'
 import type { ThinkingLevel } from '../../../../shared/conductor-thinking'
 import { THINKING_LABELS, isReasoningEffortActive, normalizeThinkingLevel } from '../../../../shared/conductor-thinking'
-import { displayModelName, isFastModel } from '../../../../shared/conductor-model-utils'
-import { PLAN_MODEL_PRESETS } from '../../../../shared/plan-build-command'
+import { conductorModelPresets, displayModelName, isFastModel } from '../../../../shared/conductor-model-utils'
 import type { TimelineToolCall } from '../../../../shared/pi/timeline-types'
 import { isSubagentToolCall, parseSubagentMetadata } from '../../../../shared/conductor-subagent-utils'
 import { safeJsonStringify } from '../../../../shared/json-safe'
@@ -12,7 +11,7 @@ import { ProviderIcon, ReasoningIcon, SubagentCornerIcon } from './ConductorIcon
 import styles from '../Conductor.module.css'
 
 function modelLabel(provider: AgentProvider, model: string): string {
-  const preset = PLAN_MODEL_PRESETS[provider]?.find((m) => m.cliModel === model)
+  const preset = conductorModelPresets(provider).find((m) => m.cliModel === model)
   return displayModelName(preset?.label ?? model)
 }
 
