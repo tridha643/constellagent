@@ -1,10 +1,18 @@
-import { readFile } from 'fs/promises'
+import { readdir, readFile } from 'fs/promises'
 import { join, basename } from 'path'
+import { homedir } from 'os'
+import type { AgentProvider } from '../shared/agent-chat-types'
 import { getAgentFS } from './agentfs-service'
 
 export interface SkillInfo {
   name: string
   description: string
+}
+
+export interface HarnessSkillInfo {
+  name: string
+  description: string
+  sourcePath: string
 }
 
 export interface SubagentInfo {
@@ -28,6 +36,45 @@ function parseYamlFrontmatter(content: string): Record<string, string> {
 }
 
 export class SkillsService {
+  static async discoverHarnessSkills(
+    provider: AgentProvider,
+    workspacePath: string,
+  ): Promise<HarnessSkillInfo[]> {
+    const home = homedir()
+    const scanDirs: string[] = []
+
+    if (provider === 'cursor') {
+      scanDirs.push(join(home, '.cursor', 'skills'))
+      scanDirs.push(join(workspacePath, '.cursor', 'skills'))
+    } else {
+      scanDirs.push(join(home, '.codex', 'skills'))
+      scanDirs.push(join(workspacePath, '.codex', 'skills'))
+    }
+    scanDirs.push(join(home, '.claude', 'skills'))
+
+    const byName = new Map<string, HarnessSkillInfo>()
+    for (const dir of scanDirs) {
+      let entries: string[] = []
+      try {
+        entries = await readdir(dir)
+      } catch {
+        continue
+      }
+      for (const entry of entries) {
+        const sourcePath = join(dir, entry)
+        const info = await SkillsService.scanSkillDir(sourcePath)
+        if (!info) continue
+        byName.set(info.name, {
+          name: info.name,
+          description: info.description,
+          sourcePath,
+        })
+      }
+    }
+
+    return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name))
+  }
+
   static async scanSkillDir(skillPath: string): Promise<SkillInfo | null> {
     const skillMdPath = join(skillPath, 'SKILL.md')
     try {

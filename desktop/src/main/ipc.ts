@@ -29,8 +29,9 @@ import { readPlanMeta } from './plan-meta'
 import { AutomationEngine } from './automation-engine'
 import type { AutomationConfigLike, AutomationWorkspaceEvent } from '../shared/automation-types'
 import { trustPathForClaude, loadClaudeSettings, saveClaudeSettings, loadJsonFile, saveJsonFile } from './claude-config'
-import { loadCodexConfigText, saveCodexConfigText, CODEX_CONFIG_PATH, CODEX_DIR } from './codex-config'
+import { loadCodexConfigText, saveCodexConfigText, CODEX_CONFIG_PATH, CODEX_DIR, getCodexPersonality, setCodexPersonality, type CodexPersonality } from './codex-config'
 import { loadMcpServersFromConfig, removeServerFromConfig } from './mcp-config'
+import { probeMcpStatus } from './mcp-status-service'
 import { CLAUDE_CONFIG_PATH } from './claude-config'
 import { LspService } from './lsp/lsp-service'
 import { SkillsService } from './skills-service'
@@ -1058,6 +1059,10 @@ export function registerIpcHandlers(): void {
   const codexUsageService = new CodexUsageService()
   const cursorUsageService = new CursorUsageService()
   ipcMain.handle(IPC.CODEX_GET_RATE_LIMITS, async () => codexUsageService.getRateLimits())
+  ipcMain.handle(IPC.CODEX_GET_PERSONALITY, async () => ({ personality: await getCodexPersonality() }))
+  ipcMain.handle(IPC.CODEX_SET_PERSONALITY, async (_e, personality: CodexPersonality) => ({
+    personality: await setCodexPersonality(personality),
+  }))
   ipcMain.handle(IPC.CURSOR_GET_RATE_LIMITS, async () => cursorUsageService.getRateLimits())
 
   // ── Claude Code trust ──
@@ -1325,6 +1330,12 @@ export function registerIpcHandlers(): void {
     return { success: true }
   })
 
+  ipcMain.handle(
+    IPC.MCP_PROBE_STATUS,
+    async (_e, provider: import('../shared/agent-chat-types').AgentProvider, workspacePath: string) =>
+      probeMcpStatus(provider, workspacePath),
+  )
+
   ipcMain.handle(IPC.MCP_GET_CONFIG_PATHS, async () => {
     const home = homedir()
     const geminiDir = join(home, '.gemini')
@@ -1475,6 +1486,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.SKILLS_SCAN, async (_e, skillPath: string) => {
     return SkillsService.scanSkillDir(skillPath)
   })
+
+  ipcMain.handle(
+    IPC.SKILLS_DISCOVER_HARNESS,
+    async (_e, provider: import('../shared/agent-chat-types').AgentProvider, workspacePath: string) =>
+      SkillsService.discoverHarnessSkills(provider, workspacePath),
+  )
 
   ipcMain.handle(IPC.SUBAGENTS_SCAN, async (_e, filePath: string) => {
     return SkillsService.scanSubagentFile(filePath)
@@ -2010,4 +2027,11 @@ export function cleanupAll(): void {
   getAgentChatHost().dispose()
   guestTabSwitchListeners.clear()
   closeAllAgentFS().catch(() => {})
+}
+
+// electron-vite can rebuild main without restarting the app; re-register handlers so new IPC channels work.
+if (import.meta.hot) {
+  import.meta.hot.accept(() => {
+    registerIpcHandlers()
+  })
 }

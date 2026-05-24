@@ -12,6 +12,7 @@ import type { ThinkingLevel } from '../../shared/conductor-thinking'
 import type { TranscriptMessage } from '../../shared/pi/pi-desktop-state'
 import { formatTranscriptForAgentContext } from '../../shared/conductor-transcript-utils'
 import { buildJsonCanvasPromptSuffix } from '../../shared/json-canvas-schema'
+import { isHarnessSlashCommand } from '../../shared/conductor-composer-commands'
 
 export type { AgentProvider }
 
@@ -52,6 +53,9 @@ export function buildAgentPrompt(
   provider?: AgentProvider,
   canvas = false,
 ): string {
+  if (isHarnessSlashCommand(text)) {
+    return text.trim()
+  }
   const parts: string[] = []
   if (canvas && provider) {
     parts.push(buildJsonCanvasPromptSuffix(provider))

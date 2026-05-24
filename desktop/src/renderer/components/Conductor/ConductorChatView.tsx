@@ -8,6 +8,7 @@ import {
   type QueuedAgentMessageMode,
 } from '../../../shared/agent-chat-types'
 import type { ConductorComposerAttachment } from '../../../shared/conductor-attachments'
+import type { ConductorSlashCommand } from '../../../shared/conductor-composer-commands'
 import type { ThinkingLevel } from '../../../shared/conductor-thinking'
 import { normalizeThinkingLevel } from '../../../shared/conductor-thinking'
 import {
@@ -16,10 +17,14 @@ import {
   resolveConductorDefaultSelection,
   toConductorDraftSelection,
   setModelFast,
+  hasFastVariant,
 } from '../../../shared/conductor-model-utils'
 import type { Tab } from '../../store/types'
 import { ChatTimeline, type ChatTimelineHandle } from './chat/ChatTimeline'
 import { ChatComposer, type ChatComposerHandle } from './chat/ChatComposer'
+import { ConductorEmbeddedTerminal } from './chat/ConductorEmbeddedTerminal'
+import { ConductorMcpStatusPanel } from './chat/ConductorMcpStatusPanel'
+import { ConductorMcpTerminalBanner } from './chat/ConductorMcpTerminalBanner'
 import { APPROVE_PLAN_MESSAGE, getLatestPlanApprovalMessageId } from './chat/plan-approval'
 import { ConductorAskQuestionModal } from './chat/ConductorAskQuestionModal'
 import { useConductorSession } from './use-agent-chat'
@@ -49,6 +54,8 @@ export function ConductorChatView({
   const setConductorTabSessionBinding = useAppStore((s) => s.setConductorTabSessionBinding)
   const openConductorSessionTab = useAppStore((s) => s.openConductorSessionTab)
   const openSettingsSection = useAppStore((s) => s.openSettingsSection)
+  const removeTab = useAppStore((s) => s.removeTab)
+  const createConductorTabForActiveWorkspace = useAppStore((s) => s.createConductorTabForActiveWorkspace)
   const conductorCursorApiKey = useAppStore((s) => s.settings.conductorCursorApiKey)
   const conductorOpenaiApiKey = useAppStore((s) => s.settings.conductorOpenaiApiKey)
   const conductorDefaultProviderSetting = useAppStore((s) => s.settings.conductorDefaultProvider)
@@ -89,6 +96,10 @@ export function ConductorChatView({
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
   const [forking, setForking] = useState(false)
   const [approvingPlan, setApprovingPlan] = useState(false)
+  const [mcpStatusOpen, setMcpStatusOpen] = useState(false)
+  const [mcpBannerOpen, setMcpBannerOpen] = useState(false)
+  const [mcpTerminalOpen, setMcpTerminalOpen] = useState(false)
+  const [mcpTerminalPtyId, setMcpTerminalPtyId] = useState<string | null>(null)
   const composerRef = useRef<ChatComposerHandle | null>(null)
   const timelineRef = useRef<ChatTimelineHandle | null>(null)
 
@@ -234,6 +245,91 @@ export function ConductorChatView({
     }
   }
 
+  const dispatchHarnessCommand = useCallback(
+    async (text: string) => {
+      setSubmitError(null)
+      try {
+        let id = agentSessionId
+        if (!id) {
+          id = await createSession(draftProvider, draftModel, text.slice(0, 48))
+        }
+        if (id) await window.api.agentChat.submit(id, text)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        setSubmitError(formatChatError(message))
+      }
+    },
+    [
+      agentSessionId,
+      draftProvider,
+      draftModel,
+      plan,
+      thinkingLevel,
+      workspaceId,
+      worktreePath,
+      tab.id,
+      setConductorTabSessionBinding,
+    ],
+  )
+
+  const closeMcpTerminal = useCallback(() => {
+    if (mcpTerminalPtyId) {
+      window.api.pty.destroy(mcpTerminalPtyId)
+    }
+    setMcpTerminalOpen(false)
+    setMcpBannerOpen(false)
+    setMcpTerminalPtyId(null)
+    composerRef.current?.focus()
+  }, [mcpTerminalPtyId])
+
+  const openMcpTerminal = useCallback(async () => {
+    if (!worktreePath || mcpTerminalPtyId) {
+      setMcpBannerOpen(false)
+      setMcpTerminalOpen(true)
+      return
+    }
+    try {
+      const ptyId = await window.api.pty.create(worktreePath)
+      setMcpTerminalPtyId(ptyId)
+      setMcpBannerOpen(false)
+      setMcpTerminalOpen(true)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setSubmitError(formatChatError(message))
+    }
+  }, [worktreePath, mcpTerminalPtyId])
+
+  useEffect(() => {
+    return () => {
+      if (mcpTerminalPtyId) {
+        window.api.pty.destroy(mcpTerminalPtyId)
+      }
+    }
+  }, [mcpTerminalPtyId])
+
+  const handleRestartSession = useCallback(async () => {
+    setSubmitError(null)
+    try {
+      if (running) {
+        await cancelRun()
+      }
+      if (agentSessionId) {
+        await window.api.agentChat.deleteSession(agentSessionId)
+      }
+      useAppStore.setState((state) => ({
+        tabs: state.tabs.map((entry) =>
+          entry.id === tab.id && entry.type === 'conductor'
+            ? { ...entry, agentSessionId: undefined }
+            : entry,
+        ),
+      }))
+      composerRef.current?.focus()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setSubmitError(formatChatError(message))
+    }
+  }, [running, cancelRun, agentSessionId, tab.id])
+
   const handleReplaceQueue = (messages: readonly QueuedAgentMessage[]) => {
     if (!agentSessionId) return
     void window.api.agentChat.replaceQueue(agentSessionId, messages).catch(() => {})
@@ -278,6 +374,75 @@ export function ConductorChatView({
       controller.setPlan(nextPlan)
     }
   }
+
+  const handleSlashAction = useCallback(
+    (command: ConductorSlashCommand) => {
+      switch (command.id) {
+        case 'host:clear':
+          removeTab(tab.id)
+          createConductorTabForActiveWorkspace()
+          return
+        case 'host:restart':
+          void handleRestartSession()
+          return
+        case 'host:mcp-status':
+          setMcpStatusOpen(true)
+          return
+        case 'host:mcp':
+          setMcpBannerOpen(true)
+          return
+        case 'host:plan':
+          handleSetPlan(true)
+          composerRef.current?.focus()
+          return
+        case 'host:fast':
+          if (hasFastVariant(model, provider)) {
+            handleToggleFast(true)
+          }
+          composerRef.current?.focus()
+          return
+        case 'host:compact':
+          void dispatchHarnessCommand('/compact')
+          return
+        default:
+          if (command.kind === 'skill') {
+            void dispatchHarnessCommand(command.command)
+          }
+      }
+    },
+    [
+      tab.id,
+      removeTab,
+      createConductorTabForActiveWorkspace,
+      handleRestartSession,
+      handleSetPlan,
+      handleToggleFast,
+      model,
+      provider,
+      dispatchHarnessCommand,
+    ],
+  )
+
+  const handleNamePromptConfirm = useCallback(
+    (command: ConductorSlashCommand, value: string) => {
+      void dispatchHarnessCommand(`${command.command} ${value}`)
+      composerRef.current?.focus()
+    },
+    [dispatchHarnessCommand],
+  )
+
+  const handlePersonalitySelect = useCallback(
+    (value: string) => {
+      void window.api.codex
+        .setPersonality(value as 'pragmatic' | 'friendly' | 'none')
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err)
+          setSubmitError(formatChatError(message))
+        })
+      composerRef.current?.focus()
+    },
+    [formatChatError],
+  )
 
   const handleForkFromMessage = async (messageId: string) => {
     if (!agentSessionId || forking) return
@@ -433,6 +598,23 @@ export function ConductorChatView({
           }}
         />
       ) : null}
+      <div className={styles.composerStackPanels}>
+        {mcpStatusOpen ? (
+          <ConductorMcpStatusPanel
+            provider={provider}
+            workspacePath={worktreePath}
+            onClose={() => setMcpStatusOpen(false)}
+          />
+        ) : null}
+        {mcpTerminalOpen && mcpTerminalPtyId ? (
+          <ConductorEmbeddedTerminal ptyId={mcpTerminalPtyId} onDone={closeMcpTerminal} />
+        ) : mcpBannerOpen ? (
+          <ConductorMcpTerminalBanner
+            onOpenTerminal={() => void openMcpTerminal()}
+            onClose={() => setMcpBannerOpen(false)}
+          />
+        ) : null}
+      </div>
       <ChatComposer
         provider={provider}
         model={model}
@@ -451,6 +633,10 @@ export function ConductorChatView({
         onHistoryUp={() => timelineRef.current?.openHistory()}
         composerRef={composerRef}
         sessionId={agentSessionId}
+        workspacePath={worktreePath}
+        onSlashAction={handleSlashAction}
+        onPersonalitySelect={handlePersonalitySelect}
+        onNamePromptConfirm={handleNamePromptConfirm}
       />
     </div>
   )
