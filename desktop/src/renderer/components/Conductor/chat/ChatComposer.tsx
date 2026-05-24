@@ -458,16 +458,19 @@ export function ChatComposer({
             {attachError}
           </div>
         ) : null}
-        <div className={styles.composerInputBlock}>
+          <div className={styles.composerInputBlock}>
           {showFocusHint ? <span className={styles.composerHint}>⌘L to focus</span> : null}
           {showRunningHint ? (
             <span className={styles.composerRunningHint}>{runningHint}</span>
           ) : null}
-          <div className={styles.composerDraft}>
-            {fileMentions.map((mention) => (
-              <ComposerFileChip key={mention.id} mention={mention} onRemove={removeFileMention} />
-            ))}
-            <textarea
+          {fileMentions.length > 0 ? (
+            <div className={styles.composerFileChips}>
+              {fileMentions.map((mention) => (
+                <ComposerFileChip key={mention.id} mention={mention} onRemove={removeFileMention} />
+              ))}
+            </div>
+          ) : null}
+          <textarea
               ref={textareaRef}
               className={[
                 styles.composerTextarea,
@@ -576,8 +579,7 @@ export function ChatComposer({
               onHistoryUp()
             }
           })))}
-            />
-          </div>
+          />
           {dragActive ? (
             <div className={styles.composerDropIndicator} aria-hidden>
               Drop images to attach
