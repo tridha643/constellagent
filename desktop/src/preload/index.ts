@@ -339,10 +339,6 @@ const api = {
   skills: {
     scan: (skillPath: string) =>
       ipcRenderer.invoke(IPC.SKILLS_SCAN, skillPath) as Promise<{ name: string; description: string } | null>,
-    sync: (skillPath: string, projectPath: string) =>
-      ipcRenderer.invoke(IPC.SKILLS_SYNC, skillPath, projectPath),
-    remove: (skillName: string, projectPath: string) =>
-      ipcRenderer.invoke(IPC.SKILLS_REMOVE, skillName, projectPath),
     kvSave: (projectPath: string, skill: { name: string; description: string; sourcePath: string; enabled: boolean }) =>
       ipcRenderer.invoke(IPC.SKILLS_KV_SAVE, projectPath, skill),
     kvRemove: (projectPath: string, skillName: string) =>
@@ -354,10 +350,6 @@ const api = {
   subagents: {
     scan: (filePath: string) =>
       ipcRenderer.invoke(IPC.SUBAGENTS_SCAN, filePath) as Promise<{ name: string; description: string; tools?: string } | null>,
-    sync: (subagentPath: string, projectPath: string) =>
-      ipcRenderer.invoke(IPC.SUBAGENTS_SYNC, subagentPath, projectPath),
-    remove: (subagentName: string, projectPath: string) =>
-      ipcRenderer.invoke(IPC.SUBAGENTS_REMOVE, subagentName, projectPath),
     kvSave: (projectPath: string, subagent: { name: string; description: string; sourcePath: string; tools?: string; enabled: boolean }) =>
       ipcRenderer.invoke(IPC.SUBAGENTS_KV_SAVE, projectPath, subagent),
     kvRemove: (projectPath: string, subagentName: string) =>

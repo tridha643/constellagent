@@ -24,7 +24,7 @@ A macOS desktop app for running multiple AI agents in parallel. Each agent gets 
 - Context history backed by `.constellagent/constellagent.db`, with search, markdown summaries, and checkpoint restore
 - Hunk-based inline review comments on diffs (session comments via the `hunk` CLI)
 - Plan workflow for agent-written markdown plans, including a searchable plan palette, build status, relocation, and build launch
-- MCP server management plus skills and subagent syncing into project agent directories
+- MCP server management plus bundled agent skills via setup script; skills/subagent catalog in Settings
 - Claude/Codex hook configuration for notifications and context capture
 - Keyboard-first UX for Quick Open, tab and workspace switching, pane management, settings, and plan/context panels
 
@@ -33,7 +33,7 @@ A macOS desktop app for running multiple AI agents in parallel. Each agent gets 
 Requires macOS and [Bun](https://bun.sh).
 
 ```bash
-bun run setup   # also fetches upstream hunk `hunk-review` agent skill (see AGENTS.md)
+bun run setup   # installs deps, rebuilds native modules, and installs bundled agent skills (see AGENTS.md)
 bun run dev
 ```
 

@@ -33,7 +33,6 @@ import {
   estimateTokensFromTranscript,
 } from '../shared/context-window-utils'
 import { detectCanvasIntent } from '../shared/json-canvas-schema'
-import { syncConductorCanvasSkill } from './conductor-canvas-skill'
 import {
   isConductorGeneratedImageOutput,
   isGeneratedImageToolCall,
@@ -295,9 +294,6 @@ export class AgentChatHost {
       }
     }
     const effectiveCanvas = detectCanvasIntent(promptText)
-    if (effectiveCanvas) {
-      await syncConductorCanvasSkill(state.provider, state.workspacePath).catch(() => {})
-    }
     const ref = this.refOf(state)
     this.turnTelemetry.set(sessionId, {
       submittedAt: performance.now(),

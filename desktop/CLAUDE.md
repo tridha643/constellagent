@@ -61,7 +61,7 @@ Constellagent no longer writes workspace context capture files or creates `.cons
 2. **`agent.getDatabase()`** — Async libSQL API (`prepare` / `run` / `all` / `exec`) used for the remaining AgentFS-backed app data.
 3. **`agent.kv`** — Key-value namespace inside the same DB file for mirrored skill/subagent metadata.
 
-**`SkillsService`** — Files on disk are canonical; **KV** mirrors enabled skills/subagents (`skill:{name}`, `subagent:{name}`) for the app and symlinks expose them to Claude/Cursor/Codex/Gemini dirs.
+**`SkillsService`** — **KV** catalogs enabled skills/subagents (`skill:{name}`, `subagent:{name}`) for the app. Bundled Conductor canvas skills live in `desktop/skills/` and install via root `scripts/install-bundled-skills.sh` (run by `bun run setup`) into gitignored agent dirs — see root `AGENTS.md`.
 
 **Review annotations** — Stored in `.git/review-annotations.db` via `annotation-service.ts` and `constell-annotate`.
 

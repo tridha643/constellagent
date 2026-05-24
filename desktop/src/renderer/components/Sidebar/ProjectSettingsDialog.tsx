@@ -161,7 +161,6 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
     assignIds(normalizeStartupCommands(project.startupCommands)),
   )
   const [startupOpen, setStartupOpen] = useState(() => (project.startupCommands?.length ?? 0) > 0)
-  const [syncing, setSyncing] = useState(false)
   const [startupSettingsPath, setStartupSettingsPath] = useState('')
   const [prLinkProvider, setPrLinkProvider] = useState<PrLinkProvider>(
     project.prLinkProvider ?? 'github'
@@ -399,7 +398,7 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
 
         <label className={styles.label}>Skills & Subagents</label>
         <div className={styles.hint}>
-          Sync enabled skills and subagents to this project's agent directories.
+          Enabled skills and subagents from Settings (catalog only). Install into agent dirs locally — see AGENTS.md.
         </div>
         <div className={styles.commandList}>
           {enabledSkills.length === 0 && enabledSubagents.length === 0 ? (
@@ -422,33 +421,6 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
               ))}
             </>
           )}
-          <button
-            className={styles.addBtn}
-            disabled={syncing}
-            onClick={async () => {
-              const api = getRendererApi()
-              if (!api?.skills || !api?.subagents) {
-                addToast({ id: crypto.randomUUID(), message: 'Project sync is unavailable right now', type: 'error' })
-                return
-              }
-              setSyncing(true)
-              try {
-                for (const skill of enabledSkills) {
-                  await api.skills.sync(skill.sourcePath, project.repoPath)
-                }
-                for (const sa of enabledSubagents) {
-                  await api.subagents.sync(sa.sourcePath, project.repoPath)
-                }
-                addToast({ id: crypto.randomUUID(), message: 'Skills & subagents synced to project', type: 'info' })
-              } catch {
-                addToast({ id: crypto.randomUUID(), message: 'Failed to sync skills', type: 'error' })
-              } finally {
-                setSyncing(false)
-              }
-            }}
-          >
-            <span>{syncing ? 'Syncing...' : 'Sync to Project'}</span>
-          </button>
         </div>
 
         <div className={styles.actions}>

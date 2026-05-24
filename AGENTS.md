@@ -14,6 +14,34 @@ Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (
 
 AgentFS-backed storage that still exists for app internals lives under the repo’s `.git/` directory instead of `.constellagent/`.
 
+## Bundled agent skills
+
+**Point your Cursor, Codex, or other agent harness at this file** (`AGENTS.md` at the repo root) so setup instructions are available during onboarding.
+
+### One-time setup after clone
+
+```bash
+bun run setup
+```
+
+This installs bundled Conductor canvas skills and the optional hunk-review skill into **gitignored** agent directories:
+
+| Harness | Installed skill | Path |
+|---------|-----------------|------|
+| Codex | `conductor-canvas-codex` | `.codex/skills/conductor-canvas-codex/` |
+| Cursor | `conductor-canvas-cursor` | `.cursor/skills/conductor-canvas-cursor/` |
+| Claude / Cursor / Gemini | `hunk-review` (optional) | `desktop/.claude/skills/hunk-review/` (+ symlinks for Cursor/Gemini) |
+
+Source files for bundled skills live under `desktop/skills/` (tracked in git). The setup scripts symlink them into agent dirs locally — nothing is written into git by the app.
+
+### Conductor chat formatting
+
+Conductor markdown and canvas formatting is **app-managed** (inline prompt prefixes at runtime). Bundled canvas skills supplement SDK skill discovery when running Cursor Agent SDK or Codex SDK in this repo; they are not required for the Conductor UI itself.
+
+### Settings catalog
+
+Constellagent Settings can catalog additional skill directories and subagent files (stored in AgentFS KV). The app does **not** symlink them into your project — install into agent dirs locally using the same pattern as above.
+
 ## Review annotations (human ↔ agent)
 
 The **Review Changes** panel and the **Changes** diff use **review annotations** backed by a local libSQL database (`.git/review-annotations.db`). The `constell-annotate` CLI (from `@tridha643/review-annotations`) is the agent-facing tool.
