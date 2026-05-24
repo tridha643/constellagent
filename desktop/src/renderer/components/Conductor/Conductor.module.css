@@ -161,7 +161,7 @@
 .chatView .timeline,
 .chatView .messageBody,
 .chatView .toolCardBody,
-.chatView .generatedImageCaption,
+.chatView .generatedImageLightboxCaption,
 .chatView .toolInlineMarkdown,
 .chatView .subagentExpanded,
 .chatView .activityRowMarkdown,
@@ -754,55 +754,52 @@
   color: var(--text-secondary);
 }
 
-.generatedImageHeader {
+.generatedImageOpenPill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  width: fit-content;
+  max-width: min(320px, 100%);
   min-width: 0;
-  font-size: var(--text-xs);
-  line-height: 1.35;
-  color: var(--text-secondary);
-}
-
-.generatedImageHeader svg {
-  flex: 0 0 auto;
-  color: var(--text-tertiary);
-}
-
-.generatedImageGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
-  gap: 10px;
-}
-
-.jsonCanvasBlock .generatedImage {
-  max-height: min(420px, 55vh);
-}
-
-.generatedImageFigure {
-  min-width: 0;
-  margin: 0;
-}
-
-.generatedImage {
-  display: block;
-  width: 100%;
-  max-height: 420px;
-  aspect-ratio: 1 / 1;
-  object-fit: contain;
+  padding: 5px 9px 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 74%, transparent);
   border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
-  background: var(--surface-1);
+  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.25;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    transform 130ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
-.generatedImageCaption {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  margin-top: 6px;
+.generatedImageOpenPill:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .generatedImageOpenPill:hover {
+    background: color-mix(in srgb, var(--surface-3) 88%, transparent);
+    border-color: color-mix(in srgb, var(--accent-blue) 48%, var(--border-default));
+    color: var(--text-primary);
+  }
+}
+
+.generatedImageOpenPill:focus-visible,
+.generatedImageLightboxClose:focus-visible,
+.generatedImageThumb:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--accent-blue, #60a5fa));
+  outline-offset: 2px;
+}
+
+.generatedImagePillDescription {
+  max-width: min(460px, 100%);
   font-size: var(--text-xs);
-  line-height: 1.4;
+  line-height: 1.45;
   color: var(--text-tertiary);
 }
 
@@ -813,6 +810,105 @@
 
 .generatedImagePrompt {
   color: var(--text-secondary);
+}
+
+.generatedImageLightboxBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 0.72);
+}
+
+.generatedImageLightbox {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(960px, 100%);
+  max-height: calc(100vh - 48px);
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent);
+  border-radius: 10px;
+  background: var(--surface-1);
+  box-shadow: 0 24px 90px rgb(0 0 0 / 0.5);
+}
+
+.generatedImageLightboxClose {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 78%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .generatedImageLightboxClose:hover {
+    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--accent-blue) 44%, var(--border-default));
+  }
+}
+
+.generatedImageLightboxImage {
+  display: block;
+  width: 100%;
+  max-height: calc(100vh - 180px);
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--surface-0, #111);
+}
+
+.generatedImageLightboxCaption {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+
+.generatedImageThumbs {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  overflow-x: auto;
+  padding-top: 2px;
+}
+
+.generatedImageThumb {
+  flex: 0 0 auto;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent);
+  border-radius: 7px;
+  background: var(--surface-2);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.generatedImageThumb[data-active="true"] {
+  border-color: color-mix(in srgb, var(--accent-blue) 64%, var(--border-default));
+}
+
+.generatedImageThumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .workingRow {
