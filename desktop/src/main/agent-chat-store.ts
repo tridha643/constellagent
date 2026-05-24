@@ -10,6 +10,7 @@ import type {
   AgentChatSessionState,
   QueuedAgentMessage,
 } from '../shared/agent-chat-types'
+import { normalizeConductorDefaultProvider } from '../shared/conductor-model-utils'
 import { safeJsonStringify } from '../shared/json-safe'
 import { parseQueuedMessagesJson } from './agent-chat-queue'
 
@@ -228,7 +229,7 @@ function rowToSession(row: Record<string, unknown>): StoredSession {
     workspaceId: String(row.workspace_id),
     workspacePath: String(row.workspace_path),
     title: String(row.title),
-    provider: String(row.provider) as AgentProvider,
+    provider: normalizeConductorDefaultProvider(row.provider),
     model: String(row.model),
     thinkingLevel: normalizeThinkingLevel(
       row.thinking_level == null ? undefined : String(row.thinking_level),

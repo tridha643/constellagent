@@ -2045,6 +2045,10 @@ export function cleanupAll(): void {
 // electron-vite can rebuild main without restarting the app; re-register handlers so new IPC channels work.
 if (import.meta.hot) {
   import.meta.hot.accept(() => {
-    registerIpcHandlers()
+    try {
+      registerIpcHandlers()
+    } catch (error) {
+      console.error('[ipc] Failed to re-register handlers after main HMR:', error)
+    }
   })
 }

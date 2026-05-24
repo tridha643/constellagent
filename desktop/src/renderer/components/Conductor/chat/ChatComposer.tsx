@@ -631,18 +631,16 @@ export function ChatComposer({
                 styles.composerChip,
                 plan ? styles.composerChipWarm : styles.composerChipNeutral,
                 styles.planToggle,
-                plan ? '' : styles.planToggleIconOnly,
               ]
                 .filter(Boolean)
                 .join(' ')}
               aria-pressed={plan}
               data-plan-active={plan ? 'true' : undefined}
-              title={plan ? 'Plan mode on (Shift+Tab)' : 'Plan mode (Shift+Tab)'}
-              aria-label={plan ? 'Plan mode on. Click to disable.' : 'Enable plan mode'}
+              title={plan ? 'Plan mode on (Shift+Tab)' : 'Plan mode off (Shift+Tab)'}
               onClick={() => onSetPlan(!plan)}
             >
               <PlanMapIcon />
-              {plan ? 'Plan' : null}
+              Plan
             </button>
           </div>
           <div className={styles.composerActionsRight}>

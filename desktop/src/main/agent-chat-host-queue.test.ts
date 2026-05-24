@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentDriver } from './agents/agent-driver'
 import type { AgentTurnContext } from './agents/agent-driver'
-import type { AgentProvider } from '../shared/agent-chat-types'
+import type { AgentProvider, AgentChatSessionState } from '../shared/agent-chat-types'
 
 let tempUserData = ''
 
@@ -128,5 +128,31 @@ describe('AgentChatHost queue drain', () => {
     if (firstMessage?.kind === 'message') {
       expect(firstMessage.attachments).toEqual([image])
     }
+  })
+
+  test('getContextUsage tolerates unknown provider values', async () => {
+    const host = new AgentChatHost()
+    ;(host as unknown as { drivers: Partial<Record<AgentProvider, AgentDriver>> }).drivers = {
+      codex: createMockDriver('codex', async () => {}),
+      cursor: createMockDriver('cursor', async () => {}),
+    }
+
+    const created = await host.createSession({
+      workspaceId: 'ws-1',
+      workspacePath: '/tmp/ws',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    })
+
+    const runtime = (
+      host as unknown as { sessions: Map<string, { state: AgentChatSessionState }> }
+    ).sessions.get(created.sessionId)
+    if (runtime) {
+      runtime.state = { ...runtime.state, provider: 'legacy' as AgentProvider }
+    }
+
+    const usage = await host.getContextUsage(created.sessionId)
+    expect(usage).not.toBeNull()
+    expect(usage?.usedTokens).toBeGreaterThanOrEqual(0)
   })
 })
