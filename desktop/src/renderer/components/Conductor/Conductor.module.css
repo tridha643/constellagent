@@ -406,6 +406,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .messageRole {
@@ -422,6 +423,8 @@
   padding: var(--space-3) var(--space-4);
   align-self: flex-end;
   max-width: 85%;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .userMessageSegmented {
@@ -430,6 +433,29 @@
   align-items: center;
   gap: 6px;
   line-height: 1.5;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.userMessageInlineText {
+  flex: 1 1 16rem;
+  min-width: min(12rem, 100%);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.userMessageInlineText:global(.prosemark-chat-inline) :global(.cm-editor),
+.userMessageInlineText:global(.prosemark-chat-inline) :global(.cm-scroller),
+.userMessageInlineText:global(.prosemark-chat-inline) :global(.cm-content) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.userMessageInlineText:global(.prosemark-chat-inline) :global(.cm-content),
+.userMessageInlineText:global(.prosemark-chat-inline) :global(.cm-line) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .conductorSkillChip {
@@ -450,6 +476,8 @@
 }
 
 .conductorSkillChipIcon {
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
   opacity: 0.88;
 }

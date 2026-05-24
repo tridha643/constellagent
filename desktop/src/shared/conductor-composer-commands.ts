@@ -10,6 +10,7 @@ export interface ConductorSlashCommand {
   readonly description: string
   readonly kind: ConductorSlashCommandKind
   readonly picker?: ConductorSlashPicker
+  readonly sourcePath?: string
 }
 
 export interface ConductorSlashSection {
@@ -197,6 +198,7 @@ export function harnessSkillsToSlashCommands(
     command: `/${skill.name}`,
     description: firstSentence(skill.description) || 'Skill',
     kind: 'skill' as const,
+    sourcePath: skill.sourcePath,
   }))
 }
 

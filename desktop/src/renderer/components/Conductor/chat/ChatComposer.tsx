@@ -13,6 +13,11 @@ import { ConductorMessageQueue } from './ConductorMessageQueue'
 import { ConductorPersonalityMenu } from './ConductorPersonalityMenu'
 import { ConductorAtMenu } from './ConductorAtMenu'
 import { ComposerFileChip } from './ComposerFileChip'
+import {
+  ComposerSkillChip,
+  createConductorSkillMention,
+  type ConductorSkillMention,
+} from './ComposerSkillChip'
 import { ConductorHashMenu } from './ConductorHashMenu'
 import { ConductorSlashMenu } from './ConductorSlashMenu'
 import { ConductorSlashNamePrompt } from './ConductorSlashNamePrompt'
@@ -98,6 +103,7 @@ export function ChatComposer({
 }) {
   const [text, setText] = useState('')
   const [fileMentions, setFileMentions] = useState<ConductorFileMention[]>([])
+  const [skillMentions, setSkillMentions] = useState<ConductorSkillMention[]>([])
   const [attachments, setAttachments] = useState<ConductorComposerAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
@@ -107,6 +113,23 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerInnerRef = useRef<HTMLDivElement | null>(null)
+
+  const addSkillMention = useCallback((command: ConductorSlashCommand) => {
+    const name = command.command.replace(/^\//, '')
+    setSkillMentions((current) => {
+      if (current.some((mention) => mention.command === command.command)) {
+        return current
+      }
+      return [
+        ...current,
+        createConductorSkillMention({
+          name,
+          command: command.command,
+          sourcePath: command.sourcePath,
+        }),
+      ]
+    })
+  }, [])
 
   const {
     slashSections,
@@ -130,6 +153,7 @@ export function ChatComposer({
     model,
     workspacePath,
     onSlashAction,
+    onSkillSelect: addSkillMention,
     onPersonalitySelect,
     onNamePromptConfirm,
   })
@@ -149,8 +173,16 @@ export function ChatComposer({
     setFileMentions((current) => current.filter((mention) => mention.id !== id))
   }, [])
 
+  const removeSkillMention = useCallback((id: string) => {
+    setSkillMentions((current) => current.filter((mention) => mention.id !== id))
+  }, [])
+
   const popLastFileMention = useCallback(() => {
     setFileMentions((current) => (current.length > 0 ? current.slice(0, -1) : current))
+  }, [])
+
+  const popLastSkillMention = useCallback(() => {
+    setSkillMentions((current) => (current.length > 0 ? current.slice(0, -1) : current))
   }, [])
 
   const {
@@ -198,7 +230,8 @@ export function ChatComposer({
   const runningHint = 'Enter · queue · ⌘↵ · steer · Esc · stop'
   const showFocusHint = !focused && !disabled && !running
   const showRunningHint = running && !focused && !disabled
-  const hasInput = hasComposerDraftInput(text, fileMentions) || attachments.length > 0
+  const hasInput =
+    hasComposerDraftInput(text, fileMentions) || skillMentions.length > 0 || attachments.length > 0
   const textareaPlaceholder =
     attachments.length > 0
       ? 'Describe what you want about the attached image…'
@@ -240,7 +273,9 @@ export function ChatComposer({
   }, [composerRef])
 
   const submit = (deliverAs?: QueuedAgentMessageMode) => {
-    const payload = serializeComposerTextWithFileMentions(text, fileMentions)
+    const messagePayload = serializeComposerTextWithFileMentions(text, fileMentions)
+    const skillPayload = skillMentions.map((mention) => mention.command).join(' ')
+    const payload = [skillPayload, messagePayload].filter(Boolean).join(' ').trim()
     if (!hasInput || disabled) return
 
     if (editingQueueId) {
@@ -254,6 +289,7 @@ export function ChatComposer({
       setEditingQueueId(null)
       setText('')
       setFileMentions([])
+      setSkillMentions([])
       setAttachments([])
       setAttachError(null)
       return
@@ -262,6 +298,7 @@ export function ChatComposer({
     onSubmit(payload, running ? deliverAs ?? 'followUp' : undefined, attachments)
     setText('')
     setFileMentions([])
+    setSkillMentions([])
     setAttachments([])
     setAttachError(null)
   }
@@ -272,6 +309,7 @@ export function ChatComposer({
     setEditingQueueId(messageId)
     setText(message.text)
     setFileMentions([])
+    setSkillMentions([])
     setAttachments([...(message.attachments ?? [])])
     setAttachError(null)
     requestAnimationFrame(() => textareaRef.current?.focus())
@@ -283,6 +321,7 @@ export function ChatComposer({
       setEditingQueueId(null)
       setText('')
       setFileMentions([])
+      setSkillMentions([])
       setAttachments([])
       setAttachError(null)
     }
@@ -463,8 +502,11 @@ export function ChatComposer({
           {showRunningHint ? (
             <span className={styles.composerRunningHint}>{runningHint}</span>
           ) : null}
-          {fileMentions.length > 0 ? (
+          {fileMentions.length > 0 || skillMentions.length > 0 ? (
             <div className={styles.composerFileChips}>
+              {skillMentions.map((mention) => (
+                <ComposerSkillChip key={mention.id} mention={mention} onRemove={removeSkillMention} />
+              ))}
               {fileMentions.map((mention) => (
                 <ComposerFileChip key={mention.id} mention={mention} onRemove={removeFileMention} />
               ))}
@@ -474,7 +516,9 @@ export function ChatComposer({
               ref={textareaRef}
               className={[
                 styles.composerTextarea,
-                fileMentions.length > 0 ? styles.composerTextareaWithChips : '',
+                fileMentions.length > 0 || skillMentions.length > 0
+                  ? styles.composerTextareaWithChips
+                  : '',
                 queuedMessages.length > 0 ? styles.composerTextareaQueued : '',
                 showFocusHint || showRunningHint ? styles.composerTextareaWithHint : '',
               ]
@@ -529,6 +573,11 @@ export function ChatComposer({
                 popLastFileMention()
                 return
               }
+              if (shouldBackspaceRemoveLastFileMention(start, end, skillMentions.length)) {
+                e.preventDefault()
+                popLastSkillMention()
+                return
+              }
             }
             if (e.key === 'Escape') {
               if (showAtMenu) {
@@ -551,6 +600,7 @@ export function ChatComposer({
                 setEditingQueueId(null)
                 setText('')
                 setFileMentions([])
+                setSkillMentions([])
                 setAttachments([])
               } else if (running) {
                 e.preventDefault()
