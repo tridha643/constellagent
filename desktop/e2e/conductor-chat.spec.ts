@@ -1009,4 +1009,92 @@ test.describe('Conductor chat view', () => {
     await expect(window.getByText('EARLIERANSWER')).toBeVisible()
     await expect(window.getByText('LATESTANSWER')).toBeVisible()
   })
+
+  test('does not re-pin timeline scroll after the user scrolls up and transcript grows', async () => {
+    const repoPath = createTestRepo('conductor-scroll-pin')
+    await setupWorkspace(window, repoPath)
+
+    const title = `scroll-pin-${Date.now()}`
+    const sessionId = await createAndSelectSession(window, title)
+
+    const filler = 'scroll-filler-line with extra content\n'.repeat(40)
+    const baseTranscript = Array.from({ length: 12 }, (_, index) => [
+      {
+        kind: 'message',
+        id: `u-${index}`,
+        role: 'user',
+        text: `Question ${index}\n${filler}`,
+        createdAt: nowIso(),
+      },
+      {
+        kind: 'message',
+        id: `a-${index}`,
+        role: 'assistant',
+        text: `Answer ${index}\n${filler}`,
+        createdAt: nowIso(),
+      },
+    ]).flat()
+
+    await injectTranscript(app, sessionId, baseTranscript)
+    await expect(window.getByText('Answer 0')).toBeVisible({ timeout: 5000 })
+    await window.waitForTimeout(200)
+
+    const scrollAway = await window.evaluate(() => {
+      const el = document.querySelector(
+        '[class*="timelineWrap"] > [class*="timeline"]',
+      ) as HTMLElement | null
+      if (!el) return null
+      const maxScrollTop = el.scrollHeight - el.clientHeight
+      if (maxScrollTop <= 80) {
+        return { scrollTop: el.scrollTop, maxScrollTop, scrollable: false }
+      }
+      el.scrollTop = Math.floor(maxScrollTop / 2)
+      el.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, bubbles: true }))
+      el.dispatchEvent(new Event('scroll', { bubbles: true }))
+      return {
+        scrollTop: el.scrollTop,
+        maxScrollTop,
+        scrollable: true,
+      }
+    })
+    expect(scrollAway).not.toBeNull()
+    if (!scrollAway) return
+    expect(scrollAway.scrollable).toBe(true)
+    expect(scrollAway.scrollTop).toBeLessThan(scrollAway.maxScrollTop - 80)
+
+    const extendedTranscript = [
+      ...baseTranscript,
+      {
+        kind: 'message',
+        id: 'u-extra',
+        role: 'user',
+        text: `Question extra\n${filler}`,
+        createdAt: nowIso(),
+      },
+      {
+        kind: 'message',
+        id: 'a-extra',
+        role: 'assistant',
+        text: `Answer extra\n${filler}`,
+        createdAt: nowIso(),
+      },
+    ]
+    await injectTranscript(app, sessionId, extendedTranscript)
+    await expect(window.getByText('Answer extra')).toBeVisible({ timeout: 5000 })
+
+    const scrollAfterGrowth = await window.evaluate(() => {
+      const el = document.querySelector(
+        '[class*="timelineWrap"] > [class*="timeline"]',
+      ) as HTMLElement | null
+      if (!el) return null
+      return {
+        scrollTop: el.scrollTop,
+        maxScrollTop: el.scrollHeight - el.clientHeight,
+      }
+    })
+    expect(scrollAfterGrowth).not.toBeNull()
+    if (!scrollAfterGrowth) return
+    expect(scrollAfterGrowth.scrollTop).toBeLessThan(scrollAfterGrowth.maxScrollTop - 80)
+    expect(Math.abs(scrollAfterGrowth.scrollTop - scrollAway.scrollTop)).toBeLessThan(48)
+  })
 })
