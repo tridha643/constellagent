@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
 import { Plus, X } from 'lucide-react'
 import type { AgentProvider, QueuedAgentMessage, QueuedAgentMessageMode } from '../../../../shared/agent-chat-types'
 import type { ConductorComposerAttachment } from '../../../../shared/conductor-attachments'
@@ -11,11 +11,22 @@ import { FastToggle } from './FastToggle'
 import { ComposerSendIcon, ComposerStopIcon, PlanMapIcon } from './ConductorIcons'
 import { ConductorMessageQueue } from './ConductorMessageQueue'
 import { ConductorPersonalityMenu } from './ConductorPersonalityMenu'
+import { ConductorAtMenu } from './ConductorAtMenu'
+import { ComposerFileChip } from './ComposerFileChip'
 import { ConductorHashMenu } from './ConductorHashMenu'
 import { ConductorSlashMenu } from './ConductorSlashMenu'
 import { ConductorSlashNamePrompt } from './ConductorSlashNamePrompt'
+import { useConductorComposerAt } from './use-conductor-composer-at'
 import { useConductorComposerHash } from './use-conductor-composer-hash'
 import { useConductorComposerSlash } from './use-conductor-composer-slash'
+import { useAppStore } from '../../../store/app-store'
+import {
+  createConductorFileMention,
+  hasComposerDraftInput,
+  serializeComposerTextWithFileMentions,
+  shouldBackspaceRemoveLastFileMention,
+  type ConductorFileMention,
+} from '../../../../shared/composer-at-mention'
 import {
   ContextUsageHover,
 } from './ContextWindowControl'
@@ -86,6 +97,7 @@ export function ChatComposer({
   onNamePromptConfirm: (command: ConductorSlashCommand, value: string) => void
 }) {
   const [text, setText] = useState('')
+  const [fileMentions, setFileMentions] = useState<ConductorFileMention[]>([])
   const [attachments, setAttachments] = useState<ConductorComposerAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
@@ -122,6 +134,25 @@ export function ChatComposer({
     onNamePromptConfirm,
   })
 
+  const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
+
+  const addFileMention = useCallback((item: { path: string; relativePath: string }) => {
+    setFileMentions((current) => {
+      if (current.some((mention) => mention.relativePath === item.relativePath)) {
+        return current
+      }
+      return [...current, createConductorFileMention(item)]
+    })
+  }, [])
+
+  const removeFileMention = useCallback((id: string) => {
+    setFileMentions((current) => current.filter((mention) => mention.id !== id))
+  }, [])
+
+  const popLastFileMention = useCallback(() => {
+    setFileMentions((current) => (current.length > 0 ? current.slice(0, -1) : current))
+  }, [])
+
   const {
     showHashMenu,
     filteredPrs,
@@ -139,6 +170,25 @@ export function ChatComposer({
     repoPath,
   })
 
+  const {
+    showAtMenu,
+    atItems,
+    selectedAtItem,
+    loading: atLoading,
+    indexing: atIndexing,
+    fetchError: atFetchError,
+    onSelectAtMention,
+    onComposerSelectionChange: onAtSelectionChange,
+    wrapComposerKeyDown: wrapAtKeyDown,
+    dismissAtUi,
+  } = useConductorComposerAt({
+    text,
+    setText,
+    composerRef: textareaRef,
+    workspacePath,
+    onAddFileMention: addFileMention,
+  })
+
   const modelLabel = `${provider} · ${model}`
   const showEffort = hasEffortVariants(model, provider)
   const showFast = hasFastVariant(model, provider)
@@ -148,7 +198,7 @@ export function ChatComposer({
   const runningHint = 'Enter · queue · ⌘↵ · steer · Esc · stop'
   const showFocusHint = !focused && !disabled && !running
   const showRunningHint = running && !focused && !disabled
-  const hasInput = text.trim().length > 0 || attachments.length > 0
+  const hasInput = hasComposerDraftInput(text, fileMentions) || attachments.length > 0
   const textareaPlaceholder =
     attachments.length > 0
       ? 'Describe what you want about the attached image…'
@@ -159,7 +209,7 @@ export function ChatComposer({
     plan ? styles.composerInnerPlan : '',
     reasoningActive ? styles.composerInnerReasoning : '',
     dragActive ? styles.composerInnerDragActive : '',
-    showSlashMenu || showPersonalityMenu || showNamePromptMenu || showHashMenu
+    showSlashMenu || showPersonalityMenu || showNamePromptMenu || showHashMenu || showAtMenu
       ? styles.composerInnerMenuNest
       : '',
   ]
@@ -190,26 +240,28 @@ export function ChatComposer({
   }, [composerRef])
 
   const submit = (deliverAs?: QueuedAgentMessageMode) => {
-    const trimmed = text.trim()
+    const payload = serializeComposerTextWithFileMentions(text, fileMentions)
     if (!hasInput || disabled) return
 
     if (editingQueueId) {
       onReplaceQueue(
         queuedMessages.map((message) =>
           message.id === editingQueueId
-            ? { ...message, text: trimmed, attachments: [...attachments] }
+            ? { ...message, text: payload, attachments: [...attachments] }
             : message,
         ),
       )
       setEditingQueueId(null)
       setText('')
+      setFileMentions([])
       setAttachments([])
       setAttachError(null)
       return
     }
 
-    onSubmit(trimmed, running ? deliverAs ?? 'followUp' : undefined, attachments)
+    onSubmit(payload, running ? deliverAs ?? 'followUp' : undefined, attachments)
     setText('')
+    setFileMentions([])
     setAttachments([])
     setAttachError(null)
   }
@@ -219,6 +271,7 @@ export function ChatComposer({
     if (!message) return
     setEditingQueueId(messageId)
     setText(message.text)
+    setFileMentions([])
     setAttachments([...(message.attachments ?? [])])
     setAttachError(null)
     requestAnimationFrame(() => textareaRef.current?.focus())
@@ -229,6 +282,7 @@ export function ChatComposer({
     if (editingQueueId === messageId) {
       setEditingQueueId(null)
       setText('')
+      setFileMentions([])
       setAttachments([])
       setAttachError(null)
     }
@@ -326,9 +380,19 @@ export function ChatComposer({
   return (
     <div className={styles.composer}>
       <div className={styles.composerStack}>
-        {showHashMenu || showPersonalityMenu || showSlashMenu || showNamePromptMenu ? (
+        {showAtMenu || showHashMenu || showPersonalityMenu || showSlashMenu || showNamePromptMenu ? (
           <div className={styles.composerMenus}>
-            {showHashMenu ? (
+            {showAtMenu ? (
+              <ConductorAtMenu
+                items={atItems}
+                selectedItem={selectedAtItem}
+                loading={atLoading}
+                indexing={atIndexing}
+                error={atFetchError}
+                appearanceThemeId={appearanceThemeId}
+                onSelect={onSelectAtMention}
+              />
+            ) : showHashMenu ? (
               <ConductorHashMenu
                 prs={filteredPrs}
                 selectedPr={selectedPr}
@@ -399,46 +463,75 @@ export function ChatComposer({
           {showRunningHint ? (
             <span className={styles.composerRunningHint}>{runningHint}</span>
           ) : null}
-          <textarea
-            ref={textareaRef}
-            className={[
-              styles.composerTextarea,
-              queuedMessages.length > 0 ? styles.composerTextareaQueued : '',
-              showFocusHint || showRunningHint ? styles.composerTextareaWithHint : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            placeholder={textareaPlaceholder}
-            rows={1}
-            value={text}
-            disabled={disabled}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            onChange={(e) => {
-              setText(e.target.value)
-              const pos = e.target.selectionStart ?? e.target.value.length
-              onComposerSelectionChange(pos)
-              onHashSelectionChange(pos)
-            }}
-            onClick={(e) => {
-              const pos = e.currentTarget.selectionStart ?? text.length
-              onComposerSelectionChange(pos)
-              onHashSelectionChange(pos)
-            }}
-            onKeyUp={(e) => {
-              const pos = e.currentTarget.selectionStart ?? text.length
-              onComposerSelectionChange(pos)
-              onHashSelectionChange(pos)
-            }}
-            onSelect={(e) => {
-              const pos = e.currentTarget.selectionStart ?? text.length
-              onComposerSelectionChange(pos)
-              onHashSelectionChange(pos)
-            }}
-            {...dragHandlers}
-            onKeyDown={wrapHashKeyDown(wrapComposerKeyDown((e) => {
+          <div className={styles.composerDraft}>
+            {fileMentions.map((mention) => (
+              <ComposerFileChip key={mention.id} mention={mention} onRemove={removeFileMention} />
+            ))}
+            <textarea
+              ref={textareaRef}
+              className={[
+                styles.composerTextarea,
+                fileMentions.length > 0 ? styles.composerTextareaWithChips : '',
+                queuedMessages.length > 0 ? styles.composerTextareaQueued : '',
+                showFocusHint || showRunningHint ? styles.composerTextareaWithHint : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              placeholder={textareaPlaceholder}
+              rows={1}
+              value={text}
+              disabled={disabled}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              onChange={(e) => {
+                setText(e.target.value)
+                const pos = e.target.selectionStart ?? e.target.value.length
+                onComposerSelectionChange(pos)
+                onHashSelectionChange(pos)
+                onAtSelectionChange(pos)
+              }}
+              onClick={(e) => {
+                const pos = e.currentTarget.selectionStart ?? text.length
+                onComposerSelectionChange(pos)
+                onHashSelectionChange(pos)
+                onAtSelectionChange(pos)
+              }}
+              onKeyUp={(e) => {
+                const pos = e.currentTarget.selectionStart ?? text.length
+                onComposerSelectionChange(pos)
+                onHashSelectionChange(pos)
+                onAtSelectionChange(pos)
+              }}
+              onSelect={(e) => {
+                const pos = e.currentTarget.selectionStart ?? text.length
+                onComposerSelectionChange(pos)
+                onHashSelectionChange(pos)
+                onAtSelectionChange(pos)
+              }}
+              {...dragHandlers}
+              onKeyDown={wrapAtKeyDown(wrapHashKeyDown(wrapComposerKeyDown((e) => {
+            if (
+              e.key === 'Backspace' &&
+              !showAtMenu &&
+              !showHashMenu &&
+              !showSlashMenu &&
+              !showPersonalityMenu &&
+              !showNamePromptMenu
+            ) {
+              const el = textareaRef.current
+              const start = el?.selectionStart ?? 0
+              const end = el?.selectionEnd ?? 0
+              if (shouldBackspaceRemoveLastFileMention(start, end, fileMentions.length)) {
+                e.preventDefault()
+                popLastFileMention()
+                return
+              }
+            }
             if (e.key === 'Escape') {
-              if (showHashMenu) {
+              if (showAtMenu) {
+                e.preventDefault()
+                dismissAtUi()
+              } else if (showHashMenu) {
                 e.preventDefault()
                 dismissHashUi()
               } else if (showSlashMenu || showPersonalityMenu || showNamePromptMenu) {
@@ -454,6 +547,7 @@ export function ChatComposer({
                 e.preventDefault()
                 setEditingQueueId(null)
                 setText('')
+                setFileMentions([])
                 setAttachments([])
               } else if (running) {
                 e.preventDefault()
@@ -462,6 +556,7 @@ export function ChatComposer({
             } else if (
               e.key === 'Tab' &&
               e.shiftKey &&
+              !showAtMenu &&
               !showHashMenu &&
               !showSlashMenu &&
               !showPersonalityMenu &&
@@ -480,8 +575,9 @@ export function ChatComposer({
               e.preventDefault()
               onHistoryUp()
             }
-          }))}
-          />
+          })))}
+            />
+          </div>
           {dragActive ? (
             <div className={styles.composerDropIndicator} aria-hidden>
               Drop images to attach

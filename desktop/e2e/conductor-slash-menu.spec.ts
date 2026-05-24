@@ -224,6 +224,52 @@ test.describe('Conductor slash menu', () => {
     await expect(window.locator('[data-testid="conductor-hash-menu"]')).toHaveCount(0)
   })
 
+  test('at menu lists files and inserts mention', async () => {
+    const repoPath = createTestRepo('at-menu')
+    mkdirSync(join(repoPath, 'src'), { recursive: true })
+    writeFileSync(join(repoPath, 'src', 'App.tsx'), 'export {}\n')
+    execSync('git add .', { cwd: repoPath })
+    execSync('git commit -m "add app file"', { cwd: repoPath })
+    await setupWorkspace(window, repoPath)
+    await ensureCodexProvider(window)
+    await openConductorTab(window)
+    await mockSlashApis(window)
+
+    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    await composer.click()
+    await composer.fill('@App')
+    await composer.press('End')
+    await expect(window.locator('[data-testid="conductor-at-menu"]')).toContainText('App.tsx')
+
+    await composer.press('Enter')
+    await expect(window.locator('[data-testid="composer-file-chip"]')).toContainText('App.tsx')
+    await expect(composer).toHaveValue('')
+    await expect(window.locator('[data-testid="conductor-at-menu"]')).toHaveCount(0)
+  })
+
+  test('backspace at draft start removes the last file chip', async () => {
+    const repoPath = createTestRepo('at-menu-backspace')
+    mkdirSync(join(repoPath, 'src'), { recursive: true })
+    writeFileSync(join(repoPath, 'src', 'App.tsx'), 'export {}\n')
+    execSync('git add .', { cwd: repoPath })
+    execSync('git commit -m "add app file"', { cwd: repoPath })
+    await setupWorkspace(window, repoPath)
+    await ensureCodexProvider(window)
+    await openConductorTab(window)
+    await mockSlashApis(window)
+
+    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    await composer.click()
+    await composer.fill('@App')
+    await composer.press('End')
+    await expect(window.locator('[data-testid="conductor-at-menu"]')).toContainText('App.tsx')
+    await composer.press('Enter')
+    await expect(window.locator('[data-testid="composer-file-chip"]')).toHaveCount(1)
+
+    await composer.press('Backspace')
+    await expect(window.locator('[data-testid="composer-file-chip"]')).toHaveCount(0)
+  })
+
   test('Esc dismisses hash token without submitting', async () => {
     const repoPath = createTestRepo('hash-menu-esc')
     await setupWorkspace(window, repoPath)
