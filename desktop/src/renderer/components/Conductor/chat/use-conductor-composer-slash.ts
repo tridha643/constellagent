@@ -29,6 +29,7 @@ export interface UseConductorComposerSlashArgs {
   readonly model: string
   readonly workspacePath: string
   readonly onSlashAction: (command: ConductorSlashCommand) => void
+  readonly onSkillSelect: (command: ConductorSlashCommand) => void
   readonly onPersonalitySelect: (value: string) => void
   readonly onNamePromptConfirm: (command: ConductorSlashCommand, value: string) => void
 }
@@ -41,6 +42,7 @@ export function useConductorComposerSlash({
   model,
   workspacePath,
   onSlashAction,
+  onSkillSelect,
   onPersonalitySelect,
   onNamePromptConfirm,
 }: UseConductorComposerSlashArgs) {
@@ -154,7 +156,8 @@ export function useConductorComposerSlash({
     (command: ConductorSlashCommand) => {
       if (!slashToken) return
       if (command.kind === 'skill') {
-        replaceRange(slashToken.from, slashToken.to, `${command.command} `)
+        clearSlashToken()
+        onSkillSelect(command)
         setPickCommand(null)
         return
       }
@@ -167,7 +170,7 @@ export function useConductorComposerSlash({
       setPickCommand(null)
       onSlashAction(command)
     },
-    [slashToken, replaceRange, clearSlashToken, onSlashAction],
+    [slashToken, clearSlashToken, onSlashAction, onSkillSelect],
   )
 
   const applyNamePromptValue = useCallback(

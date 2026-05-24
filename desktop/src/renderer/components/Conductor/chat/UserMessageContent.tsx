@@ -14,7 +14,12 @@ function segmentToNode(segment: MessageSegment, index: number): ReactNode {
   switch (segment.kind) {
     case 'text':
       return segment.text.trim() ? (
-        <MarkdownBody key={`t-${index}`} content={segment.text} inline />
+        <MarkdownBody
+          key={`t-${index}`}
+          content={segment.text}
+          className={styles.userMessageInlineText}
+          inline
+        />
       ) : null
     case 'file':
       return <FilePathChip key={`f-${index}`} path={segment.path} />
@@ -23,6 +28,7 @@ function segmentToNode(segment: MessageSegment, index: number): ReactNode {
         <ConductorSkillChip
           key={`sf-${index}`}
           name={markdownBasename(segment.path)}
+          path={segment.path}
           title={segment.path}
         />
       )

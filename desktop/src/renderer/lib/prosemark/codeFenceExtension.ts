@@ -73,6 +73,23 @@ const codeBlockDecorations = (view: EditorView) => {
               );
             }
 
+            if (isFencedCode) {
+              const cursor = node.node.cursor();
+              cursor.iterate((child) => {
+                if (
+                  (child.type.name === "CodeMark" || child.type.name === "CodeInfo") &&
+                  child.from >= line.from &&
+                  child.to <= line.to
+                ) {
+                  builder.add(
+                    child.from,
+                    child.to,
+                    Decoration.mark({ class: "cm-fenced-code-syntax" }),
+                  );
+                }
+              });
+            }
+
             pos = line.to + 1;
           }
         }
@@ -161,6 +178,14 @@ export const codeFenceTheme = EditorView.theme({
   // In case the active line color changes
   ".cm-activeLine.cm-fenced-code-line": {
     backgroundColor: "var(--pm-code-background-color)",
+  },
+  ".cm-fenced-code-syntax": {
+    opacity: "0 !important",
+    fontSize: "0 !important",
+    width: "0",
+    display: "inline-block",
+    overflow: "hidden",
+    pointerEvents: "none",
   },
   ".cm-fenced-code-line-first": {
     borderTopLeftRadius: "0.4rem",
