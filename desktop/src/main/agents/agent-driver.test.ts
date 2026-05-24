@@ -63,4 +63,9 @@ describe('agent-driver prompt construction', () => {
     expect(prompt).toContain('Do not write plan files.')
     expect(prompt).toContain('Return the plan directly in the Conductor chat response')
   })
+
+  test('passes harness slash commands through without Conductor wrapping', () => {
+    expect(buildAgentPrompt('/compact', false)).toBe('/compact')
+    expect(buildAgentPrompt('/add-dir src/lib', false)).toBe('/add-dir src/lib')
+  })
 })

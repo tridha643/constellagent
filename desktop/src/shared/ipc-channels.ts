@@ -133,6 +133,8 @@ export const IPC = {
   CODEX_UNINSTALL_NOTIFY: 'codex:uninstall-notify',
   CODEX_CHECK_NOTIFY: 'codex:check-notify',
   CODEX_GET_RATE_LIMITS: 'codex:get-rate-limits',
+  CODEX_GET_PERSONALITY: 'codex:get-personality',
+  CODEX_SET_PERSONALITY: 'codex:set-personality',
   CURSOR_GET_RATE_LIMITS: 'cursor:get-rate-limits',
 
   // Automation operations
@@ -166,12 +168,14 @@ export const IPC = {
   MCP_LOAD_SERVERS: 'mcp:load-servers',
   MCP_REMOVE_SERVER: 'mcp:remove-server',
   MCP_GET_CONFIG_PATHS: 'mcp:get-config-paths',
+  MCP_PROBE_STATUS: 'mcp:probe-status',
 
   // Session
   SESSION_GET_LAST: 'session:get-last',
 
   // Skills & Subagents
   SKILLS_SCAN: 'skills:scan',
+  SKILLS_DISCOVER_HARNESS: 'skills:discover-harness',
   SUBAGENTS_SCAN: 'subagents:scan',
 
   // Skills & Subagents KV persistence (AgentFS-backed)

@@ -339,6 +339,10 @@ const api = {
   skills: {
     scan: (skillPath: string) =>
       ipcRenderer.invoke(IPC.SKILLS_SCAN, skillPath) as Promise<{ name: string; description: string } | null>,
+    discoverHarness: (provider: import('../shared/agent-chat-types').AgentProvider, workspacePath: string) =>
+      ipcRenderer.invoke(IPC.SKILLS_DISCOVER_HARNESS, provider, workspacePath) as Promise<
+        Array<{ name: string; description: string; sourcePath: string }>
+      >,
     kvSave: (projectPath: string, skill: { name: string; description: string; sourcePath: string; enabled: boolean }) =>
       ipcRenderer.invoke(IPC.SKILLS_KV_SAVE, projectPath, skill),
     kvRemove: (projectPath: string, skillName: string) =>
@@ -394,6 +398,14 @@ const api = {
       ipcRenderer.invoke(IPC.CODEX_CHECK_NOTIFY),
     getRateLimits: () =>
       ipcRenderer.invoke(IPC.CODEX_GET_RATE_LIMITS),
+    getPersonality: () =>
+      ipcRenderer.invoke(IPC.CODEX_GET_PERSONALITY) as Promise<{
+        personality: 'pragmatic' | 'friendly' | 'none'
+      }>,
+    setPersonality: (personality: 'pragmatic' | 'friendly' | 'none') =>
+      ipcRenderer.invoke(IPC.CODEX_SET_PERSONALITY, personality) as Promise<{
+        personality: 'pragmatic' | 'friendly' | 'none'
+      }>,
   },
 
   cursor: {
@@ -498,6 +510,11 @@ const api = {
       ipcRenderer.invoke(IPC.MCP_REMOVE_SERVER, serverName),
     getConfigPaths: () =>
       ipcRenderer.invoke(IPC.MCP_GET_CONFIG_PATHS) as Promise<Record<string, string>>,
+    probeStatus: (provider: import('../shared/agent-chat-types').AgentProvider, workspacePath: string) =>
+      ipcRenderer.invoke(IPC.MCP_PROBE_STATUS, provider, workspacePath) as Promise<{
+        servers: Array<{ name: string; status: 'ok' | 'error' | 'unknown'; detail?: string }>
+        probedAt: number
+      }>,
   },
 
   session: {

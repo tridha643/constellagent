@@ -3079,3 +3079,508 @@
   font-size: 12px;
   color: var(--text-secondary);
 }
+
+/* ── Conductor slash menu + MCP panels (motion tokens) ── */
+.composerStack {
+  position: relative;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  --composer-menu-inset: 14px;
+  --composer-menu-radius: 8px;
+}
+
+.composerMenus {
+  position: absolute;
+  left: var(--composer-menu-inset);
+  right: var(--composer-menu-inset);
+  bottom: calc(100% - 1px);
+  z-index: 21;
+  --conductor-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --conductor-pop-enter: 160ms;
+  transform-origin: bottom center;
+}
+
+.composerInnerMenuNest {
+  border-top-color: transparent;
+}
+
+.composerInnerMenuNest::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: calc(var(--composer-menu-inset) + 1px);
+  height: calc(var(--conductor-composer-radius) + 1px);
+  border-top: 1px solid var(--border-subtle);
+  border-left: 1px solid var(--border-subtle);
+  border-top-left-radius: var(--conductor-composer-radius);
+  pointer-events: none;
+  z-index: 19;
+}
+
+.composerInnerMenuNest:not(.composerInnerPlan)::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: calc(var(--composer-menu-inset) + 1px);
+  height: calc(var(--conductor-composer-radius) + 1px);
+  border-top: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  border-top-right-radius: var(--conductor-composer-radius);
+  pointer-events: none;
+  z-index: 19;
+}
+
+.composerInnerPlan.composerInnerMenuNest {
+  border-top-color: transparent;
+  background:
+    linear-gradient(var(--border-subtle), var(--border-subtle)) right top /
+      calc(var(--composer-menu-inset) + 1px) 1px no-repeat,
+    var(--surface-1);
+}
+
+.composerStackPanels {
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.conductorSlashMenu,
+.conductorPersonalityMenu,
+.conductorSlashNamePrompt {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--composer-menu-radius);
+  background: var(--surface-1);
+  max-height: min(300px, 40vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 5px 0 6px;
+  box-shadow: none;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity var(--conductor-pop-enter, 160ms) var(--conductor-ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform var(--conductor-pop-enter, 160ms) var(--conductor-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-secondary) 35%, transparent) transparent;
+}
+
+.conductorMcpPanel,
+.conductorMcpBanner,
+.conductorEmbeddedTerminal {
+  --conductor-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --conductor-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --conductor-pop-enter: 180ms;
+  --conductor-pop-exit: 140ms;
+  transform-origin: bottom center;
+}
+
+.conductorSlashMenu::-webkit-scrollbar,
+.conductorPersonalityMenu::-webkit-scrollbar {
+  width: 4px;
+}
+
+.conductorSlashMenu::-webkit-scrollbar-thumb,
+.conductorPersonalityMenu::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-secondary) 35%, transparent);
+}
+
+.conductorSlashSection[data-section='commands'] {
+  padding-bottom: 4px;
+}
+
+.conductorSlashSection + .conductorSlashSection {
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 6px;
+  padding-top: 2px;
+}
+
+.conductorSlashSectionTitle {
+  padding: 10px 14px 7px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: color-mix(in srgb, var(--text-secondary) 88%, var(--text-primary));
+}
+
+.conductorSlashMenuItem,
+.conductorPersonalityMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  border-radius: 0;
+  padding: 4px 14px;
+  min-height: 24px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.conductorSlashMenuItem[data-active='true'],
+.conductorPersonalityMenuItem[data-active='true'] {
+  background: color-mix(in srgb, var(--surface-2) 88%, var(--surface-1));
+}
+
+.conductorSlashMenuItem[data-kind='skill'] {
+  align-items: flex-start;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  min-height: auto;
+}
+
+.conductorSlashMenuItem[data-kind='skill'] .slashCommandToken {
+  padding-top: 1px;
+}
+
+.conductorSlashMenuItem[data-kind='skill'] .slashCommandDesc {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.conductorSlashNamePrompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+
+.conductorSlashNamePromptTitle {
+  font-size: 11px;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--text-secondary) 88%, var(--text-primary));
+}
+
+.conductorSlashNamePromptInput {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  padding: 8px 10px;
+  outline: none;
+}
+
+.conductorSlashNamePromptInput:focus {
+  border-color: color-mix(in srgb, var(--accent-blue) 45%, var(--border-subtle));
+}
+
+.conductorSlashNamePromptBrowse {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  padding: 4px 2px;
+  cursor: pointer;
+  text-align: left;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .conductorSlashNamePromptBrowse:hover {
+    background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .conductorSlashMenuItem,
+  .conductorPersonalityMenuItem {
+    transition: background-color 120ms ease;
+  }
+
+  .conductorSlashMenuItem:hover,
+  .conductorPersonalityMenuItem:hover {
+    background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  }
+}
+
+.composerMenus,
+.conductorSlashMenuItem:active,
+.conductorPersonalityMenuItem:active {
+  --conductor-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.conductorMcpBannerOpen:active,
+.conductorEmbeddedTerminalDone:active,
+.conductorMcpFooterBtn:active,
+.conductorPanelClose:active {
+  transform: scale(0.97);
+  transition: transform 140ms var(--conductor-ease-out);
+}
+
+.slashCommandToken {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  flex-shrink: 0;
+  color: var(--text-primary);
+  font-weight: 400;
+}
+
+.slashCommandSlash,
+.slashCommandLabel {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.slashCommandDesc,
+.conductorPersonalityDesc {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.conductorPersonalityLabel {
+  font-size: 13px;
+  font-weight: 400;
+  flex-shrink: 0;
+  color: var(--text-primary);
+}
+
+.conductorPersonalityCheck {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.conductorMcpPanel,
+.conductorMcpBanner,
+.conductorEmbeddedTerminal {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-1);
+  box-shadow: 0 12px 40px color-mix(in srgb, #000 24%, transparent);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity var(--conductor-pop-enter) var(--conductor-ease-out),
+    transform var(--conductor-pop-enter) var(--conductor-ease-out);
+}
+
+.conductorMcpPanel {
+  padding: 14px 16px;
+}
+
+.conductorMcpPanelHeader,
+.conductorEmbeddedTerminalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.conductorMcpPanelTitle {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.conductorMcpPanelSubtitle {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.conductorMcpPanelBody {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conductorMcpServerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.conductorMcpServerIconOk {
+  color: #6fcf97;
+}
+
+.conductorMcpServerIconError {
+  color: #e07070;
+}
+
+.conductorMcpServerName {
+  font-family: 'SF Mono', Menlo, 'Cascadia Code', monospace;
+  font-size: 12px;
+}
+
+.conductorMcpEmpty {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 2px;
+}
+
+.conductorMcpPanelFooter {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.conductorMcpFooterBtn,
+.conductorMcpBannerOpen,
+.conductorEmbeddedTerminalDone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.conductorPanelClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.conductorMcpBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.conductorMcpBannerText {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.conductorMcpBannerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conductorMcpBannerOpen {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.conductorEmbeddedTerminal {
+  overflow: hidden;
+  transform: translateY(0);
+  transition:
+    opacity 200ms var(--conductor-ease-out),
+    transform 200ms var(--conductor-ease-out);
+}
+
+.conductorEmbeddedTerminalHeader {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.conductorEmbeddedTerminalHeaderActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conductorEmbeddedTerminalDone {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.conductorEmbeddedTerminalStatus {
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.conductorEmbeddedTerminalBody {
+  height: 280px;
+  background: #0d0d0d;
+  padding: 6px;
+}
+
+@starting-style {
+  .conductorMcpPanel,
+  .conductorMcpBanner {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+
+  .conductorSlashMenu,
+  .conductorPersonalityMenu {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+
+  .conductorEmbeddedTerminal {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conductorMcpPanel,
+  .conductorMcpBanner,
+  .conductorEmbeddedTerminal,
+  .conductorSlashMenu,
+  .conductorPersonalityMenu,
+  .conductorSlashMenuItem,
+  .conductorPersonalityMenuItem {
+    transition: none;
+    animation: none;
+  }
+
+  @starting-style {
+    .conductorMcpPanel,
+    .conductorMcpBanner,
+    .conductorEmbeddedTerminal,
+    .conductorSlashMenu,
+    .conductorPersonalityMenu {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}

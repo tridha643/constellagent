@@ -4,7 +4,7 @@
  * Delegated subagent runs arrive as runtime `collab_tool_call` JSONL items (spawn_agent / wait)
  * even when the published SDK `ThreadItem` union omits them; see `codex-driver-collab.ts`.
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
@@ -197,28 +197,56 @@ export function isBenignCodexInterruptError(err: unknown, signal: AbortSignal): 
   return false
 }
 
-/** Prefer a `codex` on PATH so we do not require @openai/codex optional vendor binaries at app load. */
+/** True when `codex exec` accepts the SDK's `--experimental-json` flag (not just `--json`). */
+export function codexCliSupportsSdkExec(codexPath: string, env: NodeJS.ProcessEnv): boolean {
+  const result = spawnSync(codexPath, ['exec', '--experimental-json'], {
+    encoding: 'utf8',
+    env,
+    input: '',
+    timeout: 5000,
+  })
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+  if (output.includes("unexpected argument '--experimental-json'")) {
+    return false
+  }
+  return result.error == null
+}
+
+let resolvedCodexCliPath: string | undefined | null = null
+
+/** Prefer newer/user-managed Codex installs over stale Homebrew shims that break the SDK. */
 export function resolveCodexCliPath(): string | undefined {
+  if (resolvedCodexCliPath !== null) {
+    return resolvedCodexCliPath || undefined
+  }
   const env = cliEnvWithStandardPath()
   const executable = process.platform === 'win32' ? 'codex.exe' : 'codex'
   const candidates = [
-    'codex',
+    join(homedir(), '.bun', 'bin', executable),
     join(homedir(), '.local', 'bin', executable),
     join(homedir(), '.npm-global', 'bin', executable),
     '/opt/homebrew/bin/codex',
     '/usr/local/bin/codex',
   ]
   for (const candidate of candidates) {
-    if (candidate !== 'codex' && existsSync(candidate)) return candidate
-    try {
-      const lookup = process.platform === 'win32' ? 'where' : 'which'
-      const out = execFileSync(lookup, [candidate], { encoding: 'utf8', env, timeout: 5000 })
-      const line = out.trim().split(/\r?\n/)[0]?.trim()
-      if (line) return line
-    } catch {
-      // try next candidate
+    if (!existsSync(candidate)) continue
+    if (codexCliSupportsSdkExec(candidate, env)) {
+      resolvedCodexCliPath = candidate
+      return candidate
     }
   }
+  try {
+    const lookup = process.platform === 'win32' ? 'where' : 'which'
+    const out = execFileSync(lookup, ['codex'], { encoding: 'utf8', env, timeout: 5000 })
+    const line = out.trim().split(/\r?\n/)[0]?.trim()
+    if (line && codexCliSupportsSdkExec(line, env)) {
+      resolvedCodexCliPath = line
+      return line
+    }
+  } catch {
+    // fall through
+  }
+  resolvedCodexCliPath = undefined
   return undefined
 }
 

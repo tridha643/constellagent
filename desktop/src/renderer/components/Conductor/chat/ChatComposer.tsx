@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from
 import { Plus, X } from 'lucide-react'
 import type { AgentProvider, QueuedAgentMessage, QueuedAgentMessageMode } from '../../../../shared/agent-chat-types'
 import type { ConductorComposerAttachment } from '../../../../shared/conductor-attachments'
+import type { ConductorSlashCommand } from '../../../../shared/conductor-composer-commands'
 import { hasEffortVariants, hasFastVariant, isFastModel } from '../../../../shared/conductor-model-utils'
 import { normalizeThinkingLevel, isReasoningEffortActive, type ThinkingLevel } from '../../../../shared/conductor-thinking'
 import { ChatModelSelector } from './ChatModelSelector'
@@ -9,6 +10,10 @@ import { EffortPill } from './EffortPill'
 import { FastToggle } from './FastToggle'
 import { ComposerSendIcon, ComposerStopIcon, PlanMapIcon } from './ConductorIcons'
 import { ConductorMessageQueue } from './ConductorMessageQueue'
+import { ConductorPersonalityMenu } from './ConductorPersonalityMenu'
+import { ConductorSlashMenu } from './ConductorSlashMenu'
+import { ConductorSlashNamePrompt } from './ConductorSlashNamePrompt'
+import { useConductorComposerSlash } from './use-conductor-composer-slash'
 import {
   ContextUsageHover,
 } from './ContextWindowControl'
@@ -45,6 +50,10 @@ export function ChatComposer({
   onHistoryUp,
   composerRef,
   sessionId,
+  workspacePath,
+  onSlashAction,
+  onPersonalitySelect,
+  onNamePromptConfirm,
 }: {
   provider: AgentProvider
   model: string
@@ -67,6 +76,10 @@ export function ChatComposer({
   onHistoryUp: () => void
   composerRef?: React.RefObject<ChatComposerHandle | null>
   sessionId: string | null
+  workspacePath: string
+  onSlashAction: (command: ConductorSlashCommand) => void
+  onPersonalitySelect: (value: string) => void
+  onNamePromptConfirm: (command: ConductorSlashCommand, value: string) => void
 }) {
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<ConductorComposerAttachment[]>([])
@@ -78,6 +91,33 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerInnerRef = useRef<HTMLDivElement | null>(null)
+
+  const {
+    slashSections,
+    showSlashMenu,
+    showPersonalityMenu,
+    showNamePromptMenu,
+    namePromptVariant,
+    selectedSlashCommand,
+    optionIndex,
+    onSelectSlashCommand,
+    onSelectPersonalityOption,
+    onConfirmNamePrompt,
+    onComposerSelectionChange,
+    wrapComposerKeyDown,
+    dismissSlashUi,
+  } = useConductorComposerSlash({
+    text,
+    setText,
+    composerRef: textareaRef,
+    provider,
+    model,
+    workspacePath,
+    onSlashAction,
+    onPersonalitySelect,
+    onNamePromptConfirm,
+  })
+
   const modelLabel = `${provider} · ${model}`
   const showEffort = hasEffortVariants(model, provider)
   const showFast = hasFastVariant(model, provider)
@@ -98,6 +138,7 @@ export function ChatComposer({
     plan ? styles.composerInnerPlan : '',
     reasoningActive ? styles.composerInnerReasoning : '',
     dragActive ? styles.composerInnerDragActive : '',
+    showSlashMenu || showPersonalityMenu || showNamePromptMenu ? styles.composerInnerMenuNest : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -261,13 +302,40 @@ export function ChatComposer({
 
   return (
     <div className={styles.composer}>
-      <div
-        className={composerInnerClass}
-        ref={composerInnerRef}
-        data-plan={plan ? 'true' : undefined}
-        data-reasoning={reasoningActive ? effortLevel : undefined}
-        {...dragHandlers}
-      >
+      <div className={styles.composerStack}>
+        {showPersonalityMenu || showSlashMenu || showNamePromptMenu ? (
+          <div className={styles.composerMenus}>
+            {showPersonalityMenu ? (
+              <ConductorPersonalityMenu
+                selectedIndex={optionIndex}
+                onSelect={onSelectPersonalityOption}
+              />
+            ) : showNamePromptMenu && namePromptVariant ? (
+              <ConductorSlashNamePrompt
+                variant={namePromptVariant}
+                onConfirm={onConfirmNamePrompt}
+                onBrowse={async () =>
+                  namePromptVariant === 'dir-name'
+                    ? window.api.app.selectDirectory()
+                    : window.api.app.selectFile()
+                }
+              />
+            ) : (
+              <ConductorSlashMenu
+                sections={slashSections}
+                selectedCommand={selectedSlashCommand}
+                onSelect={onSelectSlashCommand}
+              />
+            )}
+          </div>
+        ) : null}
+        <div
+          className={composerInnerClass}
+          ref={composerInnerRef}
+          data-plan={plan ? 'true' : undefined}
+          data-reasoning={reasoningActive ? effortLevel : undefined}
+          {...dragHandlers}
+        >
         <input
           ref={fileInputRef}
           type="file"
@@ -315,11 +383,26 @@ export function ChatComposer({
             disabled={disabled}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value)
+              onComposerSelectionChange(e.target.selectionStart ?? e.target.value.length)
+            }}
+            onClick={(e) =>
+              onComposerSelectionChange(e.currentTarget.selectionStart ?? text.length)
+            }
+            onKeyUp={(e) =>
+              onComposerSelectionChange(e.currentTarget.selectionStart ?? text.length)
+            }
+            onSelect={(e) =>
+              onComposerSelectionChange(e.currentTarget.selectionStart ?? text.length)
+            }
             {...dragHandlers}
-            onKeyDown={(e) => {
+            onKeyDown={wrapComposerKeyDown((e) => {
             if (e.key === 'Escape') {
-              if (dragActive) {
+              if (showSlashMenu || showPersonalityMenu || showNamePromptMenu) {
+                e.preventDefault()
+                dismissSlashUi()
+              } else if (dragActive) {
                 e.preventDefault()
                 setDragActive(false)
               } else if (attachError) {
@@ -334,7 +417,7 @@ export function ChatComposer({
                 e.preventDefault()
                 onCancel()
               }
-            } else if (e.key === 'Tab' && e.shiftKey) {
+            } else if (e.key === 'Tab' && e.shiftKey && !showSlashMenu && !showPersonalityMenu && !showNamePromptMenu) {
               e.preventDefault()
               onSetPlan(!plan)
             } else if (e.key === 'Enter' && !e.shiftKey) {
@@ -348,7 +431,7 @@ export function ChatComposer({
               e.preventDefault()
               onHistoryUp()
             }
-          }}
+          })}
           />
           {dragActive ? (
             <div className={styles.composerDropIndicator} aria-hidden>
@@ -444,6 +527,7 @@ export function ChatComposer({
             )}
           </div>
         </div>
+      </div>
       </div>
     </div>
   )

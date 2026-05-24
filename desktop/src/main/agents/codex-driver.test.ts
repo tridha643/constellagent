@@ -1,15 +1,19 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { buildAgentPrompt } from './agent-driver'
 import {
   applyCodexToolHook,
   buildCodexUserInput,
+  codexCliSupportsSdkExec,
   codexConfigForWebSockets,
   codexSdkEnv,
   codexSdkModelForConductorModel,
   isCodexWebSocketsEligibleModel,
   isBenignCodexInterruptError,
   isStaleCodexThreadError,
+  resolveCodexCliPath,
   shouldUseCodexWebSockets,
 } from './codex-driver'
 
@@ -73,6 +77,20 @@ describe('CodexDriver CLI environment', () => {
     expect(typeof env.PATH).toBe('string')
     expect(env.PATH.length).toBeGreaterThan(0)
     expect(Object.values(env).every((value) => typeof value === 'string')).toBe(true)
+  })
+})
+
+describe('codexCliSupportsSdkExec', () => {
+  test('rejects codex builds that do not understand --experimental-json', () => {
+    const homebrewCodex = '/opt/homebrew/bin/codex'
+    if (!existsSync(homebrewCodex)) return
+    expect(codexCliSupportsSdkExec(homebrewCodex, codexSdkEnv())).toBe(false)
+  })
+
+  test('resolveCodexCliPath skips incompatible homebrew shims when bun codex exists', () => {
+    const bunCodex = join(homedir(), '.bun', 'bin', 'codex')
+    if (!existsSync(bunCodex)) return
+    expect(resolveCodexCliPath()).toBe(bunCodex)
   })
 })
 
