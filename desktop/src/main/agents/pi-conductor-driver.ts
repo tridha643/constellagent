@@ -11,8 +11,13 @@ import type { ConductorComposerAttachment } from '../../shared/conductor-attachm
 import type { SessionExtensionUiStateRecord } from '../../shared/pi/pi-desktop-state'
 import type { ModelPreset } from '../../shared/plan-build-command'
 import { PI_CONDUCTOR_MODEL_PRESETS } from '../../shared/conductor-model-utils'
+import {
+  buildPiConductorModelPresets,
+  resolveStoredPiModelId,
+} from '../../shared/pi-conductor-model-presets'
 import type { AgentDriver, AgentTurnContext } from './agent-driver'
 import { getConstellPiHost } from '../pi-host-service'
+import { listPiModels } from '../pi-models'
 
 export class PiConductorDriver implements AgentDriver {
   readonly provider = 'pi' as const
@@ -97,18 +102,18 @@ export class PiConductorDriver implements AgentDriver {
       basename(workspacePath) || 'Workspace',
     )
     const snapshot = await this.piHost.driver.runtimeSupervisor.refreshRuntime(workspace)
-    const presets = snapshot.models
-      .filter((model) => model.available)
-      .map((model) => ({
-        label: `${model.providerName || model.providerId} / ${model.label || model.modelId}`,
-        cliModel: `${model.providerId}/${model.modelId}`,
-      }))
+    let cliModels: Awaited<ReturnType<typeof listPiModels>> = []
+    try {
+      cliModels = await listPiModels({ forceRefresh: true })
+    } catch {
+      // Runtime + static presets still populate the Conductor list when `pi --list-models` fails.
+    }
 
-    const seen = new Set<string>()
-    return [...PI_CONDUCTOR_MODEL_PRESETS, ...presets].filter((preset) => {
-      if (seen.has(preset.cliModel)) return false
-      seen.add(preset.cliModel)
-      return true
+    return buildPiConductorModelPresets({
+      staticPresets: PI_CONDUCTOR_MODEL_PRESETS,
+      cliModels,
+      runtimeModels: snapshot.models,
+      enabledModelPatterns: snapshot.settings.enabledModelPatterns,
     })
   }
 
@@ -125,9 +130,16 @@ export class PiConductorDriver implements AgentDriver {
       ctx.workspacePath,
       basename(ctx.workspacePath) || 'Workspace',
     )
+    const runtimeSnapshot = await this.piHost.driver.runtimeSupervisor.refreshRuntime(workspace)
+    let cliModels: Awaited<ReturnType<typeof listPiModels>> = []
+    try {
+      cliModels = await listPiModels({ forceRefresh: true })
+    } catch {
+      // Fall back to runtime-only resolution when the CLI catalog is unavailable.
+    }
     const snapshot = await this.piHost.driver.createSession(workspace, {
       title: 'Conductor Pi',
-      ...initialPiModel(ctx.model),
+      ...initialPiModel(ctx.model, runtimeSnapshot.models, cliModels),
       initialThinkingLevel: ctx.thinkingLevel,
     })
     ctx.setProviderSession?.(snapshot.ref)
@@ -135,9 +147,17 @@ export class PiConductorDriver implements AgentDriver {
   }
 
   private async applyTurnConfig(piRef: SessionRef, ctx: AgentTurnContext): Promise<void> {
-    const model = parsePiModel(ctx.model)
+    const workspace = { workspaceId: piRef.workspaceId, path: ctx.workspacePath }
+    const runtimeSnapshot = await this.piHost.driver.runtimeSupervisor.refreshRuntime(workspace)
+    let cliModels: Awaited<ReturnType<typeof listPiModels>> = []
+    try {
+      cliModels = await listPiModels({ forceRefresh: true })
+    } catch {
+      // Fall back to runtime-only resolution when the CLI catalog is unavailable.
+    }
+    const model = resolvePiSessionModel(ctx.model, runtimeSnapshot.models, cliModels)
     if (model) {
-      await this.piHost.driver.setSessionModel(piRef, model).catch(() => undefined)
+      await this.piHost.driver.setSessionModel(piRef, model)
     }
     await this.piHost.driver.setSessionThinkingLevel(piRef, ctx.thinkingLevel).catch(() => undefined)
   }
@@ -219,11 +239,24 @@ function parsePiModel(model: string): { provider: string; modelId: string } | nu
   }
 }
 
-function initialPiModel(model: string):
+function initialPiModel(
+  model: string,
+  runtimeModels: Parameters<typeof resolveStoredPiModelId>[1],
+  cliModels: Parameters<typeof resolveStoredPiModelId>[2],
+):
   | { initialModel: { provider: string; modelId: string } }
   | Record<string, never> {
-  const parsed = parsePiModel(model)
+  const parsed = parsePiModel(resolveStoredPiModelId(model, runtimeModels, cliModels))
   return parsed ? { initialModel: parsed } : {}
+}
+
+function resolvePiSessionModel(
+  model: string,
+  runtimeModels: Parameters<typeof resolveStoredPiModelId>[1],
+  cliModels: Parameters<typeof resolveStoredPiModelId>[2],
+): { provider: string; modelId: string } | null {
+  const resolvedId = resolveStoredPiModelId(model, runtimeModels, cliModels)
+  return parsePiModel(resolvedId)
 }
 
 function sessionAttachmentsFromConductor(

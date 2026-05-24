@@ -59,8 +59,22 @@ async function listPiModelsFromCli(): Promise<PiModelOption[]> {
   return parsePiListModelsOrThrow(merged)
 }
 
-export async function listPiModels(): Promise<PiModelOption[]> {
+export async function listPiModels(options?: { forceRefresh?: boolean }): Promise<PiModelOption[]> {
   const cacheFilePath = piModelCacheFilePath()
+  if (options?.forceRefresh) {
+    const models = normalizePiModelOptions(await listPiModelsFromCli())
+    try {
+      await writePiModelCache(cacheFilePath, {
+        version: PI_MODEL_CACHE_VERSION,
+        fetchedAt: Date.now(),
+        models,
+      })
+    } catch {
+      // Ignore cache write failures.
+    }
+    return models
+  }
+
   return resolvePiModelList({
     readCache: () => readPiModelCache(cacheFilePath),
     writeCache: (record) => writePiModelCache(cacheFilePath, record),

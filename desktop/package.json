@@ -48,7 +48,7 @@
     "@lezer/markdown": "^1.6.1",
     "@lezer/yaml": "^1.0.4",
     "@libsql/client": "^0.17.2",
-    "@mariozechner/pi-coding-agent": "^0.67.2",
+    "@mariozechner/pi-coding-agent": "^0.73.1",
     "@monaco-editor/react": "^4.7.0",
     "@openai/codex-sdk": "0.132.0",
     "@openrouter/ai-sdk-provider": "^2.3.3",

@@ -4,6 +4,7 @@ import {
   applyThinkingLevel,
   defaultConductorModel,
   displayModelName,
+  conductorModelPresets,
   hasEffortVariants,
   hasFastVariant,
   mapThinkingLevelToCodexEffort,
@@ -159,6 +160,10 @@ describe('Conductor defaults', () => {
     expect(defaultConductorModel('pi')).toBe('')
     expect(resolveConductorDefaultSelection('pi', '').model).toBe('')
     expect(hasFastVariant('', 'pi')).toBe(false)
+  })
+
+  test('Pi Conductor static presets only include Pi default', () => {
+    expect(conductorModelPresets('pi')).toEqual([{ label: 'Pi default', cliModel: '' }])
   })
 
   test('converts stored model ids into draft model + thinking level', () => {
