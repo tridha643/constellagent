@@ -5,18 +5,19 @@ import { applyTimelineEvent, type TimelineRuntimeState } from './pi-timeline'
 
 const sessionRef: SessionRef = { workspaceId: 'workspace-1', sessionId: 'session-1' }
 
-function runtimeState(): TimelineRuntimeState {
+function runtimeState(userRequestedImages = false): TimelineRuntimeState {
   return {
     runMetricsBySession: new Map(),
     runningSinceBySession: new Map(),
     activeAssistantMessageBySession: new Map(),
     activeWorkingActivityBySession: new Map(),
+    userRequestedGeneratedImagesBySession: new Map([['workspace-1:session-1', userRequestedImages]]),
   }
 }
 
-function apply(events: readonly SessionDriverEvent[]): TranscriptMessage[] {
+function apply(events: readonly SessionDriverEvent[], userRequestedImages = false): TranscriptMessage[] {
   const cache = new Map<string, TranscriptMessage[]>()
-  const state = runtimeState()
+  const state = runtimeState(userRequestedImages)
   for (const event of events) {
     applyTimelineEvent(cache, event, state)
   }
@@ -25,7 +26,8 @@ function apply(events: readonly SessionDriverEvent[]): TranscriptMessage[] {
 
 describe('applyTimelineEvent generated images', () => {
   test('labels image generation tools and stores normalized image output', () => {
-    const transcript = apply([
+    const transcript = apply(
+      [
       {
         type: 'toolStarted',
         sessionRef,
@@ -45,7 +47,9 @@ describe('applyTimelineEvent generated images', () => {
           value: { filePath: '/tmp/aurora.png', imageData: 'iVBORw0KGgo=' },
         },
       },
-    ])
+    ],
+      true,
+    )
 
     const tool = transcript.find((item) => item.kind === 'tool')
     expect(tool).toMatchObject({
@@ -88,12 +92,45 @@ describe('applyTimelineEvent generated images', () => {
         success: true,
         output: { content: [{ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/heic' }] },
       },
-    ])
+    ],
+      true,
+    )
 
     const tool = transcript.find((item) => item.kind === 'tool')
     expect(tool?.label).toBe('Generating image: unsupported image')
     expect(tool?.output).toEqual({
       content: [{ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/heic' }],
+    })
+  })
+
+  test('does not label image tools when the user did not request images', () => {
+    const transcript = apply([
+      {
+        type: 'toolStarted',
+        sessionRef,
+        timestamp: '2026-05-23T12:00:00.000Z',
+        callId: 'tool-1',
+        toolName: 'generateImage',
+        input: { description: 'unwanted icon' },
+      },
+      {
+        type: 'toolFinished',
+        sessionRef,
+        timestamp: '2026-05-23T12:00:01.000Z',
+        callId: 'tool-1',
+        success: true,
+        output: {
+          status: 'success',
+          value: { filePath: '/tmp/cat.png', imageData: 'iVBORw0KGgo=' },
+        },
+      },
+    ])
+
+    const tool = transcript.find((item) => item.kind === 'tool')
+    expect(tool?.label).toBe('Generating image: unwanted icon')
+    expect(tool?.output).toMatchObject({
+      status: 'success',
+      value: { filePath: '/tmp/cat.png', imageData: 'iVBORw0KGgo=' },
     })
   })
 })

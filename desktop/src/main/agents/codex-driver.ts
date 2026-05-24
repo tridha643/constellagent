@@ -1,9 +1,8 @@
 /**
  * Codex Conductor driver — maps `@openai/codex-sdk` thread items to the shared timeline.
  *
- * The Codex TypeScript SDK does not expose delegated subagent runs as a first-class
- * `ThreadItem` (unlike Cursor's `tool_call` / task tool). Subagent-style cards in
- * Conductor are therefore Cursor-only unless a future SDK item type is added.
+ * Delegated subagent runs arrive as runtime `collab_tool_call` JSONL items (spawn_agent / wait)
+ * even when the published SDK `ThreadItem` union omits them; see `codex-driver-collab.ts`.
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -37,6 +36,13 @@ import {
 } from './agent-driver'
 import type { ConductorImageAttachment } from '../../shared/conductor-attachments'
 import { codexConductorThreadPermissions } from './conductor-sdk-cli-permissions'
+import { isCollabToolCallItem } from '../../shared/codex-collab-types'
+import {
+  clearCodexCollabSessionState,
+  createCodexCollabSessionState,
+  handleCodexCollabItem,
+  type CodexCollabSessionState,
+} from './codex-driver-collab'
 
 interface CodexSessionState {
   thread: Thread
@@ -48,6 +54,7 @@ interface CodexSessionState {
   webSocketsEnabled: boolean
   readonly emittedByItem: Map<string, string>
   readonly lastToolUpdateByItem: Map<string, { text: string; emittedAt: number }>
+  readonly collab: CodexCollabSessionState
 }
 
 interface CodexContextUsage {
@@ -322,6 +329,7 @@ export class CodexDriver implements AgentDriver {
       // SDK primary path: same Thread instance, repeated runStreamed (see sdk/typescript/README.md).
       state = existing
       existing.emittedByItem.clear()
+      clearCodexCollabSessionState(existing.collab)
     } else if (!forceTranscriptFallback && !configChanged && recovery?.codexThreadId && !recovery.preferTranscriptFallback) {
       // In-memory Thread lost but persisted session may still be resumable (~/.codex/sessions).
       const thread = this.getCodex(webSocketsEnabled).resumeThread(recovery.codexThreadId, options)
@@ -335,6 +343,7 @@ export class CodexDriver implements AgentDriver {
         webSocketsEnabled,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
+        collab: createCodexCollabSessionState(),
       }
       this.sessions.set(key, state)
     } else if (!forceTranscriptFallback && !configChanged && recovery?.codexThreadId && recovery.preferTranscriptFallback) {
@@ -351,6 +360,7 @@ export class CodexDriver implements AgentDriver {
         webSocketsEnabled,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
+        collab: createCodexCollabSessionState(),
       }
       this.sessions.set(key, state)
     } else {
@@ -370,6 +380,7 @@ export class CodexDriver implements AgentDriver {
         webSocketsEnabled,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
+        collab: createCodexCollabSessionState(),
       }
       this.sessions.set(key, state)
     }
@@ -468,6 +479,10 @@ export class CodexDriver implements AgentDriver {
       }
       case 'item.started': {
         const item = event.item
+        if (isCollabToolCallItem(item)) {
+          handleCodexCollabItem(ctx, state.collab, state.lastToolUpdateByItem, event.type, item)
+          break
+        }
         if (item.type === 'agent_message') {
           this.emitAgentMessageText(ctx, state, item.id, item.text ?? '')
         } else if (item.type === 'reasoning') {
@@ -482,6 +497,10 @@ export class CodexDriver implements AgentDriver {
       case 'item.updated':
       case 'item.completed': {
         const item = event.item
+        if (isCollabToolCallItem(item)) {
+          handleCodexCollabItem(ctx, state.collab, state.lastToolUpdateByItem, event.type, item)
+          break
+        }
         if (item.type === 'agent_message' || item.type === 'reasoning') {
           this.emitAgentMessageText(ctx, state, item.id, item.text ?? '')
           break

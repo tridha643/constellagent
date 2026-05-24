@@ -305,6 +305,8 @@ export function ConductorChatView({
       setSubmitError(null)
       setApprovingPlan(true)
       try {
+        handleSetPlan(false)
+        await window.api.agentChat.setPlan(agentSessionId, false)
         await window.api.agentChat.submit(agentSessionId, APPROVE_PLAN_MESSAGE)
         composerRef.current?.focus()
       } catch (err) {

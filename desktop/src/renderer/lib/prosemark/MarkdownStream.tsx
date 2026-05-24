@@ -20,6 +20,7 @@ import {
 } from "./main";
 import { darkTheme } from "./syntaxHighlighting";
 import { tableDecorations } from "./table-decorations";
+import { mermaidDecorations } from "./mermaid/mermaid-decorations";
 import { htmlBlockDecorations, htmlBlockParserExtension } from "./html-block-decorations";
 import { dragFreezeExtensions } from "./drag-selection-gate";
 import { markdownFileChipExtension, type MarkdownFileChipOptions } from "./file-chip-extension";
@@ -134,7 +135,7 @@ const prosemarkDecorationSync = ViewPlugin.fromClass(
 //   2. viewProsemarkBasicSetup() (hide/fold/codeFence/clickLink/tasks/wrap)
 //   3. base theme + syntax highlighting
 //   4. heading-weight HighlightStyle (Prec.highest, matches upstream)
-//   5. table / html-block decorations + decoration sync
+//   5. table / mermaid / html-block decorations + decoration sync
 //   6. changeFilter (task toggles + programmatic sync only) + non-editable + wrap
 function buildExtensions(options: MarkdownFileChipOptions): Extension[] {
   return [
@@ -160,6 +161,7 @@ function buildExtensions(options: MarkdownFileChipOptions): Extension[] {
       ),
     ),
     tableDecorations(),
+    mermaidDecorations(),
     htmlBlockDecorations(),
     dragFreezeExtensions,
     prosemarkDecorationSync,

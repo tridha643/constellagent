@@ -1,8 +1,6 @@
 import { type ReactNode } from 'react'
 import { Collapsible } from '@base-ui-components/react/collapsible'
 import { ChevronDownIcon, PlanMapIcon } from './ConductorIcons'
-import { TurnFileChangeChips } from './TurnFileChangeChips'
-import type { ToolFileChange } from './tools/tool-file-change'
 import styles from '../Conductor.module.css'
 
 /**
@@ -16,7 +14,6 @@ export function TurnSummary({
   messageCount,
   failedToolCount = 0,
   toolSummary,
-  fileChanges = [],
   isPlan,
   open,
   onOpenChange,
@@ -26,7 +23,6 @@ export function TurnSummary({
   messageCount: number
   failedToolCount?: number
   toolSummary?: string
-  fileChanges?: readonly ToolFileChange[]
   isPlan?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -51,7 +47,6 @@ export function TurnSummary({
         {toolSummary ? <span className={styles.turnSummaryMeta}>{toolSummary}</span> : null}
         {statusLabel ? <span className={styles.turnSummaryError}>{statusLabel}</span> : null}
       </Collapsible.Trigger>
-      <TurnFileChangeChips changes={fileChanges} compact />
       <Collapsible.Panel className={`${styles.collapsiblePanel} ${styles.turnSummaryPanel}`}>
         <div className={styles.turnSummaryBody}>{open ? children : null}</div>
       </Collapsible.Panel>

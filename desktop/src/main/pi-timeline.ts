@@ -21,6 +21,7 @@ import { isSkillLoadToolName, skillDisplayFromToolInput } from "../shared/skill-
 import { RENDER_JSON_CANVAS_TOOL_NAME } from "../shared/json-canvas-schema";
 import {
   extractConductorGeneratedImages,
+  hasRenderableGeneratedImageOutput,
   isConductorGeneratedImageToolName,
 } from "../shared/conductor-generated-images";
 
@@ -36,6 +37,8 @@ export interface TimelineRuntimeState {
   readonly runningSinceBySession: Map<string, string>;
   readonly activeAssistantMessageBySession: Map<string, string>;
   readonly activeWorkingActivityBySession: Map<string, string>;
+  /** Set when the user message for the current turn explicitly requests raster images. */
+  readonly userRequestedGeneratedImagesBySession: Map<string, boolean>;
 }
 
 export function appendUserMessage(
@@ -192,13 +195,20 @@ export function applyTimelineEvent(
         (item) => item.kind === "tool" && item.callId === event.callId,
       );
       const existingTool = existing?.kind === "tool" ? existing : undefined;
-      const generatedImages =
-        event.success && existingTool
+      const userRequestedImages = state.userRequestedGeneratedImagesBySession.get(key) ?? false;
+      let generatedImages =
+        event.success &&
+        userRequestedImages &&
+        existingTool &&
+        isConductorGeneratedImageToolName(existingTool.toolName)
           ? extractConductorGeneratedImages(event.output, {
               toolName: existingTool.toolName,
               input: existingTool.input,
             })
           : undefined;
+      if (generatedImages && !hasRenderableGeneratedImageOutput(generatedImages)) {
+        generatedImages = undefined;
+      }
       const subagentFinish =
         existingTool && (existingTool.variant === "subagent" || isSubagentTool(existingTool.toolName))
           ? {

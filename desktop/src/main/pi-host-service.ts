@@ -110,6 +110,7 @@ export class ConstellPiHost {
   private readonly runningSinceBySession = new Map<string, string>()
   private readonly runMetricsBySession = new Map<string, RunMetrics>()
   private readonly activeWorkingActivityBySession = new Map<string, string>()
+  private readonly userRequestedGeneratedImagesBySession = new Map<string, boolean>()
   private readonly sessionSubscriptions = new Map<string, () => void>()
   private readonly sessionConfigBySession = new Map<string, SessionConfig>()
   private readonly lastViewedAtBySession = new Map<string, string>()
@@ -204,6 +205,7 @@ export class ConstellPiHost {
       runningSinceBySession: this.runningSinceBySession,
       activeAssistantMessageBySession: this.activeAssistantMessageBySession,
       activeWorkingActivityBySession: this.activeWorkingActivityBySession,
+      userRequestedGeneratedImagesBySession: this.userRequestedGeneratedImagesBySession,
     }
   }
 

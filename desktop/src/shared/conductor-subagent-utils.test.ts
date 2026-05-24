@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
   buildSubagentMetadata,
+  collabAgentStatusLabel,
   isSubagentTool,
   mergeSubagentResultMetadata,
+  parseCodexSpawnPrompt,
   parseSubagentInput,
   parseSubagentMetadata,
   parseSubagentResult,
@@ -15,7 +17,39 @@ describe('isSubagentTool', () => {
   test('matches Task harness names', () => {
     expect(isSubagentTool('Task')).toBe(true)
     expect(isSubagentTool('explore')).toBe(true)
+    expect(isSubagentTool('spawn_agent')).toBe(true)
     expect(isSubagentTool('read')).toBe(false)
+  })
+})
+
+describe('parseCodexSpawnPrompt', () => {
+  test('parses JSON spawn prompts with agent_type', () => {
+    expect(
+      parseCodexSpawnPrompt(
+        JSON.stringify({
+          agent_type: 'explorer',
+          message: 'Search auth module\nMore details',
+        }),
+      ),
+    ).toEqual({
+      title: 'Search auth module',
+      statusHint: 'Search auth module',
+      subagentType: 'explorer',
+    })
+  })
+
+  test('falls back to first line for plain prompts', () => {
+    expect(parseCodexSpawnPrompt('Find fork icon\nMore details')).toEqual({
+      title: 'Find fork icon',
+      statusHint: 'Find fork icon',
+    })
+  })
+})
+
+describe('collabAgentStatusLabel', () => {
+  test('returns human-readable status labels', () => {
+    expect(collabAgentStatusLabel('running')).toBe('Running…')
+    expect(collabAgentStatusLabel('completed')).toBe('Completed')
   })
 })
 

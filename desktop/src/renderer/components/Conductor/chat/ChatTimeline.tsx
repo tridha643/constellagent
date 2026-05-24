@@ -26,7 +26,7 @@ import { TurnFileChangeChips } from './TurnFileChangeChips'
 import { SubagentCallCard } from './SubagentCallCard'
 import { ToolPart } from './tools/tool-registry'
 import { isJsonCanvasToolName } from '../../../../shared/json-canvas-schema'
-import { isGeneratedImageToolCall } from '../../../../shared/conductor-generated-images'
+import { isGeneratedImageToolCall, userRequestedGeneratedImages } from '../../../../shared/conductor-generated-images'
 import { turnHasFileTools, turnHasTodoTools } from './tools/turn-tool-flags'
 import { TurnHistoryRail, type TurnHistoryRailHandle } from './TurnHistoryRail'
 import { getLatestPlanApprovalMessageId } from './plan-approval'
@@ -55,7 +55,6 @@ type RenderUnit =
       messageCount: number
       failedToolCount: number
       toolSummary: string
-      fileChanges: readonly ToolFileChange[]
       isPlan: boolean
     }
   | {
@@ -119,14 +118,21 @@ function isCollapsibleTool(item: TranscriptMessage): boolean {
   return item.kind === 'tool' && !isSubagentToolCall(item) && !isPostTurnArtifactTool(item)
 }
 
-function isPostTurnArtifactTool(item: TranscriptMessage): boolean {
+function isPostTurnArtifactTool(
+  item: TranscriptMessage,
+  userRequestedImages = false,
+): boolean {
   return (
     item.kind === 'tool' &&
-    (isJsonCanvasToolName(item.toolName) || isGeneratedImageToolCall(item))
+    (isJsonCanvasToolName(item.toolName) ||
+      isGeneratedImageToolCall(item, { userRequestedImages }))
   )
 }
 
-function partitionTurnArtifacts(tools: readonly TimelineToolCall[]): {
+function partitionTurnArtifacts(
+  tools: readonly TimelineToolCall[],
+  userRequestedImages = false,
+): {
   canvasTools: TimelineToolCall[]
   generatedImageTools: TimelineToolCall[]
   otherTools: TimelineToolCall[]
@@ -137,7 +143,7 @@ function partitionTurnArtifacts(tools: readonly TimelineToolCall[]): {
   for (const tool of tools) {
     if (isJsonCanvasToolName(tool.toolName)) {
       canvasTools.push(tool)
-    } else if (isGeneratedImageToolCall(tool)) {
+    } else if (isGeneratedImageToolCall(tool, { userRequestedImages })) {
       generatedImageTools.push(tool)
     } else {
       otherTools.push(tool)
@@ -146,9 +152,18 @@ function partitionTurnArtifacts(tools: readonly TimelineToolCall[]): {
   return { canvasTools, generatedImageTools, otherTools }
 }
 
-function isVisibleTurnToolRow(item: TranscriptMessage, running: boolean): boolean {
+function turnUserRequestedImages(userItem: TranscriptMessage): boolean {
+  if (userItem.kind !== 'message' || userItem.role !== 'user') return false
+  return userRequestedGeneratedImages(userItem.text ?? '')
+}
+
+function isVisibleTurnToolRow(
+  item: TranscriptMessage,
+  running: boolean,
+  userRequestedImages = false,
+): boolean {
   if (item.kind !== 'tool' || isSubagentToolCall(item)) return true
-  if (isPostTurnArtifactTool(item)) return true
+  if (isPostTurnArtifactTool(item, userRequestedImages)) return true
   if (!running) return true
   return item.status !== 'running'
 }
@@ -386,9 +401,13 @@ export const ChatTimeline = forwardRef<
     return tools
   }, [transcript, lastUserIndex])
 
+  const lastUserMessage = lastUserIndex >= 0 ? transcript[lastUserIndex] : undefined
+  const currentTurnUserRequestedImages =
+    lastUserMessage && lastUserMessage.kind === 'message' ? turnUserRequestedImages(lastUserMessage) : false
+
   const tickerTurnTools = useMemo(
-    () => currentTurnTools.filter((tool) => !isPostTurnArtifactTool(tool)),
-    [currentTurnTools],
+    () => currentTurnTools.filter((tool) => !isPostTurnArtifactTool(tool, currentTurnUserRequestedImages)),
+    [currentTurnTools, currentTurnUserRequestedImages],
   )
 
   const currentTurnToolIds = useMemo(
@@ -416,6 +435,7 @@ export const ChatTimeline = forwardRef<
     }
     while (i < n) {
       const userItem = transcript[i]
+      const userRequestedImages = turnUserRequestedImages(userItem)
       result.push({ type: 'item', item: userItem })
       i += 1
       const body: TranscriptMessage[] = []
@@ -428,17 +448,20 @@ export const ChatTimeline = forwardRef<
       const isLatestTurn = i >= n
       const { assistants, rest: nonAssistantBody } = splitTurnAssistants(bodyItems)
       const visibleNonAssistantBody = isLatestTurn
-        ? nonAssistantBody.filter((item) => isVisibleTurnToolRow(item, running))
+        ? nonAssistantBody.filter((item) => isVisibleTurnToolRow(item, running, userRequestedImages))
         : nonAssistantBody
       const toolRows = visibleNonAssistantBody.filter(
         (item): item is TimelineToolCall => item.kind === 'tool' && !isSubagentToolCall(item),
       )
-      const { canvasTools, generatedImageTools, otherTools } = partitionTurnArtifacts(toolRows)
+      const { canvasTools, generatedImageTools, otherTools } = partitionTurnArtifacts(
+        toolRows,
+        userRequestedImages,
+      )
       const otherBody = visibleNonAssistantBody.filter(
         (item) =>
           item.kind !== 'tool' ||
           isSubagentToolCall(item) ||
-          isPostTurnArtifactTool(item),
+          isPostTurnArtifactTool(item, userRequestedImages),
       )
       const messageCount = assistants.length
       const pushPlain = (item: TranscriptMessage) => result.push({ type: 'item', item })
@@ -454,7 +477,6 @@ export const ChatTimeline = forwardRef<
           messageCount,
           failedToolCount: toolRows.filter((tool) => tool.status === 'error').length,
           toolSummary: buildToolSummary(toolRows),
-          fileChanges,
           isPlan: planActive,
         })
         pushTurnAssistantGroup(result, assistants, userItem.id, [], pushPlain)
@@ -462,7 +484,7 @@ export const ChatTimeline = forwardRef<
         pushTurnAssistantGroup(result, assistants, userItem.id, otherTools, pushPlain)
       }
       for (const item of otherBody) {
-        if (item.kind === 'tool' && isPostTurnArtifactTool(item)) continue
+        if (item.kind === 'tool' && isPostTurnArtifactTool(item, userRequestedImages)) continue
         pushPlain(item)
       }
       for (const canvas of canvasTools) {
@@ -715,7 +737,7 @@ export const ChatTimeline = forwardRef<
         running &&
         item.status === 'running' &&
         currentTurnToolIds.has(item.id) &&
-        !isPostTurnArtifactTool(item)
+        !isPostTurnArtifactTool(item, currentTurnUserRequestedImages)
       ) {
         return null
       }
@@ -732,7 +754,7 @@ export const ChatTimeline = forwardRef<
         variant: item.kind === 'tool' ? 'tool' : undefined,
       }
     },
-    [running, currentTurnToolIds, renderItemInner],
+    [running, currentTurnToolIds, currentTurnUserRequestedImages, renderItemInner],
   )
 
   const renderTimelineRow = useCallback(
@@ -829,7 +851,6 @@ export const ChatTimeline = forwardRef<
                   messageCount={unit.messageCount}
                   failedToolCount={unit.failedToolCount}
                   toolSummary={unit.toolSummary}
-                  fileChanges={unit.fileChanges}
                   isPlan={unit.isPlan}
                   open={isExpanded}
                   onOpenChange={(open) => setTurnExpanded(unit.key, open)}

@@ -34,6 +34,7 @@ import {
 } from '../shared/context-window-utils'
 import { detectCanvasIntent } from '../shared/json-canvas-schema'
 import { syncConductorCanvasSkill } from './conductor-canvas-skill'
+import { syncConductorMarkdownSkill } from './conductor-markdown-skill'
 import {
   isConductorGeneratedImageOutput,
   isGeneratedImageToolCall,
@@ -41,7 +42,9 @@ import {
   looksLikeGeneratedImageCompletionText,
   turnTranscriptText,
   type ConductorGeneratedImageOutput,
+  userRequestedGeneratedImages,
 } from '../shared/conductor-generated-images'
+import { isPlanApprovalMessage } from '../shared/plan-approval'
 import {
   loadGeneratedImagesForTurn,
   resolveConductorGeneratedImagesWithFiles,
@@ -90,6 +93,7 @@ export class AgentChatHost {
     runningSinceBySession: new Map(),
     activeAssistantMessageBySession: new Map(),
     activeWorkingActivityBySession: new Map(),
+    userRequestedGeneratedImagesBySession: new Map(),
   }
   private readonly store = new AgentChatStore()
   private readonly drivers: Record<AgentProvider, AgentDriver> = {
@@ -278,14 +282,24 @@ export class AgentChatHost {
     attachments: readonly ConductorComposerAttachment[] = [],
   ): Promise<void> {
     const live = this.sessions.get(sessionId)
-    const state = live?.state ?? (await this.rehydrate(sessionId))
+    let state = live?.state ?? (await this.rehydrate(sessionId))
     if (!state) return
 
     const normalizedAttachments = cloneConductorImageAttachments(attachments)
     const promptText = conductorPromptText(text)
+    let effectivePlan = state.plan
+    if (isPlanApprovalMessage(text) || isPlanApprovalMessage(promptText)) {
+      effectivePlan = false
+      if (state.plan) {
+        this.update(sessionId, { plan: false })
+        state = { ...state, plan: false }
+      }
+    }
     const effectiveCanvas = detectCanvasIntent(promptText)
     if (effectiveCanvas) {
       await syncConductorCanvasSkill(state.provider, state.workspacePath).catch(() => {})
+    } else {
+      await syncConductorMarkdownSkill(state.provider, state.workspacePath).catch(() => {})
     }
     const ref = this.refOf(state)
     this.turnTelemetry.set(sessionId, {
@@ -295,7 +309,11 @@ export class AgentChatHost {
       transcriptFlushCount: 0,
     })
     const previousTranscript = [...(this.transcriptCache.get(sessionKey(ref)) ?? [])]
-    appendUserMessage(this.transcriptCache, ref, promptText, normalizedAttachments, state.plan)
+    appendUserMessage(this.transcriptCache, ref, promptText, normalizedAttachments, effectivePlan)
+    this.timelineState.userRequestedGeneratedImagesBySession.set(
+      sessionKey(ref),
+      userRequestedGeneratedImages(promptText),
+    )
     this.flushTranscript(state)
 
     const driver = this.drivers[state.provider]
@@ -325,7 +343,7 @@ export class AgentChatHost {
         workspacePath: state.workspacePath,
         model: state.model,
         thinkingLevel: state.thinkingLevel,
-        plan: state.plan,
+        plan: effectivePlan,
         canvas: effectiveCanvas,
         text: promptText,
         attachments: normalizedAttachments,
@@ -535,6 +553,7 @@ export class AgentChatHost {
       if (!transcript) return
       const tool = transcript.find((item) => item.kind === 'tool' && item.callId === callId)
       if (!tool || tool.kind !== 'tool') return
+      if (!this.timelineState.userRequestedGeneratedImagesBySession.get(key)) return
 
       const resolved = await resolveConductorGeneratedImagesWithFiles(
         isConductorGeneratedImageOutput(tool.output) ? tool.output : output,
@@ -546,7 +565,7 @@ export class AgentChatHost {
           sinceMs: this.turnStartedAtMs(state),
         },
       )
-      if (resolved) {
+      if (resolved && hasRenderableGeneratedImageOutput(resolved)) {
         this.updateToolGeneratedImages(state, callId, resolved)
       }
     } catch {
@@ -579,6 +598,8 @@ export class AgentChatHost {
 
   private currentTurnLooksLikeGeneratedImage(state: AgentChatSessionState): boolean {
     const key = sessionKey(this.refOf(state))
+    if (!this.timelineState.userRequestedGeneratedImagesBySession.get(key)) return false
+
     const transcript = this.transcriptCache.get(key)
     if (!transcript) return false
 
@@ -619,12 +640,14 @@ export class AgentChatHost {
       }
       if (lastAssistantIndex < 0) return false
 
+      if (!this.timelineState.userRequestedGeneratedImagesBySession.get(key)) return false
+
       const turnSlice = transcript.slice(lastUserIndex >= 0 ? lastUserIndex + 1 : 0)
       if (
         turnSlice.some(
           (item) =>
             item.kind === 'tool' &&
-            isGeneratedImageToolCall(item) &&
+            isGeneratedImageToolCall(item, { userRequestedImages: true }) &&
             hasRenderableGeneratedImageOutput(item.output),
         )
       ) {
@@ -643,7 +666,7 @@ export class AgentChatHost {
           sinceMs,
         },
       )
-      if (!generated) return false
+      if (!generated || !hasRenderableGeneratedImageOutput(generated)) return false
 
       const callId = `generated-image:${message.id}`
       const current = this.transcriptCache.get(key)
@@ -691,6 +714,7 @@ export class AgentChatHost {
     if (idx < 0) return
     const target = current[idx]
     if (target.kind !== 'tool') return
+    if (!hasRenderableGeneratedImageOutput(output)) return
 
     const next = [...current]
     next[idx] = {
