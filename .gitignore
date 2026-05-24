@@ -13,8 +13,12 @@ desktop/.env.local
 # Upstream hunk-review skill (installed by scripts/install-hunk-skill.sh / bun run setup)
 desktop/.claude/skills/hunk-review/
 .cursor/skills/hunk-review
-.cursor/skills/conductor-canvas-cursor
 .gemini/skills/hunk-review
+# Bundled Conductor skills (installed by scripts/install-bundled-skills.sh; legacy injection leftovers)
+.claude/skills/conductor-*
+.cursor/skills/conductor-*
+.gemini/skills/conductor-*
+.opencode/skills/conductor-*
 .codex/
 .cursor/hooks.json
 .cursor/rules/constellagent.mdc
