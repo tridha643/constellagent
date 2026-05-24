@@ -163,6 +163,109 @@ test.describe('Conductor slash menu', () => {
     await expect(composer).toHaveValue('')
   })
 
+  test('hash menu lists PRs and inserts mention', async () => {
+    const repoPath = createTestRepo('hash-menu')
+    await setupWorkspace(window, repoPath)
+    await ensureCodexProvider(window)
+    await openConductorTab(window)
+    await mockSlashApis(window)
+
+    await window.evaluate(() => {
+      const api = (window as unknown as { api: any }).api
+      api.github.listOpenPrs = async () => ({
+        available: true,
+        data: [
+          {
+            number: 170,
+            state: 'open',
+            title: 'docs(agents): add automation section',
+            url: 'https://github.com/o/r/pull/170',
+            checkStatus: 'none',
+            hasPendingComments: false,
+            pendingCommentCount: 0,
+            isBlockedByCi: false,
+            isApproved: false,
+            isChangesRequested: false,
+            updatedAt: '2026-01-01T00:00:00Z',
+            headRefName: 'auto/constellagent-email-to-pr/20240516',
+            baseRefName: 'main',
+            isCrossRepository: false,
+            authorLogin: 'tri',
+          },
+          {
+            number: 42,
+            state: 'open',
+            title: 'Fix login bug',
+            url: 'https://github.com/o/r/pull/42',
+            checkStatus: 'none',
+            hasPendingComments: false,
+            pendingCommentCount: 0,
+            isBlockedByCi: false,
+            isApproved: false,
+            isChangesRequested: false,
+            updatedAt: '2026-01-01T00:00:00Z',
+            headRefName: 'fix/login',
+            baseRefName: 'main',
+            isCrossRepository: false,
+          },
+        ],
+      })
+    })
+
+    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    await composer.click()
+    await composer.fill('#17')
+    await composer.press('End')
+    await expect(window.locator('[data-testid="conductor-hash-menu"]')).toContainText('#170')
+    await expect(window.locator('[data-testid="conductor-hash-menu"]')).not.toContainText('#42')
+
+    await composer.press('Enter')
+    await expect(composer).toHaveValue('#170 ')
+    await expect(window.locator('[data-testid="conductor-hash-menu"]')).toHaveCount(0)
+  })
+
+  test('Esc dismisses hash token without submitting', async () => {
+    const repoPath = createTestRepo('hash-menu-esc')
+    await setupWorkspace(window, repoPath)
+    await ensureCodexProvider(window)
+    await openConductorTab(window)
+    await mockSlashApis(window)
+
+    await window.evaluate(() => {
+      const api = (window as unknown as { api: any }).api
+      api.github.listOpenPrs = async () => ({
+        available: true,
+        data: [
+          {
+            number: 5,
+            state: 'open',
+            title: 'Sample PR',
+            url: 'https://github.com/o/r/pull/5',
+            checkStatus: 'none',
+            hasPendingComments: false,
+            pendingCommentCount: 0,
+            isBlockedByCi: false,
+            isApproved: false,
+            isChangesRequested: false,
+            updatedAt: '2026-01-01T00:00:00Z',
+            headRefName: 'feature/sample',
+            baseRefName: 'main',
+            isCrossRepository: false,
+          },
+        ],
+      })
+    })
+
+    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    await composer.click()
+    await composer.fill('#')
+    await composer.press('End')
+    await expect(window.locator('[data-testid="conductor-hash-menu"]')).toBeVisible()
+    await composer.press('Escape')
+    await expect(composer).toHaveValue('')
+    await expect(window.locator('[data-testid="conductor-hash-menu"]')).toHaveCount(0)
+  })
+
   test('mcp-status panel opens from slash menu', async () => {
     const repoPath = createTestRepo('slash-mcp-status')
     await setupWorkspace(window, repoPath)

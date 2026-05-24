@@ -65,6 +65,11 @@ export function ConductorChatView({
   )
   const conductorCodexWebSocketsSetting = useAppStore((s) => s.settings.conductorCodexWebSockets)
   const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
+  const projects = useAppStore((s) => s.projects)
+  const workspaces = useAppStore((s) => s.workspaces)
+  const workspace = workspaces.find((ws) => ws.id === workspaceId)
+  const project = workspace ? projects.find((p) => p.id === workspace.projectId) : undefined
+  const repoPath = project?.repoPath ?? ''
   const chatViewRef = useRef<HTMLDivElement | null>(null)
   useConductorChatTypographyScope(chatViewRef)
 
@@ -634,6 +639,7 @@ export function ConductorChatView({
         composerRef={composerRef}
         sessionId={agentSessionId}
         workspacePath={worktreePath}
+        repoPath={repoPath}
         onSlashAction={handleSlashAction}
         onPersonalitySelect={handlePersonalitySelect}
         onNamePromptConfirm={handleNamePromptConfirm}
