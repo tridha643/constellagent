@@ -59,7 +59,7 @@ export function ChatModelSelector({
   }, [open])
 
   useEffect(() => {
-    if (!open || !workspacePath) return
+    if (!workspacePath) return
     let cancelled = false
     void window.api.agentChat
       .listPiModels(workspacePath)
@@ -70,7 +70,7 @@ export function ChatModelSelector({
     return () => {
       cancelled = true
     }
-  }, [open, workspacePath])
+  }, [workspacePath, open])
 
   const presetsForProvider = (nextProvider: AgentProvider): readonly ModelPreset[] =>
     nextProvider === 'pi' ? piPresets : conductorModelPresets(nextProvider)

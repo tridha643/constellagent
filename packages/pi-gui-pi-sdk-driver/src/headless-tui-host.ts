@@ -24,5 +24,6 @@ export function createHeadlessTerminal(initialColumns: number, initialRows: numb
     clearFromCursor() {},
     clearScreen() {},
     setTitle() {},
+    setProgress() {},
   } as Terminal;
 }
