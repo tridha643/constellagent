@@ -35,7 +35,11 @@ export const PLAN_PROMPT_CURSOR_ASK =
  * renderer can display (GFM headings, task lists, tables, bullets).
  */
 export const CONDUCTOR_MARKDOWN_FORMAT_PREFIX =
-  'Format your reply as clean GitHub-Flavored Markdown: use ATX headings (`## Section`) without wrapping the markers in bold; use `- [ ]` / `- [x]` task lists (no emoji list markers); use pipe tables with a header row and `|---|---|` separator; use `-` bullets for unordered lists.'
+  [
+    'Format your reply as clean GitHub-Flavored Markdown: use ATX headings (`## Section`) without wrapping the markers in bold; use `- [ ]` / `- [x]` task lists (no emoji list markers); use pipe tables with a header row and `|---|---|` separator; use `-` bullets for unordered lists.',
+    'Conductor renders assistant replies in a live markdown preview. Render diagrams and charts in chat with fenced Mermaid blocks, using `xychart-beta` for numeric/bar/line charts when appropriate.',
+    'Do not invoke image generation tools or create PNG/JPG/WebP/SVG image files for diagrams, charts, architecture, plans, or other content Mermaid can express. Only generate raster images when the user explicitly asks for a photo, icon, mockup, or other non-Mermaid visual.',
+  ].join(' ')
 
 const CONDUCTOR_CONTEXT_PROMPT_PREFIX =
   'Previous conversation context from this Conductor chat is below. Use it as the authoritative thread history, including any plan the assistant already produced.'
