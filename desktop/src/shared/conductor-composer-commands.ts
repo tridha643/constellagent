@@ -243,3 +243,12 @@ export function flattenConductorSlashSections(
 ): readonly ConductorSlashCommand[] {
   return sections.flatMap((section) => section.items)
 }
+
+const CONDUCTOR_HOST_SLASH_NAMES = new Set(
+  CONDUCTOR_HOST_COMMANDS.map((command) => command.command.slice(1).toLowerCase()),
+)
+
+/** True when `name` is a built-in Conductor host slash command (not a harness skill). */
+export function isConductorHostSlashName(name: string): boolean {
+  return CONDUCTOR_HOST_SLASH_NAMES.has(name.trim().toLowerCase())
+}

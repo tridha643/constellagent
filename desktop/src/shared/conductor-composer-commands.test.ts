@@ -4,6 +4,7 @@ import {
   firstSentence,
   getConductorHostCommands,
   harnessSkillsToSlashCommands,
+  isConductorHostSlashName,
   isHarnessSlashCommand,
   parseActiveSlashToken,
 } from './conductor-composer-commands'
@@ -78,6 +79,18 @@ describe('firstSentence', () => {
   test('truncates long single-sentence descriptions', () => {
     const long = 'A'.repeat(140)
     expect(firstSentence(long).endsWith('…')).toBe(true)
+  })
+})
+
+describe('isConductorHostSlashName', () => {
+  test('recognizes built-in host commands', () => {
+    expect(isConductorHostSlashName('plan')).toBe(true)
+    expect(isConductorHostSlashName('mcp-status')).toBe(true)
+  })
+
+  test('rejects harness skill names', () => {
+    expect(isConductorHostSlashName('triage')).toBe(false)
+    expect(isConductorHostSlashName('caveman')).toBe(false)
   })
 })
 
