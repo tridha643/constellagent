@@ -70,3 +70,13 @@ In repositories that still ship workspace context files, read **`.constellagent/
 ## Cachebro (MCP — auto-configured)
 
 Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) instead of raw file reads to save tokens.
+
+## Email-to-PR automation mode
+
+Constellagent supports an automation mode that converts inbound Gmail messages (`GMAIL_NEW_GMAIL_MESSAGE` Composio trigger) into pushed branches and GitHub pull requests. When invoked in this mode:
+
+- The email body is the implementation request; subject and body supply acceptance criteria.
+- The agent works on a branch named `email/<short-message-id>-<short-slug>`, commits, pushes, and opens a PR against `main` via the configured GitHub PR creation tool.
+- The PR body must record requester/sender, Gmail `message_id`/`thread_id`, summary of changes, tests run, and a note that the PR was generated from an email automation.
+- Ignore the email only when it is plainly unrelated to constellagent or does not request any code/documentation/PR work. For valid-but-ambiguous requests, make the safest reasonable interpretation and proceed.
+- Sendblue notifications and AI annotation requirements above still apply in this mode.
