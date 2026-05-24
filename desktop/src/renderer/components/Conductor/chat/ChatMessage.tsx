@@ -10,7 +10,7 @@ import {
 import MarkdownStream, { type MarkdownStreamHandle } from '../../../lib/prosemark/MarkdownStream'
 import { useMarkdownSurfaceContext } from '../../../hooks/useMarkdownSurfaceContext'
 import { MuloadLoader } from './MuloadLoader'
-import { MarkdownBody } from '../../Markdown/MarkdownBody'
+import { UserMessageContent } from './UserMessageContent'
 import { JsonCanvasBlock } from './JsonCanvasBlock'
 import { MessageFooter } from './MessageFooter'
 import styles from '../Conductor.module.css'
@@ -182,7 +182,7 @@ export function ChatMessage({
               ))}
             </div>
           ) : null}
-          <MarkdownBody content={normalizedText} />
+          <UserMessageContent text={normalizedText} />
         </div>
       ) : showBraille ? (
         <div className={styles.messageBody}>

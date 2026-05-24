@@ -422,6 +422,42 @@
   max-width: 85%;
 }
 
+.userMessageSegmented {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.conductorSkillChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 80%, var(--text-primary) 12%);
+  background: color-mix(in srgb, var(--surface-1) 88%, var(--text-primary) 4%);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.conductorSkillChipIcon {
+  flex-shrink: 0;
+  opacity: 0.88;
+}
+
+.conductorSkillChipLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
 .messageAttachments {
   display: flex;
   flex-wrap: wrap;
