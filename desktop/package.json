@@ -33,6 +33,7 @@
     "@codemirror/search": "^6.7.0",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.40.0",
+    "@constellagent/mobile-protocol": "workspace:*",
     "@cursor/sdk": "1.0.13",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/utilities": "^3.2.2",

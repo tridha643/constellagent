@@ -1,8 +1,9 @@
 node_modules/
-# Vendored pi-gui workspace packages — build outputs (built automatically on root `bun install`; run `bun run build:pi-gui-packages` manually if needed)
+# Workspace package build outputs (built automatically on root `bun install`; run package build scripts manually if needed)
 packages/pi-gui-session-driver/dist/
 packages/pi-gui-catalogs/dist/
 packages/pi-gui-pi-sdk-driver/dist/
+packages/constellagent-mobile-protocol/dist/
 pnpm-lock.yaml
 .constellagent/
 context.md

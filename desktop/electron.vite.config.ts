@@ -8,7 +8,7 @@ export default defineConfig({
     // CJS main output does not call require("@openai/codex-sdk") at runtime.
     build: {
       externalizeDeps: {
-        exclude: ['@openai/codex-sdk'],
+        exclude: ['@openai/codex-sdk', '@constellagent/mobile-protocol'],
       },
     },
     resolve: {

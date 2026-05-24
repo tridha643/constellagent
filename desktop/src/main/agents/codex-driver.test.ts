@@ -14,6 +14,7 @@ import {
   isBenignCodexInterruptError,
   isStaleCodexThreadError,
   resolveCodexCliPath,
+  shouldSeedFreshCodexThread,
   shouldUseCodexWebSockets,
 } from './codex-driver'
 
@@ -48,6 +49,25 @@ describe('CodexDriver prompt seeding', () => {
     expect(prompt).toContain('Canvas mode is active')
     expect(prompt).toContain('inline generation')
     expect(prompt).not.toContain('GitHub-Flavored Markdown')
+  })
+
+  test('seeds prior Conductor transcript when Codex starts a fresh handoff thread', () => {
+    expect(
+      shouldSeedFreshCodexThread(false, [
+        {
+          kind: 'message',
+          id: 'a1',
+          role: 'assistant',
+          text: '## Plan\n- [ ] Build it',
+          createdAt: '',
+        },
+      ]),
+    ).toBe(true)
+  })
+
+  test('does not seed empty transcript into a normal first Codex turn', () => {
+    expect(shouldSeedFreshCodexThread(false, [])).toBe(false)
+    expect(shouldSeedFreshCodexThread(false, undefined)).toBe(false)
   })
 })
 

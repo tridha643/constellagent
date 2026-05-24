@@ -13,6 +13,7 @@ interface PersistedWorkspaceRecord {
   projectId: string
   branch?: string
   worktreePath?: string
+  lastOpenedAt?: string
 }
 
 interface PersistedStateRecord {
@@ -107,6 +108,37 @@ export function listPersistedProjectsWithBranches(): Array<{
   }))
 }
 
+export function listPersistedMobileWorkspaces(): Array<{
+  id: string
+  projectId?: string
+  name: string
+  branch?: string
+  updatedAt: string
+}> {
+  const state = loadState()
+  const projects = new Map((state.projects ?? []).map((project) => [project.id, project]))
+  return (state.workspaces ?? [])
+    .filter((workspace) => typeof workspace.id === 'string' && workspace.id.trim())
+    .map((workspace) => {
+      const project = projects.get(workspace.projectId)
+      return {
+        id: workspace.id,
+        ...(workspace.projectId ? { projectId: workspace.projectId } : {}),
+        name: project?.name || workspace.branch || workspace.id,
+        ...(workspace.branch ? { branch: workspace.branch } : {}),
+        updatedAt: normalizeIsoDate(workspace.lastOpenedAt),
+      }
+    })
+}
+
+function normalizeIsoDate(value: unknown): string {
+  if (typeof value === 'string') {
+    const date = new Date(value)
+    if (!Number.isNaN(date.getTime())) return date.toISOString()
+  }
+  return new Date().toISOString()
+}
+
 /** Pi model id for commit message generation; empty/undefined means use app default in pi-run-prompt. */
 export function readPersistedPiCommitMessageModel(): string | undefined {
   const state = loadState()
@@ -115,4 +147,3 @@ export function readPersistedPiCommitMessageModel(): string | undefined {
   const t = raw.trim()
   return t || undefined
 }
-
