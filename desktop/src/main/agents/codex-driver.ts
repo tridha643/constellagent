@@ -72,10 +72,9 @@ interface CodexSessionRecovery {
   preferTranscriptFallback: boolean
 }
 
-<<<<<<< Updated upstream
 type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexConfigObject
 type CodexConfigObject = { [key: string]: CodexConfigValue }
-=======
+
 export interface CodexToolHookEvent {
   readonly phase: 'started' | 'updated' | 'finished'
   readonly callId: string
@@ -106,7 +105,6 @@ interface CodexToolEmission {
   readonly output?: unknown
   readonly success?: boolean
 }
->>>>>>> Stashed changes
 
 const CODEX_IMAGE_EXTENSION_BY_MIME: Record<ConductorImageAttachment['mimeType'], string> = {
   'image/png': 'png',
@@ -290,15 +288,10 @@ export class CodexDriver implements AgentDriver {
   private readonly recovery = new Map<string, CodexSessionRecovery>()
   private readonly contextUsage = new Map<string, CodexContextUsage>()
 
-<<<<<<< Updated upstream
-  private getCodex(webSocketsEnabled: boolean): Codex {
-    if (!this.codex || this.codex.webSocketsEnabled !== webSocketsEnabled) {
-=======
   constructor(private readonly hooks: CodexDriverHooks = {}) {}
 
-  private getCodex(): Codex {
-    if (!this.codex) {
->>>>>>> Stashed changes
+  private getCodex(webSocketsEnabled: boolean): Codex {
+    if (!this.codex || this.codex.webSocketsEnabled !== webSocketsEnabled) {
       const codexPathOverride = resolveCodexCliPath()
       const config = codexConfigForWebSockets(webSocketsEnabled)
       const client = new Codex({
@@ -455,11 +448,7 @@ export class CodexDriver implements AgentDriver {
 
     try {
       const runStreamedStartedAt = performance.now()
-<<<<<<< Updated upstream
       const { events } = await thread.runStreamed(input, turnOptions)
-=======
-      const { events } = await thread.runStreamed(input, { signal: ctx.signal })
->>>>>>> Stashed changes
       logMainPerfEvent('codex.runStreamed_ready', performance.now() - runStreamedStartedAt, {
         model: baseModel,
         effort,

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { buildAgentPrompt } from './agent-driver'
 import {
-<<<<<<< Updated upstream
+  applyCodexToolHook,
   buildCodexUserInput,
   codexConfigForWebSockets,
   codexSdkEnv,
@@ -11,12 +11,6 @@ import {
   isBenignCodexInterruptError,
   isStaleCodexThreadError,
   shouldUseCodexWebSockets,
-=======
-  applyCodexToolHook,
-  buildCodexUserInput,
-  isBenignCodexInterruptError,
-  isStaleCodexThreadError,
->>>>>>> Stashed changes
 } from './codex-driver'
 
 describe('CodexDriver prompt seeding', () => {
