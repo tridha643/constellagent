@@ -20,6 +20,16 @@ describe('agent-driver prompt construction', () => {
     expect(prompt).not.toContain('Previous conversation context')
   })
 
+  test('keeps markdown rendering and raster-image safeguards in the app prompt', () => {
+    const prompt = buildAgentPrompt('draw the service flow', false)
+
+    expect(prompt).toContain('GitHub-Flavored Markdown')
+    expect(prompt).toContain('fenced Mermaid blocks')
+    expect(prompt).toContain('xychart-beta')
+    expect(prompt).toContain('Do not invoke image generation tools')
+    expect(prompt).toContain('Only generate raster images when the user explicitly asks')
+  })
+
   test('adds prior chat context before the current user request', () => {
     const previous: TranscriptMessage[] = [
       msg('u1', 'user', 'create a plan first', true),
