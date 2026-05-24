@@ -40,11 +40,14 @@ describe('codexConductorThreadPermissions', () => {
 })
 
 describe('cursorConductorLocalPermissions', () => {
-  test('enables sandbox in plan mode to block file writes', () => {
+  test('keeps sandbox disabled in plan mode (Electron has no local sandbox)', () => {
     assert.deepEqual(cursorConductorLocalPermissions(true), CURSOR_PLAN_LOCAL_PERMISSIONS)
+    assert.deepEqual(CURSOR_PLAN_LOCAL_PERMISSIONS, {
+      sandboxOptions: { enabled: false },
+    })
   })
 
-  test('disables sandbox in working mode for unrestricted approvalMode', () => {
+  test('disables sandbox in working mode for unrestricted agent mode', () => {
     assert.deepEqual(cursorConductorLocalPermissions(false), CURSOR_WORKING_LOCAL_PERMISSIONS)
   })
 })

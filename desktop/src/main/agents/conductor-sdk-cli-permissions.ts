@@ -28,17 +28,22 @@ export function codexConductorThreadPermissions(plan: boolean): CodexConductorTh
   return plan ? CODEX_PLAN_THREAD_PERMISSIONS : CODEX_WORKING_THREAD_PERMISSIONS
 }
 
-/** Cursor plan — enable local sandbox so plan-mode turns cannot write workspace files. */
+/**
+ * Cursor plan — keep sandbox off. Local SDK sandboxing is unavailable inside
+ * Electron, and Conductor plan turns rely on PLAN_PROMPT_PREFIX (same as Codex)
+ * to render markdown in chat instead of writing plan files.
+ */
 export const CURSOR_PLAN_LOCAL_PERMISSIONS = {
-  sandboxOptions: { enabled: true } satisfies SandboxOptions,
+  sandboxOptions: { enabled: false } satisfies SandboxOptions,
 }
 
-/** Cursor working — sandbox off for unrestricted approvalMode. */
+/** Cursor working — sandbox off for unrestricted agent mode. */
 export const CURSOR_WORKING_LOCAL_PERMISSIONS = {
   sandboxOptions: { enabled: false } satisfies SandboxOptions,
 }
 
 /** Cursor local executor sandbox for a Conductor turn (see plan vs working profiles above). */
-export function cursorConductorLocalPermissions(plan: boolean): Pick<LocalAgentOptions, 'sandboxOptions'> {
-  return plan ? CURSOR_PLAN_LOCAL_PERMISSIONS : CURSOR_WORKING_LOCAL_PERMISSIONS
+export function cursorConductorLocalPermissions(_plan: boolean): Pick<LocalAgentOptions, 'sandboxOptions'> {
+  // Plan and working both disable sandbox — Electron cannot host the local sandbox.
+  return CURSOR_WORKING_LOCAL_PERMISSIONS
 }
