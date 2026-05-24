@@ -148,10 +148,17 @@ describe('Conductor defaults', () => {
   test('falls back to cursor for invalid providers', () => {
     expect(normalizeConductorDefaultProvider('nope')).toBe('cursor')
     expect(normalizeConductorDefaultProvider('codex')).toBe('codex')
+    expect(normalizeConductorDefaultProvider('pi')).toBe('pi')
   })
 
   test('resolves blank codex defaults to the provider preset', () => {
     expect(resolveConductorDefaultSelection('codex', '').model).toBe(defaultConductorModel('codex'))
+  })
+
+  test('uses Pi default model placeholder without fast variants', () => {
+    expect(defaultConductorModel('pi')).toBe('')
+    expect(resolveConductorDefaultSelection('pi', '').model).toBe('')
+    expect(hasFastVariant('', 'pi')).toBe(false)
   })
 
   test('converts stored model ids into draft model + thinking level', () => {

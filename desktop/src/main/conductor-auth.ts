@@ -175,5 +175,9 @@ export function getConductorAuthStatus(forceRefresh = false): ConductorAuthStatu
           ? 'Signed in via `codex login`'
           : 'Run `codex login` in a terminal or add an OpenAI API key in Settings → Conductor.',
     },
+    pi: {
+      ready: true,
+      detail: 'Uses Pi SDK runtime configuration.',
+    },
   }
 }

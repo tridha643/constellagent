@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   CODEX_THINKING_LEVELS,
   CURSOR_THINKING_LEVELS,
+  PI_THINKING_LEVELS,
   nextThinkingLevel,
   coerceThinkingLevelForProvider,
   isReasoningEffortActive,
@@ -18,6 +19,11 @@ describe('conductor thinking levels', () => {
     expect(CURSOR_THINKING_LEVELS).not.toContain('minimal')
     expect(nextThinkingLevel('xhigh', 'cursor')).toBe('low')
     expect(nextThinkingLevel(undefined, 'cursor')).toBe('medium')
+  })
+
+  test('pi cycle matches runtime thinking levels', () => {
+    expect(PI_THINKING_LEVELS).toEqual(['low', 'medium', 'high', 'xhigh'])
+    expect(nextThinkingLevel('xhigh', 'pi')).toBe('low')
   })
 
   test('coerceThinkingLevelForProvider folds minimal to low on cursor', () => {

@@ -33,8 +33,8 @@ export interface ConductorAskQuestionDetails {
   readonly answers: readonly ConductorAskQuestionAnswer[]
 }
 
-export type ConductorBlockingQuestionProvider = 'cursor' | 'codex'
-export type ConductorBlockingQuestionSource = 'askQuestion' | 'mcpAskUserQuestion'
+export type ConductorBlockingQuestionProvider = 'cursor' | 'codex' | 'pi'
+export type ConductorBlockingQuestionSource = 'askQuestion' | 'mcpAskUserQuestion' | 'piHostUi'
 
 export interface ConductorBlockingQuestion {
   readonly requestId: string

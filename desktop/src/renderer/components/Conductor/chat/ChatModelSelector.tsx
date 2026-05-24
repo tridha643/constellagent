@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { PLAN_MODEL_PRESETS } from '../../../../shared/plan-build-command'
+import type { ModelPreset } from '../../../../shared/plan-build-command'
 import {
   displayModelName,
   applyThinkingLevel,
   sameModelFamily,
+  conductorModelPresets,
 } from '../../../../shared/conductor-model-utils'
 import type { AgentProvider } from '../../../../shared/agent-chat-types'
 import type { ThinkingLevel } from '../../../../shared/conductor-thinking'
@@ -13,10 +14,11 @@ import styles from '../Conductor.module.css'
 const GROUPS: { provider: AgentProvider; label: string }[] = [
   { provider: 'cursor', label: 'Cursor' },
   { provider: 'codex', label: 'Codex' },
+  { provider: 'pi', label: 'Pi' },
 ]
 
 function labelFor(provider: AgentProvider, model: string): string {
-  const preset = PLAN_MODEL_PRESETS[provider]?.find((m) => m.cliModel === model)
+  const preset = conductorModelPresets(provider).find((m) => m.cliModel === model)
   return displayModelName(preset?.label ?? model)
 }
 
@@ -25,13 +27,16 @@ export function ChatModelSelector({
   model,
   thinkingLevel = 'low',
   onSelect,
+  workspacePath,
 }: {
   provider: AgentProvider
   model: string
   thinkingLevel?: ThinkingLevel
+  workspacePath: string
   onSelect: (provider: AgentProvider, model: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [piPresets, setPiPresets] = useState<readonly ModelPreset[]>(() => conductorModelPresets('pi'))
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -52,6 +57,23 @@ export function ChatModelSelector({
       document.removeEventListener('keydown', onKey)
     }
   }, [open])
+
+  useEffect(() => {
+    if (!open || !workspacePath) return
+    let cancelled = false
+    void window.api.agentChat
+      .listPiModels(workspacePath)
+      .then((models) => {
+        if (!cancelled && models.length > 0) setPiPresets(models)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [open, workspacePath])
+
+  const presetsForProvider = (nextProvider: AgentProvider): readonly ModelPreset[] =>
+    nextProvider === 'pi' ? piPresets : conductorModelPresets(nextProvider)
 
   return (
     <div className={styles.modelSelector} ref={rootRef}>
@@ -74,7 +96,7 @@ export function ChatModelSelector({
                 <ProviderIcon provider={group.provider} size={14} />
                 {group.label}
               </div>
-              {(PLAN_MODEL_PRESETS[group.provider] ?? []).map((preset) => {
+              {presetsForProvider(group.provider).map((preset) => {
                 const effective =
                   group.provider === provider && provider === 'cursor'
                     ? applyThinkingLevel(model, thinkingLevel)

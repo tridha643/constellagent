@@ -657,6 +657,10 @@ const api = {
         attachments: readonly ConductorComposerAttachment[]
         error?: string
       }>,
+    listPiModels: (workspacePath: string) =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_LIST_PI_MODELS, workspacePath) as Promise<
+        readonly import('../shared/plan-build-command').ModelPreset[]
+      >,
     replaceQueue: (sessionId: string, messages: readonly QueuedAgentMessage[]) =>
       ipcRenderer.invoke(IPC.AGENT_CHAT_REPLACE_QUEUE, sessionId, messages),
     setModel: (sessionId: string, model: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_SET_MODEL, sessionId, model),
@@ -670,6 +674,12 @@ const api = {
       sessionId: string,
       response: import('../shared/conductor-ask-question-types').ConductorBlockingQuestionResponse,
     ) => ipcRenderer.invoke(IPC.AGENT_CHAT_RESPOND_BLOCKING_QUESTION, sessionId, response),
+    respondPiHostUi: (
+      sessionId: string,
+      response: import('@pi-gui/session-driver').HostUiResponse,
+    ) => ipcRenderer.invoke(IPC.AGENT_CHAT_RESPOND_PI_HOST_UI, sessionId, response),
+    sendPiExtensionTuiInput: (sessionId: string, data: string) =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_PI_EXTENSION_TUI_INPUT, sessionId, data),
     deleteSession: (sessionId: string) => ipcRenderer.invoke(IPC.AGENT_CHAT_DELETE_SESSION, sessionId),
     getAuthStatus: (force?: boolean) => ipcRenderer.invoke(IPC.AGENT_CHAT_GET_AUTH_STATUS, force),
     syncAuth: (input: { cursorApiKey: string; openaiApiKey: string; codexWebSockets?: CodexWebSocketsSetting }) =>

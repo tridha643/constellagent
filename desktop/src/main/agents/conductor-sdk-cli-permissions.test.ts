@@ -10,11 +10,11 @@ import {
 } from './conductor-sdk-cli-permissions'
 
 describe('CODEX_PLAN_THREAD_PERMISSIONS', () => {
-  test('uses read-only sandbox for chat-rendered plans', () => {
+  test('uses fully unrestricted SDK permissions for chat-rendered plans', () => {
     assert.deepEqual(CODEX_PLAN_THREAD_PERMISSIONS, {
-      sandboxMode: 'read-only',
-      networkAccessEnabled: true,
+      sandboxMode: 'danger-full-access',
       approvalPolicy: 'never',
+      networkAccessEnabled: true,
     })
   })
 })

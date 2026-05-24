@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { BrowserWindow } from 'electron'
 import { sessionKey } from '@pi-gui/pi-sdk-driver'
-import type { SessionDriverEvent, SessionRef, SessionSnapshot } from '@pi-gui/session-driver'
+import type {
+  HostUiResponse,
+  SessionDriverEvent,
+  SessionRef,
+  SessionSnapshot,
+} from '@pi-gui/session-driver'
 import { IPC } from '../shared/ipc-channels'
 import type { TranscriptMessage } from '../shared/pi/pi-desktop-state'
 import {
@@ -16,6 +21,7 @@ import { GitService } from './git-service'
 import { evToolFinished, type AgentDriver } from './agents/agent-driver'
 import { CodexDriver } from './agents/codex-driver'
 import { CursorDriver } from './agents/cursor-driver'
+import { PiConductorDriver } from './agents/pi-conductor-driver'
 import {
   cloneTranscriptWithNewIds,
   sliceTranscriptForFork,
@@ -57,6 +63,7 @@ import type {
   QueuedAgentMessage,
   QueuedAgentMessageMode,
 } from '../shared/agent-chat-types'
+import type { ModelPreset } from '../shared/plan-build-command'
 import type { ConductorBlockingQuestionResponse } from '../shared/conductor-ask-question-types'
 import {
   enqueueQueuedMessage,
@@ -97,6 +104,7 @@ export class AgentChatHost {
   private readonly drivers: Record<AgentProvider, AgentDriver> = {
     codex: new CodexDriver(),
     cursor: new CursorDriver(),
+    pi: new PiConductorDriver(),
   }
   /** Coalesces high-frequency transcript broadcasts during streaming (~25fps). */
   private readonly pendingTranscriptFlush = new Map<string, ReturnType<typeof setTimeout>>()
@@ -124,6 +132,8 @@ export class AgentChatHost {
       status: 'idle',
       runPhase: 'idle',
       blockingQuestion: null,
+      providerSession: undefined,
+      piExtensionUi: null,
       queuedMessages: [],
       createdAt: nowIso,
       updatedAt: nowIso,
@@ -280,8 +290,9 @@ export class AgentChatHost {
     attachments: readonly ConductorComposerAttachment[] = [],
   ): Promise<void> {
     const live = this.sessions.get(sessionId)
-    let state = live?.state ?? (await this.rehydrate(sessionId))
-    if (!state) return
+    const initialState = live?.state ?? (await this.rehydrate(sessionId))
+    if (!initialState) return
+    let state: AgentChatSessionState = initialState
 
     const normalizedAttachments = cloneConductorImageAttachments(attachments)
     const promptText = conductorPromptText(text)
@@ -341,9 +352,18 @@ export class AgentChatHost {
         text: promptText,
         attachments: normalizedAttachments,
         previousTranscript,
+        providerSession: state.providerSession,
         signal: abort.signal,
+        setProviderSession: (providerSession) => {
+          const current = this.currentState(sessionId) ?? state
+          this.update(sessionId, { providerSession })
+          state = { ...current, providerSession }
+        },
+        setPiExtensionUi: (piExtensionUi) => {
+          this.update(sessionId, { piExtensionUi })
+        },
         emit: (event) => {
-          this.markDriverEvent(sessionId, state, event)
+          this.markDriverEvent(sessionId, this.currentState(sessionId) ?? state, event)
           this.onDriverEvent(sessionId, event)
         },
       })
@@ -400,6 +420,24 @@ export class AgentChatHost {
   async setThinkingLevel(sessionId: string, thinkingLevel: AgentChatSessionState['thinkingLevel']): Promise<void> {
     await this.ensureSession(sessionId)
     this.update(sessionId, { thinkingLevel, error: undefined })
+  }
+
+  async respondPiHostUi(sessionId: string, response: HostUiResponse): Promise<void> {
+    const state = await this.resolveState(sessionId)
+    if (!state || state.provider !== 'pi') return
+    await this.drivers.pi.respondHostUi?.(sessionId, response)
+    this.update(sessionId, { piExtensionUi: this.drivers.pi.getPiExtensionUi?.(sessionId) ?? null })
+  }
+
+  async sendPiExtensionTuiInput(sessionId: string, data: string): Promise<void> {
+    const state = await this.resolveState(sessionId)
+    if (!state || state.provider !== 'pi') return
+    this.drivers.pi.sendExtensionTuiInput?.(sessionId, data)
+    this.update(sessionId, { piExtensionUi: this.drivers.pi.getPiExtensionUi?.(sessionId) ?? null })
+  }
+
+  async listPiModels(workspacePath: string): Promise<readonly ModelPreset[]> {
+    return this.drivers.pi.listModelsForWorkspace?.(workspacePath) ?? []
   }
 
   async cancel(sessionId: string): Promise<void> {
@@ -548,13 +586,14 @@ export class AgentChatHost {
       if (!tool || tool.kind !== 'tool') return
       if (!this.timelineState.userRequestedGeneratedImagesBySession.get(key)) return
 
+      const provider = state.provider === 'pi' ? undefined : state.provider
       const resolved = await resolveConductorGeneratedImagesWithFiles(
         isConductorGeneratedImageOutput(tool.output) ? tool.output : output,
         {
           workspacePath: state.workspacePath,
           toolName: tool.toolName,
           input: tool.input,
-          provider: state.provider,
+          provider,
           sinceMs: this.turnStartedAtMs(state),
         },
       )
@@ -651,11 +690,12 @@ export class AgentChatHost {
       if (message.kind !== 'message' || message.role !== 'assistant') return false
 
       const sinceMs = this.turnStartedAtMs(state) ?? sinceMsFallback
+      const provider = state.provider === 'pi' ? undefined : state.provider
       const generated = await loadGeneratedImagesForTurn(
         turnTranscriptText(turnSlice),
         state.workspacePath,
         {
-          provider: state.provider,
+          provider,
           sinceMs,
         },
       )
@@ -869,7 +909,16 @@ export class AgentChatHost {
     const model = speedSuffix ? `${base}-fast` : base
     const thinkingLevel =
       inferred !== 'medium' ? inferred : normalizeThinkingLevel(stored.thinkingLevel)
-    return { ...stored, model, thinkingLevel, canvas: stored.canvas ?? false, queuedMessages: stored.queuedMessages ?? [], runPhase: stored.runPhase ?? 'idle', blockingQuestion: stored.blockingQuestion ?? null }
+    return {
+      ...stored,
+      model,
+      thinkingLevel,
+      canvas: stored.canvas ?? false,
+      queuedMessages: stored.queuedMessages ?? [],
+      runPhase: stored.runPhase ?? 'idle',
+      blockingQuestion: stored.blockingQuestion ?? null,
+      piExtensionUi: stored.piExtensionUi ?? null,
+    }
   }
 
   private async rehydrate(sessionId: string): Promise<AgentChatSessionState | null> {

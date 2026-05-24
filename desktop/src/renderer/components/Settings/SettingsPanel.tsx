@@ -33,7 +33,7 @@ import type { PlanAgent } from '../../../shared/agent-plan-path'
 import { BUILD_HARNESS_OPTIONS, PLAN_MODEL_PRESETS } from '../../../shared/plan-build-command'
 import type { PiModelOption } from '../../../shared/plan-build-command'
 import { formatPiModelOptionLabel } from '../../../shared/pi-models'
-import { defaultConductorModel } from '../../../shared/conductor-model-utils'
+import { conductorModelPresets, defaultConductorModel } from '../../../shared/conductor-model-utils'
 import { THINKING_LABELS, THINKING_LEVELS } from '../../../shared/conductor-thinking'
 import type { ComposioNgrokStatus, ComposioWebhookSettings } from '../../../shared/composio-types'
 import {
@@ -1215,7 +1215,7 @@ function ConductorSettingsSection({
   const defaultProvider = normalizeConductorDefaultProviderSetting(
     settings.conductorDefaultProvider,
   )
-  const modelPresets = PLAN_MODEL_PRESETS[defaultProvider]
+  const modelPresets = conductorModelPresets(defaultProvider)
   const normalizedDefaultModel = normalizeConductorDefaultModelSetting(
     settings.conductorDefaultModel,
   )
@@ -1259,6 +1259,7 @@ function ConductorSettingsSection({
         options={[
           { value: 'cursor', label: 'Cursor' },
           { value: 'codex', label: 'Codex' },
+          { value: 'pi', label: 'Pi' },
         ]}
       />
       <SelectRow
@@ -1416,7 +1417,7 @@ function LinearSettingsSection({
   const conductorLaunchProvider = normalizeLinearIssueConductorProvider(
     settings.linearIssueConductorProvider,
   )
-  const conductorLaunchModelPresets = PLAN_MODEL_PRESETS[conductorLaunchProvider]
+  const conductorLaunchModelPresets = conductorModelPresets(conductorLaunchProvider)
   const normalizedConductorLaunchModel = normalizeLinearIssueConductorModel(
     settings.linearIssueConductorModel,
   )
@@ -1596,6 +1597,7 @@ function LinearSettingsSection({
             options={[
               { value: 'cursor', label: 'Cursor' },
               { value: 'codex', label: 'Codex' },
+              { value: 'pi', label: 'Pi' },
             ]}
             disabled={settings.linearIssueConductorUseDefaults}
           />

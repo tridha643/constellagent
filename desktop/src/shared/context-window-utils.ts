@@ -20,10 +20,10 @@ function estimateChars(value: unknown, depth = 0): number {
   if (typeof value === 'string') return value.length
   if (typeof value === 'number' || typeof value === 'boolean') return String(value).length
   if (Array.isArray(value)) {
-    return value.reduce((sum, item) => sum + estimateChars(item, depth + 1), 0)
+    return value.reduce<number>((sum, item) => sum + estimateChars(item, depth + 1), 0)
   }
   if (typeof value === 'object') {
-    return Object.values(value as Record<string, unknown>).reduce(
+    return Object.values(value as Record<string, unknown>).reduce<number>(
       (sum, item) => sum + estimateChars(item, depth + 1),
       0,
     )

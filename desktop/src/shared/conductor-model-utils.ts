@@ -1,5 +1,5 @@
 import type { ModelReasoningEffort } from '@openai/codex-sdk'
-import { PLAN_MODEL_PRESETS } from './plan-build-command'
+import { PLAN_MODEL_PRESETS, type ModelPreset } from './plan-build-command'
 import type { AgentProvider } from './agent-chat-types'
 import type { ThinkingLevel } from './conductor-thinking'
 
@@ -18,6 +18,15 @@ export interface ConductorDraftSelection {
 
 export const DEFAULT_CONDUCTOR_PROVIDER: AgentProvider = 'cursor'
 
+export const PI_CONDUCTOR_MODEL_PRESETS: readonly ModelPreset[] = [
+  { label: 'Pi default', cliModel: '' },
+]
+
+export function conductorModelPresets(provider: AgentProvider): readonly ModelPreset[] {
+  if (provider === 'pi') return PI_CONDUCTOR_MODEL_PRESETS
+  return PLAN_MODEL_PRESETS[provider]
+}
+
 function defaultCursorConductorModel(): string {
   const effortPreset = PLAN_MODEL_PRESETS.cursor.find((preset) => {
     if (preset.cliModel === 'auto') return false
@@ -29,7 +38,8 @@ function defaultCursorConductorModel(): string {
 
 export function defaultConductorModel(provider: AgentProvider): string {
   if (provider === 'cursor') return defaultCursorConductorModel()
-  return PLAN_MODEL_PRESETS[provider].find((preset) => preset.cliModel.trim() !== '')?.cliModel ?? 'gpt-5.5'
+  if (provider === 'pi') return ''
+  return conductorModelPresets(provider).find((preset) => preset.cliModel.trim() !== '')?.cliModel ?? 'gpt-5.5'
 }
 
 /** Codex SDK `modelReasoningEffort` — separate from hyphenated Cursor model ids. */
@@ -39,7 +49,8 @@ export function mapThinkingLevelToCodexEffort(level: ThinkingLevel): ModelReason
 }
 
 export function normalizeConductorDefaultProvider(v: unknown): AgentProvider {
-  return v === 'codex' ? 'codex' : DEFAULT_CONDUCTOR_PROVIDER
+  if (v === 'codex' || v === 'pi') return v
+  return DEFAULT_CONDUCTOR_PROVIDER
 }
 
 export function normalizeConductorDefaultModel(v: unknown): string {
@@ -102,6 +113,7 @@ const CODEX_FAST_MODEL_FAMILIES = new Set(['gpt-5.5'])
 
 /** Whether this model family supports a Fast (-fast) variant in CLI/SDK presets. */
 export function hasFastVariant(cliModel: string, provider: AgentProvider = 'cursor'): boolean {
+  if (provider === 'pi') return false
   const { base, speedSuffix } = parseModelEffort(cliModel)
   if (provider === 'codex') {
     const codexPresets = codexPresetIds()
@@ -130,6 +142,7 @@ export function setModelFast(cliModel: string, fast: boolean): string {
 
 /** Whether the Effort control applies for this provider + model family. */
 export function hasEffortVariants(cliModel: string, provider: AgentProvider = 'cursor'): boolean {
+  if (provider === 'pi') return true
   const { base } = parseModelEffort(cliModel)
   if (provider === 'codex') {
     return [...codexPresetIds()].some((id) => parseModelEffort(id).base === base)

@@ -7,13 +7,14 @@ type CodexConductorThreadPermissions = Pick<
 >
 
 /**
- * Plan toggle ON — read-only. Plans are rendered in Conductor chat and no files
- * should be written for plan-mode turns.
+ * Plan toggle ON — full SDK access. Plans are still kept in chat by the
+ * Conductor plan prompt; permissions stay unrestricted so Codex can inspect
+ * the workspace and use the same tools available in working mode.
  */
 export const CODEX_PLAN_THREAD_PERMISSIONS = {
-  sandboxMode: 'read-only' satisfies SandboxMode,
-  networkAccessEnabled: true,
+  sandboxMode: 'danger-full-access' satisfies SandboxMode,
   approvalPolicy: 'never' satisfies ApprovalMode,
+  networkAccessEnabled: true,
 } satisfies CodexConductorThreadPermissions
 
 /** Plan toggle OFF — fully unrestricted agent mode. */

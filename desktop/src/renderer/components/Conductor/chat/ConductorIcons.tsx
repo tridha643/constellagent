@@ -215,6 +215,26 @@ export function ProviderIcon({
       </span>
     )
   }
+  if (provider === 'pi') {
+    return (
+      <span
+        className={className}
+        aria-hidden
+        style={{
+          width: size,
+          height: size,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: Math.max(9, Math.round(size * 0.72)),
+          fontWeight: 700,
+          lineHeight: 1,
+        }}
+      >
+        π
+      </span>
+    )
+  }
   return (
     <img
       src={openaiIcon}

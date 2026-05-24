@@ -184,7 +184,9 @@ export function isHarnessSlashCommand(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed.startsWith('/')) return false
   if (/\n/.test(trimmed)) return false
-  return /^\/[^\s]+(?:\s+\S+)*$/.test(trimmed)
+  if (!/^\/[^\s]+(?:\s+\S+)*$/.test(trimmed)) return false
+  const commandName = trimmed.slice(1).split(/\s+/, 1)[0]?.toLowerCase()
+  return CONDUCTOR_HOST_SLASH_NAMES.has(commandName ?? '')
 }
 
 export function harnessSkillsToSlashCommands(

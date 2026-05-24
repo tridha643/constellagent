@@ -153,6 +153,11 @@ export function useConductorComposerSlash({
   const applySlashCommand = useCallback(
     (command: ConductorSlashCommand) => {
       if (!slashToken) return
+      if (command.kind === 'skill') {
+        replaceRange(slashToken.from, slashToken.to, `${command.command} `)
+        setPickCommand(null)
+        return
+      }
       if (command.picker === 'personality' || command.picker === 'dir-name' || command.picker === 'file-path') {
         setPickCommand(command)
         setOptionIndex(0)
@@ -162,7 +167,7 @@ export function useConductorComposerSlash({
       setPickCommand(null)
       onSlashAction(command)
     },
-    [slashToken, clearSlashToken, onSlashAction],
+    [slashToken, replaceRange, clearSlashToken, onSlashAction],
   )
 
   const applyNamePromptValue = useCallback(
