@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer/MarkdownRenderer";
+import { isLikelySkillIdentifier } from "../../shared/skill-tool-utils";
 import { segmentMessageForInlineChips, type MessageSegment } from "./message-inline-segments";
 
 const REMARK_PLUGINS = [remarkGfm];
@@ -12,6 +13,13 @@ const MARKDOWN_COMPONENTS = {
     const language = className?.replace(/^language-/, "");
     const code = String(children).replace(/\n$/, "");
     if (!className) {
+      if (isLikelySkillIdentifier(code)) {
+        return (
+          <span className="pi-inline-chip pi-inline-chip--skill" title={`/${code}`}>
+            <span className="pi-inline-chip__label">{code}</span>
+          </span>
+        );
+      }
       return <code>{code}</code>;
     }
     return (

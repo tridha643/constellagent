@@ -1,6 +1,8 @@
 import { defineRegistry } from '@json-render/react'
 import { shadcnComponents } from '@json-render/shadcn'
 import { jsonCanvasCatalog } from '../../../../shared/json-canvas-catalog'
+import { parseFilePathListText } from '../../../../shared/file-path-list-text'
+import { FilePathListPanel } from './FilePathListPanel'
 import styles from '../Conductor.module.css'
 
 const { registry } = defineRegistry(jsonCanvasCatalog, {
@@ -24,19 +26,24 @@ const { registry } = defineRegistry(jsonCanvasCatalog, {
         {children}
       </div>
     ),
-    Text: ({ props }) => (
-      <p
-        className={[
-          styles.jsonCanvasText,
-          props.variant === 'caption' ? styles.jsonCanvasTextCaption : '',
-          props.variant === 'heading' ? styles.jsonCanvasTextHeading : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
-      >
-        {props.text}
-      </p>
-    ),
+    Text: ({ props }) => {
+      const paths = parseFilePathListText(props.text)
+      if (paths) return <FilePathListPanel paths={paths} />
+      return (
+        <p
+          className={[
+            styles.jsonCanvasText,
+            props.variant === 'caption' ? styles.jsonCanvasTextCaption : '',
+            props.variant === 'heading' ? styles.jsonCanvasTextHeading : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
+          {props.text}
+        </p>
+      )
+    },
+    FilePathList: ({ props }) => <FilePathListPanel paths={props.paths} />,
     Metric: ({ props }) => (
       <div className={styles.jsonCanvasMetric}>
         <div className={styles.jsonCanvasMetricLabel}>{props.label}</div>

@@ -2377,20 +2377,20 @@
 .toolInlineChip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
-  border: none;
-  border-radius: 6px;
-  background: var(--surface-2);
+  gap: 5px;
+  padding: 2px 7px 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
   color: var(--text-secondary);
-  transition: transform 160ms var(--ease-out-strong), background 120ms ease;
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: 11px;
   min-width: 0;
-  max-width: min(240px, 100%);
+  max-width: min(280px, 100%);
   cursor: pointer;
   transition:
     background-color 150ms ease,
+    border-color 150ms ease,
     color 150ms ease,
     transform 130ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
 }
@@ -2401,7 +2401,8 @@
 
 @media (hover: hover) and (pointer: fine) {
   .toolInlineChip:hover {
-    background: var(--surface-3);
+    background: color-mix(in srgb, var(--surface-3) 88%, transparent);
+    border-color: color-mix(in srgb, var(--accent-blue) 48%, var(--border-default));
     color: var(--text-primary);
   }
 }
@@ -2412,8 +2413,8 @@
 }
 
 .toolInlineChipIcon {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   flex-shrink: 0;
 }
 
@@ -3213,6 +3214,95 @@
   background: color-mix(in srgb, var(--accent-red, #e07070) 8%, var(--surface-1));
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.jsonCanvasFilePathList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-2, #1a1a1a) 72%, transparent);
+}
+
+.jsonCanvasFilePathListHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.jsonCanvasFilePathListCount {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.jsonCanvasFilePathListCopy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.jsonCanvasFilePathListCopy:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent-blue, #7eb8b8) 35%, var(--border-subtle));
+}
+
+.jsonCanvasFilePathListRows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.jsonCanvasFilePathListRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jsonCanvasFilePathListRow:hover {
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+}
+
+.jsonCanvasFilePathListIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.jsonCanvasFilePathListPath {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Conductor slash menu + MCP panels (motion tokens) ── */

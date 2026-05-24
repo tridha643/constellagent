@@ -26,6 +26,12 @@ export const jsonCanvasCatalog = defineCatalog(schema, {
       }),
       description: 'Text block',
     },
+    FilePathList: {
+      props: z.object({
+        paths: z.array(z.string()).min(1),
+      }),
+      description: 'File path list with icons and copy-all button',
+    },
     Metric: {
       props: z.object({
         label: z.string(),

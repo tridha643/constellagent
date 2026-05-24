@@ -1,6 +1,6 @@
 import type { TimelineToolCall } from '../../../../../shared/pi/timeline-types'
 import { skillDisplayFromToolInput } from '../../../../../shared/skill-tool-utils'
-import { CursorToolChip } from './CursorToolChip'
+import { CursorSkillChip } from './CursorSkillChip'
 import styles from './CursorTool.module.css'
 
 function SkillLoadIcon() {
@@ -30,9 +30,7 @@ export function SkillLoadTool({ tool }: { tool: TimelineToolCall }) {
           <SkillLoadIcon />
         </span>
         <span className={styles.cursorToolLabel}>{displayLabel}</span>
-        {skillId ? (
-          <CursorToolChip variant="file" path={skillId} onClick={(event) => event.preventDefault()} />
-        ) : null}
+        {skillId ? <CursorSkillChip name={skillId} /> : null}
       </div>
     </div>
   )
