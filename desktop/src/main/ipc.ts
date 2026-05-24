@@ -1476,24 +1476,8 @@ export function registerIpcHandlers(): void {
     return SkillsService.scanSkillDir(skillPath)
   })
 
-  ipcMain.handle(IPC.SKILLS_SYNC, async (_e, skillPath: string, projectPath: string) => {
-    await SkillsService.syncSkillToAgents(skillPath, projectPath)
-  })
-
-  ipcMain.handle(IPC.SKILLS_REMOVE, async (_e, skillName: string, projectPath: string) => {
-    await SkillsService.removeSkillFromAgents(skillName, projectPath)
-  })
-
   ipcMain.handle(IPC.SUBAGENTS_SCAN, async (_e, filePath: string) => {
     return SkillsService.scanSubagentFile(filePath)
-  })
-
-  ipcMain.handle(IPC.SUBAGENTS_SYNC, async (_e, subagentPath: string, projectPath: string) => {
-    await SkillsService.syncSubagentToAgents(subagentPath, projectPath)
-  })
-
-  ipcMain.handle(IPC.SUBAGENTS_REMOVE, async (_e, subagentName: string, projectPath: string) => {
-    await SkillsService.removeSubagentFromAgents(subagentName, projectPath)
   })
 
   // ── Skills & Subagents KV persistence ──

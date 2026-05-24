@@ -10,13 +10,13 @@ describe('skill-tool-utils', () => {
   })
 
   it('extracts skill label from tool input', () => {
-    expect(skillDisplayFromToolInput({ skill: 'conductor-canvas-codex' })).toEqual({
-      label: 'Conductor Canvas Codex',
-      skillId: 'conductor-canvas-codex',
-    })
-    expect(skillDisplayFromToolInput('emil-design-eng')).toEqual({
+    expect(skillDisplayFromToolInput({ skill: 'emil-design-eng' })).toEqual({
       label: 'Emil Design Eng',
       skillId: 'emil-design-eng',
+    })
+    expect(skillDisplayFromToolInput('hunk-review')).toEqual({
+      label: 'Hunk Review',
+      skillId: 'hunk-review',
     })
   })
 })

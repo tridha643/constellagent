@@ -172,11 +172,7 @@ export const IPC = {
 
   // Skills & Subagents
   SKILLS_SCAN: 'skills:scan',
-  SKILLS_SYNC: 'skills:sync',
-  SKILLS_REMOVE: 'skills:remove',
   SUBAGENTS_SCAN: 'subagents:scan',
-  SUBAGENTS_SYNC: 'subagents:sync',
-  SUBAGENTS_REMOVE: 'subagents:remove',
 
   // Skills & Subagents KV persistence (AgentFS-backed)
   SKILLS_KV_SAVE: 'skills:kv-save',

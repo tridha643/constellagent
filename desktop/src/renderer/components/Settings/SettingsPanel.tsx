@@ -145,7 +145,7 @@ const SETTINGS_SIDEBAR: readonly {
   {
     id: 'skills',
     label: 'Skills',
-    blurb: 'Mounted skills directories and Markdown subagents.',
+    blurb: 'Catalog skill directories and subagent files — install locally per AGENTS.md.',
   },
   {
     id: 'shortcuts',
@@ -671,14 +671,12 @@ function SkillsSubagentsSection() {
     }
     addSkill(skill)
     if (activeProject) {
-      await window.api.skills.sync(dirPath, activeProject.repoPath)
       await window.api.skills.kvSave(activeProject.repoPath, skill).catch(() => {})
     }
   }
 
   const handleRemoveSkill = async (skill: SkillEntry) => {
     if (activeProject) {
-      await window.api.skills.remove(skill.name, activeProject.repoPath)
       await window.api.skills.kvRemove(activeProject.repoPath, skill.name).catch(() => {})
     }
     removeSkill(skill.id)
@@ -688,11 +686,6 @@ function SkillsSubagentsSection() {
     const newEnabled = !skill.enabled
     updateSkill(skill.id, { enabled: newEnabled })
     if (activeProject) {
-      if (newEnabled) {
-        await window.api.skills.sync(skill.sourcePath, activeProject.repoPath)
-      } else {
-        await window.api.skills.remove(skill.name, activeProject.repoPath)
-      }
       await window.api.skills.kvSave(activeProject.repoPath, { ...skill, enabled: newEnabled }).catch(() => {})
     }
   }
@@ -715,14 +708,12 @@ function SkillsSubagentsSection() {
     }
     addSubagent(subagent)
     if (activeProject) {
-      await window.api.subagents.sync(filePath, activeProject.repoPath)
       await window.api.subagents.kvSave(activeProject.repoPath, subagent).catch(() => {})
     }
   }
 
   const handleRemoveSubagent = async (subagent: SubagentEntry) => {
     if (activeProject) {
-      await window.api.subagents.remove(subagent.name, activeProject.repoPath)
       await window.api.subagents.kvRemove(activeProject.repoPath, subagent.name).catch(() => {})
     }
     removeSubagent(subagent.id)
@@ -732,11 +723,6 @@ function SkillsSubagentsSection() {
     const newEnabled = !subagent.enabled
     updateSubagent(subagent.id, { enabled: newEnabled })
     if (activeProject) {
-      if (newEnabled) {
-        await window.api.subagents.sync(subagent.sourcePath, activeProject.repoPath)
-      } else {
-        await window.api.subagents.remove(subagent.name, activeProject.repoPath)
-      }
       await window.api.subagents.kvSave(activeProject.repoPath, { ...subagent, enabled: newEnabled }).catch(() => {})
     }
   }
@@ -747,7 +733,7 @@ function SkillsSubagentsSection() {
 
       <div className={styles.subsectionLabel}>Skills</div>
       {settings.skills.length === 0 && (
-        <div className={styles.emptyHint}>No skills configured. Add a directory containing a SKILL.md file.</div>
+        <div className={styles.emptyHint}>No skills configured. Add a directory containing a SKILL.md file. Install into agent dirs locally — see AGENTS.md.</div>
       )}
       {settings.skills.map((skill) => (
         <div key={skill.id} className={styles.entryRow}>

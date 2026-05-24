@@ -13,6 +13,7 @@ desktop/.env.local
 # Upstream hunk-review skill (installed by scripts/install-hunk-skill.sh / bun run setup)
 desktop/.claude/skills/hunk-review/
 .cursor/skills/hunk-review
+.cursor/skills/conductor-canvas-cursor
 .gemini/skills/hunk-review
 .codex/
 .cursor/hooks.json

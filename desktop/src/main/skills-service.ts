@@ -1,4 +1,4 @@
-import { readFile, symlink, unlink, mkdir, lstat } from 'fs/promises'
+import { readFile } from 'fs/promises'
 import { join, basename } from 'path'
 import { getAgentFS } from './agentfs-service'
 
@@ -12,9 +12,6 @@ export interface SubagentInfo {
   description: string
   tools?: string
 }
-
-const AGENT_SKILL_DIRS = ['.claude/skills', '.cursor/skills', '.codex/skills', '.gemini/skills', '.opencode/skills']
-const AGENT_SUBAGENT_DIRS = ['.claude/agents', '.cursor/agents', '.codex/agents', '.gemini/agents', '.opencode/agents']
 
 function parseYamlFrontmatter(content: string): Record<string, string> {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
@@ -42,23 +39,6 @@ export class SkillsService {
       }
     } catch {
       return null
-    }
-  }
-
-  static async syncSkillToAgents(skillPath: string, projectPath: string): Promise<void> {
-    const skillName = basename(skillPath)
-    for (const dir of AGENT_SKILL_DIRS) {
-      const targetDir = join(projectPath, dir)
-      await mkdir(targetDir, { recursive: true })
-      const linkPath = join(targetDir, skillName)
-      await safeSymlink(skillPath, linkPath)
-    }
-  }
-
-  static async removeSkillFromAgents(skillName: string, projectPath: string): Promise<void> {
-    for (const dir of AGENT_SKILL_DIRS) {
-      const linkPath = join(projectPath, dir, skillName)
-      await safeUnlink(linkPath)
     }
   }
 
@@ -91,25 +71,6 @@ export class SkillsService {
       }
     } catch {
       return null
-    }
-  }
-
-  static async syncSubagentToAgents(subagentPath: string, projectPath: string): Promise<void> {
-    const fileName = basename(subagentPath)
-    for (const dir of AGENT_SUBAGENT_DIRS) {
-      const targetDir = join(projectPath, dir)
-      await mkdir(targetDir, { recursive: true })
-      const linkPath = join(targetDir, fileName)
-      await safeSymlink(subagentPath, linkPath)
-    }
-  }
-
-  static async removeSubagentFromAgents(subagentName: string, projectPath: string): Promise<void> {
-    // subagentName should include .md extension
-    const fileName = subagentName.endsWith('.md') ? subagentName : `${subagentName}.md`
-    for (const dir of AGENT_SUBAGENT_DIRS) {
-      const linkPath = join(projectPath, dir, fileName)
-      await safeUnlink(linkPath)
     }
   }
 
@@ -157,25 +118,5 @@ export class SkillsService {
       const entries = await agent.kv.list('subagent:')
       return entries.map((e) => e.value)
     } catch { return [] }
-  }
-}
-
-async function safeSymlink(target: string, linkPath: string): Promise<void> {
-  try {
-    // Remove existing symlink if present
-    const stat = await lstat(linkPath).catch(() => null)
-    if (stat) await unlink(linkPath)
-    await symlink(target, linkPath)
-  } catch {
-    // Ignore errors (e.g. permission issues)
-  }
-}
-
-async function safeUnlink(linkPath: string): Promise<void> {
-  try {
-    const stat = await lstat(linkPath).catch(() => null)
-    if (stat?.isSymbolicLink()) await unlink(linkPath)
-  } catch {
-    // Ignore
   }
 }
