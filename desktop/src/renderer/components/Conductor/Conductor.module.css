@@ -3187,6 +3187,7 @@
 }
 
 .conductorSlashMenu,
+.conductorHashMenu,
 .conductorPersonalityMenu,
 .conductorSlashNamePrompt {
   border: 1px solid var(--border-subtle);
@@ -3217,11 +3218,13 @@
 }
 
 .conductorSlashMenu::-webkit-scrollbar,
+.conductorHashMenu::-webkit-scrollbar,
 .conductorPersonalityMenu::-webkit-scrollbar {
   width: 4px;
 }
 
 .conductorSlashMenu::-webkit-scrollbar-thumb,
+.conductorHashMenu::-webkit-scrollbar-thumb,
 .conductorPersonalityMenu::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: color-mix(in srgb, var(--text-secondary) 35%, transparent);
@@ -3247,6 +3250,7 @@
 }
 
 .conductorSlashMenuItem,
+.conductorHashMenuItem,
 .conductorPersonalityMenuItem {
   display: flex;
   align-items: center;
@@ -3266,6 +3270,7 @@
 }
 
 .conductorSlashMenuItem[data-active='true'],
+.conductorHashMenuItem[data-active='true'],
 .conductorPersonalityMenuItem[data-active='true'] {
   background: color-mix(in srgb, var(--surface-2) 88%, var(--surface-1));
 }
@@ -3343,11 +3348,13 @@
 
 @media (hover: hover) and (pointer: fine) {
   .conductorSlashMenuItem,
+  .conductorHashMenuItem,
   .conductorPersonalityMenuItem {
     transition: background-color 120ms ease;
   }
 
   .conductorSlashMenuItem:hover,
+  .conductorHashMenuItem:hover,
   .conductorPersonalityMenuItem:hover {
     background: color-mix(in srgb, var(--surface-2) 80%, transparent);
   }
@@ -3355,6 +3362,7 @@
 
 .composerMenus,
 .conductorSlashMenuItem:active,
+.conductorHashMenuItem:active,
 .conductorPersonalityMenuItem:active {
   --conductor-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
@@ -3393,6 +3401,52 @@
   text-overflow: ellipsis;
   min-width: 0;
   flex: 1;
+}
+
+.conductorHashMenuItem {
+  gap: 8px;
+}
+
+.conductorHashMenuIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: #3fb950;
+}
+
+.conductorHashMenuToken {
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.conductorHashMenuTitle {
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conductorHashMenuBranch {
+  flex-shrink: 0;
+  max-width: 42%;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conductorHashMenuStatus {
+  padding: 8px 14px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-secondary);
 }
 
 .conductorPersonalityLabel {
@@ -3586,6 +3640,7 @@
   }
 
   .conductorSlashMenu,
+  .conductorHashMenu,
   .conductorPersonalityMenu {
     opacity: 0;
     transform: translateY(4px) scale(0.985);
@@ -3602,8 +3657,10 @@
   .conductorMcpBanner,
   .conductorEmbeddedTerminal,
   .conductorSlashMenu,
+  .conductorHashMenu,
   .conductorPersonalityMenu,
   .conductorSlashMenuItem,
+  .conductorHashMenuItem,
   .conductorPersonalityMenuItem {
     transition: none;
     animation: none;

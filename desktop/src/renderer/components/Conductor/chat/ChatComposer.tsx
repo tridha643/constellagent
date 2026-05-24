@@ -11,8 +11,10 @@ import { FastToggle } from './FastToggle'
 import { ComposerSendIcon, ComposerStopIcon, PlanMapIcon } from './ConductorIcons'
 import { ConductorMessageQueue } from './ConductorMessageQueue'
 import { ConductorPersonalityMenu } from './ConductorPersonalityMenu'
+import { ConductorHashMenu } from './ConductorHashMenu'
 import { ConductorSlashMenu } from './ConductorSlashMenu'
 import { ConductorSlashNamePrompt } from './ConductorSlashNamePrompt'
+import { useConductorComposerHash } from './use-conductor-composer-hash'
 import { useConductorComposerSlash } from './use-conductor-composer-slash'
 import {
   ContextUsageHover,
@@ -51,6 +53,7 @@ export function ChatComposer({
   composerRef,
   sessionId,
   workspacePath,
+  repoPath,
   onSlashAction,
   onPersonalitySelect,
   onNamePromptConfirm,
@@ -77,6 +80,7 @@ export function ChatComposer({
   composerRef?: React.RefObject<ChatComposerHandle | null>
   sessionId: string | null
   workspacePath: string
+  repoPath: string
   onSlashAction: (command: ConductorSlashCommand) => void
   onPersonalitySelect: (value: string) => void
   onNamePromptConfirm: (command: ConductorSlashCommand, value: string) => void
@@ -118,6 +122,23 @@ export function ChatComposer({
     onNamePromptConfirm,
   })
 
+  const {
+    showHashMenu,
+    filteredPrs,
+    selectedPr,
+    loading: hashLoading,
+    fetchError: hashFetchError,
+    onSelectHashMention,
+    onComposerSelectionChange: onHashSelectionChange,
+    wrapComposerKeyDown: wrapHashKeyDown,
+    dismissHashUi,
+  } = useConductorComposerHash({
+    text,
+    setText,
+    composerRef: textareaRef,
+    repoPath,
+  })
+
   const modelLabel = `${provider} · ${model}`
   const showEffort = hasEffortVariants(model, provider)
   const showFast = hasFastVariant(model, provider)
@@ -138,7 +159,9 @@ export function ChatComposer({
     plan ? styles.composerInnerPlan : '',
     reasoningActive ? styles.composerInnerReasoning : '',
     dragActive ? styles.composerInnerDragActive : '',
-    showSlashMenu || showPersonalityMenu || showNamePromptMenu ? styles.composerInnerMenuNest : '',
+    showSlashMenu || showPersonalityMenu || showNamePromptMenu || showHashMenu
+      ? styles.composerInnerMenuNest
+      : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -303,9 +326,17 @@ export function ChatComposer({
   return (
     <div className={styles.composer}>
       <div className={styles.composerStack}>
-        {showPersonalityMenu || showSlashMenu || showNamePromptMenu ? (
+        {showHashMenu || showPersonalityMenu || showSlashMenu || showNamePromptMenu ? (
           <div className={styles.composerMenus}>
-            {showPersonalityMenu ? (
+            {showHashMenu ? (
+              <ConductorHashMenu
+                prs={filteredPrs}
+                selectedPr={selectedPr}
+                loading={hashLoading}
+                error={hashFetchError}
+                onSelect={onSelectHashMention}
+              />
+            ) : showPersonalityMenu ? (
               <ConductorPersonalityMenu
                 selectedIndex={optionIndex}
                 onSelect={onSelectPersonalityOption}
@@ -385,21 +416,32 @@ export function ChatComposer({
             onBlur={() => setFocused(false)}
             onChange={(e) => {
               setText(e.target.value)
-              onComposerSelectionChange(e.target.selectionStart ?? e.target.value.length)
+              const pos = e.target.selectionStart ?? e.target.value.length
+              onComposerSelectionChange(pos)
+              onHashSelectionChange(pos)
             }}
-            onClick={(e) =>
-              onComposerSelectionChange(e.currentTarget.selectionStart ?? text.length)
-            }
-            onKeyUp={(e) =>
-              onComposerSelectionChange(e.currentTarget.selectionStart ?? text.length)
-            }
-            onSelect={(e) =>
-              onComposerSelectionChange(e.currentTarget.selectionStart ?? text.length)
-            }
+            onClick={(e) => {
+              const pos = e.currentTarget.selectionStart ?? text.length
+              onComposerSelectionChange(pos)
+              onHashSelectionChange(pos)
+            }}
+            onKeyUp={(e) => {
+              const pos = e.currentTarget.selectionStart ?? text.length
+              onComposerSelectionChange(pos)
+              onHashSelectionChange(pos)
+            }}
+            onSelect={(e) => {
+              const pos = e.currentTarget.selectionStart ?? text.length
+              onComposerSelectionChange(pos)
+              onHashSelectionChange(pos)
+            }}
             {...dragHandlers}
-            onKeyDown={wrapComposerKeyDown((e) => {
+            onKeyDown={wrapHashKeyDown(wrapComposerKeyDown((e) => {
             if (e.key === 'Escape') {
-              if (showSlashMenu || showPersonalityMenu || showNamePromptMenu) {
+              if (showHashMenu) {
+                e.preventDefault()
+                dismissHashUi()
+              } else if (showSlashMenu || showPersonalityMenu || showNamePromptMenu) {
                 e.preventDefault()
                 dismissSlashUi()
               } else if (dragActive) {
@@ -417,7 +459,14 @@ export function ChatComposer({
                 e.preventDefault()
                 onCancel()
               }
-            } else if (e.key === 'Tab' && e.shiftKey && !showSlashMenu && !showPersonalityMenu && !showNamePromptMenu) {
+            } else if (
+              e.key === 'Tab' &&
+              e.shiftKey &&
+              !showHashMenu &&
+              !showSlashMenu &&
+              !showPersonalityMenu &&
+              !showNamePromptMenu
+            ) {
               e.preventDefault()
               onSetPlan(!plan)
             } else if (e.key === 'Enter' && !e.shiftKey) {
@@ -431,7 +480,7 @@ export function ChatComposer({
               e.preventDefault()
               onHistoryUp()
             }
-          })}
+          }))}
           />
           {dragActive ? (
             <div className={styles.composerDropIndicator} aria-hidden>
