@@ -1,0 +1,29 @@
+{
+  "name": "@constellagent/mobile-protocol",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "license": "ISC",
+  "description": "Shared protocol contracts for Constellagent mobile-over-Tailscale access.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bunx tsc -p tsconfig.json",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+    "test": "bun test src/index.test.ts"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.4",
+    "typescript": "^5.9.3"
+  }
+}

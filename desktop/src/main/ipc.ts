@@ -49,6 +49,7 @@ import { CommitMessageService } from './commit-message-service'
 import { LinearDraftService } from './linear-draft-service'
 import { requestAppRelaunch } from './app-relaunch'
 import { measureMainAsync } from './perf'
+import { getMobileLocalServer, stopMobileLocalServer } from './mobile-service'
 import {
   deleteProjectStartupCommands,
   getProjectStartupCommands,
@@ -1653,6 +1654,10 @@ export function registerIpcHandlers(): void {
     return getComposioWebhookStatus()
   })
 
+  ipcMain.handle(IPC.MOBILE_GET_STATUS, async () => {
+    return getMobileLocalServer().getStatus()
+  })
+
   ipcMain.handle(IPC.COMPOSIO_SUGGEST_GITHUB_CONNECTED_ACCOUNT, async () => {
     const key = composioWebhookService.getSettings().apiKey.trim()
     const connectedAccountId = await composioSuggestGithubConnectedAccountId(key)
@@ -2038,6 +2043,7 @@ export function cleanupAll(): void {
   FileService.disposeQuickOpenSearch()
   LinearFffService.disposeAll()
   getAgentChatHost().dispose()
+  void stopMobileLocalServer()
   guestTabSwitchListeners.clear()
   closeAllAgentFS().catch(() => {})
 }

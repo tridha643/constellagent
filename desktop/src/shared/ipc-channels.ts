@@ -289,6 +289,9 @@ export const IPC = {
   /** Composio webhooks + trigger API (main process). */
   COMPOSIO_WEBHOOK_STATUS: 'composio:webhook-status',
   COMPOSIO_WEBHOOK_APPLY_SETTINGS: 'composio:webhook-apply-settings',
+
+  // Mobile over Tailscale
+  MOBILE_GET_STATUS: 'mobile:get-status',
   COMPOSIO_SUBSCRIBE_WEBHOOK: 'composio:subscribe-webhook',
   COMPOSIO_NGROK_STATUS: 'composio:ngrok-status',
   COMPOSIO_NGROK_START: 'composio:ngrok-start',

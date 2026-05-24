@@ -35,6 +35,7 @@ import {
   type AgentTurnContext,
 } from './agent-driver'
 import type { ConductorImageAttachment } from '../../shared/conductor-attachments'
+import type { TranscriptMessage } from '../../shared/pi/pi-desktop-state'
 import { codexConductorThreadPermissions } from './conductor-sdk-cli-permissions'
 import { isCollabToolCallItem } from '../../shared/codex-collab-types'
 import {
@@ -119,6 +120,13 @@ export function buildCodexUserInput(prompt: string, imagePaths: readonly string[
     { type: 'text', text: prompt },
     ...imagePaths.map((path) => ({ type: 'local_image' as const, path })),
   ]
+}
+
+export function shouldSeedFreshCodexThread(
+  forceTranscriptFallback: boolean,
+  previousTranscript?: readonly TranscriptMessage[],
+): boolean {
+  return forceTranscriptFallback || Boolean(previousTranscript?.length)
 }
 
 export function applyCodexToolHook(
@@ -440,11 +448,7 @@ export class CodexDriver implements AgentDriver {
       this.sessions.set(key, state)
     } else {
       const thread = this.getCodex(webSocketsEnabled).startThread(options)
-      const hasPrior = Boolean(ctx.previousTranscript?.length)
-      seedTranscript =
-        forceTranscriptFallback ||
-        (configChanged && hasPrior) ||
-        Boolean(recovery?.preferTranscriptFallback && hasPrior)
+      seedTranscript = shouldSeedFreshCodexThread(forceTranscriptFallback, ctx.previousTranscript)
       this.recovery.delete(key)
       state = {
         thread,

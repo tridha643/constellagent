@@ -15,6 +15,7 @@ import { composioWebhookService } from './composio-webhook-service'
 import { applyConductorAuthFromPersistedState } from './conductor-auth'
 import { applyConductorSettingsFromPersistedState } from './conductor-settings'
 import { isBenignConnectTransportError } from './agents/cursor-driver'
+import { startMobileLocalServer } from './mobile-service'
 
 process.on('unhandledRejection', (reason) => {
   if (isBenignConnectTransportError(reason)) return
@@ -237,6 +238,9 @@ app.whenReady().then(() => {
   }
   notificationWatcher.start()
   getGithubPollService().start()
+  startMobileLocalServer().catch((err) => {
+    console.warn('[mobile] local server did not start', err)
+  })
   createWindow()
 
   // Auto-install CLI (fire-and-forget, don't block startup)
