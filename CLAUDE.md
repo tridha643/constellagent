@@ -6,11 +6,17 @@ Shared instructions for all coding agents — session context, Cachebro, AgentFS
 
 ## Constellagent monorepo (this repository)
 
+Bun workspaces (`["packages/*", "desktop"]`). For a file-by-file service map of the desktop app, see **`desktop/CLAUDE.md`**.
+
 | Area | Path | Notes |
 |------|------|-------|
-| Desktop app | `desktop/` | Electron; `bun run dev` from repo root |
+| Desktop app (primary) | `desktop/` | Electron; `bun run dev` from repo root. Deep architecture: `desktop/CLAUDE.md` |
 | iOS companion | `ios/Constellagent/` | SwiftUI; see `ios/Constellagent/README.md` |
-| Mobile wire protocol | `packages/constellagent-mobile-protocol/` | Zod schemas; built on `bun install` |
+| Mobile wire protocol | `packages/constellagent-mobile-protocol/` | `@constellagent/mobile-protocol`; Zod schemas; built on `bun install` |
+| Review annotations | `packages/review-annotations/` | `@tridha643/review-annotations`; ships the `constell-annotate` CLI |
+| Pi GUI packages | `packages/pi-gui-{session-driver,catalogs,pi-sdk-driver}/` | `@pi-gui/*` session driver + catalogs |
+| Pi CLI extensions | `packages/pi-constell/`, `packages/pi-inline-skill-autocomplete/` | plan mode + inline skill autocomplete for `pi` |
+| Landing page | `landing-page/` | static marketing site (`bunx serve landing-page`) |
 | Desktop mobile bridge | `desktop/src/main/mobile-*.ts` | Tailscale-local WS + E2EE; Settings → Mobile |
 
 The iPhone app talks to the desktop bridge over secure WebSocket. Shared contracts live in `@constellagent/mobile-protocol`; Swift adapts via `ConstellagentService+ProtocolMapping.swift`. When editing RPC shapes, keep TypeScript, the desktop router (`mobile-method-router.ts`), and Swift mapping in sync.
@@ -84,10 +90,10 @@ constell-annotate add --file src/foo.ts --new-line 42 --summary "Why" --author "
 
 **Key point:** By default, `--new-line` must be inside a `git diff HEAD` hunk's new-side range. Use `--force` to skip validation when needed.
 
-## Session & activity context (optional)
+## Session & activity context
 
-In repositories that still ship workspace context files, read **`.constellagent/context/sliding-window.md`**, **`.constellagent/context/agent-context.md`**, and **`.constellagent/sessions/`** when present. Constellagent may store AgentFS-backed data under **`.git/`** instead of `.constellagent/` — see **`AGENTS.md`**.
+This repo does **not** create a `.constellagent/` directory for context capture or session history. AgentFS/libSQL data that still exists lives under the repo's **`.git/`** (DB table in `desktop/CLAUDE.md`). Only legacy repos that still ship `.constellagent/context/*.md` or `.constellagent/sessions/` files should have them read when present.
 
-## Cachebro (MCP — auto-configured)
+## Cachebro (MCP — optional, per-machine)
 
-Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) instead of raw file reads to save tokens.
+`cachebro` is a `desktop/` dependency (CLI MCP server) but is **not** configured by any committed file in this repo. Configure it once per machine with `npx cachebro init` (writes your global `~/.claude.json` / Cursor MCP config). When its tools are available, prefer the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) over raw file reads to save tokens.
