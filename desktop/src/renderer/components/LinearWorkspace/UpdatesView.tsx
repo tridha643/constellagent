@@ -97,7 +97,34 @@ export function UpdatesView({
               Pick a project above to see its update history.
             </div>
           ) : updatesLoading && !hasAnyUpdates ? (
-            <div className={styles.empty}>Loading updates…</div>
+            <div
+              className={styles.skeletonList}
+              role="status"
+              aria-busy="true"
+              aria-label="Loading"
+            >
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className={styles.skeletonRow}>
+                  <div
+                    className={`shimmer-block ${styles.skeletonAvatar}`}
+                  />
+                  <div className={styles.skeletonBody}>
+                    <div
+                      className="shimmer-block"
+                      style={{ width: '38%', height: 11 }}
+                    />
+                    <div
+                      className="shimmer-block"
+                      style={{ width: '90%', height: 10 }}
+                    />
+                    <div
+                      className="shimmer-block"
+                      style={{ width: '64%', height: 10 }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : updatesError ? (
             <div className={styles.empty} title={updatesError}>
               {updatesError}

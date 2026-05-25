@@ -9,6 +9,7 @@ import {
   type CloneRepoStage,
 } from '../../../shared/clone-repo'
 import { useExitAnimation } from '../../hooks/useExitAnimation'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { ADD_PROJECT_DIALOG_SEGMENT, type AddProjectDialogSegmentDetail } from '../../utils/add-project-dialog-segment'
 import styles from './AddProjectDialog.module.css'
 
@@ -95,6 +96,10 @@ export function AddProjectDialog({ onClose }: Props) {
   const suggestRegionRef = useRef<HTMLDivElement>(null)
   const suggestListRef = useRef<HTMLUListElement>(null)
   const urlInputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  // Trap Tab focus inside the dialog so keyboard nav can't reach the obscured app.
+  useFocusTrap(dialogRef, shouldRender)
 
   // Debounce URL validation to avoid flashing errors on every keystroke.
   useEffect(() => {
@@ -489,6 +494,7 @@ export function AddProjectDialog({ onClose }: Props) {
       onClick={animateExit}
     >
       <div
+        ref={dialogRef}
         className={`${styles.dialog} constellagent-dialog-body ${exiting ? 'constellagent-dialog-body--exiting' : ''}`}
         data-constellagent-add-project-dialog=""
         onClick={(e) => e.stopPropagation()}

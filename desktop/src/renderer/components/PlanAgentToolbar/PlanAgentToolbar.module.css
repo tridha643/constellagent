@@ -20,7 +20,8 @@
   transition:
     border-color var(--motion-fast),
     color var(--motion-fast),
-    background-color var(--motion-fast);
+    background-color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
 .harnessSelect:focus {
@@ -44,7 +45,8 @@
   transition:
     border-color var(--motion-fast),
     color var(--motion-fast),
-    background-color var(--motion-fast);
+    background-color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
 .agentSelect:focus {
@@ -54,12 +56,31 @@
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 25%, transparent);
 }
 
+.harnessSelect:active,
+.agentSelect:active {
+  transform: scale(0.97);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .harnessSelect:hover,
   .agentSelect:hover {
     border-color: color-mix(in srgb, var(--text-primary) 14%, transparent);
     color: var(--text-primary);
     outline: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harnessSelect,
+  .agentSelect {
+    transition:
+      border-color var(--motion-fast),
+      color var(--motion-fast),
+      background-color var(--motion-fast);
+  }
+  .harnessSelect:active,
+  .agentSelect:active {
+    transform: none;
   }
 }
 

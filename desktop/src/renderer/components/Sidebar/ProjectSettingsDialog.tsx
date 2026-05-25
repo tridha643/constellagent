@@ -1,6 +1,7 @@
 import { useState, useCallback, useLayoutEffect, useRef, useEffect } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useExitAnimation } from '../../hooks/useExitAnimation'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 import type {
   Project,
   PrLinkProvider,
@@ -162,6 +163,10 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
   const { shouldRender, animating } = useExitAnimation(open, EXIT_MS)
   const exiting = animating === 'exit'
   const pendingRef = useRef<(() => void) | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  // Trap Tab focus inside the dialog so keyboard nav can't reach the obscured app.
+  useFocusTrap(dialogRef, shouldRender)
 
   const beginExit = useCallback((cb: () => void) => {
     if (exiting) return
@@ -355,6 +360,7 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
       onClick={handleCancel}
     >
       <div
+        ref={dialogRef}
         className={`${styles.dialog} constellagent-dialog-body ${exiting ? 'constellagent-dialog-body--exiting' : ''}`}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}

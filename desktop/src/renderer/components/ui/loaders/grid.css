@@ -28,6 +28,13 @@
   will-change: auto;
 }
 
+/* Same-element case: each loader component's root IS the .loader element and
+   carries data-paused directly (the ancestor selector above can't match it). */
+.loader[data-paused='true'] .dot {
+  animation-play-state: paused;
+  will-change: auto;
+}
+
 /* Pattern masking — applies to any [data-pattern] wrapper around a loader.
    Hides dots not in the active pattern's index set. Default 'full' has no
    rule (existing behavior preserved). Indices below are 1-based nth-child

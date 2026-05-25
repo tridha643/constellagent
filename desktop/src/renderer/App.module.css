@@ -90,7 +90,7 @@
 .welcome > * {
   opacity: 0;
   transform: translateY(4px);
-  animation: welcomeItemEnter 320ms var(--ease-out) forwards;
+  animation: welcomeItemEnter 300ms var(--ease-out) forwards;
 }
 
 .welcome > *:nth-child(1) {

@@ -37,7 +37,12 @@
   text-transform: uppercase;
   cursor: pointer;
   border-radius: var(--radius-md);
-  transition: color 140ms var(--ease-out), background-color 140ms var(--ease-out);
+  transition: color 140ms var(--ease-out), background-color 140ms var(--ease-out),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.toggle:active {
+  transform: scale(0.97);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -66,6 +71,10 @@
 @media (prefers-reduced-motion: reduce) {
   .caret {
     transition: none;
+  }
+
+  .toggle:active {
+    transform: none;
   }
 }
 

@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { Project } from "../../store/types";
 import { useExitAnimation } from "../../hooks/useExitAnimation";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import styles from "./WorkspaceDialog.module.css";
 
 /** Match `WorkspaceDialog` / `shared-dialog-motion.css` exit timing */
@@ -17,6 +18,10 @@ export function FolderDialog({ project, onConfirm, onCancel }: Props) {
   const [open, setOpen] = useState(true);
   const { shouldRender, animating } = useExitAnimation(open, EXIT_MS);
   const exiting = animating === "exit";
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Trap Tab focus inside the dialog so keyboard nav can't reach the obscured app.
+  useFocusTrap(dialogRef, shouldRender);
 
   const animateExit = useCallback(() => {
     if (exiting) return;
@@ -62,6 +67,7 @@ export function FolderDialog({ project, onConfirm, onCancel }: Props) {
       onClick={animateExit}
     >
       <div
+        ref={dialogRef}
         className={`${styles.dialog} constellagent-dialog-body ${exiting ? "constellagent-dialog-body--exiting" : ""}`}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}

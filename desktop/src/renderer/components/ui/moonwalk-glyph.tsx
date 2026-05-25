@@ -2,6 +2,7 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useOffscreenPause } from "@/components/ui/loaders/useOffscreenPause";
 
 const circleA =
   "M 12 8 C 14.21 8 16 9.79 16 12 C 16 14.21 14.21 16 12 16 C 9.79 16 8 14.21 8 12 C 8 9.79 9.79 8 12 8 Z";
@@ -22,6 +23,10 @@ export interface MoonwalkGlyphProps {
  */
 export function MoonwalkGlyph({ className, size = 20 }: MoonwalkGlyphProps) {
   const reduceMotion = useReducedMotion();
+  // Pause the infinite path-morph when the glyph is scrolled offscreen or the
+  // window is backgrounded — an always-running compositor animation there is
+  // pure wasted GPU. We reuse the static reduced-motion path for that state.
+  const { ref, paused } = useOffscreenPause<SVGSVGElement>();
 
   const svgProps = {
     "aria-hidden": true as const,
@@ -36,16 +41,20 @@ export function MoonwalkGlyph({ className, size = 20 }: MoonwalkGlyphProps) {
     className: cn("text-muted-foreground shrink-0", className),
   };
 
-  if (reduceMotion) {
+  // Static glyph when motion is disabled OR the element isn't visible. The ref
+  // stays attached so the IntersectionObserver/visibilitychange in
+  // useOffscreenPause can flip `paused` back off and resume animating once the
+  // glyph is on-screen again.
+  if (reduceMotion || paused) {
     return (
-      <svg {...svgProps}>
+      <svg ref={ref} {...svgProps}>
         <path d={infinity} />
       </svg>
     );
   }
 
   return (
-    <motion.svg {...svgProps}>
+    <motion.svg ref={ref} {...svgProps}>
       <motion.path
         animate={{
           d: [circleA, infinity, circleB, infinity, circleA],

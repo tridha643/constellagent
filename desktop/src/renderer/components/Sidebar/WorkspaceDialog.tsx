@@ -3,6 +3,7 @@ import type { Project } from '../../store/types'
 import { parsePrUrl, parsePrNumber } from '../../../shared/pr-url'
 import type { ResolvedPrInfo } from '../../../shared/github-types'
 import { useExitAnimation } from '../../hooks/useExitAnimation'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 import styles from './WorkspaceDialog.module.css'
 
 /** Match exit keyframes in WorkspaceDialog.module.css */
@@ -69,9 +70,13 @@ export function WorkspaceDialog({
   const [basePickerOpen, setBasePickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const basePickerRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(true)
   const { shouldRender, animating } = useExitAnimation(open, EXIT_MS)
   const exiting = animating === 'exit'
+
+  // Trap Tab focus inside the dialog so keyboard nav can't reach the obscured app.
+  useFocusTrap(dialogRef, shouldRender)
 
   useEffect(() => {
     let cancelled = false
@@ -242,6 +247,7 @@ export function WorkspaceDialog({
       onClick={animateExit}
     >
       <div
+        ref={dialogRef}
         className={`${styles.dialog} constellagent-dialog-body ${exiting ? 'constellagent-dialog-body--exiting' : ''}`}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}

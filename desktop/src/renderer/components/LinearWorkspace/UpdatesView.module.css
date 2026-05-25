@@ -121,7 +121,12 @@
   color: var(--text-tertiary);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out);
+  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.searchClear:active {
+  transform: scale(0.97);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -150,4 +155,41 @@
   color: var(--text-tertiary);
   font-family: var(--font-ui);
   font-size: 13px;
+}
+
+.skeletonList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) 0;
+}
+
+.skeletonRow {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+  border: 1px solid var(--panel-border-inner, var(--border-subtle));
+}
+
+.skeletonAvatar {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
+.skeletonBody {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .searchClear:active {
+    transform: none;
+  }
 }

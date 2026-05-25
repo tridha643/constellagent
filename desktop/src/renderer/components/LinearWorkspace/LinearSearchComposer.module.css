@@ -330,8 +330,13 @@
   font-size: 12px;
   font-family: var(--font-ui);
   cursor: pointer;
-  transition: background-color 120ms ease;
+  transition: background-color 120ms ease,
+    transform var(--duration-micro) var(--ease-press);
   animation: staggerItem 160ms var(--ease-out) both;
+}
+
+.popoverItem:active {
+  transform: scale(0.97);
 }
 
 /* Stagger the first 8 items so the popover feels cascaded rather than instantaneous. */
@@ -351,6 +356,10 @@
 @media (prefers-reduced-motion: reduce) {
   .popoverItem {
     animation: none;
+  }
+
+  .popoverItem:active {
+    transform: none;
   }
 }
 

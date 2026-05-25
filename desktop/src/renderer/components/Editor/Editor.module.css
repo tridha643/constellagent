@@ -555,7 +555,9 @@
   top: 0;
   z-index: 2;
   cursor: pointer;
-  transition: background var(--motion-fast);
+  transition:
+    background var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
@@ -563,6 +565,19 @@
 @media (hover: hover) and (pointer: fine) {
   .fileHeader:hover {
     background: var(--surface-3);
+  }
+}
+
+.fileHeader:active {
+  transform: scale(0.99);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fileHeader {
+    transition: background var(--motion-fast);
+  }
+  .fileHeader:active {
+    transform: none;
   }
 }
 
@@ -587,7 +602,7 @@
 }
 
 .collapsedFileHeader:active {
-  transform: scale(0.997);
+  transform: scale(0.98);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -665,7 +680,13 @@
   color: var(--text-tertiary);
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: color var(--duration-fast) var(--ease-out);
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.viewedLabel:active {
+  transform: scale(0.97);
 }
 
 .viewedLabelCollapsed {
@@ -702,6 +723,12 @@
 
 @media (prefers-reduced-motion: reduce) {
   .viewedInput:active {
+    transform: none;
+  }
+  .viewedLabel {
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+  .viewedLabel:active {
     transform: none;
   }
   .fileStripItemViewed {

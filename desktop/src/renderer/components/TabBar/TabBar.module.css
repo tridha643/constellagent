@@ -119,6 +119,12 @@
   background: color-mix(in srgb, var(--text-primary) 7%, transparent);
 }
 
+/* Keyboard focus ring only (not mouse) — inset so it sits inside the pill. */
+.tab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-blue) 55%, transparent);
+  outline-offset: -2px;
+}
+
 /* ── Tab Icon ── */
 
 .tabIcon {

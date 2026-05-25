@@ -310,7 +310,7 @@ export function TabBar() {
       className={`${styles.tabBar} ${!leftSidePanelOpen ? styles.tabBarCollapsed : ''} ${panelDockDrag ? styles.tabBarPanelDocking : ''}`}
     >
       <SharedFileIconDefs appearanceThemeId={settings.appearanceThemeId} />
-      <div className={styles.tabList}>
+      <div className={styles.tabList} role="tablist">
         {tabs.map((tab) => {
           const { icon, className } = TAB_ICONS[tab.type]
           const isSaved = tab.id === lastSavedTabId
@@ -325,6 +325,10 @@ export function TabBar() {
           return (
             <div
               key={tab.id}
+              role="tab"
+              aria-selected={tab.id === activeTabId}
+              // Roving tabindex: only the active tab is in the Tab order; arrow/click move focus.
+              tabIndex={tab.id === activeTabId ? 0 : -1}
               className={`${styles.tab} ${tab.id === activeTabId ? styles.active : ''} ${isDeleted ? styles.deleted : ''} ${draggingTabId === tab.id ? styles.tabDragging : ''} ${dragOverTabId === tab.id && draggingTabIdRef.current !== tab.id ? styles.tabDragOver : ''}`}
               onClick={(e) => {
                 if ((e.metaKey || e.ctrlKey) && (tab.type === 'terminal' || tab.type === 'file' || tab.type === 'markdownPreview')) {
@@ -334,6 +338,15 @@ export function TabBar() {
                   return
                 }
                 setActiveTab(tab.id)
+              }}
+              onKeyDown={(e) => {
+                // Activate on Enter/Space like a native tab. Ignore key events that
+                // bubbled up from the inner close button so it keeps its own behavior.
+                if (e.target !== e.currentTarget) return
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setActiveTab(tab.id)
+                }
               }}
               draggable
               onDragStart={(e) => {

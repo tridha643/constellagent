@@ -186,10 +186,16 @@
   border-radius: 4px;
   cursor: pointer;
   background: transparent;
+  transition: transform var(--duration-micro) var(--ease-press);
 }
 
 .prosemark-chat .cm-editor .cm-checkbox:hover {
   border-color: var(--text-secondary);
+}
+
+.prosemark-chat .cm-editor .cm-checkbox:active {
+  /* Compose with the resting vertical-centering translate */
+  transform: translateY(-50%) scale(0.97);
 }
 
 .prosemark-chat .cm-editor .cm-checkbox:checked {
@@ -533,11 +539,16 @@
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
+  transition: transform var(--duration-micro) var(--ease-press);
 }
 
 .prosemark-chat .cm-editor .cm-file-path-list-copy:hover {
   color: var(--text-primary);
   border-color: color-mix(in srgb, var(--accent-blue, #7eb8b8) 35%, var(--border-subtle));
+}
+
+.prosemark-chat .cm-editor .cm-file-path-list-copy:active {
+  transform: scale(0.97);
 }
 
 .prosemark-chat .cm-editor .cm-file-path-list-rows {
@@ -564,10 +575,15 @@
   line-height: 1.35;
   text-align: left;
   cursor: pointer;
+  transition: transform var(--duration-micro) var(--ease-press);
 }
 
 .prosemark-chat .cm-editor .cm-file-path-list-row:hover:not(:disabled) {
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+}
+
+.prosemark-chat .cm-editor .cm-file-path-list-row:active:not(:disabled) {
+  transform: scale(0.99);
 }
 
 .prosemark-chat .cm-editor .cm-file-path-list-row:disabled {
@@ -594,6 +610,21 @@
   }
 
   .prosemark-chat .cm-editor .cm-file-chip:active {
+    transform: none;
+  }
+
+  .prosemark-chat .cm-editor .cm-checkbox,
+  .prosemark-chat .cm-editor .cm-file-path-list-copy,
+  .prosemark-chat .cm-editor .cm-file-path-list-row {
+    transition: none;
+  }
+
+  .prosemark-chat .cm-editor .cm-checkbox:active {
+    transform: translateY(-50%);
+  }
+
+  .prosemark-chat .cm-editor .cm-file-path-list-copy:active,
+  .prosemark-chat .cm-editor .cm-file-path-list-row:active:not(:disabled) {
     transform: none;
   }
 }

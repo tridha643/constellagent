@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useAppStore } from '../../store/app-store'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 import {
   relativePathInWorktree,
   pathsEqualOrAlias,
@@ -182,10 +183,14 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
   const [worktreeFilter, setWorktreeFilter] = useState<WorktreeFilterKey>('all')
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const requestIdRef = useRef(0)
   const resolvedQueryRef = useRef('')
   const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
   const closePlanPalette = useAppStore((s) => s.closePlanPalette)
+
+  // Trap Tab focus inside the palette so keyboard nav can't reach the obscured app.
+  useFocusTrap(panelRef)
 
   const pathsToScan = useMemo(() => {
     const raw = projectWorktrees.length > 0 ? projectWorktrees.map((w) => w.path) : [worktreePath]
@@ -332,7 +337,7 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
 
   return (
     <div className={qoStyles.overlay} onClick={closePlanPalette}>
-      <div className={`${qoStyles.panel} ${styles.planPanel}`} onClick={(e) => e.stopPropagation()}>
+      <div className={`${qoStyles.panel} ${styles.planPanel}`} ref={panelRef} onClick={(e) => e.stopPropagation()}>
         <div className={qoStyles.inputWrap}>
           <input
             ref={inputRef}

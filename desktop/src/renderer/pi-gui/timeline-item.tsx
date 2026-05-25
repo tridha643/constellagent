@@ -39,6 +39,12 @@ function TimelineToolMoonwalkHeader({
       return;
     }
     const interval = setInterval(() => {
+      // Don't advance the mood label while the window is backgrounded — it's
+      // offscreen to the user, so re-rendering it just burns idle CPU. Cadence
+      // is identical when the window is foregrounded.
+      if (typeof document !== "undefined" && document.hidden) {
+        return;
+      }
       setMoodIndex((i) => (i + 1) % THINKING_CYCLING_LABELS.length);
     }, 4000);
     return () => clearInterval(interval);

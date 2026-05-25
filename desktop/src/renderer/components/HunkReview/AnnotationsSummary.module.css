@@ -142,7 +142,7 @@
   transition:
     background-color var(--motion-fast),
     opacity var(--motion-default),
-    transform var(--motion-default);
+    transform var(--duration-micro) var(--ease-press);
 }
 
 @starting-style {
@@ -152,9 +152,16 @@
   }
 }
 
+.row:active {
+  transform: translateY(0) scale(0.99);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .row {
     transition: background-color var(--motion-fast);
+    transform: none;
+  }
+  .row:active {
     transform: none;
   }
   @starting-style {
@@ -193,8 +200,10 @@
   transition: transform var(--motion-default);
 }
 
-.row:hover .rowAvatar {
-  transform: scale(1.08);
+@media (hover: hover) and (pointer: fine) {
+  .row:hover .rowAvatar {
+    transform: scale(1.08);
+  }
 }
 
 .rowContent {

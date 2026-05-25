@@ -93,7 +93,8 @@
   transition:
     border-color var(--motion-fast),
     color var(--motion-fast),
-    background-color var(--motion-fast);
+    background-color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
 .harnessSelect:focus {
@@ -117,7 +118,8 @@
   transition:
     border-color var(--motion-fast),
     color var(--motion-fast),
-    background-color var(--motion-fast);
+    background-color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
 }
 
 .agentSelect:focus {
@@ -127,12 +129,31 @@
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 25%, transparent);
 }
 
+.harnessSelect:active,
+.agentSelect:active {
+  transform: scale(0.97);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .harnessSelect:hover,
   .agentSelect:hover {
     border-color: color-mix(in srgb, var(--text-primary) 14%, transparent);
     color: var(--text-primary);
     outline: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harnessSelect,
+  .agentSelect {
+    transition:
+      border-color var(--motion-fast),
+      color var(--motion-fast),
+      background-color var(--motion-fast);
+  }
+  .harnessSelect:active,
+  .agentSelect:active {
+    transform: none;
   }
 }
 
@@ -199,8 +220,25 @@
   transition:
     border-color var(--motion-fast),
     color var(--motion-fast),
-    opacity var(--motion-fast);
+    opacity var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
   white-space: nowrap;
+}
+
+.builtBadge:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .builtBadge {
+    transition:
+      border-color var(--motion-fast),
+      color var(--motion-fast),
+      opacity var(--motion-fast);
+  }
+  .builtBadge:active {
+    transform: none;
+  }
 }
 
 .builtBadgeYes {
@@ -339,13 +377,29 @@
   white-space: nowrap;
   transition:
     background var(--motion-fast),
-    color var(--motion-fast);
+    color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.relocateItem:active {
+  transform: scale(0.97);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .relocateItem:hover {
     background: color-mix(in srgb, var(--text-primary) 5%, transparent);
     color: var(--text-primary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relocateItem {
+    transition:
+      background var(--motion-fast),
+      color var(--motion-fast);
+  }
+  .relocateItem:active {
+    transform: none;
   }
 }
 
@@ -372,6 +426,15 @@
   color: var(--text-tertiary);
   font-size: var(--text-sm);
   font-family: var(--font-ui);
+}
+
+.loadingSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-6);
+  max-width: 720px;
+  width: 100%;
 }
 
 .errorState {

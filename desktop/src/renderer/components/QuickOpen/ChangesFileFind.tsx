@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useAppStore } from '../../store/app-store'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
 import {
   cancelChangesFileFindSelection,
@@ -62,6 +63,10 @@ export function ChangesFileFind() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // Trap Tab focus inside the palette so keyboard nav can't reach the obscured app.
+  useFocusTrap(panelRef, Boolean(changesFileFind))
 
   useEffect(() => {
     if (!changesFileFind) return
@@ -139,7 +144,7 @@ export function ChangesFileFind() {
 
   return (
     <div className={styles.overlay} onClick={() => cancelChangesFileFindSelection()}>
-      <div className={styles.panel} onClick={(e) => e.stopPropagation()}>
+      <div className={styles.panel} ref={panelRef} onClick={(e) => e.stopPropagation()}>
         <div className={styles.inputWrap}>
           <input
             ref={inputRef}

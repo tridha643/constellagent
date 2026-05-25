@@ -102,8 +102,12 @@
   font-weight: var(--weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  transition: color var(--motion-fast);
+  transition: color var(--motion-fast), transform var(--duration-micro) var(--ease-press);
   position: relative;
+}
+
+.projectHeader:active {
+  transform: scale(0.99);
 }
 
 .projectHeader[draggable="true"] {
@@ -775,7 +779,11 @@
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
   background: var(--surface-1);
-  transition: border-color var(--motion-fast);
+  transition: border-color var(--motion-fast), transform var(--duration-micro) var(--ease-press);
+}
+
+.projectPrRow:active {
+  transform: scale(0.99);
 }
 
 .projectPrRow:hover {
@@ -804,6 +812,11 @@
   align-items: center;
   gap: var(--space-3);
   cursor: pointer;
+  transition: transform var(--duration-micro) var(--ease-press);
+}
+
+.projectPrLink:active {
+  transform: scale(0.97);
 }
 
 .projectPrLink:hover .projectPrItemTitle {
@@ -1862,7 +1875,10 @@
   .settingsBtn:active,
   .prListBtn:active,
   .syncBtn:active,
-  .deleteBtn:active {
+  .deleteBtn:active,
+  .projectHeader:active,
+  .projectPrLink:active,
+  .projectPrRow:active {
     transform: none;
   }
   .prCiPending {
@@ -2060,7 +2076,11 @@
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
-  transition: background-color var(--motion-default), color var(--motion-default);
+  transition: background-color var(--motion-default), color var(--motion-default), transform var(--duration-micro) var(--ease-press);
+}
+
+.folderMenuBtn:active {
+  transform: scale(0.97);
 }
 
 .folderMenuBtn:hover {
@@ -2094,7 +2114,11 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-family: inherit;
-  transition: background-color var(--motion-default);
+  transition: background-color var(--motion-default), transform var(--duration-micro) var(--ease-press);
+}
+
+.folderMenuItem:active {
+  transform: scale(0.97);
 }
 
 .folderMenuItem:hover:not(:disabled) {
@@ -2142,7 +2166,11 @@
   cursor: pointer;
   user-select: none;
   border-radius: var(--radius-md);
-  transition: background-color 140ms ease, color 140ms ease;
+  transition: background-color 140ms ease, color 140ms ease, transform var(--duration-micro) var(--ease-press);
+}
+
+.projectAddSummary:active {
+  transform: scale(0.97);
 }
 
 .projectAddSummary::-webkit-details-marker {
@@ -2217,7 +2245,10 @@
     transition: none;
   }
 
-  .projectAddMenuItem:active {
+  .projectAddMenuItem:active,
+  .folderMenuBtn:active,
+  .folderMenuItem:active,
+  .projectAddSummary:active {
     transform: none;
   }
 }
