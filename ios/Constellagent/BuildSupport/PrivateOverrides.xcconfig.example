@@ -1,0 +1,6 @@
+// Copy this file to PrivateOverrides.xcconfig and keep the real values local.
+// Xcode will load the private file automatically when it exists.
+
+// Local Electron bridge (Pair with Code on first launch — use your Mac's LAN IP):
+// PHODEX_DEFAULT_RELAY_URL = ws://192.168.2.66:3987/ws
+PHODEX_DEFAULT_RELAY_URL =

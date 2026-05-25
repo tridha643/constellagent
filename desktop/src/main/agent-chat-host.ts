@@ -74,7 +74,9 @@ import {
   findSteerMessageIndex,
 } from './agent-chat-queue'
 import { getConductorQuestionBridge } from './agents/conductor-question-bridge'
+import { computeTextDelta, normalizeAssistantStreamDelta, needsAssistantWordBoundarySpace } from './agents/agent-driver'
 import { logMainPerfEvent, measureMainAsync } from './perf'
+import { mobileDebugLog, shouldSampleMobileDelta } from './mobile-debug-log'
 
 export type { AgentChatSessionState, CreateAgentChatSessionInput }
 
@@ -93,10 +95,13 @@ interface TurnTelemetry {
   transcriptFlushCount: number
 }
 
+export type AgentChatBroadcastListener = (channel: string, payload: unknown) => void
+
 export class AgentChatHost {
   private readonly sessions = new Map<string, RuntimeSession>()
   private readonly questionBridge = getConductorQuestionBridge()
   private readonly transcriptCache = new Map<string, TranscriptMessage[]>()
+  private readonly broadcastListeners = new Set<AgentChatBroadcastListener>()
   private readonly timelineState: TimelineRuntimeState = {
     runMetricsBySession: new Map(),
     runningSinceBySession: new Map(),
@@ -113,6 +118,10 @@ export class AgentChatHost {
   /** Coalesces high-frequency transcript broadcasts during streaming (~25fps). */
   private readonly pendingTranscriptFlush = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly turnTelemetry = new Map<string, TurnTelemetry>()
+  /** Tracks assistant text already appended/broadcast for word-boundary delta normalization. */
+  private readonly emittedAssistantTextBySession = new Map<string, string>()
+  /** Samples assistant delta logs per session when mobile debug is enabled. */
+  private readonly assistantDeltaDebugSequenceBySession = new Map<string, number>()
   private static readonly TRANSCRIPT_FLUSH_MS = 40
 
   constructor() {
@@ -310,6 +319,17 @@ export class AgentChatHost {
     }
     const effectiveCanvas = detectCanvasIntent(promptText)
     const ref = this.refOf(state)
+    this.emittedAssistantTextBySession.delete(sessionKey(ref))
+    this.assistantDeltaDebugSequenceBySession.delete(sessionKey(ref))
+    mobileDebugLog('agent-chat-host', 'startTurn', {
+      sessionId,
+      provider: state.provider,
+      model: state.model,
+      promptChars: promptText.length,
+      attachmentCount: normalizedAttachments.length,
+      plan: effectivePlan,
+      canvas: effectiveCanvas,
+    })
     this.turnTelemetry.set(sessionId, {
       submittedAt: performance.now(),
       driverEventCount: 0,
@@ -503,19 +523,46 @@ export class AgentChatHost {
     const state = this.currentState(sessionId)
     if (!state) return
     if (event.type === 'assistantDelta') {
+      const key = sessionKey(event.sessionRef)
+      const emitted = this.emittedAssistantTextBySession.get(key) ?? ''
+      const { delta: rawDelta } = computeTextDelta(emitted, event.text)
+      const { delta, emitted: nextEmitted } = normalizeAssistantStreamDelta(emitted, event.text)
+      if (delta.length === 0) {
+        return
+      }
+      const sequence = (this.assistantDeltaDebugSequenceBySession.get(key) ?? 0) + 1
+      this.assistantDeltaDebugSequenceBySession.set(key, sequence)
+      const wordBoundaryInserted = needsAssistantWordBoundarySpace(emitted, rawDelta)
+      if (wordBoundaryInserted || shouldSampleMobileDelta(sequence)) {
+        mobileDebugLog('agent-chat-host', 'assistantDelta normalized', {
+          sessionId,
+          sequence,
+          incomingChars: event.text.length,
+          deltaChars: delta.length,
+          emittedChars: nextEmitted.length,
+          wordBoundaryInserted,
+          incomingPreview: event.text.slice(0, 48),
+          deltaPreview: delta.slice(0, 48),
+        })
+      }
+      this.emittedAssistantTextBySession.set(key, nextEmitted)
       const messageId = appendAssistantDelta(
         this.transcriptCache,
         this.timelineState.activeAssistantMessageBySession,
         event.sessionRef,
-        event.text,
+        delta,
       )
       if (messageId) {
         // Token stream: send only the delta. Full transcript IPC on every token
         // duplicated multi‑MB payloads and OOM'd the main process heap.
         this.markAssistantDelta(sessionId, state)
-        this.broadcastDelta(state, messageId, event.text)
+        this.broadcastDelta(state, messageId, delta)
       }
       return
+    }
+    if (event.type === 'toolStarted') {
+      this.emittedAssistantTextBySession.delete(sessionKey(event.sessionRef))
+      this.assistantDeltaDebugSequenceBySession.delete(sessionKey(event.sessionRef))
     }
     applyTimelineEvent(this.transcriptCache, event, this.timelineState)
     if (event.type === 'toolFinished' && event.success) {
@@ -1109,6 +1156,25 @@ export class AgentChatHost {
       if (!win.isDestroyed()) {
         win.webContents.send(channel, payload)
       }
+    }
+    if (this.broadcastListeners.size > 0) {
+      for (const listener of this.broadcastListeners) {
+        try {
+          listener(channel, payload)
+        } catch (error) {
+          // Mobile event bridge faults must never break the desktop UI feed.
+          console.warn('[agent-chat-host] broadcast listener failed', error)
+        }
+      }
+    }
+  }
+
+  // Mobile event bridge taps into the same outbound stream the renderer sees;
+  // returns a disposer so callers can clean up on shutdown.
+  subscribeBroadcasts(listener: AgentChatBroadcastListener): () => void {
+    this.broadcastListeners.add(listener)
+    return () => {
+      this.broadcastListeners.delete(listener)
     }
   }
 }

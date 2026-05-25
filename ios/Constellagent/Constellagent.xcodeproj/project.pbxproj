@@ -1,0 +1,777 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4CCE0926DAD312571934343A /* TurnTimelineReducerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EEB36EBEA2A475AC9B30B1F /* TurnTimelineReducerTests.swift */; };
+		A1B2C3D4E5F60718293A4B6 /* AssistantDeltaMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5 /* AssistantDeltaMergeTests.swift */; };
+		516497899B5C9A82CD10D93F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9A37794F4B32C1952A3770E0 /* Foundation.framework */; };
+		62F6E3FF0E73AF87254BCE47 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 96AB07DF1EAF634D1B823574 /* AppIntents.framework */; };
+		8D1F2A3B4C5D6E7F8091A2B3 /* ConstellagentServiceConnectionErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D1F2A3B4C5D6E7F8091A2B4 /* ConstellagentServiceConnectionErrorTests.swift */; };
+		8FA12BC34DE56F708192A3B8 /* ConstellagentSecurePairingStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FA12BC34DE56F708192A3B9 /* ConstellagentSecurePairingStateTests.swift */; };
+		A4B0C1D2E3F4051627384A10 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A4B0C1D2E3F4051627384A0F /* UIKit.framework */; };
+		C0A34C3A2FBA9D04007294E3 /* RemodexTextKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0A34C392FBA9D04007294E3 /* RemodexTextKit */; };
+		D1A000000000000000000200 /* Runestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000100 /* Runestone */; };
+		D1A000000000000000000201 /* TreeSitterBashRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000101 /* TreeSitterBashRunestone */; };
+		D1A000000000000000000202 /* TreeSitterCRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000102 /* TreeSitterCRunestone */; };
+		D1A000000000000000000203 /* TreeSitterCPPRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000103 /* TreeSitterCPPRunestone */; };
+		D1A000000000000000000204 /* TreeSitterCSSRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000104 /* TreeSitterCSSRunestone */; };
+		D1A000000000000000000205 /* TreeSitterCSharpRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000105 /* TreeSitterCSharpRunestone */; };
+		D1A000000000000000000206 /* TreeSitterGoRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000106 /* TreeSitterGoRunestone */; };
+		D1A000000000000000000207 /* TreeSitterHTMLRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000107 /* TreeSitterHTMLRunestone */; };
+		D1A000000000000000000208 /* TreeSitterJavaRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000108 /* TreeSitterJavaRunestone */; };
+		D1A000000000000000000209 /* TreeSitterJavaScriptRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000109 /* TreeSitterJavaScriptRunestone */; };
+		D1A00000000000000000020A /* TreeSitterJSONRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A00000000000000000010A /* TreeSitterJSONRunestone */; };
+		D1A00000000000000000020B /* TreeSitterMarkdownRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A00000000000000000010B /* TreeSitterMarkdownRunestone */; };
+		D1A00000000000000000020C /* TreeSitterPythonRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A00000000000000000010C /* TreeSitterPythonRunestone */; };
+		D1A00000000000000000020D /* TreeSitterRubyRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A00000000000000000010D /* TreeSitterRubyRunestone */; };
+		D1A00000000000000000020E /* TreeSitterRustRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A00000000000000000010E /* TreeSitterRustRunestone */; };
+		D1A00000000000000000020F /* TreeSitterSQLRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A00000000000000000010F /* TreeSitterSQLRunestone */; };
+		D1A000000000000000000210 /* TreeSitterSwiftRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000110 /* TreeSitterSwiftRunestone */; };
+		D1A000000000000000000211 /* TreeSitterTOMLRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000111 /* TreeSitterTOMLRunestone */; };
+		D1A000000000000000000212 /* TreeSitterTSXRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000112 /* TreeSitterTSXRunestone */; };
+		D1A000000000000000000213 /* TreeSitterTypeScriptRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000113 /* TreeSitterTypeScriptRunestone */; };
+		D1A000000000000000000214 /* TreeSitterYAMLRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = D1A000000000000000000114 /* TreeSitterYAMLRunestone */; };
+		E1A2B3C4D5E6F708192A3B4C /* QRScannerPairingValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4D /* QRScannerPairingValidatorTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		5D03133674F4AAC9F7795B99 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C09A76A62F4B8D7B003B3F3A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C09A76AD2F4B8D7B003B3F3A;
+			remoteInfo = Constellagent;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		17BE0F06A89467BC99605261 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		4EEB36EBEA2A475AC9B30B1F /* TurnTimelineReducerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TurnTimelineReducerTests.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5 /* AssistantDeltaMergeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantDeltaMergeTests.swift; sourceTree = "<group>"; };
+		5CE9E263053F9B9545E78ECC /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/WidgetKit.framework; sourceTree = DEVELOPER_DIR; };
+		8D1F2A3B4C5D6E7F8091A2B4 /* ConstellagentServiceConnectionErrorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConstellagentServiceConnectionErrorTests.swift; sourceTree = "<group>"; };
+		8FA12BC34DE56F708192A3B9 /* ConstellagentSecurePairingStateTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConstellagentSecurePairingStateTests.swift; sourceTree = "<group>"; };
+		96AB07DF1EAF634D1B823574 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/AppIntents.framework; sourceTree = DEVELOPER_DIR; };
+		9A37794F4B32C1952A3770E0 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		A4B0C1D2E3F4051627384A0F /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		C09A76AE2F4B8D7B003B3F3A /* Constellagent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Constellagent.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E1A2B3C4D5E6F708192A3B4D /* QRScannerPairingValidatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QRScannerPairingValidatorTests.swift; sourceTree = "<group>"; };
+		FBC8EB1341C49A392A43BFB3 /* ConstellagentTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ConstellagentTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FDBD5C45B205BFD7C281AD0D /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/SwiftUI.framework; sourceTree = DEVELOPER_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		C09A76B02F4B8D7B003B3F3A /* Constellagent */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			path = Constellagent;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C09A76AB2F4B8D7B003B3F3A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A4B0C1D2E3F4051627384A10 /* UIKit.framework in Frameworks */,
+				D1A000000000000000000200 /* Runestone in Frameworks */,
+				D1A000000000000000000201 /* TreeSitterBashRunestone in Frameworks */,
+				D1A000000000000000000202 /* TreeSitterCRunestone in Frameworks */,
+				D1A000000000000000000203 /* TreeSitterCPPRunestone in Frameworks */,
+				D1A000000000000000000204 /* TreeSitterCSSRunestone in Frameworks */,
+				D1A000000000000000000205 /* TreeSitterCSharpRunestone in Frameworks */,
+				D1A000000000000000000206 /* TreeSitterGoRunestone in Frameworks */,
+				D1A000000000000000000207 /* TreeSitterHTMLRunestone in Frameworks */,
+				D1A000000000000000000208 /* TreeSitterJavaRunestone in Frameworks */,
+				D1A000000000000000000209 /* TreeSitterJavaScriptRunestone in Frameworks */,
+				D1A00000000000000000020A /* TreeSitterJSONRunestone in Frameworks */,
+				D1A00000000000000000020B /* TreeSitterMarkdownRunestone in Frameworks */,
+				D1A00000000000000000020C /* TreeSitterPythonRunestone in Frameworks */,
+				D1A00000000000000000020D /* TreeSitterRubyRunestone in Frameworks */,
+				D1A00000000000000000020E /* TreeSitterRustRunestone in Frameworks */,
+				D1A00000000000000000020F /* TreeSitterSQLRunestone in Frameworks */,
+				D1A000000000000000000210 /* TreeSitterSwiftRunestone in Frameworks */,
+				D1A000000000000000000211 /* TreeSitterTOMLRunestone in Frameworks */,
+				D1A000000000000000000212 /* TreeSitterTSXRunestone in Frameworks */,
+				D1A000000000000000000213 /* TreeSitterTypeScriptRunestone in Frameworks */,
+				D1A000000000000000000214 /* TreeSitterYAMLRunestone in Frameworks */,
+				62F6E3FF0E73AF87254BCE47 /* AppIntents.framework in Frameworks */,
+				C0A34C3A2FBA9D04007294E3 /* RemodexTextKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D1687CF50E3519E9AB5D4729 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				516497899B5C9A82CD10D93F /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		208D6F189D9F04FCC137EE5A /* ConstellagentTests */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F60718293A4B5 /* AssistantDeltaMergeTests.swift */,
+				8D1F2A3B4C5D6E7F8091A2B4 /* ConstellagentServiceConnectionErrorTests.swift */,
+				8FA12BC34DE56F708192A3B9 /* ConstellagentSecurePairingStateTests.swift */,
+				E1A2B3C4D5E6F708192A3B4D /* QRScannerPairingValidatorTests.swift */,
+				4EEB36EBEA2A475AC9B30B1F /* TurnTimelineReducerTests.swift */,
+			);
+			path = ConstellagentTests;
+			sourceTree = "<group>";
+		};
+		B593FCA030A810D9E56EC959 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				C1F310AC95AC9514C6883203 /* iOS */,
+				F132BC0A90D092E32B9D22C1 /* OS X */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		C09A76A52F4B8D7B003B3F3A = {
+			isa = PBXGroup;
+			children = (
+				C09A76B02F4B8D7B003B3F3A /* Constellagent */,
+				C09A76AF2F4B8D7B003B3F3A /* Products */,
+				B593FCA030A810D9E56EC959 /* Frameworks */,
+				208D6F189D9F04FCC137EE5A /* ConstellagentTests */,
+			);
+			sourceTree = "<group>";
+		};
+		C09A76AF2F4B8D7B003B3F3A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C09A76AE2F4B8D7B003B3F3A /* Constellagent.app */,
+				FBC8EB1341C49A392A43BFB3 /* ConstellagentTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C1F310AC95AC9514C6883203 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				9A37794F4B32C1952A3770E0 /* Foundation.framework */,
+				A4B0C1D2E3F4051627384A0F /* UIKit.framework */,
+				5CE9E263053F9B9545E78ECC /* WidgetKit.framework */,
+				FDBD5C45B205BFD7C281AD0D /* SwiftUI.framework */,
+				96AB07DF1EAF634D1B823574 /* AppIntents.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		F132BC0A90D092E32B9D22C1 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		75087BFA4D34C41906650C95 /* ConstellagentTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A12D73031EE6808173A99691 /* Build configuration list for PBXNativeTarget "ConstellagentTests" */;
+			buildPhases = (
+				CC9279F10CC29F0557B8C955 /* Sources */,
+				D1687CF50E3519E9AB5D4729 /* Frameworks */,
+				5A5D7883E5CC7BCD3EAC431E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AAE44F8D7AD2D1D62A7CE4B0 /* PBXTargetDependency */,
+			);
+			name = ConstellagentTests;
+			productName = ConstellagentTests;
+			productReference = FBC8EB1341C49A392A43BFB3 /* ConstellagentTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		C09A76AD2F4B8D7B003B3F3A /* Constellagent */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C09A76B92F4B8D7C003B3F3A /* Build configuration list for PBXNativeTarget "Constellagent" */;
+			buildPhases = (
+				C09A76AA2F4B8D7B003B3F3A /* Sources */,
+				C09A76AB2F4B8D7B003B3F3A /* Frameworks */,
+				C09A76AC2F4B8D7B003B3F3A /* Resources */,
+				17BE0F06A89467BC99605261 /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C09A76B02F4B8D7B003B3F3A /* Constellagent */,
+			);
+			name = Constellagent;
+			packageProductDependencies = (
+				C0A34C392FBA9D04007294E3 /* RemodexTextKit */,
+				D1A000000000000000000100 /* Runestone */,
+				D1A000000000000000000101 /* TreeSitterBashRunestone */,
+				D1A000000000000000000102 /* TreeSitterCRunestone */,
+				D1A000000000000000000103 /* TreeSitterCPPRunestone */,
+				D1A000000000000000000104 /* TreeSitterCSSRunestone */,
+				D1A000000000000000000105 /* TreeSitterCSharpRunestone */,
+				D1A000000000000000000106 /* TreeSitterGoRunestone */,
+				D1A000000000000000000107 /* TreeSitterHTMLRunestone */,
+				D1A000000000000000000108 /* TreeSitterJavaRunestone */,
+				D1A000000000000000000109 /* TreeSitterJavaScriptRunestone */,
+				D1A00000000000000000010A /* TreeSitterJSONRunestone */,
+				D1A00000000000000000010B /* TreeSitterMarkdownRunestone */,
+				D1A00000000000000000010C /* TreeSitterPythonRunestone */,
+				D1A00000000000000000010D /* TreeSitterRubyRunestone */,
+				D1A00000000000000000010E /* TreeSitterRustRunestone */,
+				D1A00000000000000000010F /* TreeSitterSQLRunestone */,
+				D1A000000000000000000110 /* TreeSitterSwiftRunestone */,
+				D1A000000000000000000111 /* TreeSitterTOMLRunestone */,
+				D1A000000000000000000112 /* TreeSitterTSXRunestone */,
+				D1A000000000000000000113 /* TreeSitterTypeScriptRunestone */,
+				D1A000000000000000000114 /* TreeSitterYAMLRunestone */,
+			);
+			productName = Constellagent;
+			productReference = C09A76AE2F4B8D7B003B3F3A /* Constellagent.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C09A76A62F4B8D7B003B3F3A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					B37F412BAE6D4B4BFF0980D2 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					C09A76AD2F4B8D7B003B3F3A = {
+						CreatedOnToolsVersion = 26.2;
+					};
+				};
+			};
+			buildConfigurationList = C09A76A92F4B8D7B003B3F3A /* Build configuration list for PBXProject "Constellagent" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = C09A76A52F4B8D7B003B3F3A;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C0A34C382FBA9D04007294E3 /* XCRemoteSwiftPackageReference "RemodexTextKit" */,
+				D1A000000000000000000001 /* XCRemoteSwiftPackageReference "Runestone" */,
+				D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C09A76AF2F4B8D7B003B3F3A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C09A76AD2F4B8D7B003B3F3A /* Constellagent */,
+				75087BFA4D34C41906650C95 /* ConstellagentTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5A5D7883E5CC7BCD3EAC431E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C09A76AC2F4B8D7B003B3F3A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C09A76AA2F4B8D7B003B3F3A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CC9279F10CC29F0557B8C955 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B2C3D4E5F60718293A4B6 /* AssistantDeltaMergeTests.swift in Sources */,
+				8D1F2A3B4C5D6E7F8091A2B3 /* ConstellagentServiceConnectionErrorTests.swift in Sources */,
+				8FA12BC34DE56F708192A3B8 /* ConstellagentSecurePairingStateTests.swift in Sources */,
+				E1A2B3C4D5E6F708192A3B4C /* QRScannerPairingValidatorTests.swift in Sources */,
+				4CCE0926DAD312571934343A /* TurnTimelineReducerTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AAE44F8D7AD2D1D62A7CE4B0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Constellagent;
+			target = C09A76AD2F4B8D7B003B3F3A /* Constellagent */;
+			targetProxy = 5D03133674F4AAC9F7795B99 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		501D189BC697D4A1009B0D76 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 9CRNC5PND5;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tridhatri.constellagent.devlocal.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Constellagent.app/Constellagent";
+			};
+			name = Debug;
+		};
+		A71FD816CC5B382C7BEB2025 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 9CRNC5PND5;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tridhatri.constellagent.devlocal.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Constellagent.app/Constellagent";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C09A76B72F4B8D7C003B3F3A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 9CRNC5PND5;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		C09A76B82F4B8D7C003B3F3A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 9CRNC5PND5;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C09A76BA2F4B8D7C003B3F3A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APS_ENVIRONMENT = development;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Constellagent2;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Constellagent/Constellagent.local-dev.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 130;
+				DEVELOPMENT_TEAM = 9CRNC5PND5;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "BuildSupport/Constellagent-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Constellagent;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Constellagent needs local network access to connect to your Constellagent app-server running on your Mac.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Constellagent needs photo library access to let you attach images to your messages.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.6;
+				PHODEX_DEFAULT_RELAY_URL = "ws://192.168.2.66:3987/ws";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tridhatri.constellagent.devlocal;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		C09A76BB2F4B8D7C003B3F3A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APS_ENVIRONMENT = production;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Constellagent2;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Constellagent/Constellagent.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 130;
+				DEVELOPMENT_TEAM = 9CRNC5PND5;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "BuildSupport/Constellagent-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Constellagent;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Constellagent needs local network access to connect to your Constellagent app-server running on your Mac.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Constellagent needs photo library access to let you attach images to your messages.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.6;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tridhatri.constellagent.devlocal;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A12D73031EE6808173A99691 /* Build configuration list for PBXNativeTarget "ConstellagentTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A71FD816CC5B382C7BEB2025 /* Release */,
+				501D189BC697D4A1009B0D76 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C09A76A92F4B8D7B003B3F3A /* Build configuration list for PBXProject "Constellagent" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C09A76B72F4B8D7C003B3F3A /* Debug */,
+				C09A76B82F4B8D7C003B3F3A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C09A76B92F4B8D7C003B3F3A /* Build configuration list for PBXNativeTarget "Constellagent" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C09A76BA2F4B8D7C003B3F3A /* Debug */,
+				C09A76BB2F4B8D7C003B3F3A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C0A34C382FBA9D04007294E3 /* XCRemoteSwiftPackageReference "RemodexTextKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Emanuele-web04/RemodexTextKit.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.3.8;
+			};
+		};
+		D1A000000000000000000001 /* XCRemoteSwiftPackageReference "Runestone" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/simonbs/Runestone";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.2;
+			};
+		};
+		D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/simonbs/TreeSitterLanguages";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.10;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C0A34C392FBA9D04007294E3 /* RemodexTextKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0A34C382FBA9D04007294E3 /* XCRemoteSwiftPackageReference "RemodexTextKit" */;
+			productName = RemodexTextKit;
+		};
+		D1A000000000000000000100 /* Runestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000001 /* XCRemoteSwiftPackageReference "Runestone" */;
+			productName = Runestone;
+		};
+		D1A000000000000000000101 /* TreeSitterBashRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterBashRunestone;
+		};
+		D1A000000000000000000102 /* TreeSitterCRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterCRunestone;
+		};
+		D1A000000000000000000103 /* TreeSitterCPPRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterCPPRunestone;
+		};
+		D1A000000000000000000104 /* TreeSitterCSSRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterCSSRunestone;
+		};
+		D1A000000000000000000105 /* TreeSitterCSharpRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterCSharpRunestone;
+		};
+		D1A000000000000000000106 /* TreeSitterGoRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterGoRunestone;
+		};
+		D1A000000000000000000107 /* TreeSitterHTMLRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterHTMLRunestone;
+		};
+		D1A000000000000000000108 /* TreeSitterJavaRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterJavaRunestone;
+		};
+		D1A000000000000000000109 /* TreeSitterJavaScriptRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterJavaScriptRunestone;
+		};
+		D1A00000000000000000010A /* TreeSitterJSONRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterJSONRunestone;
+		};
+		D1A00000000000000000010B /* TreeSitterMarkdownRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterMarkdownRunestone;
+		};
+		D1A00000000000000000010C /* TreeSitterPythonRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterPythonRunestone;
+		};
+		D1A00000000000000000010D /* TreeSitterRubyRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterRubyRunestone;
+		};
+		D1A00000000000000000010E /* TreeSitterRustRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterRustRunestone;
+		};
+		D1A00000000000000000010F /* TreeSitterSQLRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterSQLRunestone;
+		};
+		D1A000000000000000000110 /* TreeSitterSwiftRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterSwiftRunestone;
+		};
+		D1A000000000000000000111 /* TreeSitterTOMLRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterTOMLRunestone;
+		};
+		D1A000000000000000000112 /* TreeSitterTSXRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterTSXRunestone;
+		};
+		D1A000000000000000000113 /* TreeSitterTypeScriptRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterTypeScriptRunestone;
+		};
+		D1A000000000000000000114 /* TreeSitterYAMLRunestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1A000000000000000000002 /* XCRemoteSwiftPackageReference "TreeSitterLanguages" */;
+			productName = TreeSitterYAMLRunestone;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = C09A76A62F4B8D7B003B3F3A /* Project object */;
+}

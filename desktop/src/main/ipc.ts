@@ -50,6 +50,7 @@ import { LinearDraftService } from './linear-draft-service'
 import { requestAppRelaunch } from './app-relaunch'
 import { measureMainAsync } from './perf'
 import { getMobileLocalServer, stopMobileLocalServer } from './mobile-service'
+import { deployIosAppToDevice, listUsbConnectedIosDevices } from './mobile-device-tools'
 import {
   deleteProjectStartupCommands,
   getProjectStartupCommands,
@@ -1655,8 +1656,29 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.MOBILE_GET_STATUS, async () => {
-    return getMobileLocalServer().getStatus()
+    return getMobileLocalServer().getConnectionSnapshot()
   })
+
+  ipcMain.handle(IPC.MOBILE_LIST_TRUSTED_DEVICES, async () => {
+    return getMobileLocalServer().listTrustedPhones()
+  })
+
+  ipcMain.handle(IPC.MOBILE_REVOKE_TRUSTED_DEVICE, async (_e, phoneDeviceId: string) => {
+    await getMobileLocalServer().revokeTrustedPhone(phoneDeviceId)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IPC.MOBILE_CREATE_PAIRING_PAYLOAD, async () => {
+    return getMobileLocalServer().createPairingPayload()
+  })
+
+  ipcMain.handle(IPC.MOBILE_LIST_USB_DEVICES, async () => listUsbConnectedIosDevices())
+
+  ipcMain.handle(
+    IPC.MOBILE_DEPLOY_IOS_APP,
+    async (_e, input: { deviceUdid: string; mode: 'connect' | 'update' }) =>
+      deployIosAppToDevice(input),
+  )
 
   ipcMain.handle(IPC.COMPOSIO_SUGGEST_GITHUB_CONNECTED_ACCOUNT, async () => {
     const key = composioWebhookService.getSettings().apiKey.trim()

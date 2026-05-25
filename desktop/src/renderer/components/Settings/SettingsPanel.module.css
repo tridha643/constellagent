@@ -402,6 +402,22 @@
   flex-wrap: wrap;
 }
 
+.mobileQrBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.mobileQrImage {
+  width: 280px;
+  height: 280px;
+  border-radius: var(--radius-md);
+  background: #fff;
+  padding: var(--space-2);
+}
+
 /* Select input */
 .selectInput {
   width: 160px;

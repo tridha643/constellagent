@@ -46,6 +46,7 @@ import { Tooltip } from '../Tooltip/Tooltip'
 import { FloatingPanel } from '../FloatingPanel/FloatingPanel'
 import { APPEARANCE_THEME_OPTIONS, type AppearanceThemeId } from '../../theme/appearance'
 import { shouldConfirmAppRestart } from './restart-app'
+import { MobileSettingsSection } from './MobileSettingsSection'
 import { linearFetchViewer } from '../../linear/linear-api'
 import {
   fetchConductorAuthStatus,
@@ -136,6 +137,11 @@ const SETTINGS_SIDEBAR: readonly {
     id: 'composio',
     label: 'Composio',
     blurb: 'Webhook receiver and public callback URL.',
+  },
+  {
+    id: 'mobile',
+    label: 'Mobile',
+    blurb: 'Pair your iPhone, copy codes, deploy updates over USB.',
   },
   {
     id: 'worktree',
@@ -2041,6 +2047,9 @@ function SettingsSectionBody({
 
     case 'composio':
       return <ComposioSettingsSection />
+
+    case 'mobile':
+      return <MobileSettingsSection />
 
     case 'worktree':
       return <WorktreeCredentialsSection />

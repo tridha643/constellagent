@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
 import { app } from 'electron'
-import { existsSync, readFileSync, realpathSync } from 'fs'
-import { join, resolve } from 'path'
 
 interface PersistedProjectRecord {
   id: string
@@ -113,6 +114,7 @@ export function listPersistedMobileWorkspaces(): Array<{
   projectId?: string
   name: string
   branch?: string
+  worktreePath?: string
   updatedAt: string
 }> {
   const state = loadState()
@@ -126,9 +128,39 @@ export function listPersistedMobileWorkspaces(): Array<{
         ...(workspace.projectId ? { projectId: workspace.projectId } : {}),
         name: project?.name || workspace.branch || workspace.id,
         ...(workspace.branch ? { branch: workspace.branch } : {}),
+        ...(workspace.worktreePath ? { worktreePath: workspace.worktreePath } : {}),
         updatedAt: normalizeIsoDate(workspace.lastOpenedAt),
       }
     })
+}
+
+export function listPersistedWorkspaceRecords(): PersistedWorkspaceRecord[] {
+  return loadState().workspaces ?? []
+}
+
+export function resolveMobileWorkspaceForPath(rawPath: string): {
+  workspaceId: string
+  workspacePath: string
+} {
+  const workspacePath = normalizePath(rawPath)
+  const records = listPersistedWorkspaceRecords()
+  for (const workspace of records) {
+    if (!workspace.worktreePath) continue
+    if (normalizePath(workspace.worktreePath) === workspacePath) {
+      return { workspaceId: workspace.id, workspacePath }
+    }
+  }
+  const slug = workspacePath.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48)
+  return {
+    workspaceId: slug ? `mobile-path:${slug}` : 'mobile-path:unknown',
+    workspacePath,
+  }
+}
+
+export function resolveDefaultMobileWorkspacePath(): string | null {
+  const workspaces = listPersistedMobileWorkspaces()
+  const withPath = workspaces.find((workspace) => typeof workspace.worktreePath === 'string' && workspace.worktreePath.trim())
+  return withPath?.worktreePath?.trim() || null
 }
 
 function normalizeIsoDate(value: unknown): string {
@@ -139,11 +171,91 @@ function normalizeIsoDate(value: unknown): string {
   return new Date().toISOString()
 }
 
-/** Pi model id for commit message generation; empty/undefined means use app default in pi-run-prompt. */
 export function readPersistedPiCommitMessageModel(): string | undefined {
   const state = loadState()
   const raw = state.settings?.piCommitMessageModel
   if (typeof raw !== 'string') return undefined
   const t = raw.trim()
   return t || undefined
+}
+
+export interface UpsertMobileWorkspaceInput {
+  readonly worktreePath: string
+  readonly repoPath: string
+  readonly branch: string
+  readonly name?: string
+}
+
+export interface UpsertMobileWorkspaceResult {
+  readonly workspaceId: string
+  readonly projectId: string
+  readonly worktreePath: string
+  readonly branch: string
+  readonly name: string
+  readonly created: boolean
+}
+
+function saveState(state: PersistedStateRecord): void {
+  const filePath = stateFilePath()
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf-8')
+}
+
+/** Registers a git worktree as a persisted desktop workspace so mobile sessions mirror the sidebar. */
+export function upsertPersistedMobileWorkspace(input: UpsertMobileWorkspaceInput): UpsertMobileWorkspaceResult {
+  const worktreePath = normalizePath(input.worktreePath.trim())
+  const repoPath = normalizePath(input.repoPath.trim())
+  const branch = input.branch.trim() || 'main'
+  const state = loadState()
+  const projects = [...(state.projects ?? [])]
+  const workspaces = [...(state.workspaces ?? [])]
+
+  for (const workspace of workspaces) {
+    if (!workspace.worktreePath) continue
+    if (normalizePath(workspace.worktreePath) !== worktreePath) continue
+    const project = projects.find((entry) => entry.id === workspace.projectId)
+    return {
+      workspaceId: workspace.id,
+      projectId: workspace.projectId,
+      worktreePath,
+      branch: workspace.branch ?? branch,
+      name: input.name?.trim() || workspace.branch || basename(worktreePath),
+      created: false,
+    }
+  }
+
+  let project = projects.find((entry) => normalizePath(entry.repoPath) === repoPath) ?? null
+  if (!project) {
+    project = {
+      id: randomUUID(),
+      name: basename(repoPath),
+      repoPath,
+    }
+    projects.push(project)
+  }
+
+  const workspaceId = randomUUID()
+  const name = input.name?.trim() || `[${basename(worktreePath)}]` || branch
+  workspaces.push({
+    id: workspaceId,
+    projectId: project.id,
+    branch,
+    worktreePath,
+    lastOpenedAt: new Date().toISOString(),
+  })
+
+  saveState({
+    ...state,
+    projects,
+    workspaces,
+  })
+
+  return {
+    workspaceId,
+    projectId: project.id,
+    worktreePath,
+    branch,
+    name,
+    created: true,
+  }
 }

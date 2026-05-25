@@ -1,0 +1,3143 @@
+// FILE: ConstellagentService+ThreadsTurns.swift
+// Purpose: Thread/turn operations exposed to the UI.
+// Layer: Service
+// Exports: ConstellagentService thread+turn APIs
+// Depends on: ConstellagentThread, JSONValue
+
+import Foundation
+
+private enum ThreadTurnStateSnapshotPolicy {
+    static let recentTurnLimit = 8
+    static let requestTimeoutNanoseconds: UInt64 = 30_000_000_000
+}
+
+private enum ThreadListHydrationPolicy {
+    static let requestTimeoutNanoseconds: UInt64 = 12_000_000_000
+}
+
+struct ConstellagentPreAppendedTurnMessage: Sendable {
+    let messageID: String
+    let automaticTitleSeed: String?
+}
+
+extension ConstellagentService {
+    // Sidebar loads stay capped so reconnect/bootstrap cannot pull an entire local history at once.
+    var recentActiveThreadListLimit: Int { 70 }
+
+    // Encodes manual approval replies using the app-server decision object shape.
+    func approvalDecisionResult(_ decision: String) -> JSONValue {
+        .object(["decision": .string(decision)])
+    }
+
+    // New permission prompts use a grant payload, unlike command/file approval decisions.
+    func permissionApprovalResult(for request: ConstellagentApprovalRequest, grantsRequestedPermissions: Bool) -> JSONValue {
+        let requestedPermissions = request.params?.objectValue?["permissions"] ?? .object([:])
+        return .object([
+            "permissions": grantsRequestedPermissions ? requestedPermissions : .object([:]),
+            "scope": .string("turn"),
+        ])
+    }
+
+    func approvalResponseResult(
+        for request: ConstellagentApprovalRequest,
+        decision: String,
+        forSession: Bool = false
+    ) -> JSONValue {
+        let normalizedMethod = request.method.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizedMethod == "item/permissions/requestApproval" {
+            return permissionApprovalResult(for: request, grantsRequestedPermissions: decision == "accept")
+        }
+
+        let isCommandApproval = normalizedMethod == "item/commandExecution/requestApproval"
+            || normalizedMethod == "item/command_execution/request_approval"
+        let resolvedDecision = (decision == "accept" && forSession && isCommandApproval) ? "acceptForSession" : decision
+        return approvalDecisionResult(resolvedDecision)
+    }
+
+    // Returns the next pending approval for a specific thread, falling back to thread-less requests.
+    func pendingApproval(for threadId: String? = nil) -> ConstellagentApprovalRequest? {
+        guard let normalizedThreadID = normalizedApprovalThreadIdentifier(threadId) else {
+            return pendingApprovals.first
+        }
+
+        return pendingApprovals.first(where: { $0.threadId == normalizedThreadID })
+            ?? pendingApprovals.first(where: { $0.threadId == nil })
+    }
+
+    // Preserves arrival order while replacing retried copies of the same request id.
+    func enqueuePendingApproval(_ request: ConstellagentApprovalRequest) {
+        if let existingIndex = pendingApprovals.firstIndex(where: { $0.id == request.id }) {
+            pendingApprovals[existingIndex] = request
+            return
+        }
+
+        pendingApprovals.append(request)
+    }
+
+    // Removes the exact resolved approval request when the server confirms it is gone.
+    @discardableResult
+    func removePendingApproval(requestID: JSONValue) -> ConstellagentApprovalRequest? {
+        let requestKey = idKey(from: requestID)
+        return removePendingApproval(id: requestKey)
+    }
+
+    // Clears all volatile approval prompts on disconnect or server switch.
+    func clearPendingApprovals() {
+        pendingApprovals.removeAll()
+    }
+
+    func listThreads(limit: Int? = nil) async throws {
+        isLoadingThreads = true
+        defer {
+            isLoadingThreads = false
+            flushPendingRuntimeOptionRefreshIfPossible()
+        }
+
+        let activeLimit = limit ?? recentActiveThreadListLimit
+
+        let activeThreads = try await fetchCoalescedServerThreads(limit: activeLimit)
+        reconcileLocalThreadsWithServer(activeThreads)
+
+        if activeThreadId == nil {
+            activeThreadId = firstLiveThreadID()
+        }
+    }
+
+    // Preserves the older startThread symbol used by most call sites and incremental builds.
+    func startThread(
+        preferredProjectPath: String? = nil,
+        runtimeOverride: ConstellagentThreadRuntimeOverride? = nil
+    ) async throws -> ConstellagentThread {
+        try await startThreadImpl(
+            preferredProjectPath: preferredProjectPath,
+            pendingComposerAction: nil,
+            runtimeOverride: runtimeOverride
+        )
+    }
+
+    // Starts a new thread and seeds a one-shot composer action for the destination thread.
+    func startThread(
+        preferredProjectPath: String? = nil,
+        pendingComposerAction: ConstellagentPendingThreadComposerAction,
+        runtimeOverride: ConstellagentThreadRuntimeOverride? = nil
+    ) async throws -> ConstellagentThread {
+        try await startThreadImpl(
+            preferredProjectPath: preferredProjectPath,
+            pendingComposerAction: pendingComposerAction,
+            runtimeOverride: runtimeOverride
+        )
+    }
+
+    // Starts a new thread and stores it in local state.
+    private func startThreadImpl(
+        preferredProjectPath: String? = nil,
+        pendingComposerAction: ConstellagentPendingThreadComposerAction? = nil,
+        runtimeOverride: ConstellagentThreadRuntimeOverride? = nil
+    ) async throws -> ConstellagentThread {
+        let normalizedPreferredProjectPath = ConstellagentThreadStartProjectBinding.normalizedProjectPath(preferredProjectPath)
+        // Brand-new chats start from app defaults; per-chat overrides are inherited only on continuation.
+        let explicitServiceTier = runtimeOverride?.overridesServiceTier == true
+            ? normalizedServiceTierForSelectedModel(runtimeOverride?.serviceTier)?.rawValue
+            : runtimeServiceTierForTurn()
+        var includesServiceTier = explicitServiceTier != nil
+
+        while true {
+            let params = ConstellagentThreadStartProjectBinding.makeThreadStartParams(
+                modelIdentifier: runtimeModelIdentifierForTurn(),
+                preferredProjectPath: normalizedPreferredProjectPath,
+                serviceTier: includesServiceTier ? explicitServiceTier : nil
+            )
+
+            do {
+                let response = try await sendRequestWithSandboxFallback(
+                    method: "thread/start",
+                    baseParams: params,
+                    timeoutNanoseconds: ThreadTurnStateSnapshotPolicy.requestTimeoutNanoseconds,
+                    timeoutMessage: "thread/start timed out waiting for the desktop bridge. Check the Mobile connection on your Mac."
+                )
+
+                guard let result = response.result,
+                      let resultObject = result.objectValue,
+                      let threadValue = resultObject["thread"],
+                      let decodedThread = decodeModel(ConstellagentThread.self, from: threadValue) else {
+                    throw ConstellagentServiceError.invalidResponse("thread/start response missing thread")
+                }
+
+                let thread = ConstellagentThreadStartProjectBinding.applyPreferredProjectFallback(
+                    to: decodedThread,
+                    preferredProjectPath: normalizedPreferredProjectPath
+                )
+                if let pendingComposerAction {
+                    queuePendingComposerAction(pendingComposerAction, for: thread.id)
+                }
+                if let runtimeOverride, !runtimeOverride.isEmpty {
+                    applyThreadRuntimeOverride(runtimeOverride, to: thread.id)
+                }
+                // Mark the fresh thread as resumed before publishing it so the first
+                // render can skip the transient loading state while the empty composer
+                // is already the right answer.
+                resumedThreadIDs.insert(thread.id)
+                hydratedThreadIDs.insert(thread.id)
+                initialTurnsLoadedByThreadID.insert(thread.id)
+                upsertThread(thread, treatAsServerState: true)
+                if let normalizedProjectPath = thread.normalizedProjectPath,
+                   ConstellagentThread.projectIconSystemName(for: normalizedProjectPath) == "arrow.triangle.branch" {
+                    rememberAssociatedManagedWorktreePath(normalizedProjectPath, for: thread.id)
+                }
+                activeThreadId = thread.id
+                return thread
+            } catch {
+                guard consumeUnsupportedServiceTier(error, includesServiceTier: &includesServiceTier) else {
+                    throw error
+                }
+            }
+        }
+    }
+
+    // Stores one-shot composer setup so a newly created thread can open in the requested mode.
+    func queuePendingComposerAction(_ action: ConstellagentPendingThreadComposerAction, for threadId: String) {
+        pendingComposerActionByThreadID[threadId] = action
+    }
+
+    // Consumes the pending composer setup once the destination thread view appears.
+    func consumePendingComposerAction(for threadId: String) -> ConstellagentPendingThreadComposerAction? {
+        pendingComposerActionByThreadID.removeValue(forKey: threadId)
+    }
+
+    // Reads an unsent local composer draft for the requested thread.
+    func composerDraft(for threadId: String) -> TurnComposerLocalDraft? {
+        composerDraftsByThreadID[threadId]
+    }
+
+    // Stores or clears an unsent composer draft, optionally flushing it to local disk.
+    func setComposerDraft(
+        _ draft: TurnComposerLocalDraft?,
+        for threadId: String,
+        persistToDisk: Bool = false
+    ) {
+        if let draft, !draft.isEmpty {
+            composerDraftsByThreadID[threadId] = draft
+        } else {
+            composerDraftsByThreadID.removeValue(forKey: threadId)
+        }
+
+        if persistToDisk {
+            persistComposerDrafts()
+        }
+    }
+
+    func persistComposerDrafts() {
+        guard !suspendAutomaticMacScopedPersistence else {
+            return
+        }
+
+        composerDraftPersistence.save(
+            composerDraftsByThreadID,
+            macDeviceId: currentMacScopedPersistenceDeviceId
+        )
+    }
+
+    // Sends user input as a new turn against an existing (or newly created) thread.
+    func startTurn(
+        userInput: String,
+        threadId: String?,
+        attachments: [ConstellagentImageAttachment] = [],
+        skillMentions: [ConstellagentTurnSkillMention] = [],
+        mentionMentions: [ConstellagentTurnMention] = [],
+        fileMentions: [String] = [],
+        shouldAppendUserMessage: Bool = true,
+        preAppendedUserMessageID: String? = nil,
+        automaticTitleSeedOverride: String? = nil,
+        collaborationMode: ConstellagentCollaborationModeKind? = nil,
+        preservePlanSessionState: Bool = false
+    ) async throws {
+        let trimmedInput = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedInput.isEmpty
+                || !attachments.isEmpty
+                || hasRenderableStructuredMentions(skillMentions: skillMentions, mentionMentions: mentionMentions) else {
+            throw ConstellagentServiceError.invalidInput("User input, images, and mentions cannot all be empty")
+        }
+
+        let initialThreadId = try await resolveThreadID(threadId)
+        let effectiveCollaborationMode = collaborationModeForOutgoingTurn(
+            threadId: initialThreadId,
+            requestedMode: collaborationMode,
+            preserveExisting: preservePlanSessionState
+        )
+        preparePlanSessionForStart(
+            threadId: initialThreadId,
+            collaborationMode: effectiveCollaborationMode,
+            preserveExisting: preservePlanSessionState
+        )
+        let outgoingDisplayText = displayTextForOutgoingTurn(
+            userInput: trimmedInput,
+            skillMentions: skillMentions,
+            mentionMentions: mentionMentions
+        )
+        let normalizedPreAppendedUserMessageID = normalizedInterruptIdentifier(preAppendedUserMessageID)
+        let shouldAppendOnContinuation = shouldAppendUserMessage || normalizedPreAppendedUserMessageID != nil
+        let preResumeTitleSeed = resolvedAutomaticThreadTitleSeed(
+            override: automaticTitleSeedOverride,
+            shouldEvaluate: shouldAppendUserMessage && normalizedPreAppendedUserMessageID == nil,
+            userInput: outgoingDisplayText,
+            attachments: attachments,
+            threadId: initialThreadId
+        )
+        // Put the user's bubble in the timeline before any resume/network work so
+        // sends feel instant while the runtime catches up in the background.
+        let preResumePendingMessageId: String
+        if let normalizedPreAppendedUserMessageID {
+            preResumePendingMessageId = normalizedPreAppendedUserMessageID
+        } else if shouldAppendUserMessage {
+            preResumePendingMessageId = appendUserMessage(
+                threadId: initialThreadId,
+                text: outgoingDisplayText,
+                attachments: attachments,
+                fileMentions: fileMentions,
+                skillMentions: skillMentions.compactMap {
+                    let rawName = $0.name ?? $0.id
+                    let normalized = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return normalized.isEmpty ? nil : normalized
+                },
+                pluginMentions: mentionMentions.compactMap {
+                    let normalized = $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return normalized.isEmpty ? nil : normalized
+                }
+            )
+        } else {
+            preResumePendingMessageId = ""
+        }
+
+        do {
+            try await ensureThreadResumed(threadId: initialThreadId)
+        } catch {
+            if shouldTreatAsThreadNotFound(error) {
+                if shouldAppendUserMessage || !preResumePendingMessageId.isEmpty {
+                    removePreResumePendingUserMessage(
+                        threadId: initialThreadId,
+                        messageId: preResumePendingMessageId,
+                        matchingText: trimmedInput,
+                        matchingAttachments: attachments
+                    )
+                }
+                handleMissingThread(initialThreadId)
+
+                let continuationThread = try await createContinuationThread(from: initialThreadId)
+                migratePlanSessionState(from: initialThreadId, to: continuationThread.id)
+                try await ensureThreadResumed(threadId: continuationThread.id)
+                try await sendTurnStart(
+                    trimmedInput,
+                    attachments: attachments,
+                    skillMentions: skillMentions,
+                    mentionMentions: mentionMentions,
+                    fileMentions: fileMentions,
+                    to: continuationThread.id,
+                    shouldAppendUserMessage: shouldAppendUserMessage,
+                    collaborationMode: effectiveCollaborationMode
+                )
+                activeThreadId = continuationThread.id
+                lastErrorMessage = nil
+                return
+            }
+        }
+
+        do {
+            try await sendTurnStart(
+                trimmedInput,
+                attachments: attachments,
+                skillMentions: skillMentions,
+                mentionMentions: mentionMentions,
+                fileMentions: fileMentions,
+                to: initialThreadId,
+                shouldAppendUserMessage: false,
+                collaborationMode: effectiveCollaborationMode,
+                preAppendedUserMessageID: preResumePendingMessageId,
+                automaticTitleSeedOverride: preResumeTitleSeed
+            )
+        } catch {
+            if shouldTreatAsThreadNotFound(error) {
+                // If turn/start explicitly says "thread not found", treat it as authoritative.
+                // Some server states can make thread/read flaky, so we avoid blocking on a second check.
+                if shouldAppendUserMessage || !preResumePendingMessageId.isEmpty {
+                    removePreResumePendingUserMessage(
+                        threadId: initialThreadId,
+                        messageId: preResumePendingMessageId,
+                        matchingText: trimmedInput,
+                        matchingAttachments: attachments
+                    )
+                }
+                handleMissingThread(initialThreadId)
+
+                let continuationThread = try await createContinuationThread(from: initialThreadId)
+                migratePlanSessionState(from: initialThreadId, to: continuationThread.id)
+                try await sendTurnStart(
+                    trimmedInput,
+                    attachments: attachments,
+                    skillMentions: skillMentions,
+                    mentionMentions: mentionMentions,
+                    fileMentions: fileMentions,
+                    to: continuationThread.id,
+                    shouldAppendUserMessage: shouldAppendUserMessage,
+                    collaborationMode: effectiveCollaborationMode
+                )
+                activeThreadId = continuationThread.id
+                lastErrorMessage = nil
+                return
+            }
+            throw error
+        }
+
+        activeThreadId = initialThreadId
+    }
+
+    // Lets the New Chat handoff publish the first user row before the real
+    // TurnView appears, while `startTurn` still owns the single `turn/start`.
+    func preAppendOutgoingUserMessage(
+        userInput: String,
+        threadId: String,
+        attachments: [ConstellagentImageAttachment] = [],
+        skillMentions: [ConstellagentTurnSkillMention] = [],
+        mentionMentions: [ConstellagentTurnMention] = [],
+        fileMentions: [String] = []
+    ) -> ConstellagentPreAppendedTurnMessage? {
+        let normalizedThreadID = normalizedInterruptIdentifier(threadId) ?? threadId
+        let outgoingDisplayText = displayTextForOutgoingTurn(
+            userInput: userInput.trimmingCharacters(in: .whitespacesAndNewlines),
+            skillMentions: skillMentions,
+            mentionMentions: mentionMentions
+        )
+        let automaticTitleSeed = resolvedAutomaticThreadTitleSeed(
+            override: nil,
+            shouldEvaluate: true,
+            userInput: outgoingDisplayText,
+            attachments: attachments,
+            threadId: normalizedThreadID
+        )
+        let messageID = appendUserMessage(
+            threadId: normalizedThreadID,
+            text: outgoingDisplayText,
+            attachments: attachments,
+            fileMentions: fileMentions,
+            skillMentions: skillMentions.compactMap {
+                let rawName = $0.name ?? $0.id
+                let normalized = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                return normalized.isEmpty ? nil : normalized
+            },
+            pluginMentions: mentionMentions.compactMap {
+                let normalized = $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return normalized.isEmpty ? nil : normalized
+            }
+        )
+
+        guard !messageID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return ConstellagentPreAppendedTurnMessage(
+            messageID: messageID,
+            automaticTitleSeed: automaticTitleSeed
+        )
+    }
+
+    // Carries a draft-thread pending row into the real thread created by thread/start.
+    func movePreAppendedOutgoingUserMessage(
+        _ preAppendedMessage: ConstellagentPreAppendedTurnMessage?,
+        from sourceThreadID: String,
+        to targetThreadID: String
+    ) -> ConstellagentPreAppendedTurnMessage? {
+        guard let preAppendedMessage,
+              let messageID = normalizedInterruptIdentifier(preAppendedMessage.messageID),
+              let normalizedSourceThreadID = normalizedInterruptIdentifier(sourceThreadID),
+              let normalizedTargetThreadID = normalizedInterruptIdentifier(targetThreadID) else {
+            return nil
+        }
+        guard normalizedSourceThreadID != normalizedTargetThreadID else {
+            return preAppendedMessage
+        }
+        guard var sourceMessages = messagesByThread[normalizedSourceThreadID],
+              let sourceIndex = sourceMessages.firstIndex(where: { $0.id == messageID }),
+              sourceMessages[sourceIndex].role == .user else {
+            return nil
+        }
+
+        let sourceMessage = sourceMessages.remove(at: sourceIndex)
+        let automaticTitleSeed = resolvedAutomaticThreadTitleSeed(
+            override: preAppendedMessage.automaticTitleSeed,
+            shouldEvaluate: true,
+            userInput: sourceMessage.text,
+            attachments: sourceMessage.attachments,
+            threadId: normalizedTargetThreadID
+        )
+        let movedMessage = ConstellagentMessage(
+            id: sourceMessage.id,
+            threadId: normalizedTargetThreadID,
+            role: sourceMessage.role,
+            kind: sourceMessage.kind,
+            assistantPhase: sourceMessage.assistantPhase,
+            text: sourceMessage.text,
+            fileMentions: sourceMessage.fileMentions,
+            skillMentions: sourceMessage.skillMentions,
+            pluginMentions: sourceMessage.pluginMentions,
+            createdAt: sourceMessage.createdAt,
+            turnId: sourceMessage.turnId,
+            itemId: sourceMessage.itemId,
+            isStreaming: sourceMessage.isStreaming,
+            deliveryState: sourceMessage.deliveryState,
+            attachments: sourceMessage.attachments,
+            planState: sourceMessage.planState,
+            planPresentation: sourceMessage.planPresentation,
+            proposedPlan: sourceMessage.proposedPlan,
+            subagentAction: sourceMessage.subagentAction,
+            structuredUserInputRequest: sourceMessage.structuredUserInputRequest,
+            orderIndex: sourceMessage.orderIndex
+        )
+
+        if sourceMessages.isEmpty {
+            messagesByThread.removeValue(forKey: normalizedSourceThreadID)
+        } else {
+            messagesByThread[normalizedSourceThreadID] = sourceMessages
+        }
+
+        var targetMessages = messagesByThread[normalizedTargetThreadID] ?? []
+        targetMessages.removeAll { $0.id == movedMessage.id }
+        targetMessages.append(movedMessage)
+        targetMessages.sort(by: { $0.orderIndex < $1.orderIndex })
+        messagesByThread[normalizedTargetThreadID] = targetMessages
+        messageIndexCacheByThread[normalizedSourceThreadID] = nil
+        messageIndexCacheByThread[normalizedTargetThreadID] = nil
+        persistMessages()
+        updateCurrentOutput(for: normalizedSourceThreadID)
+        updateCurrentOutput(for: normalizedTargetThreadID)
+        return ConstellagentPreAppendedTurnMessage(
+            messageID: messageID,
+            automaticTitleSeed: automaticTitleSeed
+        )
+    }
+
+    // Removes the optimistic row by id first because structured mention-only rows may not match raw composer text.
+    private func removePreResumePendingUserMessage(
+        threadId: String,
+        messageId: String,
+        matchingText: String,
+        matchingAttachments: [ConstellagentImageAttachment]
+    ) {
+        if removeUserMessage(threadId: threadId, messageId: messageId) {
+            return
+        }
+
+        markMessageDeliveryState(threadId: threadId, messageId: messageId, state: .failed)
+        removeLatestFailedUserMessage(
+            threadId: threadId,
+            matchingText: matchingText,
+            matchingAttachments: matchingAttachments
+        )
+    }
+
+    // Requests interruption for the active turn.
+    func interruptTurn(turnId: String?, threadId: String? = nil) async throws {
+        let normalizedThreadID = normalizedInterruptIdentifier(threadId)
+            ?? normalizedInterruptIdentifier(activeThreadId)
+
+        var normalizedTurnID = normalizedInterruptIdentifier(turnId)
+        if normalizedTurnID == nil,
+           let normalizedThreadID {
+            normalizedTurnID = normalizedInterruptIdentifier(activeTurnIdByThread[normalizedThreadID])
+        }
+        if normalizedTurnID == nil {
+            normalizedTurnID = normalizedInterruptIdentifier(activeTurnId)
+        }
+        if normalizedTurnID == nil,
+           let normalizedThreadID {
+            do {
+                normalizedTurnID = try await resolveInFlightTurnID(threadId: normalizedThreadID)
+            } catch {
+                if let serviceError = error as? ConstellagentServiceError,
+                   case .invalidInput(_) = serviceError,
+                   protectedRunningFallbackThreadIDs.contains(normalizedThreadID),
+                   activeTurnID(for: normalizedThreadID) == nil {
+                    demoteVisibleRunningStateToProtectedFallback(for: normalizedThreadID)
+                }
+                lastErrorMessage = userFacingTurnErrorMessageForFooter(from: error)
+                throw error
+            }
+        }
+
+        guard let normalizedTurnID else {
+            throw ConstellagentServiceError.invalidInput("turn/interrupt requires a non-empty turnId")
+        }
+
+        let resolvedThreadID = normalizedThreadID
+            ?? threadIdByTurnID[normalizedTurnID]
+            ?? normalizedInterruptIdentifier(activeThreadId)
+        if let resolvedThreadID {
+            threadIdByTurnID[normalizedTurnID] = resolvedThreadID
+        }
+
+        do {
+            try await sendInterruptRequest(
+                turnId: normalizedTurnID,
+                threadId: resolvedThreadID,
+                useSnakeCaseParams: false
+            )
+            lastErrorMessage = nil
+            return
+        } catch {
+            var finalError: Error = error
+
+            if shouldRetryInterruptWithSnakeCaseParams(error) {
+                do {
+                    try await sendInterruptRequest(
+                        turnId: normalizedTurnID,
+                        threadId: resolvedThreadID,
+                        useSnakeCaseParams: true
+                    )
+                    lastErrorMessage = nil
+                    return
+                } catch {
+                    finalError = error
+                }
+            }
+
+            if let resolvedThreadID,
+               shouldRetryInterruptWithRefreshedTurnID(finalError),
+               let refreshedTurnID = try await resolveInFlightTurnID(threadId: resolvedThreadID),
+               refreshedTurnID != normalizedTurnID {
+                do {
+                    try await sendInterruptRequest(
+                        turnId: refreshedTurnID,
+                        threadId: resolvedThreadID,
+                        useSnakeCaseParams: false
+                    )
+                    setActiveTurnID(refreshedTurnID, for: resolvedThreadID)
+                    threadIdByTurnID[refreshedTurnID] = resolvedThreadID
+                    lastErrorMessage = nil
+                    return
+                } catch {
+                    finalError = error
+                    if shouldRetryInterruptWithSnakeCaseParams(error) {
+                        do {
+                            try await sendInterruptRequest(
+                                turnId: refreshedTurnID,
+                                threadId: resolvedThreadID,
+                                useSnakeCaseParams: true
+                            )
+                            setActiveTurnID(refreshedTurnID, for: resolvedThreadID)
+                            threadIdByTurnID[refreshedTurnID] = resolvedThreadID
+                            lastErrorMessage = nil
+                            return
+                        } catch {
+                            finalError = error
+                        }
+                    }
+                }
+            }
+
+            lastErrorMessage = userFacingTurnErrorMessageForFooter(from: finalError)
+            throw finalError
+        }
+    }
+
+    // Interrupts every active or protected run before switching to a different Mac context.
+    func interruptAllRunningTurnsBeforeMacSwitch() async throws {
+        let candidateThreadIDs = runningThreadIDs
+            .union(protectedRunningFallbackThreadIDs)
+            .union(activeTurnIdByThread.keys)
+            .sorted()
+
+        for threadID in candidateThreadIDs {
+            try await interruptTurn(turnId: nil, threadId: threadID)
+        }
+    }
+
+    // Queries server-side fuzzy file search using stable RPC (non-experimental).
+    func fuzzyFileSearch(
+        query: String,
+        roots: [String],
+        cancellationToken: String?
+    ) async throws -> [ConstellagentFuzzyFileMatch] {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else {
+            return []
+        }
+
+        let normalizedRoots = roots
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !normalizedRoots.isEmpty else {
+            return []
+        }
+
+        let normalizedToken = cancellationToken?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let tokenValue = (normalizedToken?.isEmpty == false) ? normalizedToken : nil
+
+        let params: JSONValue = .object([
+            "query": .string(normalizedQuery),
+            "roots": .array(normalizedRoots.map { .string($0) }),
+            "cancellationToken": tokenValue.map(JSONValue.string) ?? .null,
+        ])
+
+        let response = try await sendRequest(method: "fuzzyFileSearch", params: params)
+
+        guard let decodedFiles = decodeFuzzyFileMatches(from: response.result) else {
+            throw ConstellagentServiceError.invalidResponse("fuzzyFileSearch response missing result.files")
+        }
+
+        return decodedFiles.map { match in
+            let normalizedPath = normalizeFuzzyFilePath(path: match.path, root: match.root)
+            return ConstellagentFuzzyFileMatch(
+                root: match.root,
+                path: normalizedPath,
+                fileName: match.fileName,
+                score: match.score,
+                indices: match.indices
+            )
+        }
+    }
+
+    // Loads available skills for one or more roots with shape-fallback compatibility.
+    func listSkills(
+        cwds: [String]?,
+        forceReload: Bool = false
+    ) async throws -> [ConstellagentSkillMetadata] {
+        let normalizedCwds = (cwds ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var paramsObject: RPCObject = [:]
+        if !normalizedCwds.isEmpty {
+            paramsObject["cwds"] = .array(normalizedCwds.map { .string($0) })
+        }
+        if forceReload {
+            paramsObject["forceReload"] = .bool(true)
+        }
+
+        let response: RPCMessage
+        do {
+            response = try await sendRequest(method: "skills/list", params: .object(paramsObject))
+        } catch {
+            guard !normalizedCwds.isEmpty,
+                  shouldRetrySkillsListWithCwdFallback(error) else {
+                throw error
+            }
+
+            var fallbackParams: RPCObject = ["cwd": .string(normalizedCwds[0])]
+            if forceReload {
+                fallbackParams["forceReload"] = .bool(true)
+            }
+            response = try await sendRequest(method: "skills/list", params: .object(fallbackParams))
+        }
+
+        guard let decodedSkills = decodeSkillMetadata(from: response.result) else {
+            throw ConstellagentServiceError.invalidResponse("skills/list response missing result.data[].skills")
+        }
+
+        let dedupedByName = Dictionary(grouping: decodedSkills) { $0.normalizedName }
+            .compactMap { _, bucket -> ConstellagentSkillMetadata? in
+                bucket.first(where: { $0.enabled }) ?? bucket.first
+            }
+            .filter { !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return dedupedByName
+    }
+
+    // Loads Constellagent app-server plugins and returns entries usable as `@plugin` mentions.
+    func listPlugins(
+        cwds: [String]?,
+        forceReload: Bool = false
+    ) async throws -> [ConstellagentPluginMetadata] {
+        let normalizedCwds = (cwds ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var paramsObject: RPCObject = [:]
+        if !normalizedCwds.isEmpty {
+            paramsObject["cwds"] = .array(normalizedCwds.map { .string($0) })
+        }
+        if forceReload {
+            paramsObject["forceReload"] = .bool(true)
+        }
+
+        let response = try await sendRequest(method: "plugin/list", params: .object(paramsObject))
+
+        guard let decodedPlugins = decodePluginMetadata(from: response.result) else {
+            throw ConstellagentServiceError.invalidResponse("plugin/list response missing result.marketplaces[].plugins")
+        }
+
+        let mentionablePlugins = decodedPlugins.filter(\.isAvailableForMention)
+        let dedupedByPath = Dictionary(grouping: mentionablePlugins) { $0.mentionPath }
+            .compactMap { _, bucket -> ConstellagentPluginMetadata? in
+                bucket.first
+            }
+            .filter { !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .sorted { $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending }
+
+        return dedupedByPath
+    }
+
+    // Accepts the latest pending approval request.
+    func approvePendingRequest(_ request: ConstellagentApprovalRequest, forSession: Bool = false) async throws {
+        let requestKey = request.id
+        guard pendingApprovals.contains(where: { $0.id == requestKey }) else {
+            throw ConstellagentServiceError.noPendingApproval
+        }
+
+        try await sendResponse(
+            id: request.requestID,
+            result: approvalResponseResult(for: request, decision: "accept", forSession: forSession)
+        )
+        removePendingApproval(requestID: request.requestID)
+    }
+
+    // Accepts the next pending approval request, optionally scoped to a thread.
+    func approvePendingRequest(forThread threadId: String? = nil, forSession: Bool = false) async throws {
+        guard let request = pendingApproval(for: threadId) else {
+            throw ConstellagentServiceError.noPendingApproval
+        }
+
+        try await approvePendingRequest(request, forSession: forSession)
+    }
+
+    // Declines the latest pending approval request.
+    func declinePendingRequest(_ request: ConstellagentApprovalRequest) async throws {
+        let requestKey = request.id
+        guard pendingApprovals.contains(where: { $0.id == requestKey }) else {
+            throw ConstellagentServiceError.noPendingApproval
+        }
+
+        try await sendResponse(
+            id: request.requestID,
+            result: approvalResponseResult(for: request, decision: "decline")
+        )
+        removePendingApproval(requestID: request.requestID)
+    }
+
+    // Declines the next pending approval request, optionally scoped to a thread.
+    func declinePendingRequest(forThread threadId: String? = nil) async throws {
+        guard let request = pendingApproval(for: threadId) else {
+            throw ConstellagentServiceError.noPendingApproval
+        }
+
+        try await declinePendingRequest(request)
+    }
+
+    // Responds to item/tool/requestUserInput using the exact app-server answer envelope.
+    func respondToStructuredUserInput(
+        requestID: JSONValue,
+        answersByQuestionID: [String: [String]]
+    ) async throws {
+        try await sendResponse(
+            id: requestID,
+            result: buildStructuredUserInputResponse(answersByQuestionID: answersByQuestionID)
+        )
+        removeStructuredUserInputPrompt(requestID: requestID)
+    }
+
+    func buildStructuredUserInputResponse(
+        answersByQuestionID: [String: [String]]
+    ) -> JSONValue {
+        let answersObject = answersByQuestionID.reduce(into: RPCObject()) { result, entry in
+            let filteredAnswers = entry.value
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            result[entry.key] = .object([
+                "answers": .array(filteredAnswers.map(JSONValue.string)),
+            ])
+        }
+
+        return .object([
+            "answers": .object(answersObject),
+        ])
+    }
+
+    // Interrupts the active plan turn, only tearing down local prompt/session state once it is safe.
+    func cancelStructuredPlanSession(
+        requestID _: JSONValue,
+        turnId: String?,
+        threadId: String
+    ) async throws {
+        do {
+            try await interruptTurn(turnId: turnId, threadId: threadId)
+            removeAllStructuredUserInputPrompts(threadId: threadId)
+            resetPlanSessionState(for: threadId)
+        } catch let error as ConstellagentServiceError {
+            if case .invalidInput = error {
+                removeAllStructuredUserInputPrompts(threadId: threadId)
+                resetPlanSessionState(for: threadId)
+                return
+            }
+            throw error
+        }
+    }
+
+    // Falls back to a normal plan-mode user reply when the runtime asked clarifying
+    // questions in plain text instead of emitting `item/tool/requestUserInput`.
+    func submitInferredPlanQuestionnaireResponse(
+        threadId: String,
+        questions: [ConstellagentStructuredUserInputQuestion],
+        answersByQuestionID: [String: [String]]
+    ) async throws {
+        let userInput = inferredPlanQuestionnaireResponseText(
+            questions: questions,
+            answersByQuestionID: answersByQuestionID
+        )
+        guard !userInput.isEmpty else {
+            throw ConstellagentServiceError.invalidInput("Questionnaire answers cannot be empty")
+        }
+
+        let normalizedThreadID = normalizedInterruptIdentifier(threadId) ?? threadId
+        if shouldCommitInferredPlanQuestionnaireFallback(for: normalizedThreadID) {
+            markCompatibilityPlanFallback(for: normalizedThreadID)
+        }
+
+        var expectedTurnID = activeTurnID(for: normalizedThreadID)
+        if expectedTurnID == nil {
+            do {
+                expectedTurnID = try await resolveInFlightTurnID(threadId: normalizedThreadID)
+            } catch {
+                if let serviceError = error as? ConstellagentServiceError,
+                   case .invalidInput(_) = serviceError {
+                    expectedTurnID = nil
+                } else {
+                    throw error
+                }
+            }
+        }
+
+        if let expectedTurnID {
+            try await steerTurn(
+                userInput: userInput,
+                threadId: normalizedThreadID,
+                expectedTurnId: expectedTurnID,
+                shouldAppendUserMessage: true,
+                collaborationMode: .plan
+            )
+            return
+        }
+
+        try await startTurn(
+            userInput: userInput,
+            threadId: normalizedThreadID,
+            shouldAppendUserMessage: true,
+            collaborationMode: .plan,
+            preservePlanSessionState: true
+        )
+    }
+
+    func inferredPlanQuestionnaireResponseText(
+        questions: [ConstellagentStructuredUserInputQuestion],
+        answersByQuestionID: [String: [String]]
+    ) -> String {
+        let sections = questions.enumerated().compactMap { index, question -> String? in
+            let answers = (answersByQuestionID[question.id] ?? [])
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            guard !answers.isEmpty else {
+                return nil
+            }
+
+            let prompt = question.trimmedPrompt
+            if answers.count == 1 {
+                return "\(index + 1). \(prompt)\n\(answers[0])"
+            }
+
+            let answerLines = answers.map { "- \($0)" }.joined(separator: "\n")
+            return "\(index + 1). \(prompt)\n\(answerLines)"
+        }
+
+        guard !sections.isEmpty else {
+            return ""
+        }
+
+        return """
+        Answers:
+
+        \(sections.joined(separator: "\n\n"))
+        """
+    }
+}
+
+private extension ConstellagentService {
+    @discardableResult
+    func removePendingApproval(id requestID: String) -> ConstellagentApprovalRequest? {
+        guard let exactIndex = pendingApprovals.firstIndex(where: { $0.id == requestID }) else {
+            return nil
+        }
+
+        return pendingApprovals.remove(at: exactIndex)
+    }
+
+    func normalizedApprovalThreadIdentifier(_ rawValue: String?) -> String? {
+        guard let rawValue else {
+            return nil
+        }
+
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+enum ConstellagentThreadStartProjectBinding {
+    // Normalizes project paths before sending them to thread/start.
+    static func normalizedProjectPath(_ rawValue: String?) -> String? {
+        ConstellagentThread.normalizedFilesystemProjectPath(rawValue)
+    }
+
+    static func makeThreadStartParams(
+        modelIdentifier: String?,
+        preferredProjectPath: String?,
+        serviceTier: String?
+    ) -> RPCObject {
+        var params: RPCObject = [:]
+
+        if let modelIdentifier {
+            params["model"] = .string(modelIdentifier)
+        }
+
+        if let preferredProjectPath {
+            params["cwd"] = .string(preferredProjectPath)
+        }
+
+        if let serviceTier {
+            params["serviceTier"] = .string(serviceTier)
+        }
+
+        return params
+    }
+
+    // Preserves project grouping even when older servers omit cwd in thread/start result.
+    static func applyPreferredProjectFallback(to thread: ConstellagentThread, preferredProjectPath: String?) -> ConstellagentThread {
+        guard thread.normalizedProjectPath == nil,
+              let preferredProjectPath else {
+            return thread
+        }
+
+        var patchedThread = thread
+        patchedThread.cwd = preferredProjectPath
+        return patchedThread
+    }
+}
+
+extension ConstellagentService {
+    // Reuses an in-flight thread/list request for matching caps so launch sync and sidebar refresh share one RPC.
+    func fetchCoalescedServerThreads(limit: Int) async throws -> [ConstellagentThread] {
+        if let existingFetch = threadListFetchTaskByLimit[limit] {
+            return try await existingFetch.task.value
+        }
+
+        let fetchID = UUID()
+        let task = Task { @MainActor in
+            defer {
+                if threadListFetchTaskByLimit[limit]?.id == fetchID {
+                    threadListFetchTaskByLimit[limit] = nil
+                }
+            }
+            return try await fetchServerThreads(limit: limit)
+        }
+        threadListFetchTaskByLimit[limit] = (id: fetchID, task: task)
+
+        return try await task.value
+    }
+
+    func fetchServerThreads(
+        limit: Int? = nil,
+        onPage: ((_ page: [ConstellagentThread], _ accumulatedThreads: [ConstellagentThread]) -> Void)? = nil
+    ) async throws -> [ConstellagentThread] {
+        var allThreads: [ConstellagentThread] = []
+        var nextCursor: JSONValue = .null
+        var hasRequestedFirstPage = false
+
+        repeat {
+            var params: RPCObject = [
+                // Avoid the server's narrower default sourceKinds so multi-project history
+                // includes threads started from the app-server flow as well.
+                "sourceKinds": .array(threadListSourceKinds.map(JSONValue.string)),
+                "cursor": nextCursor,
+            ]
+            if let limit {
+                params["limit"] = .integer(limit)
+            }
+
+            let response = try await sendRequest(
+                method: "thread/list",
+                params: .object(params),
+                timeoutNanoseconds: ThreadListHydrationPolicy.requestTimeoutNanoseconds,
+                timeoutMessage: "thread/list timed out while syncing chats."
+            )
+
+            guard let resultObject = response.result?.objectValue else {
+                throw ConstellagentServiceError.invalidResponse("thread/list response missing payload")
+            }
+
+            let page =
+                resultObject["data"]?.arrayValue
+                ?? resultObject["items"]?.arrayValue
+                ?? resultObject["threads"]?.arrayValue
+            guard let page else {
+                throw ConstellagentServiceError.invalidResponse("thread/list response missing data array")
+            }
+
+            let decodedPage = page.compactMap { decodeModel(ConstellagentThread.self, from: $0) }
+            allThreads.append(contentsOf: decodedPage)
+            onPage?(decodedPage, allThreads)
+            nextCursor = nextThreadListCursor(from: resultObject)
+            hasRequestedFirstPage = true
+        } while shouldContinueThreadListPagination(
+            nextCursor: nextCursor,
+            limit: limit,
+            hasRequestedFirstPage: hasRequestedFirstPage
+        )
+
+        return allThreads
+    }
+
+    // Requests all user-facing thread sources instead of relying on the server default.
+    private var threadListSourceKinds: [String] {
+        [
+            "cli",
+            "vscode",
+            "appServer",
+            "exec",
+            "unknown",
+        ]
+    }
+
+    // Accepts both modern and legacy cursor field names from thread/list responses.
+    private func nextThreadListCursor(from resultObject: RPCObject) -> JSONValue {
+        if let nextCursor = resultObject["nextCursor"] {
+            return nextCursor
+        }
+        if let nextCursor = resultObject["next_cursor"] {
+            return nextCursor
+        }
+        return .null
+    }
+
+    // Paginates until the server reports no cursor or the caller requested a capped page.
+    private func shouldContinueThreadListPagination(
+        nextCursor: JSONValue,
+        limit: Int?,
+        hasRequestedFirstPage: Bool
+    ) -> Bool {
+        guard hasRequestedFirstPage, limit == nil else {
+            return false
+        }
+
+        switch nextCursor {
+        case .null:
+            return false
+        case let .string(value):
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        default:
+            return true
+        }
+    }
+
+    func createContinuationThread(from archivedThreadId: String) async throws -> ConstellagentThread {
+        let continuationRuntimeOverride = threadRuntimeOverride(for: archivedThreadId)
+        let continuationThread = try await startThread(runtimeOverride: continuationRuntimeOverride)
+        appendSystemMessage(
+            threadId: continuationThread.id,
+            text: "Continued from archived thread `\(archivedThreadId)`"
+        )
+        return continuationThread
+    }
+
+    @discardableResult
+    func ensureThreadResumed(
+        threadId: String,
+        force: Bool = false,
+        preferredProjectPath: String? = nil,
+        modelIdentifierOverride: String? = nil
+    ) async throws -> ConstellagentThread? {
+        guard !threadId.isEmpty else {
+            return nil
+        }
+
+        if force {
+            forcedResumeEscalationThreadIDs.insert(threadId)
+        }
+        if !force, resumedThreadIDs.contains(threadId) {
+            return thread(for: threadId)
+        }
+        let requestedSignature = ConstellagentThreadResumeRequestSignature(
+            projectPath: ConstellagentThreadStartProjectBinding.normalizedProjectPath(preferredProjectPath)
+                ?? thread(for: threadId)?.gitWorkingDirectory,
+            modelIdentifier: modelIdentifierOverride ?? runtimeModelIdentifierForTurn()
+        )
+        let refreshGeneration = currentPerThreadRefreshGeneration(for: threadId)
+        if let existingTask = threadResumeTaskByThreadID[threadId] {
+            if threadResumeRequestSignatureByThreadID[threadId] == requestedSignature {
+                return try await existingTask.value
+            }
+
+            _ = try await existingTask.value
+            return try await ensureThreadResumed(
+                threadId: threadId,
+                force: force,
+                preferredProjectPath: preferredProjectPath,
+                modelIdentifierOverride: modelIdentifierOverride
+            )
+        }
+
+        let task = Task<ConstellagentThread?, Error> { @MainActor in
+            defer {
+                // Ignore stale refreshes so an older task cannot clear newer state.
+                if isPerThreadRefreshCurrent(for: threadId, generation: refreshGeneration) {
+                    threadResumeTaskByThreadID.removeValue(forKey: threadId)
+                    threadResumeRequestSignatureByThreadID.removeValue(forKey: threadId)
+                    forcedResumeEscalationThreadIDs.remove(threadId)
+                }
+            }
+
+            var params: RPCObject = [
+                "threadId": .string(threadId),
+            ]
+            let resolvedProjectPath = requestedSignature.projectPath
+            if let workingDirectory = resolvedProjectPath {
+                params["cwd"] = .string(workingDirectory)
+            }
+            if let modelIdentifier = requestedSignature.modelIdentifier {
+                params["model"] = .string(modelIdentifier)
+            }
+            if supportsTurnPagination {
+                params["excludeTurns"] = .bool(true)
+            }
+            var didRequestExcludedTurns = params["excludeTurns"] != nil
+            let response: RPCMessage
+            do {
+                response = try await sendRequestWithSandboxFallback(
+                    method: "thread/resume",
+                    baseParams: params,
+                    timeoutNanoseconds: ThreadTurnStateSnapshotPolicy.requestTimeoutNanoseconds,
+                    timeoutMessage: "thread/resume timed out waiting for the desktop bridge. Check the Mobile connection on your Mac."
+                )
+            } catch {
+                guard didRequestExcludedTurns, consumeUnsupportedTurnPagination(error) else {
+                    throw error
+                }
+
+                params.removeValue(forKey: "excludeTurns")
+                didRequestExcludedTurns = false
+                response = try await sendRequestWithSandboxFallback(
+                    method: "thread/resume",
+                    baseParams: params,
+                    timeoutNanoseconds: ThreadTurnStateSnapshotPolicy.requestTimeoutNanoseconds,
+                    timeoutMessage: "thread/resume timed out waiting for the desktop bridge. Check the Mobile connection on your Mac."
+                )
+            }
+            guard !Task.isCancelled,
+                  isPerThreadRefreshCurrent(for: threadId, generation: refreshGeneration) else {
+                throw CancellationError()
+            }
+
+            guard let resultObject = response.result?.objectValue else {
+                resumedThreadIDs.insert(threadId)
+                return nil
+            }
+
+            var resumedThread: ConstellagentThread?
+            var didReceiveEmbeddedHistory = false
+            if let threadValue = resultObject["thread"],
+               var decodedThread = decodeModel(ConstellagentThread.self, from: threadValue) {
+                decodedThread.syncState = .live
+                upsertThread(decodedThread, treatAsServerState: true)
+                resumedThread = decodedThread
+
+                if let threadObject = threadValue.objectValue {
+                    if didRequestExcludedTurns,
+                       threadObject["turns"]?.arrayValue?.isEmpty == false {
+                        markTurnPaginationUnsupportedForCurrentRuntime()
+                        didRequestExcludedTurns = false
+                    }
+                    let historyMessages = decodeMessagesFromThreadRead(threadId: threadId, threadObject: threadObject)
+                    registerSubagentThreads(from: historyMessages, parentThreadId: threadId)
+                    if !historyMessages.isEmpty {
+                        didReceiveEmbeddedHistory = true
+                        initialTurnsLoadedByThreadID.insert(threadId)
+                        updateThreadTimelineProjectionForEmbeddedHistory(
+                            threadId: threadId,
+                            decodedMessageCount: historyMessages.count
+                        )
+                        let existingMessages = messagesByThread[threadId] ?? []
+                        let activeThreadIDs = Set(activeTurnIdByThread.keys)
+                        let runningIDs = runningThreadIDs
+                        let usedRecentWindow = threadHasActiveOrRunningTurn(threadId)
+                            && Self.shouldPreferRecentHistoryWindow(
+                                existingCount: existingMessages.count,
+                                historyCount: historyMessages.count
+                            )
+                        if !usedRecentWindow {
+                            markThreadLocalHistoryStartAuthoritative(threadId, clearRemoteCursor: true)
+                        }
+                        if usedRecentWindow {
+                            markThreadNeedingCanonicalHistoryReconcile(threadId)
+                        }
+                        let merged = try await mergeHistoryMessagesOffMainActor(
+                            existing: existingMessages,
+                            history: historyMessages,
+                            activeThreadIDs: activeThreadIDs,
+                            runningThreadIDs: runningIDs,
+                            preferRecentWindow: usedRecentWindow
+                        )
+                        guard !Task.isCancelled,
+                              isPerThreadRefreshCurrent(for: threadId, generation: refreshGeneration) else {
+                            throw CancellationError()
+                        }
+                        let shouldForceMerge = force || forcedResumeEscalationThreadIDs.contains(threadId)
+                        // Forced resumes are used when reopening a running thread, so merge the
+                        // latest snapshot even mid-run and let mergeHistoryMessages preserve
+                        // existing streaming rows instead of waiting for the final block.
+                        if (shouldForceMerge || !threadHasActiveOrRunningTurn(threadId) || existingMessages.isEmpty)
+                            && merged != existingMessages {
+                            messagesByThread[threadId] = merged
+                            persistMessages()
+                            updateCurrentOutput(for: threadId)
+                        }
+                        if usedRecentWindow, !threadHasActiveOrRunningTurn(threadId) {
+                            scheduleCanonicalHistoryReconcileIfNeeded(for: threadId)
+                        } else if !threadHasActiveOrRunningTurn(threadId) {
+                            markThreadCanonicalHistoryReconciled(threadId)
+                        }
+                    }
+                }
+            } else if let index = threadIndex(for: threadId) {
+                threads[index].syncState = .live
+            }
+
+            guard !Task.isCancelled,
+                  isPerThreadRefreshCurrent(for: threadId, generation: refreshGeneration) else {
+                throw CancellationError()
+            }
+            if !didRequestExcludedTurns || didReceiveEmbeddedHistory {
+                hydratedThreadIDs.insert(threadId)
+                if !supportsTurnPagination {
+                    initialTurnsLoadedByThreadID.insert(threadId)
+                }
+            }
+            resumedThreadIDs.insert(threadId)
+            return resumedThread
+        }
+
+        threadResumeTaskByThreadID[threadId] = task
+        threadResumeRequestSignatureByThreadID[threadId] = requestedSignature
+        return try await task.value
+    }
+
+    func isThreadMissingOnServer(_ threadId: String) async -> Bool {
+        let params: JSONValue = .object([
+            "threadId": .string(threadId),
+            "includeTurns": .bool(false),
+        ])
+
+        do {
+            _ = try await sendRequest(method: "thread/read", params: params)
+            return false
+        } catch {
+            return shouldTreatAsThreadNotFound(error)
+        }
+    }
+
+    // Rebuilds active turn/running state from server truth after reconnect/background transitions.
+    // Returns false when the snapshot could not be refreshed, so callers can fall back to history sync.
+    func refreshInFlightTurnState(threadId: String) async -> Bool {
+        let normalizedThreadID = normalizedInterruptIdentifier(threadId)
+        guard let normalizedThreadID,
+              isConnected,
+              isInitialized else {
+            return false
+        }
+
+        let refreshGeneration = currentPerThreadRefreshGeneration(for: normalizedThreadID)
+        if let existingTask = turnStateRefreshTaskByThreadID[normalizedThreadID] {
+            return await existingTask.value
+        }
+
+        let task = Task<Bool, Never> { @MainActor in
+            defer {
+                if isPerThreadRefreshCurrent(for: normalizedThreadID, generation: refreshGeneration) {
+                    turnStateRefreshTaskByThreadID.removeValue(forKey: normalizedThreadID)
+                }
+            }
+
+            do {
+                let snapshot = try await readThreadTurnStateSnapshot(threadId: normalizedThreadID)
+                guard !Task.isCancelled,
+                      isPerThreadRefreshCurrent(for: normalizedThreadID, generation: refreshGeneration) else {
+                    return false
+                }
+
+                if let runningTurnID = snapshot.interruptibleTurnID {
+                    markThreadAsRunning(normalizedThreadID)
+                    noteDesktopMirroredRunningActivity(for: normalizedThreadID)
+                    setProtectedRunningFallback(false, for: normalizedThreadID)
+                    setActiveTurnID(runningTurnID, for: normalizedThreadID)
+                    threadIdByTurnID[runningTurnID] = normalizedThreadID
+                    activeTurnId = runningTurnID
+                    return true
+                }
+
+                if snapshot.hasInterruptibleTurnWithoutID {
+                    markThreadAsRunning(normalizedThreadID)
+                    noteDesktopMirroredRunningActivity(for: normalizedThreadID)
+                    setProtectedRunningFallback(true, for: normalizedThreadID)
+                } else {
+                    if isDesktopMirroredRunning(normalizedThreadID),
+                       threadHasActiveOrRunningTurn(normalizedThreadID),
+                       shouldPreserveDesktopMirroredRunningAfterStaleSnapshot(for: normalizedThreadID) {
+                        markThreadAsRunning(normalizedThreadID)
+                        if let existingTurnID = activeTurnID(for: normalizedThreadID) {
+                            setProtectedRunningFallback(false, for: normalizedThreadID)
+                            threadIdByTurnID[existingTurnID] = normalizedThreadID
+                            activeTurnId = existingTurnID
+                        } else {
+                            setProtectedRunningFallback(true, for: normalizedThreadID)
+                        }
+                        return true
+                    }
+                    clearRunningState(for: normalizedThreadID)
+                }
+
+                if let existingTurnID = activeTurnID(for: normalizedThreadID) {
+                    setActiveTurnID(nil, for: normalizedThreadID)
+                    if threadIdByTurnID[existingTurnID] == normalizedThreadID {
+                        threadIdByTurnID.removeValue(forKey: existingTurnID)
+                    }
+                    if activeTurnId == existingTurnID {
+                        activeTurnId = nil
+                    }
+                }
+                return true
+            } catch {
+                debugSyncLog("in-flight turn refresh failed thread=\(normalizedThreadID): \(error.localizedDescription)")
+                return false
+            }
+        }
+
+        turnStateRefreshTaskByThreadID[normalizedThreadID] = task
+        return await task.value
+    }
+
+    func sendTurnStart(
+        _ userInput: String,
+        attachments: [ConstellagentImageAttachment] = [],
+        skillMentions: [ConstellagentTurnSkillMention] = [],
+        mentionMentions: [ConstellagentTurnMention] = [],
+        fileMentions: [String] = [],
+        to threadId: String,
+        shouldAppendUserMessage: Bool = true,
+        collaborationMode: ConstellagentCollaborationModeKind? = nil,
+        preAppendedUserMessageID: String? = nil,
+        automaticTitleSeedOverride: String? = nil
+    ) async throws {
+        let outgoingDisplayText = displayTextForOutgoingTurn(
+            userInput: userInput,
+            skillMentions: skillMentions,
+            mentionMentions: mentionMentions
+        )
+        let automaticTitleSeed = resolvedAutomaticThreadTitleSeed(
+            override: automaticTitleSeedOverride,
+            shouldEvaluate: shouldAppendUserMessage,
+            userInput: outgoingDisplayText,
+            attachments: attachments,
+            threadId: threadId
+        )
+        let pendingMessageId: String
+        if let preAppendedUserMessageID,
+           !preAppendedUserMessageID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            pendingMessageId = preAppendedUserMessageID
+        } else if shouldAppendUserMessage {
+            pendingMessageId = appendUserMessage(
+                threadId: threadId,
+                text: outgoingDisplayText,
+                attachments: attachments,
+                fileMentions: fileMentions,
+                skillMentions: skillMentions.compactMap {
+                    let rawName = $0.name ?? $0.id
+                    let normalized = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return normalized.isEmpty ? nil : normalized
+                },
+                pluginMentions: mentionMentions.compactMap {
+                    let normalized = $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return normalized.isEmpty ? nil : normalized
+                }
+            )
+        } else {
+            pendingMessageId = ""
+        }
+        debugMobileLog(
+            "turn/start local thread=\(threadId) appendUser=\(shouldAppendUserMessage) pendingMsg=\(pendingMessageId.isEmpty ? "none" : pendingMessageId) textChars=\(outgoingDisplayText.count)"
+        )
+        activeThreadId = threadId
+        markThreadAsRunning(threadId)
+        setProtectedRunningFallback(true, for: threadId)
+        let messageStartCheckpointTask = scheduleMessageStartWorkspaceCheckpointIfPossible(
+            threadId: threadId,
+            messageId: pendingMessageId
+        )
+
+        var includeStructuredSkillItems = supportsStructuredSkillInput && !skillMentions.isEmpty
+        var includeStructuredMentionItems = supportsStructuredMentionInput && !mentionMentions.isEmpty
+        var imageURLKey = "url"
+        var effectiveCollaborationMode = supportsTurnCollaborationMode ? collaborationMode : nil
+        var didDowngradePlanModeForRuntime = false
+        var includesServiceTier = runtimeServiceTierForTurn(threadId: threadId) != nil
+
+        if collaborationMode != nil, effectiveCollaborationMode == nil {
+            debugRuntimeLog(
+                "turn/start dropping collaborationMode requested=\(collaborationMode?.rawValue ?? "") thread=\(threadId) supportsTurnCollaborationMode=\(supportsTurnCollaborationMode)"
+            )
+        }
+
+        while true {
+            do {
+                let requestParams = try buildTurnStartRequestParams(
+                    threadId: threadId,
+                    userInput: userInput,
+                    attachments: attachments,
+                    skillMentions: skillMentions,
+                    mentionMentions: mentionMentions,
+                    imageURLKey: imageURLKey,
+                    includeStructuredSkillItems: includeStructuredSkillItems,
+                    includeStructuredMentionItems: includeStructuredMentionItems,
+                    collaborationMode: effectiveCollaborationMode,
+                    includeServiceTier: includesServiceTier
+                )
+                // The pre-turn snapshot must settle before the runtime can mutate files.
+                if let messageStartCheckpointTask {
+                    await messageStartCheckpointTask.value
+                }
+                let response = try await sendRequestWithSandboxFallback(
+                    method: "turn/start",
+                    baseParams: requestParams,
+                    timeoutNanoseconds: ThreadTurnStateSnapshotPolicy.requestTimeoutNanoseconds,
+                    timeoutMessage: "turn/start timed out waiting for the desktop bridge. Check that Constellagent is running on your Mac."
+                )
+                let resolvedTurnID = handleSuccessfulTurnStartResponse(
+                    response,
+                    pendingMessageId: pendingMessageId,
+                    threadId: threadId
+                )
+                if let resolvedTurnID {
+                    scheduleMessageStartWorkspaceCheckpointCopyIfPossible(
+                        threadId: threadId,
+                        messageId: pendingMessageId,
+                        turnId: resolvedTurnID
+                    )
+                }
+                scheduleAutomaticThreadTitleGenerationIfNeeded(
+                    seed: automaticTitleSeed,
+                    threadId: threadId,
+                    attachments: attachments
+                )
+                if didDowngradePlanModeForRuntime {
+                    appendSystemMessage(
+                        threadId: threadId,
+                        text: "Plan mode is not supported by this runtime. Sent as a normal turn instead."
+                    )
+                }
+                return
+            } catch {
+                if includeStructuredSkillItems,
+                   shouldRetryTurnStartWithoutSkillItems(error) {
+                    // Disable structured skill input for this runtime after first incompatibility signal.
+                    supportsStructuredSkillInput = false
+                    includeStructuredSkillItems = false
+                    continue
+                }
+
+                if includeStructuredMentionItems,
+                   shouldRetryTurnStartWithoutMentionItems(error) {
+                    supportsStructuredMentionInput = false
+                    includeStructuredMentionItems = false
+                    continue
+                }
+
+                if imageURLKey == "url",
+                   !attachments.isEmpty,
+                   shouldRetryTurnStartWithImageURLField(error) {
+                    imageURLKey = "image_url"
+                    continue
+                }
+
+                if effectiveCollaborationMode != nil,
+                   shouldRetryTurnStartWithoutCollaborationMode(error) {
+                    // Remember the runtime limitation so future plan-mode sends skip the rejected field.
+                    supportsTurnCollaborationMode = false
+                    clearPlanSessionIfRuntimeDowngraded(
+                        threadId: threadId,
+                        collaborationMode: effectiveCollaborationMode
+                    )
+                    effectiveCollaborationMode = nil
+                    didDowngradePlanModeForRuntime = true
+                    continue
+                }
+
+                if consumeUnsupportedServiceTier(error, includesServiceTier: &includesServiceTier) {
+                    continue
+                }
+
+                try handleTurnStartFailure(
+                    error,
+                    pendingMessageId: pendingMessageId,
+                    threadId: threadId
+                )
+                return
+            }
+        }
+    }
+
+    // Starts the app-server's manual context compaction turn for the selected thread.
+    func compactThread(_ threadId: String) async throws {
+        activeThreadId = threadId
+        markThreadAsRunning(threadId)
+        setProtectedRunningFallback(true, for: threadId)
+
+        do {
+            _ = try await sendRequest(
+                method: "thread/compact/start",
+                params: .object(["threadId": .string(threadId)])
+            )
+            lastErrorMessage = nil
+        } catch {
+            clearRunningState(for: threadId)
+            let errorMessage = userFacingTurnErrorMessage(from: error)
+            lastErrorMessage = errorMessage
+            appendSystemMessage(threadId: threadId, text: "Compact error: \(errorMessage)")
+            throw error
+        }
+    }
+
+    // Generates a compact first-turn title without blocking turn/start or overwriting user renames.
+    private func scheduleAutomaticThreadTitleGenerationIfNeeded(
+        seed: String?,
+        threadId: String,
+        attachments: [ConstellagentImageAttachment]
+    ) {
+        guard let seed,
+              !seed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        let fallbackTitle = fallbackThreadTitle(from: seed)
+        let allowedTitles: Set<String> = [
+            ConstellagentThread.defaultDisplayTitle,
+            "Conversation",
+            fallbackTitle,
+        ]
+        applyAutomaticThreadTitle(fallbackTitle, for: threadId, replacing: allowedTitles)
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard let generatedTitle = await self.generatedThreadTitleOrNil(
+                seed: seed,
+                threadId: threadId,
+                attachmentCount: attachments.count
+            ) else {
+                return
+            }
+
+            self.applyAutomaticThreadTitle(
+                generatedTitle,
+                for: threadId,
+                replacing: allowedTitles
+            )
+        }
+    }
+
+    private func generatedThreadTitleOrNil(
+        seed: String,
+        threadId: String,
+        attachmentCount: Int
+    ) async -> String? {
+        var params: [String: JSONValue] = [
+            "message": .string(seed),
+            "attachmentCount": .integer(attachmentCount),
+        ]
+        if let model = gitWriterModelIdentifier(),
+           !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            params["model"] = .string(model)
+        }
+        if let workingDirectory = thread(for: threadId)?.gitWorkingDirectory,
+           !workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            params["cwd"] = .string(workingDirectory)
+        }
+
+        do {
+            let response = try await sendRequest(method: "thread/generateTitle", params: .object(params))
+            let title = response.result?.objectValue?["title"]?.stringValue?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return title?.isEmpty == false ? title : nil
+        } catch {
+            return nil
+        }
+    }
+
+    // Centralizes first-message title seeding so optimistic rows, moved draft rows,
+    // and direct turn starts all preserve the same overwrite rules.
+    private func resolvedAutomaticThreadTitleSeed(
+        override: String?,
+        shouldEvaluate: Bool,
+        userInput: String,
+        attachments: [ConstellagentImageAttachment],
+        threadId: String
+    ) -> String? {
+        if let override {
+            return override
+        }
+        guard shouldEvaluate else {
+            return nil
+        }
+        return automaticThreadTitleSeedIfNeeded(
+            userInput: userInput,
+            attachments: attachments,
+            threadId: threadId
+        )
+    }
+
+    private func automaticThreadTitleSeedIfNeeded(
+        userInput: String,
+        attachments: [ConstellagentImageAttachment],
+        threadId: String
+    ) -> String? {
+        guard persistedThreadRename(for: threadId) == nil,
+              let thread = thread(for: threadId),
+              ConstellagentThread.isGenericPlaceholderTitle(thread.title) || thread.displayTitle == ConstellagentThread.defaultDisplayTitle,
+              !hasExistingUserChatMessage(threadId: threadId) else {
+            return nil
+        }
+
+        let trimmedInput = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedInput.isEmpty {
+            return trimmedInput
+        }
+        return attachments.isEmpty ? nil : "Image request"
+    }
+
+    private func hasExistingUserChatMessage(threadId: String) -> Bool {
+        (messagesByThread[threadId] ?? []).contains { message in
+            message.role == .user && message.kind == .chat
+        }
+    }
+
+    private func fallbackThreadTitle(from seed: String) -> String {
+        let words = seed
+            .components(separatedBy: .whitespacesAndNewlines)
+            .map { word in
+                word.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+            }
+            .filter { !$0.isEmpty }
+            .prefix(4)
+        let title = words.joined(separator: " ")
+        guard !title.isEmpty else {
+            return ConstellagentThread.defaultDisplayTitle
+        }
+        return title.prefix(1).uppercased() + title.dropFirst()
+    }
+
+    // Steers an active turn using the same mixed input-item encoding as turn/start.
+    func steerTurn(
+        userInput: String,
+        threadId: String,
+        expectedTurnId: String?,
+        attachments: [ConstellagentImageAttachment] = [],
+        skillMentions: [ConstellagentTurnSkillMention] = [],
+        mentionMentions: [ConstellagentTurnMention] = [],
+        fileMentions: [String] = [],
+        shouldAppendUserMessage: Bool = true,
+        collaborationMode: ConstellagentCollaborationModeKind? = nil
+    ) async throws {
+        let normalizedThreadID = normalizedInterruptIdentifier(threadId) ?? threadId
+        let effectiveRequestedCollaborationMode = collaborationModeForOutgoingTurn(
+            threadId: normalizedThreadID,
+            requestedMode: collaborationMode
+        )
+        preparePlanSessionForSteer(
+            threadId: normalizedThreadID,
+            collaborationMode: effectiveRequestedCollaborationMode
+        )
+        let pendingMessageId = shouldAppendUserMessage
+            ? appendUserMessage(
+                threadId: normalizedThreadID,
+                text: displayTextForOutgoingTurn(
+                    userInput: userInput,
+                    skillMentions: skillMentions,
+                    mentionMentions: mentionMentions
+                ),
+                attachments: attachments,
+                fileMentions: fileMentions,
+                skillMentions: skillMentions.compactMap {
+                    let rawName = $0.name ?? $0.id
+                    let normalized = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return normalized.isEmpty ? nil : normalized
+                },
+                pluginMentions: mentionMentions.compactMap {
+                    let normalized = $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return normalized.isEmpty ? nil : normalized
+                }
+            )
+            : ""
+        var resolvedExpectedTurnID = normalizedInterruptIdentifier(expectedTurnId)
+        if resolvedExpectedTurnID == nil {
+            do {
+                resolvedExpectedTurnID = try await resolveInFlightTurnID(threadId: normalizedThreadID)
+            } catch {
+                handleSteerFailure(error, pendingMessageId: pendingMessageId, threadId: normalizedThreadID)
+                throw error
+            }
+        }
+
+        guard let initialTurnID = resolvedExpectedTurnID else {
+            let error = ConstellagentServiceError.invalidInput("No active turn available to steer")
+            handleSteerFailure(error, pendingMessageId: pendingMessageId, threadId: normalizedThreadID)
+            throw error
+        }
+
+        var includeStructuredSkillItems = supportsStructuredSkillInput && !skillMentions.isEmpty
+        var includeStructuredMentionItems = supportsStructuredMentionInput && !mentionMentions.isEmpty
+        var imageURLKey = "url"
+        var effectiveCollaborationMode = supportsTurnCollaborationMode ? effectiveRequestedCollaborationMode : nil
+        var currentExpectedTurnID = initialTurnID
+        var didRetryWithRefreshedTurnID = false
+
+        if effectiveRequestedCollaborationMode != nil, effectiveCollaborationMode == nil {
+            debugRuntimeLog(
+                "turn/steer dropping collaborationMode requested=\(effectiveRequestedCollaborationMode?.rawValue ?? "") thread=\(normalizedThreadID) supportsTurnCollaborationMode=\(supportsTurnCollaborationMode)"
+            )
+        }
+
+        while true {
+            var params: RPCObject = [
+                "threadId": .string(normalizedThreadID),
+                "expectedTurnId": .string(currentExpectedTurnID),
+                "input": .array(
+                    makeTurnInputPayload(
+                        userInput: userInput,
+                        attachments: attachments,
+                        imageURLKey: imageURLKey,
+                        skillMentions: skillMentions,
+                        mentionMentions: mentionMentions,
+                        includeStructuredSkillItems: includeStructuredSkillItems,
+                        includeStructuredMentionItems: includeStructuredMentionItems
+                    )
+                ),
+            ]
+            if let collaborationModePayload = try buildCollaborationModePayload(
+                for: effectiveCollaborationMode,
+                threadId: normalizedThreadID
+            ) {
+                params["collaborationMode"] = collaborationModePayload
+            }
+
+            do {
+                let response = try await sendRequest(
+                    method: "turn/steer",
+                    params: .object(params),
+                    timeoutNanoseconds: ThreadTurnStateSnapshotPolicy.requestTimeoutNanoseconds,
+                    timeoutMessage: "turn/steer timed out waiting for the desktop bridge. Check that Constellagent is running on your Mac."
+                )
+                let resolvedTurnID = extractTurnID(from: response.result) ?? currentExpectedTurnID
+                markMessageDeliveryState(
+                    threadId: normalizedThreadID,
+                    messageId: pendingMessageId,
+                    state: .confirmed,
+                    turnId: resolvedTurnID
+                )
+                activeTurnId = resolvedTurnID
+                setActiveTurnID(resolvedTurnID, for: normalizedThreadID)
+                threadIdByTurnID[resolvedTurnID] = normalizedThreadID
+                markThreadAsRunning(normalizedThreadID)
+                setProtectedRunningFallback(false, for: normalizedThreadID)
+                return
+            } catch {
+                if includeStructuredSkillItems,
+                   shouldRetryTurnStartWithoutSkillItems(error) {
+                    supportsStructuredSkillInput = false
+                    includeStructuredSkillItems = false
+                    continue
+                }
+
+                if includeStructuredMentionItems,
+                   shouldRetryTurnStartWithoutMentionItems(error) {
+                    supportsStructuredMentionInput = false
+                    includeStructuredMentionItems = false
+                    continue
+                }
+
+                if imageURLKey == "url",
+                   !attachments.isEmpty,
+                   shouldRetryTurnStartWithImageURLField(error) {
+                    imageURLKey = "image_url"
+                    continue
+                }
+
+                if effectiveCollaborationMode != nil,
+                   shouldRetryTurnStartWithoutCollaborationMode(error) {
+                    // Keep steer compatible with runtimes that only support plain turns.
+                    supportsTurnCollaborationMode = false
+                    clearPlanSessionIfRuntimeDowngraded(
+                        threadId: normalizedThreadID,
+                        collaborationMode: effectiveCollaborationMode
+                    )
+                    effectiveCollaborationMode = nil
+                    continue
+                }
+
+                if !didRetryWithRefreshedTurnID,
+                   shouldRetrySteerWithRefreshedTurnID(error) {
+                    do {
+                        if let refreshedTurnID = try await resolveInFlightTurnID(threadId: normalizedThreadID),
+                           refreshedTurnID != currentExpectedTurnID {
+                            didRetryWithRefreshedTurnID = true
+                            currentExpectedTurnID = refreshedTurnID
+                            activeTurnId = refreshedTurnID
+                            setActiveTurnID(refreshedTurnID, for: normalizedThreadID)
+                            threadIdByTurnID[refreshedTurnID] = normalizedThreadID
+                            continue
+                        }
+                    } catch {
+                        handleSteerFailure(error, pendingMessageId: pendingMessageId, threadId: normalizedThreadID)
+                        throw error
+                    }
+                }
+
+                handleSteerFailure(error, pendingMessageId: pendingMessageId, threadId: normalizedThreadID)
+                throw error
+            }
+        }
+    }
+
+    func userFacingTurnErrorMessage(from error: Error) -> String {
+        if isCancellationLikeError(error) {
+            return ""
+        }
+
+        if shouldTreatSendFailureAsDisconnect(error)
+            || isRetryableSavedSessionConnectError(error)
+            || isRecoverableTransientConnectionError(error)
+            || isBenignBackgroundDisconnect(error) {
+            return userFacingConnectFailureMessage(error)
+        }
+
+        if let serviceError = error as? ConstellagentServiceError {
+            switch serviceError {
+            case .rpcError(let rpcError):
+                if let mappedMessage = userFacingRuntimeMessage(for: rpcError.message) {
+                    return mappedMessage
+                }
+                let trimmed = rpcError.message.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? serviceError.localizedDescription : trimmed
+            default:
+                let trimmed = serviceError.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? "Error while sending message" : trimmed
+            }
+        }
+
+        let trimmed = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Error while sending message" : trimmed
+    }
+
+    // Returns nil for internal/transient runtime noise that should not occupy the red footer.
+    func userFacingTurnErrorMessageForFooter(from error: Error) -> String? {
+        if isCancellationLikeError(error) || shouldSuppressRuntimeErrorInChat(error) {
+            return nil
+        }
+
+        let message = userFacingTurnErrorMessage(from: error)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? nil : message
+    }
+
+    // Converts raw app-server/runtime text into short user-facing copy.
+    func userFacingRuntimeMessage(for rawMessage: String) -> String? {
+        let normalizedMessage = rawMessage
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !normalizedMessage.isEmpty else {
+            return nil
+        }
+
+        if isRuntimeMaterializationMessage(normalizedMessage) {
+            return "The run is still starting. Try again in a moment."
+        }
+
+        if isStaleTurnRuntimeMessage(normalizedMessage) {
+            return "That run already finished."
+        }
+
+        if isInternalRuntimeCompatibilityMessage(normalizedMessage) {
+            return "The paired runtime rejected this request. Reconnect and try again."
+        }
+
+        return nil
+    }
+
+    // Hides compatibility/materialization internals from chat history and footer surfaces.
+    func shouldSuppressRuntimeErrorInChat(_ error: Error) -> Bool {
+        if isCancellationLikeError(error) {
+            return true
+        }
+
+        guard let rawMessage = rawRPCMessage(from: error) else {
+            return false
+        }
+
+        return shouldSuppressRuntimeMessageInChat(rawMessage)
+    }
+
+    func shouldSuppressRuntimeMessageInChat(_ rawMessage: String) -> Bool {
+        let normalizedMessage = rawMessage.lowercased()
+        return isRuntimeMaterializationMessage(normalizedMessage)
+            || isInternalRuntimeCompatibilityMessage(normalizedMessage)
+    }
+
+    func rawRPCMessage(from error: Error) -> String? {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return nil
+        }
+
+        let trimmedMessage = rpcError.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedMessage.isEmpty ? nil : trimmedMessage
+    }
+
+    func isCancellationLikeError(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+    }
+
+    func isRuntimeMaterializationMessage(_ normalizedMessage: String) -> Bool {
+        normalizedMessage.contains("not materialized")
+            || normalizedMessage.contains("not yet materialized")
+    }
+
+    func isStaleTurnRuntimeMessage(_ normalizedMessage: String) -> Bool {
+        normalizedMessage.contains("turn already completed")
+            || normalizedMessage.contains("already completed")
+            || normalizedMessage.contains("already finished")
+            || normalizedMessage.contains("turn not found")
+            || normalizedMessage.contains("no active turn")
+            || normalizedMessage.contains("not in progress")
+            || normalizedMessage.contains("not running")
+            || normalizedMessage.contains("not active")
+    }
+
+    func isInternalRuntimeCompatibilityMessage(_ normalizedMessage: String) -> Bool {
+        if normalizedMessage.contains("method not found")
+            || normalizedMessage.contains("unknown method")
+            || normalizedMessage.contains("unknown field")
+            || normalizedMessage.contains("unrecognized field") {
+            return true
+        }
+
+        return normalizedMessage.contains("thread/turns/list")
+            && (
+                normalizedMessage.contains("unavailable")
+                    || normalizedMessage.contains("unsupported")
+                    || normalizedMessage.contains("not found")
+            )
+    }
+
+    // Normalizes outgoing turn input so we can support mixed text + image messages.
+    func makeTurnInputPayload(
+        userInput: String,
+        attachments: [ConstellagentImageAttachment],
+        imageURLKey: String,
+        skillMentions: [ConstellagentTurnSkillMention] = [],
+        mentionMentions: [ConstellagentTurnMention] = [],
+        includeStructuredSkillItems: Bool = true,
+        includeStructuredMentionItems: Bool = true
+    ) -> [JSONValue] {
+        var inputItems: [JSONValue] = []
+
+        for attachment in attachments {
+            guard let payloadDataURL = attachment.payloadDataURL,
+                  !payloadDataURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                continue
+            }
+
+            inputItems.append(
+                .object([
+                    "type": .string("image"),
+                    imageURLKey: .string(payloadDataURL),
+                ])
+            )
+        }
+
+        let trimmedText = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedText.isEmpty {
+            let fallbackText = legacyTextForStructuredMentions(
+                skillMentions: includeStructuredSkillItems ? [] : skillMentions,
+                mentionMentions: includeStructuredMentionItems ? [] : mentionMentions
+            )
+            inputItems.append(
+                .object([
+                    "type": .string("text"),
+                    "text": .string(appendingMissingLegacyMentionTokens(fallbackText, to: trimmedText)),
+                ])
+            )
+        } else {
+            let fallbackText = legacyTextForStructuredMentions(
+                skillMentions: includeStructuredSkillItems ? [] : skillMentions,
+                mentionMentions: includeStructuredMentionItems ? [] : mentionMentions
+            )
+            if !fallbackText.isEmpty {
+                inputItems.append(
+                    .object([
+                        "type": .string("text"),
+                        "text": .string(fallbackText),
+                    ])
+                )
+            }
+        }
+
+        if includeStructuredSkillItems {
+            for mention in skillMentions {
+                let normalizedSkillID = mention.id.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !normalizedSkillID.isEmpty else {
+                    continue
+                }
+
+                var payload: RPCObject = [
+                    "type": .string("skill"),
+                    "id": .string(normalizedSkillID),
+                ]
+
+                if let name = mention.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !name.isEmpty {
+                    payload["name"] = .string(name)
+                }
+
+                if let path = mention.path?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !path.isEmpty {
+                    payload["path"] = .string(path)
+                }
+
+                inputItems.append(.object(payload))
+            }
+        }
+
+        if includeStructuredMentionItems {
+            for mention in mentionMentions {
+                let normalizedName = mention.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                let normalizedPath = mention.path.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !normalizedName.isEmpty, !normalizedPath.isEmpty else {
+                    continue
+                }
+
+                inputItems.append(
+                    .object([
+                        "type": .string("mention"),
+                        "name": .string(normalizedName),
+                        "path": .string(normalizedPath),
+                    ])
+                )
+            }
+        }
+
+        return inputItems
+    }
+
+    // Gives mention-only sends a visible local row and a text fallback for runtimes without structured items.
+    private func displayTextForOutgoingTurn(
+        userInput: String,
+        skillMentions: [ConstellagentTurnSkillMention],
+        mentionMentions: [ConstellagentTurnMention]
+    ) -> String {
+        var trimmedInput = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        for mention in skillMentions {
+            let rawName = mention.name ?? mention.id
+            let normalizedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedName.isEmpty else { continue }
+            trimmedInput = Self.removeBoundedMentionToken("$\(normalizedName)", from: trimmedInput)
+        }
+
+        for mention in mentionMentions {
+            let normalizedName = mention.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedName.isEmpty else { continue }
+            trimmedInput = Self.removeBoundedMentionToken("@\(normalizedName)", from: trimmedInput)
+        }
+
+        trimmedInput = trimmedInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let legacyText = legacyTextForStructuredMentions(
+            skillMentions: skillMentions,
+            mentionMentions: mentionMentions
+        )
+
+        guard !trimmedInput.isEmpty else {
+            return legacyText
+        }
+
+        return trimmedInput
+    }
+
+    nonisolated static func removeBoundedMentionToken(_ token: String, from text: String) -> String {
+        let escaped = NSRegularExpression.escapedPattern(for: token)
+        guard let regex = try? NSRegularExpression(
+            pattern: escaped + "(?:[\\s,.;:!?)\\]}>]|$)",
+            options: [.caseInsensitive]
+        ) else {
+            return text
+        }
+
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, range: range) else {
+            return text
+        }
+
+        var result = text
+        let matchRange = Range(match.range, in: text)!
+        result.replaceSubrange(matchRange, with: "")
+        return result
+    }
+
+    private func appendingMissingLegacyMentionTokens(_ legacyText: String, to text: String) -> String {
+        let trimmedLegacyText = legacyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedLegacyText.isEmpty else {
+            return text
+        }
+
+        let missingTokens = trimmedLegacyText
+            .split(separator: " ")
+            .map(String.init)
+            .filter { token in
+                !text.localizedCaseInsensitiveContains(token)
+            }
+        guard !missingTokens.isEmpty else {
+            return text
+        }
+
+        return "\(text)\n\n\(missingTokens.joined(separator: " "))"
+    }
+
+    private func legacyTextForStructuredMentions(
+        skillMentions: [ConstellagentTurnSkillMention],
+        mentionMentions: [ConstellagentTurnMention]
+    ) -> String {
+        var tokens: [String] = []
+
+        for mention in skillMentions {
+            let rawName = mention.name ?? mention.id
+            let normalizedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !normalizedName.isEmpty {
+                tokens.append("$\(normalizedName)")
+            }
+        }
+
+        for mention in mentionMentions {
+            let normalizedName = mention.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !normalizedName.isEmpty {
+                tokens.append("@\(normalizedName)")
+            }
+        }
+
+        return tokens.joined(separator: " ")
+    }
+
+    private func hasRenderableStructuredMentions(
+        skillMentions: [ConstellagentTurnSkillMention],
+        mentionMentions: [ConstellagentTurnMention]
+    ) -> Bool {
+        !legacyTextForStructuredMentions(
+            skillMentions: skillMentions,
+            mentionMentions: mentionMentions
+        ).isEmpty
+    }
+
+    // Builds turn/start params so retries can switch only the input-item encoding.
+    func buildTurnStartRequestParams(
+        threadId: String,
+        userInput: String,
+        attachments: [ConstellagentImageAttachment],
+        skillMentions: [ConstellagentTurnSkillMention],
+        mentionMentions: [ConstellagentTurnMention],
+        imageURLKey: String,
+        includeStructuredSkillItems: Bool,
+        includeStructuredMentionItems: Bool,
+        collaborationMode: ConstellagentCollaborationModeKind?,
+        includeServiceTier: Bool
+    ) throws -> RPCObject {
+        var params: RPCObject = [
+            "threadId": .string(threadId),
+            "input": .array(
+                makeTurnInputPayload(
+                    userInput: userInput,
+                    attachments: attachments,
+                    imageURLKey: imageURLKey,
+                    skillMentions: skillMentions,
+                    mentionMentions: mentionMentions,
+                    includeStructuredSkillItems: includeStructuredSkillItems,
+                    includeStructuredMentionItems: includeStructuredMentionItems
+                )
+            ),
+        ]
+        // Keep the legacy top-level fields populated so plan-mode turns still honor
+        // the user's selected model on runtimes that do not read collaboration settings.
+        if let modelIdentifier = runtimeModelIdentifierForTurn() {
+            params["model"] = .string(modelIdentifier)
+        }
+        if let effort = selectedReasoningEffortForSelectedModel(threadId: threadId) {
+            params["effort"] = .string(effort)
+        }
+        if includeServiceTier,
+           let serviceTier = runtimeServiceTierForTurn(threadId: threadId) {
+            params["serviceTier"] = .string(serviceTier)
+        }
+        if let collaborationModePayload = try buildCollaborationModePayload(
+            for: collaborationMode,
+            threadId: threadId
+        ) {
+            params["collaborationMode"] = collaborationModePayload
+        }
+        return params
+    }
+
+    // Encodes collaborationMode while allowing the selected mode to supply built-in instructions.
+    func buildCollaborationModePayload(
+        for mode: ConstellagentCollaborationModeKind?,
+        threadId: String?
+    ) throws -> JSONValue? {
+        guard let mode else {
+            return nil
+        }
+
+        let resolvedModel = runtimeModelIdentifierForTurn()
+            ?? selectedModelOption()?.model
+            ?? availableModels.first?.model
+            ?? selectedModelId
+        guard let resolvedModel,
+              !resolvedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ConstellagentServiceError.invalidResponse(
+                "Plan mode requires an available model before starting a plan turn."
+            )
+        }
+        let developerInstructionsValue: JSONValue = {
+            guard mode == .plan,
+                  let threadId,
+                  currentPlanSessionSource(for: threadId) == .compatibilityFallback,
+                  let instructions = developerInstructions(for: mode)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !instructions.isEmpty else {
+                return .null
+            }
+            return .string(instructions)
+        }()
+
+        return .object([
+            "mode": .string(mode.rawValue),
+            "settings": .object([
+                "model": .string(resolvedModel),
+                "reasoning_effort": selectedReasoningEffortForSelectedModel(
+                    threadId: threadId
+                ).map(JSONValue.string) ?? .null,
+                // Stay native-first by default, but allow a compatibility override after fallback.
+                "developer_instructions": developerInstructionsValue,
+            ]),
+        ])
+    }
+
+    func implementProposedPlan(
+        threadId: String,
+        proposedPlan: ConstellagentProposedPlan
+    ) async throws {
+        let normalizedThreadID = normalizedInterruptIdentifier(threadId) ?? threadId
+        let planBody = proposedPlan.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !planBody.isEmpty else {
+            throw ConstellagentServiceError.invalidInput("Proposed plan cannot be empty")
+        }
+
+        // The approved plan is already part of the thread history, so keep the
+        // handoff prompt minimal instead of replaying the full plan body.
+        let userInput = "Implement plan."
+
+        var expectedTurnID = activeTurnID(for: normalizedThreadID)
+        if expectedTurnID == nil {
+            do {
+                expectedTurnID = try await resolveInFlightTurnID(threadId: normalizedThreadID)
+            } catch {
+                if let serviceError = error as? ConstellagentServiceError,
+                   case .invalidInput(_) = serviceError {
+                    expectedTurnID = nil
+                } else {
+                    throw error
+                }
+            }
+        }
+
+        if let expectedTurnID {
+            try await steerTurn(
+                userInput: userInput,
+                threadId: normalizedThreadID,
+                expectedTurnId: expectedTurnID,
+                shouldAppendUserMessage: true,
+                // Exiting plan mode needs to be explicit for runtimes that keep the
+                // current collaboration mode when turn/steer omits the field.
+                collaborationMode: .default
+            )
+            return
+        }
+
+        try await startTurn(
+            userInput: userInput,
+            threadId: normalizedThreadID,
+            shouldAppendUserMessage: true,
+            collaborationMode: .default
+        )
+    }
+
+    func currentPlanSessionSource(for threadId: String) -> ConstellagentPlanSessionSource? {
+        planSessionSourceByThread[threadId]
+    }
+
+    func allowsInferredPlanQuestionnaireFallback(for threadId: String) -> Bool {
+        currentPlanSessionSource(for: threadId) == .compatibilityFallback
+    }
+
+    // Plain-text questionnaire recovery belongs only to explicit compatibility mode.
+    func allowsAssistantPlanFallbackRecovery(for threadId: String) -> Bool {
+        currentPlanSessionSource(for: threadId) == .compatibilityFallback
+    }
+
+    // Native/requested plan threads should rely on official requestUserInput events,
+    // not on heuristics over assistant prose.
+    func allowsAssistantPlanFallbackRecovery(for threadId: String, turnId: String?) -> Bool {
+        let _ = turnId
+        return currentPlanSessionSource(for: threadId) == .compatibilityFallback
+    }
+
+    func markRequestedPlanSession(for threadId: String) {
+        planSessionSourceByThread[threadId] = .requested
+    }
+
+    func migratePlanSessionState(from sourceThreadId: String, to destinationThreadId: String) {
+        guard sourceThreadId != destinationThreadId,
+              let source = planSessionSourceByThread.removeValue(forKey: sourceThreadId) else {
+            return
+        }
+        planSessionSourceByThread[destinationThreadId] = source
+    }
+
+    func markNativePlanSession(for threadId: String) {
+        planSessionSourceByThread[threadId] = preferredNativePlanSessionSource()
+    }
+
+    func markCompatibilityPlanFallback(for threadId: String) {
+        planSessionSourceByThread[threadId] = .compatibilityFallback
+    }
+
+    func resetPlanSessionState(for threadId: String) {
+        planSessionSourceByThread.removeValue(forKey: threadId)
+    }
+
+    func reconcileNativePlanSessionSources(
+        previousTransportMode: ConstellagentRuntimeTransportMode,
+        nextTransportMode: ConstellagentRuntimeTransportMode
+    ) {
+        guard previousTransportMode != nextTransportMode else {
+            return
+        }
+
+        let preferredSource = preferredNativePlanSessionSource()
+        for (threadId, source) in planSessionSourceByThread where source.isNative {
+            planSessionSourceByThread[threadId] = preferredSource
+        }
+    }
+
+    private func preferredNativePlanSessionSource() -> ConstellagentPlanSessionSource {
+        switch constellagentTransportMode {
+        case .websocket:
+            return .nativeDesktopEndpoint
+        case .spawn, .unknown:
+            return .nativeAppServer
+        }
+    }
+
+    private func shouldCommitInferredPlanQuestionnaireFallback(for threadId: String) -> Bool {
+        currentPlanSessionSource(for: threadId) == .compatibilityFallback
+    }
+
+    // App-server keeps collaboration mode sticky when the field is omitted, so
+    // a normal send from an active plan thread must explicitly restore default.
+    private func collaborationModeForOutgoingTurn(
+        threadId: String,
+        requestedMode: ConstellagentCollaborationModeKind?,
+        preserveExisting: Bool = false
+    ) -> ConstellagentCollaborationModeKind? {
+        if let requestedMode {
+            return requestedMode
+        }
+
+        guard !preserveExisting,
+              supportsTurnCollaborationMode,
+              currentPlanSessionSource(for: threadId) != nil else {
+            return nil
+        }
+
+        return .default
+    }
+
+    func developerInstructions(for mode: ConstellagentCollaborationModeKind) -> String? {
+        switch mode {
+        case .plan:
+            Self.compatibilityPlanModeDeveloperInstructions
+        case .default:
+            nil
+        }
+    }
+
+    private static let compatibilityPlanModeDeveloperInstructions = """
+    You are in plan mode.
+
+    Strongly prefer the native structured question flow when you need clarification:
+    - use request_user_input instead of writing a numbered questionnaire in plain text
+    - keep the conversation in a one-question-at-a-time flow when possible
+    - ask one material question at a time when possible
+    - keep each tool prompt short and decision-oriented
+    - Never write multiple-choice questions as plain assistant text.
+
+    When you reach a final implementation proposal, wrap it in exactly one <proposed_plan> block with Markdown inside.
+    """
+
+    private func preparePlanSessionForStart(
+        threadId: String,
+        collaborationMode: ConstellagentCollaborationModeKind?,
+        preserveExisting: Bool
+    ) {
+        guard !preserveExisting else {
+            return
+        }
+
+        if collaborationMode == .plan,
+           currentPlanSessionSource(for: threadId) != nil {
+            return
+        }
+
+        if shouldTrackRequestedPlanSession(for: collaborationMode) {
+            resetPlanSessionState(for: threadId)
+            markRequestedPlanSession(for: threadId)
+        } else {
+            resetPlanSessionState(for: threadId)
+        }
+    }
+
+    private func preparePlanSessionForSteer(
+        threadId: String,
+        collaborationMode: ConstellagentCollaborationModeKind?
+    ) {
+        if shouldTrackRequestedPlanSession(for: collaborationMode) {
+            if currentPlanSessionSource(for: threadId) == nil {
+                markRequestedPlanSession(for: threadId)
+            }
+        } else {
+            resetPlanSessionState(for: threadId)
+        }
+    }
+
+    private func clearPlanSessionIfRuntimeDowngraded(
+        threadId: String,
+        collaborationMode: ConstellagentCollaborationModeKind?
+    ) {
+        guard collaborationMode == .plan else {
+            return
+        }
+
+        resetPlanSessionState(for: threadId)
+    }
+
+    private func shouldTrackRequestedPlanSession(
+        for collaborationMode: ConstellagentCollaborationModeKind?
+    ) -> Bool {
+        collaborationMode == .plan && supportsTurnCollaborationMode
+    }
+
+    // Applies common failure bookkeeping for turn/start primary and fallback attempts.
+    func handleTurnStartFailure(
+        _ error: Error,
+        pendingMessageId: String,
+        threadId: String
+    ) throws {
+        markMessageDeliveryState(threadId: threadId, messageId: pendingMessageId, state: .failed)
+        clearRunningState(for: threadId)
+        if shouldTreatAsThreadNotFound(error) {
+            throw error
+        }
+
+        if let footerMessage = userFacingTurnErrorMessageForFooter(from: error) {
+            lastErrorMessage = footerMessage
+        } else {
+            lastErrorMessage = nil
+        }
+        if !shouldSuppressRuntimeErrorInChat(error),
+           let errorMessage = userFacingTurnErrorMessageForFooter(from: error) {
+            appendSystemMessage(threadId: threadId, text: "Send error: \(errorMessage)")
+        }
+        throw error
+    }
+
+    // Handles successful turn/start bookkeeping for both primary and fallback payload schemas.
+    @discardableResult
+    func handleSuccessfulTurnStartResponse(
+        _ response: RPCMessage,
+        pendingMessageId: String,
+        threadId: String
+    ) -> String? {
+        let turnID = extractTurnID(from: response.result)
+        let resolvedTurnID = turnID ?? activeTurnIdByThread[threadId]
+        let deliveryState: ConstellagentMessageDeliveryState = (resolvedTurnID == nil) ? .pending : .confirmed
+        markMessageDeliveryState(
+            threadId: threadId,
+            messageId: pendingMessageId,
+            state: deliveryState,
+            turnId: resolvedTurnID
+        )
+
+        if let turnID = resolvedTurnID {
+            activeTurnId = turnID
+            setActiveTurnID(turnID, for: threadId)
+            threadIdByTurnID[turnID] = threadId
+            setProtectedRunningFallback(false, for: threadId)
+            beginAssistantMessage(threadId: threadId, turnId: turnID)
+        }
+
+        debugMobileLog(
+            "turn/start ok thread=\(threadId) turn=\(resolvedTurnID ?? "none") pendingMsg=\(pendingMessageId.isEmpty ? "none" : pendingMessageId) delivery=\(deliveryState.rawValue)"
+        )
+
+        lastErrorMessage = nil
+
+        if let index = threadIndex(for: threadId) {
+            threads[index].updatedAt = Date()
+            threads[index].syncState = .live
+            threads = sortThreads(threads)
+        }
+
+        return resolvedTurnID
+    }
+
+    // Applies steer failure bookkeeping for optimistic user rows without adding an extra system error card.
+    func handleSteerFailure(
+        _ error: Error,
+        pendingMessageId: String,
+        threadId: String
+    ) {
+        markMessageDeliveryState(threadId: threadId, messageId: pendingMessageId, state: .failed)
+        lastErrorMessage = userFacingTurnErrorMessageForFooter(from: error)
+    }
+
+    // Some server versions expect `image_url` instead of `url` for image items.
+    func shouldRetryTurnStartWithImageURLField(_ error: Error) -> Bool {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return false
+        }
+
+        let message = rpcError.message.lowercased()
+        guard message.contains("image_url") else {
+            return false
+        }
+
+        return message.contains("missing")
+            || message.contains("unknown field")
+            || message.contains("expected")
+            || message.contains("invalid")
+    }
+
+    // Detects legacy servers that reject input items with `type: "skill"`.
+    func shouldRetryTurnStartWithoutSkillItems(_ error: Error) -> Bool {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return false
+        }
+
+        let message = rpcError.message.lowercased()
+        guard message.contains("skill") || isGenericStructuredInputItemRejection(message) else {
+            return false
+        }
+
+        return message.contains("unknown")
+            || message.contains("unsupported")
+            || message.contains("invalid")
+            || message.contains("expected")
+            || message.contains("unrecognized")
+            || message.contains("type")
+            || message.contains("field")
+    }
+
+    // Detects legacy runtimes that reject input items with `type: "mention"`.
+    func shouldRetryTurnStartWithoutMentionItems(_ error: Error) -> Bool {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return false
+        }
+
+        let message = rpcError.message.lowercased()
+        guard message.contains("mention") || isGenericStructuredInputItemRejection(message) else {
+            return false
+        }
+
+        return message.contains("unknown")
+            || message.contains("unsupported")
+            || message.contains("invalid")
+            || message.contains("expected")
+            || message.contains("unrecognized")
+            || message.contains("type")
+            || message.contains("field")
+    }
+
+    private func isGenericStructuredInputItemRejection(_ message: String) -> Bool {
+        let mentionsInputShape = message.contains("input")
+            && (message.contains("item") || message.contains("type") || message.contains("array") || message.contains("schema"))
+        let rejectsShape = message.contains("unknown")
+            || message.contains("unsupported")
+            || message.contains("invalid")
+            || message.contains("expected")
+            || message.contains("unrecognized")
+            || message.contains("field")
+        return mentionsInputShape && rejectsShape
+    }
+
+    // Detects runtimes that reject plan-mode `collaborationMode` without `experimentalApi`.
+    func shouldRetryTurnStartWithoutCollaborationMode(_ error: Error) -> Bool {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return false
+        }
+
+        let message = rpcError.message.lowercased()
+        guard message.contains("collaborationmode") || message.contains("collaboration_mode") else {
+            return false
+        }
+
+        return message.contains("experimentalapi")
+            || message.contains("unsupported")
+            || message.contains("unknown")
+            || message.contains("unexpected")
+            || message.contains("unrecognized")
+            || message.contains("invalid")
+            || message.contains("field")
+            || message.contains("mode")
+    }
+
+    // Parses `result.files` so tests can validate decoding without transport wiring.
+    func decodeFuzzyFileMatches(from result: JSONValue?) -> [ConstellagentFuzzyFileMatch]? {
+        guard let resultObject = result?.objectValue,
+              let filesValue = resultObject["files"] else {
+            return nil
+        }
+
+        return decodeModel([ConstellagentFuzzyFileMatch].self, from: filesValue)
+    }
+
+    // Parses skills/list payloads from both bucketed and flat server response shapes.
+    func decodeSkillMetadata(from result: JSONValue?) -> [ConstellagentSkillMetadata]? {
+        guard let resultObject = result?.objectValue else {
+            return nil
+        }
+
+        var collectedSkills: [ConstellagentSkillMetadata] = []
+        var hasSkillContainer = false
+
+        if let dataItems = resultObject["data"]?.arrayValue {
+            hasSkillContainer = true
+            for item in dataItems {
+                guard let itemObject = item.objectValue else {
+                    continue
+                }
+                if let skillsValue = itemObject["skills"],
+                   let decodedSkills = decodeModel([ConstellagentSkillMetadata].self, from: skillsValue) {
+                    collectedSkills.append(contentsOf: decodedSkills)
+                }
+            }
+
+            if collectedSkills.isEmpty,
+               let decodedSkills = decodeModel([ConstellagentSkillMetadata].self, from: .array(dataItems)) {
+                collectedSkills.append(contentsOf: decodedSkills)
+            }
+        }
+
+        if collectedSkills.isEmpty,
+           let skillsValue = resultObject["skills"],
+           let decodedSkills = decodeModel([ConstellagentSkillMetadata].self, from: skillsValue) {
+            hasSkillContainer = true
+            collectedSkills.append(contentsOf: decodedSkills)
+        } else if resultObject["skills"] != nil {
+            hasSkillContainer = true
+        }
+
+        return hasSkillContainer ? collectedSkills : nil
+    }
+
+    // Parses Constellagent app-server plugin/list marketplace payloads.
+    func decodePluginMetadata(from result: JSONValue?) -> [ConstellagentPluginMetadata]? {
+        guard let resultObject = result?.objectValue,
+              let response = decodeModel(ConstellagentPluginListResponse.self, from: .object(resultObject)) else {
+            return nil
+        }
+
+        var plugins: [ConstellagentPluginMetadata] = []
+        for marketplace in response.marketplaces {
+            let marketplaceName = marketplace.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !marketplaceName.isEmpty else {
+                continue
+            }
+
+            for plugin in marketplace.plugins {
+                let pluginName = plugin.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !pluginName.isEmpty else {
+                    continue
+                }
+
+                plugins.append(
+                    ConstellagentPluginMetadata(
+                        id: plugin.id,
+                        name: pluginName,
+                        marketplaceName: marketplaceName,
+                        marketplacePath: marketplace.path,
+                        displayName: plugin.interface?.displayName,
+                        shortDescription: plugin.interface?.shortDescription,
+                        installed: plugin.installed,
+                        enabled: plugin.enabled,
+                        installPolicy: plugin.installPolicy
+                    )
+                )
+            }
+        }
+
+        return plugins
+    }
+
+    func shouldRetrySkillsListWithCwdFallback(_ error: Error) -> Bool {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return false
+        }
+
+        guard rpcError.code == -32600 || rpcError.code == -32602 else {
+            return false
+        }
+
+        let message = rpcError.message.lowercased()
+        return message.contains("invalid")
+            || message.contains("unknown field")
+            || message.contains("unrecognized field")
+            || message.contains("missing field")
+            || message.contains("expected")
+            || message.contains("cwds")
+    }
+
+    // Sends turn interruption request with camelCase or snake_case param keys for compatibility.
+    func sendInterruptRequest(
+        turnId: String,
+        threadId: String?,
+        useSnakeCaseParams: Bool
+    ) async throws {
+        var params: RPCObject = [:]
+        params[useSnakeCaseParams ? "turn_id" : "turnId"] = .string(turnId)
+        if let threadId {
+            params[useSnakeCaseParams ? "thread_id" : "threadId"] = .string(threadId)
+        }
+        _ = try await sendRequest(method: "turn/interrupt", params: .object(params))
+    }
+
+    // Normalizes ids coming from UI/runtime state before RPC usage.
+    func normalizedInterruptIdentifier(_ rawValue: String?) -> String? {
+        guard let rawValue else { return nil }
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    // Resolves the currently interruptible turn id from the latest turn page when local state is stale.
+    // If the runtime reports "running" without an id yet, surface that instead of falling
+    // back to the latest completed turn and interrupting the wrong run.
+    func resolveInFlightTurnID(threadId: String) async throws -> String? {
+        let maxAttempts = 3
+        for attempt in 0..<maxAttempts {
+            let snapshot = try await readThreadTurnStateSnapshot(threadId: threadId)
+            if let interruptibleTurnID = snapshot.interruptibleTurnID {
+                return interruptibleTurnID
+            }
+            if snapshot.hasInterruptibleTurnWithoutID {
+                if attempt < (maxAttempts - 1) {
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    continue
+                }
+                throw ConstellagentServiceError.invalidInput(
+                    "The active run has not published an interruptible turn ID yet. Please try again in a moment."
+                )
+            }
+            return nil
+        }
+        return nil
+    }
+
+    // Parses turn status values from app-server turn objects.
+    func normalizedInterruptTurnStatus(from turnObject: [String: JSONValue]) -> String? {
+        let status = turnObject["status"]?.stringValue
+            ?? turnObject["turnStatus"]?.stringValue
+            ?? turnObject["turn_status"]?.stringValue
+
+        guard let status else { return nil }
+
+        let trimmed = status.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        return trimmed
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .lowercased()
+    }
+
+    // Marks statuses that can still accept turn/interrupt.
+    func isInterruptibleTurnStatus(_ normalizedStatus: String?) -> Bool {
+        guard let normalizedStatus else {
+            return true
+        }
+
+        if normalizedStatus.contains("inprogress")
+            || normalizedStatus.contains("running")
+            || normalizedStatus.contains("pending")
+            || normalizedStatus.contains("started") {
+            return true
+        }
+
+        if normalizedStatus.contains("complete")
+            || normalizedStatus.contains("failed")
+            || normalizedStatus.contains("error")
+            || normalizedStatus.contains("interrupt")
+            || normalizedStatus.contains("cancel")
+            || normalizedStatus.contains("stopped") {
+            return false
+        }
+
+        return true
+    }
+
+    // Retries with snake_case params for strict or legacy server parsers.
+    func shouldRetryInterruptWithSnakeCaseParams(_ error: Error) -> Bool {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return false
+        }
+
+        guard rpcError.code == -32600 || rpcError.code == -32602 else {
+            return false
+        }
+
+        let message = rpcError.message.lowercased()
+        let hints = ["turnid", "threadid", "turn_id", "thread_id", "unknown field", "missing field", "invalid"]
+        return hints.contains { message.contains($0) }
+    }
+
+    // Reads only the latest turn page when supported, then falls back for older runtimes.
+    func readThreadTurnStateSnapshot(threadId: String) async throws -> (
+        interruptibleTurnID: String?,
+        hasInterruptibleTurnWithoutID: Bool,
+        latestTurnID: String?
+    ) {
+        if supportsTurnPagination {
+            do {
+                let response = try await sendRequest(
+                    method: "thread/turns/list",
+                    params: .object([
+                        "threadId": .string(threadId),
+                        "limit": .integer(ThreadTurnStateSnapshotPolicy.recentTurnLimit),
+                        "sortDirection": .string("desc"),
+                    ]),
+                    timeoutNanoseconds: ThreadTurnStateSnapshotPolicy.requestTimeoutNanoseconds
+                )
+
+                guard let resultObject = response.result?.objectValue else {
+                    return (nil, false, nil)
+                }
+
+                let turnObjects = (
+                    resultObject["data"]?.arrayValue
+                        ?? resultObject["items"]?.arrayValue
+                        ?? resultObject["turns"]?.arrayValue
+                        ?? []
+                ).compactMap { $0.objectValue }
+                return turnStateSnapshot(from: turnObjects, newestFirst: true)
+            } catch {
+                if shouldFallbackTurnSnapshotToThreadRead(error) {
+                    debugSyncLog("thread/turns/list unavailable for fresh thread=\(threadId); resolving stop state via thread/read")
+                } else {
+                    guard consumeUnsupportedTurnPagination(error, attemptedMethod: "thread/turns/list") else {
+                        throw error
+                    }
+                }
+            }
+        }
+
+        let response: RPCMessage
+        do {
+            response = try await sendRequest(
+                method: "thread/read",
+                params: .object([
+                    "threadId": .string(threadId),
+                    "includeTurns": .bool(true),
+                ]),
+                timeoutNanoseconds: ThreadTurnStateSnapshotPolicy.requestTimeoutNanoseconds
+            )
+        } catch {
+            guard shouldRetryThreadReadTurnSnapshotWithSnakeCase(error) else {
+                throw error
+            }
+
+            response = try await sendRequest(
+                method: "thread/read",
+                params: .object([
+                    "thread_id": .string(threadId),
+                    "include_turns": .bool(true),
+                ]),
+                timeoutNanoseconds: ThreadTurnStateSnapshotPolicy.requestTimeoutNanoseconds
+            )
+        }
+
+        let turnObjects = response.result?.objectValue?["thread"]?.objectValue?["turns"]?.arrayValue?
+            .compactMap { $0.objectValue } ?? []
+        return turnStateSnapshot(from: turnObjects, newestFirst: false)
+    }
+
+    // Freshly-created chats can reject thread/turns/list until the first user turn is materialized.
+    func shouldFallbackTurnSnapshotToThreadRead(_ error: Error) -> Bool {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return false
+        }
+
+        let message = rpcError.message.lowercased()
+        return isRuntimeMaterializationMessage(message)
+    }
+
+    // Parses latest/running turn metadata from either descending pages or chronological legacy arrays.
+    func turnStateSnapshot(
+        from turnObjects: [RPCObject],
+        newestFirst: Bool
+    ) -> (
+        interruptibleTurnID: String?,
+        hasInterruptibleTurnWithoutID: Bool,
+        latestTurnID: String?
+    ) {
+        guard !turnObjects.isEmpty else {
+            return (nil, false, nil)
+        }
+
+        let newestTurnObjects = newestFirst ? turnObjects : Array(turnObjects.reversed())
+        let latestTurnID = newestTurnObjects.compactMap { turnObject in
+            normalizedInterruptIdentifier(
+                turnObject["id"]?.stringValue
+                    ?? turnObject["turnId"]?.stringValue
+                    ?? turnObject["turn_id"]?.stringValue
+            )
+        }.first
+
+        // Newest-first scanning avoids interrupting an older completed turn when recovery is stale.
+        var hasInterruptibleTurnWithoutID = false
+        for turnObject in newestTurnObjects {
+            let turnStatus = normalizedInterruptTurnStatus(from: turnObject)
+            guard isInterruptibleTurnStatus(turnStatus) else {
+                continue
+            }
+
+            if let interruptibleTurnID = normalizedInterruptIdentifier(
+                turnObject["id"]?.stringValue
+                    ?? turnObject["turnId"]?.stringValue
+                    ?? turnObject["turn_id"]?.stringValue
+            ) {
+                return (interruptibleTurnID, false, latestTurnID)
+            }
+
+            hasInterruptibleTurnWithoutID = true
+        }
+
+        return (nil, hasInterruptibleTurnWithoutID, latestTurnID)
+    }
+
+    // Keeps stop recovery compatible with runtimes that only accept snake_case thread/read params.
+    func shouldRetryThreadReadTurnSnapshotWithSnakeCase(_ error: Error) -> Bool {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return false
+        }
+
+        guard rpcError.code == -32600 || rpcError.code == -32602 else {
+            return false
+        }
+
+        let message = rpcError.message.lowercased()
+        let hints = ["threadid", "includeturns", "thread_id", "include_turns", "unknown field", "missing field", "invalid"]
+        return hints.contains { message.contains($0) }
+    }
+
+    // Retries after refreshing turn id when local activeTurn cache is stale.
+    func shouldRetryInterruptWithRefreshedTurnID(_ error: Error) -> Bool {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return false
+        }
+
+        let message = rpcError.message.lowercased()
+        let hints = [
+            "turn not found",
+            "no active turn",
+            "not in progress",
+            "not running",
+            "already completed",
+            "already finished",
+            "invalid turn",
+            "no such turn",
+            "not active",
+            "does not exist",
+            "cannot interrupt"
+        ]
+        return hints.contains { message.contains($0) }
+    }
+
+    // Retries steer once after refreshing the active turn id when the server rejects the precondition.
+    func shouldRetrySteerWithRefreshedTurnID(_ error: Error) -> Bool {
+        shouldRetryInterruptWithRefreshedTurnID(error)
+    }
+
+    // Converts absolute match paths to root-relative output when older servers return full paths.
+    func normalizeFuzzyFilePath(path: String, root: String) -> String {
+        let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else {
+            return path
+        }
+
+        let normalizedRoot = normalizedFuzzyRootPath(root)
+        guard !normalizedRoot.isEmpty else {
+            return trimmedPath
+        }
+
+        if normalizedRoot == "/" {
+            return trimmedPath.hasPrefix("/") ? String(trimmedPath.dropFirst()) : trimmedPath
+        }
+
+        let rootPrefix = normalizedRoot.hasSuffix("/") ? normalizedRoot : "\(normalizedRoot)/"
+        if trimmedPath.hasPrefix(rootPrefix) {
+            return String(trimmedPath.dropFirst(rootPrefix.count))
+        }
+
+        return trimmedPath
+    }
+
+    private func normalizedFuzzyRootPath(_ root: String) -> String {
+        var normalized = root.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            return ""
+        }
+
+        if normalized == "/" {
+            return normalized
+        }
+
+        while normalized.hasSuffix("/") {
+            normalized.removeLast()
+        }
+
+        return normalized.isEmpty ? "/" : normalized
+    }
+}

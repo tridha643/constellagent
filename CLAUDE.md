@@ -2,7 +2,28 @@
 
 These instructions apply to **any repository** where the constellagent app is in use. They govern all coding agents regardless of which codebase is being worked on.
 
-Shared instructions for all coding agents — session context, Cachebro, AgentFS, and **review annotations** — are in **`AGENTS.md`** at the repository root (when available).
+Shared instructions for all coding agents — session context, Cachebro, AgentFS, **review annotations**, and **this repo's mobile layout** — are in **`AGENTS.md`** at the repository root (when available).
+
+## Constellagent monorepo (this repository)
+
+| Area | Path | Notes |
+|------|------|-------|
+| Desktop app | `desktop/` | Electron; `bun run dev` from repo root |
+| iOS companion | `ios/Constellagent/` | SwiftUI; see `ios/Constellagent/README.md` |
+| Mobile wire protocol | `packages/constellagent-mobile-protocol/` | Zod schemas; built on `bun install` |
+| Desktop mobile bridge | `desktop/src/main/mobile-*.ts` | Tailscale-local WS + E2EE; Settings → Mobile |
+
+The iPhone app talks to the desktop bridge over secure WebSocket. Shared contracts live in `@constellagent/mobile-protocol`; Swift adapts via `ConstellagentService+ProtocolMapping.swift`. When editing RPC shapes, keep TypeScript, the desktop router (`mobile-method-router.ts`), and Swift mapping in sync.
+
+**Verification commands (mobile-related)**
+
+```bash
+bun test packages/constellagent-mobile-protocol/src/index.test.ts
+bun test desktop/src/main/mobile-*.test.ts
+cd ios/Constellagent && xcodebuild -project Constellagent.xcodeproj -scheme Constellagent -destination 'generic/platform=iOS' build
+```
+
+Enable the bridge with `CONSTELLAGENT_MOBILE_ACCESS=1` or Settings → Mobile. Local iOS dev relay URL: `ios/Constellagent/BuildSupport/PrivateOverrides.xcconfig` (copy from `.example`; gitignored).
 
 ## Comment selection in Review Changes
 

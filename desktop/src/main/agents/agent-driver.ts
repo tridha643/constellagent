@@ -181,3 +181,33 @@ export function computeTextDelta(emitted: string, incoming: string): { delta: st
   }
   return { delta: incoming, emitted: emitted + incoming }
 }
+
+function isAlphanumericChar(char: string): boolean {
+  return /[\p{L}\p{N}]/u.test(char)
+}
+
+/** Pi/Cursor word-sized tokens often omit leading spaces; insert one at word boundaries. */
+export function needsAssistantWordBoundarySpace(existing: string, delta: string): boolean {
+  if (delta.length === 0 || /^\s/.test(delta)) return false
+  const last = existing.at(-1)
+  const first = delta.at(0)
+  if (!last || !first) return false
+  return isAlphanumericChar(last) && isAlphanumericChar(first)
+}
+
+/**
+ * Normalizes assistant stream chunks for both cumulative snapshots and
+ * incremental word tokens before appending to transcript or broadcasting.
+ */
+export function normalizeAssistantStreamDelta(
+  emitted: string,
+  incoming: string,
+): { delta: string; emitted: string } {
+  const { delta: rawDelta } = computeTextDelta(emitted, incoming)
+  if (rawDelta.length === 0) {
+    return { delta: '', emitted }
+  }
+  const prefix = needsAssistantWordBoundarySpace(emitted, rawDelta) ? ' ' : ''
+  const delta = `${prefix}${rawDelta}`
+  return { delta, emitted: emitted + delta }
+}
