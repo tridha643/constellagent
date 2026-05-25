@@ -37,7 +37,7 @@
   text-transform: uppercase;
   cursor: pointer;
   border-radius: var(--radius-md);
-  transition: color 140ms var(--ease-out), background-color 140ms var(--ease-out),
+  transition: color var(--duration-exit) var(--ease-out), background-color var(--duration-exit) var(--ease-out),
     transform var(--duration-micro) var(--ease-press);
 }
 
@@ -60,7 +60,7 @@
 .caret {
   flex-shrink: 0;
   color: var(--text-tertiary);
-  transition: transform 180ms var(--ease-out);
+  transition: transform var(--duration-enter) var(--ease-out);
   transform-origin: center;
 }
 
@@ -145,7 +145,7 @@
 .group[data-drop-active='true'] {
   background: color-mix(in srgb, var(--accent-blue) 6%, transparent);
   border-radius: var(--radius-md);
-  transition: background-color 150ms ease;
+  transition: background-color var(--duration-default) ease;
 }
 
 .group[data-drop-active='true'] .header {

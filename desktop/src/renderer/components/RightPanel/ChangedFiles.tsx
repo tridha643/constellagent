@@ -307,13 +307,42 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     }
   }, [addToast, refresh])
 
+  // Optimistically flip the staged flag for the given paths so a row jumps
+  // between the Staged / Unstaged groups the instant it's clicked, instead of
+  // freezing behind the global busy spinner until git returns. The op runs in
+  // the background and refresh() reconciles to real git state in `finally` —
+  // which also reverts the optimistic flip if the op throws. Mirrors the
+  // optimistic-update pattern already used for Linear issue drag-drop.
+  const runStagingOp = useCallback(async (
+    paths: string[],
+    staged: boolean,
+    op: () => Promise<void>,
+    fallback: string,
+  ) => {
+    if (paths.length === 0) return
+    const target = new Set(paths)
+    setFiles((prev) => prev.map((f) => (target.has(f.path) ? { ...f, staged } : f)))
+    try {
+      await op()
+    } catch (err) {
+      console.error('[ChangedFiles] staging operation failed:', err)
+      addToast({
+        id: crypto.randomUUID(),
+        message: errorMessage(err, fallback),
+        type: 'error',
+      })
+    } finally {
+      await refresh()
+    }
+  }, [addToast, refresh])
+
   const stageFiles = useCallback((paths: string[]) => {
-    void runGitOp(() => window.api.git.stage(worktreePath, paths), 'Failed to stage changes')
-  }, [worktreePath, runGitOp])
+    void runStagingOp(paths, true, () => window.api.git.stage(worktreePath, paths), 'Failed to stage changes')
+  }, [worktreePath, runStagingOp])
 
   const unstageFiles = useCallback((paths: string[]) => {
-    void runGitOp(() => window.api.git.unstage(worktreePath, paths), 'Failed to unstage changes')
-  }, [worktreePath, runGitOp])
+    void runStagingOp(paths, false, () => window.api.git.unstage(worktreePath, paths), 'Failed to unstage changes')
+  }, [worktreePath, runStagingOp])
 
   const discardFiles = useCallback((file: FileStatus) => {
     const op = file.status === 'untracked'

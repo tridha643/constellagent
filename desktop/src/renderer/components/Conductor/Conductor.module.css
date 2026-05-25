@@ -1,6 +1,6 @@
 /* Tab-mounted Conductor chat (center contentArea). */
 .chatView {
-  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-out-strong: var(--ease-out);
   --conductor-composer-radius: 10px;
   --conductor-effort-accent: #d4a574;
   --conductor-chip-fg: #dcc9b8;
@@ -610,10 +610,10 @@
   line-height: 1;
   opacity: 0.72;
   transition:
-    opacity 120ms ease,
-    color 120ms ease,
-    background-color 120ms ease,
-    transform 140ms var(--ease-out-strong);
+    opacity var(--duration-exit-fast) ease,
+    color var(--duration-exit-fast) ease,
+    background-color var(--duration-exit-fast) ease,
+    transform var(--duration-exit) var(--ease-out-strong);
 }
 
 .messageFooterBtn:active:not(:disabled) {
@@ -662,10 +662,10 @@
     inset 0 1px 0 rgb(255 255 255 / 62%),
     0 1px 2px rgb(0 0 0 / 18%);
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    transform 140ms var(--ease-out-strong);
+    background-color var(--duration-exit-fast) ease,
+    border-color var(--duration-exit-fast) ease,
+    box-shadow var(--duration-exit-fast) ease,
+    transform var(--duration-exit) var(--ease-out-strong);
 }
 
 .messageFooterApprove:active:not(:disabled) {
@@ -775,10 +775,10 @@
   line-height: 1.25;
   cursor: pointer;
   transition:
-    background-color 150ms ease,
-    border-color 150ms ease,
-    color 150ms ease,
-    transform 130ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+    background-color var(--duration-default) ease,
+    border-color var(--duration-default) ease,
+    color var(--duration-default) ease,
+    transform 130ms var(--ease-out-strong, var(--ease-out));
 }
 
 .generatedImageOpenPill:active {
@@ -1004,8 +1004,8 @@
   box-shadow: none;
   transition:
     border-color 200ms var(--ease-out-strong),
-    box-shadow 220ms var(--ease-out-strong),
-    background-color 180ms ease;
+    box-shadow var(--duration-slow) var(--ease-out-strong),
+    background-color var(--duration-enter) ease;
 }
 
 .composerInnerPlan {
@@ -1150,7 +1150,7 @@
   background: transparent;
   cursor: pointer;
   text-align: left;
-  transition: background-color 120ms ease, transform var(--duration-micro) var(--ease-press);
+  transition: background-color var(--duration-exit-fast) ease, transform var(--duration-micro) var(--ease-press);
 }
 
 .composerQueuePanelHeader:active {
@@ -1171,7 +1171,7 @@
   width: 20px;
   height: 20px;
   color: color-mix(in srgb, var(--text-tertiary) 85%, var(--text-primary));
-  transition: transform 160ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+  transition: transform 160ms var(--ease-out-strong, var(--ease-out));
 }
 
 .composerQueueChevron svg {
@@ -1200,7 +1200,7 @@
   gap: 10px;
   min-height: 28px;
   border-radius: 6px;
-  transition: opacity 140ms var(--ease-out-strong);
+  transition: opacity var(--duration-exit) var(--ease-out-strong);
 }
 
 .composerQueueListItemEditing {
@@ -1272,7 +1272,7 @@
   flex-shrink: 0;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease;
+  transition: opacity var(--duration-exit-fast) ease;
 }
 
 .composerQueueAction,
@@ -1288,8 +1288,8 @@
   color: color-mix(in srgb, var(--text-tertiary) 92%, var(--text-primary));
   cursor: pointer;
   transition:
-    color 120ms ease,
-    transform 100ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+    color var(--duration-exit-fast) ease,
+    transform 100ms var(--ease-out-strong, var(--ease-out));
 }
 
 .composerQueueIconAction {
@@ -1537,7 +1537,7 @@
   border-radius: 6px;
   cursor: pointer;
   flex-shrink: 0;
-  transition: color 120ms ease, background 120ms ease, transform var(--duration-micro) var(--ease-press);
+  transition: color var(--duration-exit-fast) ease, background var(--duration-exit-fast) ease, transform var(--duration-micro) var(--ease-press);
 }
 
 .composerAttachmentRemove:active {
@@ -1671,10 +1671,10 @@
   flex-shrink: 0;
   border: 1px solid transparent;
   transition:
-    background 140ms var(--ease-out-strong),
-    color 140ms var(--ease-out-strong),
-    border-color 140ms var(--ease-out-strong),
-    transform 140ms var(--ease-out-strong);
+    background var(--duration-exit) var(--ease-out-strong),
+    color var(--duration-exit) var(--ease-out-strong),
+    border-color var(--duration-exit) var(--ease-out-strong),
+    transform var(--duration-exit) var(--ease-out-strong);
 }
 
 .composerChip:active {
@@ -1767,8 +1767,8 @@
   transform: translateX(-50%) translateY(calc(-100% + 4px));
   opacity: 0;
   transition:
-    opacity 140ms var(--ease-out, ease),
-    transform 140ms var(--ease-out, ease);
+    opacity var(--duration-exit) var(--ease-out, ease),
+    transform var(--duration-exit) var(--ease-out, ease);
 }
 
 .contextPopoverPortal[data-entered='true'] {
@@ -1923,7 +1923,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 140ms var(--ease-press, ease), background 140ms ease, opacity 140ms ease;
+  transition: transform var(--duration-exit) var(--ease-press, ease), background var(--duration-exit) ease, opacity var(--duration-exit) ease;
 }
 
 .sendButton svg {
@@ -2044,7 +2044,7 @@
   padding: var(--space-1);
   z-index: 50;
   transform-origin: bottom left;
-  animation: popIn 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  animation: popIn var(--duration-enter) var(--ease-out);
 }
 
 .modelGroupLabel {
@@ -2096,7 +2096,7 @@
   padding: var(--space-1);
   z-index: 60;
   transform-origin: top right;
-  animation: popIn 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  animation: popIn var(--duration-enter) var(--ease-out);
 }
 
 .historyItem {
@@ -2268,7 +2268,7 @@
 }
 
 .effortLabel {
-  transition: opacity 180ms var(--ease-out-strong), filter 180ms var(--ease-out-strong);
+  transition: opacity var(--duration-enter) var(--ease-out-strong), filter var(--duration-enter) var(--ease-out-strong);
 }
 
 .effortLabelTransitioning {
@@ -2293,7 +2293,7 @@
 }
 
 .subagentRowEnter {
-  animation: subagentEnter 220ms var(--ease-out-strong) both;
+  animation: subagentEnter var(--duration-slow) var(--ease-out-strong) both;
   animation-delay: calc(var(--subagent-index, 0) * 50ms);
 }
 
@@ -2320,7 +2320,7 @@
   padding: 4px 0;
   cursor: pointer;
   width: 100%;
-  transition: transform 140ms var(--ease-out-strong);
+  transition: transform var(--duration-exit) var(--ease-out-strong);
 }
 
 .subagentRowButton:active:not(:disabled) {
@@ -2398,7 +2398,7 @@
 .subagentStatus {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
-  animation: subagentStatusIn 180ms var(--ease-out-strong);
+  animation: subagentStatusIn var(--duration-enter) var(--ease-out-strong);
 }
 
 @keyframes subagentStatusIn {
@@ -2577,10 +2577,10 @@
   max-width: min(280px, 100%);
   cursor: pointer;
   transition:
-    background-color 150ms ease,
-    border-color 150ms ease,
-    color 150ms ease,
-    transform 130ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+    background-color var(--duration-default) ease,
+    border-color var(--duration-default) ease,
+    color var(--duration-default) ease,
+    transform 130ms var(--ease-out-strong, var(--ease-out));
 }
 
 .toolInlineChip:active {
@@ -2630,7 +2630,7 @@
 .collapsiblePanel {
   overflow: hidden;
   height: var(--collapsible-panel-height);
-  transition: height 220ms var(--ease-out-strong);
+  transition: height var(--duration-slow) var(--ease-out-strong);
 }
 
 .collapsiblePanel[data-starting-style],
@@ -2930,11 +2930,11 @@
 }
 
 .tickerRowChip {
-  transition: opacity 120ms var(--ease-out-strong);
+  transition: opacity var(--duration-exit-fast) var(--ease-out-strong);
 }
 
 .toolChipCrossfade {
-  transition: opacity 120ms var(--ease-out-strong);
+  transition: opacity var(--duration-exit-fast) var(--ease-out-strong);
 }
 
 
@@ -2995,15 +2995,15 @@
   width: auto;
   max-width: 100%;
   text-align: left;
-  transition: color 120ms ease, transform 160ms var(--ease-out-strong);
+  transition: color var(--duration-exit-fast) ease, transform 160ms var(--ease-out-strong);
 }
 
 .turnSummary .collapsibleChevron {
-  transition-duration: 120ms;
+  transition-duration: var(--duration-exit-fast);
 }
 
 .turnSummaryPanel {
-  transition-duration: 150ms;
+  transition-duration: var(--duration-default);
 }
 
 .turnSummaryHeader:active {
@@ -3556,7 +3556,7 @@
   right: var(--composer-menu-inset);
   bottom: calc(100% - 1px);
   z-index: 21;
-  --conductor-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --conductor-ease-out: var(--ease-out);
   --conductor-pop-enter: 160ms;
   transform-origin: bottom center;
 }
@@ -3626,8 +3626,8 @@
   opacity: 1;
   transform: translateY(0) scale(1);
   transition:
-    opacity var(--conductor-pop-enter, 160ms) var(--conductor-ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
-    transform var(--conductor-pop-enter, 160ms) var(--conductor-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+    opacity var(--conductor-pop-enter, 160ms) var(--conductor-ease-out, var(--ease-out)),
+    transform var(--conductor-pop-enter, 160ms) var(--conductor-ease-out, var(--ease-out));
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text-secondary) 35%, transparent) transparent;
 }
@@ -3635,8 +3635,8 @@
 .conductorMcpPanel,
 .conductorMcpBanner,
 .conductorEmbeddedTerminal {
-  --conductor-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --conductor-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --conductor-ease-out: var(--ease-out);
+  --conductor-ease-in-out: var(--ease-in-out);
   --conductor-pop-enter: 180ms;
   --conductor-pop-exit: 140ms;
   transform-origin: bottom center;
@@ -3785,7 +3785,7 @@
   .conductorHashMenuItem,
   .conductorAtMenuItem,
   .conductorPersonalityMenuItem {
-    transition: background-color 120ms ease;
+    transition: background-color var(--duration-exit-fast) ease;
   }
 
   .conductorSlashMenuItem:hover,
@@ -3801,7 +3801,7 @@
 .conductorHashMenuItem:active,
 .conductorAtMenuItem:active,
 .conductorPersonalityMenuItem:active {
-  --conductor-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --conductor-ease-out: var(--ease-out);
 }
 
 .conductorMcpBannerOpen:active,
@@ -3809,7 +3809,7 @@
 .conductorMcpFooterBtn:active,
 .conductorPanelClose:active {
   transform: scale(0.97);
-  transition: transform 140ms var(--conductor-ease-out);
+  transition: transform var(--duration-exit) var(--conductor-ease-out);
 }
 
 .conductorSlashMenuItem:active,
@@ -3817,7 +3817,7 @@
 .conductorAtMenuItem:active,
 .conductorPersonalityMenuItem:active {
   transform: scale(0.97);
-  transition: transform 140ms var(--conductor-ease-out);
+  transition: transform var(--duration-exit) var(--conductor-ease-out);
 }
 
 .slashCommandToken {

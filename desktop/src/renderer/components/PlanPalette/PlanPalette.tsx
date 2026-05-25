@@ -407,7 +407,12 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
           </div>
         </div>
 
-        <div className={`${qoStyles.results} stagger-children`} ref={listRef}>
+        <div
+          className={`${qoStyles.results} stagger-children`}
+          ref={listRef}
+          role="listbox"
+          aria-label="Plan search results"
+        >
           {filtered.length === 0 ? (
             <div className={qoStyles.empty}>
               {query.trim() && !hasSearchLoaded ? (
@@ -428,10 +433,13 @@ export function PlanPalette({ worktreePath, projectWorktrees }: Props) {
             filtered.map((entry, i) => {
               const base = displayBaseForEntry(entry)
               const rel = relPath(entry.path, base, userHome)
+              const selected = i === selectedIndex
               return (
                 <div
                   key={entry.path}
-                  className={`${qoStyles.resultItem} ${i === selectedIndex ? qoStyles.selected : ''}`}
+                  role="option"
+                  aria-selected={selected}
+                  className={`${qoStyles.resultItem} ${selected ? qoStyles.selected : ''}`}
                   onClick={() => {
                     if (query.trim() && resolvedQueryRef.current !== query) return
                     openMarkdownPreview(entry.path)

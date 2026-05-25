@@ -347,7 +347,12 @@ export function QuickOpen({ worktreePath }: Props) {
             autoFocus
           />
         </div>
-        <div className={`${styles.results} stagger-children`} ref={listRef}>
+        <div
+          className={`${styles.results} stagger-children`}
+          ref={listRef}
+          role="listbox"
+          aria-label="Search results"
+        >
           {combinedResults.length === 0 ? (
             <div className={styles.empty}>
               {!hasLoaded ? (
@@ -383,6 +388,8 @@ export function QuickOpen({ worktreePath }: Props) {
               return (
                 <div
                   key={key}
+                  role="option"
+                  aria-selected={selected}
                   className={`${styles.resultItem} ${selected ? styles.selected : ''} ${item.kind === 'code' ? styles.resultItemCode : ''}`}
                   onClick={onClick}
                   onMouseEnter={() => setSelectedIndex(index)}

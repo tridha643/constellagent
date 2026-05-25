@@ -31,8 +31,8 @@
   transition:
     border-color var(--motion-slow),
     background-color var(--motion-slow),
-    opacity 180ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
-    transform 180ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+    opacity var(--duration-enter) var(--ease-out, var(--ease-out)),
+    transform var(--duration-enter) var(--ease-out, var(--ease-out));
 }
 
 @starting-style {
@@ -389,8 +389,8 @@
   transition:
     border-color var(--motion-fast),
     box-shadow var(--motion-fast),
-    opacity 180ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
-    transform 180ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+    opacity var(--duration-enter) var(--ease-out, var(--ease-out)),
+    transform var(--duration-enter) var(--ease-out, var(--ease-out));
 }
 
 @starting-style {

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConductorAuthStatus } from '../../../shared/agent-chat-types'
 import { useAppStore } from '../../store/app-store'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 import type {
   Settings,
   SettingsSectionId,
@@ -2087,6 +2088,11 @@ export function SettingsPanel() {
   const [restarting, setRestarting] = useState(false)
   const section = useAppStore((s) => s.settingsSection)
   const setSettingsSection = useAppStore((s) => s.setSettingsSection)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // Trap Tab focus inside the settings overlay so keyboard nav can't reach the
+  // obscured app behind it (FloatingPanel forwards its ref to the .card body).
+  useFocusTrap(panelRef)
 
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     updateSettings({ [key]: value })
@@ -2135,7 +2141,7 @@ export function SettingsPanel() {
     ?? SETTINGS_SIDEBAR[0].blurb
 
   return (
-    <FloatingPanel variant="fullscreen" testId="settings-panel">
+    <FloatingPanel ref={panelRef} variant="fullscreen" testId="settings-panel">
       <FloatingPanel.Titlebar trafficLightPad>
         <Tooltip label="Back" shortcut="⌘,">
           <button

@@ -133,7 +133,7 @@
   .card,
   .drawer .card,
   .surface {
-    transition: opacity 90ms var(--ease-out);
+    transition: opacity var(--duration-fast) var(--ease-out);
 
     @starting-style {
       transform: none;

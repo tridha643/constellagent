@@ -381,9 +381,9 @@
   z-index: 1;
   -webkit-tap-highlight-color: transparent;
   transition:
-    background-color 150ms ease,
-    border-color 150ms ease,
-    color 150ms ease,
+    background-color var(--duration-default) ease,
+    border-color var(--duration-default) ease,
+    color var(--duration-default) ease,
     transform 130ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 

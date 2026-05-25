@@ -12,7 +12,7 @@
   box-shadow: var(--shadow-md);
   white-space: nowrap;
   opacity: 0;
-  transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
+  transition: opacity var(--duration-exit-fast) var(--ease-out), transform var(--duration-exit-fast) var(--ease-out);
 }
 
 .top {

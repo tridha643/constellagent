@@ -185,7 +185,7 @@
   box-shadow: var(--shadow-md, 0 12px 28px rgba(0, 0, 0, 0.28));
   overflow: hidden;
   transform-origin: top center;
-  animation: suggestPopoverIn 180ms var(--ease-out);
+  animation: suggestPopoverIn var(--duration-enter) var(--ease-out);
 }
 
 .suggestMeta {
@@ -411,7 +411,7 @@
    * Blur-masked crossfade into/out of progress. Matches form → progress transition.
    * Blur kept at 2px for Safari/Electron compositor cost.
    */
-  animation: blurFadeIn 180ms var(--ease-out);
+  animation: blurFadeIn var(--duration-enter) var(--ease-out);
 }
 
 @keyframes blurFadeIn {
@@ -447,7 +447,7 @@
   color: var(--text-tertiary);
   opacity: 0;
   transform: translateY(4px);
-  animation: stageRowEnter 220ms var(--ease-out) forwards;
+  animation: stageRowEnter var(--duration-slow) var(--ease-out) forwards;
 }
 
 /* 40ms stagger between rows. */
@@ -478,7 +478,7 @@
    * indefinite progress, not a UI transition.
    */
   animation:
-    stageRowEnter 220ms var(--ease-out) forwards,
+    stageRowEnter var(--duration-slow) var(--ease-out) forwards,
     stagePulse 1400ms linear infinite;
 }
 
@@ -555,7 +555,7 @@
    */
   transform-origin: left center;
   transform: scaleX(0);
-  transition: transform 120ms linear;
+  transition: transform var(--duration-exit-fast) linear;
 }
 
 .progressMeta {

@@ -138,8 +138,8 @@
   flex-direction: column;
   gap: var(--space-2);
   position: relative;
-  transition: transform 150ms cubic-bezier(0.23, 1, 0.32, 1),
-              opacity 150ms ease-out;
+  transition: transform var(--duration-default) var(--ease-out),
+              opacity var(--duration-default) ease-out;
 }
 
 .commandBlockDragging {
@@ -191,7 +191,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .commandBlock {
-    transition: opacity 150ms ease-out;
+    transition: opacity var(--duration-default) ease-out;
   }
   .commandBlockDragging {
     transform: none;

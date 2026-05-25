@@ -58,6 +58,8 @@ export function WorkspaceDialog({
 }: Props) {
   const [name, setName] = useState(`ws-${Date.now().toString(36)}`)
   const [branches, setBranches] = useState<string[]>([])
+  const [branchLoadError, setBranchLoadError] = useState(false)
+  const [branchReloadKey, setBranchReloadKey] = useState(0)
   const [selectedBranch, setSelectedBranch] = useState('')
   const [isNewBranch, setIsNewBranch] = useState(true)
   const [newBranchName, setNewBranchName] = useState('')
@@ -82,12 +84,21 @@ export function WorkspaceDialog({
     let cancelled = false
 
     const loadBranches = async () => {
+      setBranchLoadError(false)
+      let branchesFailed = false
       try {
         const [defaultBranchRef, b] = await Promise.all([
           window.api.git.getDefaultBranch(project.repoPath).catch(() => ''),
-          window.api.git.getBranches(project.repoPath).catch(() => [] as string[]),
+          window.api.git.getBranches(project.repoPath).catch(() => {
+            branchesFailed = true
+            return [] as string[]
+          }),
         ])
         if (cancelled) return
+
+        // Distinguish "this repo has no branches" from "the branch list failed
+        // to load" so the user isn't left staring at a silently-empty picker.
+        setBranchLoadError(branchesFailed)
 
         const defaultBranch = defaultBranchRef.replace(/^origin\//, '')
         setBranches(b)
@@ -111,7 +122,7 @@ export function WorkspaceDialog({
     return () => {
       cancelled = true
     }
-  }, [project.repoPath])
+  }, [project.repoPath, branchReloadKey])
 
   /** Resolve a PR reference to its branch name via gh CLI */
   const resolvePr = useCallback(async (value: string, target: 'branch' | 'baseBranch') => {
@@ -359,6 +370,20 @@ export function WorkspaceDialog({
                 </div>
               )}
             </div>
+            {branchLoadError && (
+              <div className={styles.createSlowNote} role="status" aria-live="polite">
+                Couldn&rsquo;t load branches. Type a name above, or{' '}
+                <button
+                  type="button"
+                  onClick={() => setBranchReloadKey((k) => k + 1)}
+                  disabled={loading}
+                  style={{ background: 'none', border: 0, padding: 0, color: 'var(--accent-blue)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}
+                >
+                  retry
+                </button>
+                .
+              </div>
+            )}
             {prError && <div className={styles.prError}>{prError}</div>}
           </>
         )}

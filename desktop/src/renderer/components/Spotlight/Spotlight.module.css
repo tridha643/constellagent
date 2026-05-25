@@ -1,8 +1,8 @@
 /* Spotlight tokens — strong custom easing curves, not the built-in weak ones. */
 .spotlightTokens,
 :root {
-  --ease-out-spotlight: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-in-out-spotlight: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-out-spotlight: var(--ease-out);
+  --ease-in-out-spotlight: var(--ease-in-out);
   --spotlight-dot-fade: 180ms;
   --spotlight-dot-color: 220ms;
   --spotlight-ring-fade: 220ms;

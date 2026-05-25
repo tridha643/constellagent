@@ -11,8 +11,8 @@
   color: var(--text-primary);
   min-height: 40px;
   transition:
-    background-color 140ms var(--ease-out),
-    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+    background-color var(--duration-exit) var(--ease-out),
+    transform 160ms var(--ease-out);
 }
 
 /* Density swap via parent [data-density] — cheap to flip without remounting */
@@ -66,9 +66,9 @@
   cursor: pointer;
   white-space: nowrap;
   transition:
-    color 150ms ease,
-    background-color 150ms ease,
-    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+    color var(--duration-default) ease,
+    background-color var(--duration-default) ease,
+    transform 160ms var(--ease-out);
 }
 
 .identifier:hover {
@@ -231,9 +231,9 @@
   cursor: pointer;
   flex-shrink: 0;
   transition:
-    transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
-    background-color 150ms ease,
-    color 150ms ease;
+    transform 160ms var(--ease-out),
+    background-color var(--duration-default) ease,
+    color var(--duration-default) ease;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -262,8 +262,8 @@
   .identifier,
   .launchBtn {
     transition:
-      color 150ms ease,
-      background-color 150ms ease;
+      color var(--duration-default) ease,
+      background-color var(--duration-default) ease;
   }
 
   .identifier:active,
@@ -299,9 +299,9 @@
 .row[data-depth='1'] {
   padding-left: var(--space-5, 20px);
   transition:
-    padding 200ms cubic-bezier(0.77, 0, 0.175, 1),
-    background-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
-    transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+    padding 200ms var(--ease-in-out),
+    background-color var(--duration-exit) var(--ease-out),
+    transform var(--duration-exit) var(--ease-out);
 }
 
 .row[data-depth='1']::before {
@@ -322,6 +322,6 @@
     transform: none;
   }
   .row[data-depth='1'] {
-    transition: background-color 140ms ease;
+    transition: background-color var(--duration-exit) ease;
   }
 }

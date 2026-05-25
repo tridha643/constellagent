@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ConductorAskQuestionAnswer,
   ConductorAskQuestionDetails,
@@ -9,6 +9,7 @@ import {
   clampAskQuestionHeader,
   optionLetter,
 } from '../../../../shared/conductor-ask-question-types'
+import { useFocusTrap } from '../../../hooks/useFocusTrap'
 import styles from '../Conductor.module.css'
 
 interface QuestionUiState {
@@ -31,6 +32,11 @@ export function ConductorAskQuestionModal({
   const [highlight, setHighlight] = useState(0)
   const [customDraft, setCustomDraft] = useState('')
   const [editingCustom, setEditingCustom] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  // Trap Tab focus inside this blocking question modal so keyboard nav can't
+  // escape to the obscured chat behind it while an answer is required.
+  useFocusTrap(cardRef)
 
   const [states, setStates] = useState<Map<string, QuestionUiState>>(() => {
     const initial = new Map<string, QuestionUiState>()
@@ -194,6 +200,7 @@ export function ConductorAskQuestionModal({
   return (
     <div className={styles.askQuestionBackdrop} role="presentation" onClick={cancel}>
       <div
+        ref={cardRef}
         className={styles.askQuestionCard}
         role="dialog"
         aria-modal="true"

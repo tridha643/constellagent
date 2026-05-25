@@ -56,8 +56,8 @@
   font-family: var(--font-mono);
   outline: none;
   transition:
-    border-color 140ms var(--ease-out),
-    box-shadow 140ms var(--ease-out);
+    border-color var(--duration-exit) var(--ease-out),
+    box-shadow var(--duration-exit) var(--ease-out);
 }
 
 .input:focus {
