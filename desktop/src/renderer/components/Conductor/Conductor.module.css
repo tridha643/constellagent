@@ -1794,10 +1794,19 @@
 }
 
 .contextPopoverBarFill {
+  width: 100%;
   height: 100%;
   border-radius: var(--radius-full);
   background: var(--text-primary);
-  transition: width 0.35s ease;
+  transform-origin: left center;
+  /* Animate transform (GPU-composited) instead of width (layout-triggering). */
+  transition: transform 0.35s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contextPopoverBarFill {
+    transition: none;
+  }
 }
 
 .contextPopoverFooter {
