@@ -16,6 +16,12 @@ const ThinkingIndicator = forwardRef<
 
   useEffect(() => {
     const interval = setInterval(() => {
+      // Skip cycling (no state update / re-render) while the app window is
+      // backgrounded — the label isn't visible, so advancing wastes CPU. The
+      // visible cadence is unchanged while the window is foregrounded.
+      if (typeof document !== "undefined" && document.hidden) {
+        return;
+      }
       setIndex((i) => (i + 1) % THINKING_CYCLING_LABELS.length);
     }, 4000);
     return () => clearInterval(interval);

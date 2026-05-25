@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAppStore } from '../../store/app-store'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import type { QuickOpenSearchItem, QuickOpenSearchResult } from '../../../shared/quick-open-types'
 import type { CodeSearchItem, CodeSearchResult } from '../../../shared/code-search-types'
@@ -129,6 +130,7 @@ export function QuickOpen({ worktreePath }: Props) {
   const [hasLoaded, setHasLoaded] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const requestIdRef = useRef(0)
   const resolvedQueryRef = useRef('')
   const openFileTab = useAppStore((s) => s.openFileTab)
@@ -138,6 +140,9 @@ export function QuickOpen({ worktreePath }: Props) {
   const tabs = useAppStore((s) => s.tabs)
   const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
   const codeSearchSetting = useAppStore((s) => s.settings.quickOpenCodeSearchEnabled)
+
+  // Trap Tab focus inside the palette so keyboard nav can't reach the obscured app.
+  useFocusTrap(panelRef)
 
   const editorFindFilePath = editorFindContext?.filePath ?? null
   const inEditorFindMode = editorFindFilePath !== null
@@ -328,7 +333,7 @@ export function QuickOpen({ worktreePath }: Props) {
 
   return (
     <div className={styles.overlay} onClick={closeQuickOpen}>
-      <div className={styles.panel} onClick={(e) => e.stopPropagation()}>
+      <div className={styles.panel} ref={panelRef} onClick={(e) => e.stopPropagation()}>
         <SharedFileIconDefs appearanceThemeId={appearanceThemeId} />
         <div className={styles.inputWrap}>
           <input

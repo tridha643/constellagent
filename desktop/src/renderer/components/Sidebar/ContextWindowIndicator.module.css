@@ -6,6 +6,11 @@
   border-radius: var(--radius-md);
   cursor: default;
   position: relative;
+  transition: transform var(--duration-micro) var(--ease-press);
+}
+
+.container:active {
+  transform: scale(0.97);
 }
 
 .ring {
@@ -62,8 +67,12 @@
   z-index: 100;
 }
 
-.container:hover .tooltip {
-  opacity: 1;
+/* Tooltip is hover-revealed only on real pointer devices; gating prevents it
+   sticking open after a tap on touch screens (no hover-off event there). */
+@media (hover: hover) and (pointer: fine) {
+  .container:hover .tooltip {
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -72,5 +81,9 @@
        just without the animated tween. Stroke recolor (red/yellow/green) is a
        comprehension cue, so keep it. */
     transition: stroke var(--duration-default) var(--ease-out);
+  }
+
+  .container:active {
+    transform: none;
   }
 }

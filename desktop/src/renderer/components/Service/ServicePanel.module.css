@@ -50,6 +50,12 @@
   100% { box-shadow: 0 0 0 0 rgba(78, 201, 176, 0); }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .status-running {
+    animation: none;
+  }
+}
+
 .scriptName {
   font-weight: 600;
   color: var(--text-primary, #e6e6e6);

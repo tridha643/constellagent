@@ -162,7 +162,28 @@ export function TicketsView({
               Pick a project above to see its recent tickets.
             </div>
           ) : ticketIssuesLoading && !hasAnyTickets ? (
-            <div className={styles.empty}>Loading tickets…</div>
+            <div
+              className={styles.skeletonList}
+              role="status"
+              aria-busy="true"
+              aria-label="Loading"
+            >
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className={styles.skeletonRow}>
+                  <div
+                    className={`shimmer-block ${styles.skeletonGlyph}`}
+                  />
+                  <div
+                    className="shimmer-block"
+                    style={{ width: 52, height: 10, flex: '0 0 auto' }}
+                  />
+                  <div
+                    className="shimmer-block"
+                    style={{ width: `${52 + ((i * 13) % 32)}%`, height: 11 }}
+                  />
+                </div>
+              ))}
+            </div>
           ) : ticketIssuesError ? (
             <div className={styles.empty} title={ticketIssuesError}>
               {ticketIssuesError}

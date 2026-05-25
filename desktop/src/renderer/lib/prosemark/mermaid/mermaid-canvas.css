@@ -165,23 +165,55 @@
   transition:
     opacity 120ms ease-out,
     background-color 120ms ease-out,
-    color 120ms ease-out;
+    color 120ms ease-out,
+    transform var(--duration-micro) var(--ease-press);
 }
 
-.cm-mermaid-canvas:hover .cm-mermaid-canvas-edit,
+/* Keyboard-reveal: keep focus-within reveal available on every pointer type. */
 .cm-mermaid-canvas:focus-within .cm-mermaid-canvas-edit,
-.cm-mermaid-canvas:hover .cm-mermaid-canvas-zoom-btn,
 .cm-mermaid-canvas:focus-within .cm-mermaid-canvas-zoom-btn,
-.cm-mermaid-canvas:hover .cm-mermaid-canvas-icon-btn,
 .cm-mermaid-canvas:focus-within .cm-mermaid-canvas-icon-btn {
   opacity: 1;
 }
 
-.cm-mermaid-canvas-edit:hover,
-.cm-mermaid-canvas-zoom-btn:hover,
-.cm-mermaid-canvas-icon-btn:hover {
-  background-color: var(--surface-subtle);
-  color: var(--text-primary);
+/* Hover-reveal: gate behind real pointers so a touch tap doesn't leave the
+   controls stuck visible after the finger lifts. */
+@media (hover: hover) and (pointer: fine) {
+  .cm-mermaid-canvas:hover .cm-mermaid-canvas-edit,
+  .cm-mermaid-canvas:hover .cm-mermaid-canvas-zoom-btn,
+  .cm-mermaid-canvas:hover .cm-mermaid-canvas-icon-btn {
+    opacity: 1;
+  }
+
+  .cm-mermaid-canvas-edit:hover,
+  .cm-mermaid-canvas-zoom-btn:hover,
+  .cm-mermaid-canvas-icon-btn:hover {
+    background-color: var(--surface-subtle);
+    color: var(--text-primary);
+  }
+}
+
+.cm-mermaid-canvas-edit:active,
+.cm-mermaid-canvas-zoom-btn:active,
+.cm-mermaid-canvas-icon-btn:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-mermaid-canvas-edit,
+  .cm-mermaid-canvas-zoom-btn,
+  .cm-mermaid-canvas-icon-btn {
+    transition:
+      opacity 120ms ease-out,
+      background-color 120ms ease-out,
+      color 120ms ease-out;
+  }
+
+  .cm-mermaid-canvas-edit:active,
+  .cm-mermaid-canvas-zoom-btn:active,
+  .cm-mermaid-canvas-icon-btn:active {
+    transform: none;
+  }
 }
 
 .cm-mermaid-canvas-top {

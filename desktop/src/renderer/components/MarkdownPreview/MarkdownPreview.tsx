@@ -100,7 +100,23 @@ export function MarkdownPreview({ filePath, worktreePath }: Props) {
   if (content === null) {
     return (
       <div className={styles.container}>
-        <div className={styles.loading}>Loading...</div>
+        <div
+          className={styles.loadingSkeleton}
+          role="status"
+          aria-busy="true"
+          aria-label="Loading"
+        >
+          <div className="shimmer-block" style={{ width: '46%', height: 22 }} />
+          <div className="shimmer-block" style={{ width: '92%', height: 12 }} />
+          <div className="shimmer-block" style={{ width: '88%', height: 12 }} />
+          <div className="shimmer-block" style={{ width: '70%', height: 12 }} />
+          <div
+            className="shimmer-block"
+            style={{ width: '34%', height: 16, marginTop: 12 }}
+          />
+          <div className="shimmer-block" style={{ width: '90%', height: 12 }} />
+          <div className="shimmer-block" style={{ width: '60%', height: 12 }} />
+        </div>
       </div>
     )
   }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useExitAnimation } from '../../hooks/useExitAnimation'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 import styles from './ConfirmDialog.module.css'
 
 interface Props {
@@ -22,7 +23,11 @@ export function ConfirmDialog({ title, message, confirmLabel = 'Delete', onConfi
   const [open, setOpen] = useState(true)
   const { shouldRender, animating } = useExitAnimation(open, EXIT_MS)
   const pendingRef = useRef<(() => void) | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const exiting = animating === 'exit'
+
+  // Trap Tab focus inside the dialog so keyboard nav can't reach the obscured app.
+  useFocusTrap(dialogRef, shouldRender)
 
   const beginExit = useCallback((cb: () => void) => {
     if (loading || exiting) return
@@ -79,6 +84,7 @@ export function ConfirmDialog({ title, message, confirmLabel = 'Delete', onConfi
       onClick={loading ? undefined : handleCancel}
     >
       <div
+        ref={dialogRef}
         className={`${styles.dialog} constellagent-dialog-body ${exiting ? 'constellagent-dialog-body--exiting' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >

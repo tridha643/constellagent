@@ -156,7 +156,12 @@
   border-radius: var(--radius-md);
   transition:
     background-color 150ms ease,
-    color 150ms ease;
+    color 150ms ease,
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.resultRow:active {
+  transform: scale(0.99);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -210,4 +215,10 @@
   font-size: var(--text-sm);
   font-family: var(--font-ui);
   text-wrap: pretty;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resultRow:active {
+    transform: none;
+  }
 }

@@ -85,7 +85,11 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  transition: background var(--duration-fast, 120ms) var(--ease-out, ease);
+  transition: background var(--duration-fast, 120ms) var(--ease-out, ease), transform var(--duration-micro) var(--ease-press);
+}
+
+.sessionItem:active {
+  transform: scale(0.97);
 }
 
 .sessionItemActive {
@@ -553,7 +557,7 @@
 }
 
 .messageHighlight {
-  animation: messageHighlight 2s ease-out;
+  animation: messageHighlight 800ms ease;
 }
 
 @keyframes messageHighlight {
@@ -852,6 +856,11 @@
   background: color-mix(in srgb, var(--surface-2) 92%, transparent);
   color: var(--text-secondary);
   cursor: pointer;
+  transition: transform var(--duration-micro) var(--ease-press);
+}
+
+.generatedImageLightboxClose:active {
+  transform: scale(0.97);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -1141,7 +1150,11 @@
   background: transparent;
   cursor: pointer;
   text-align: left;
-  transition: background-color 120ms ease;
+  transition: background-color 120ms ease, transform var(--duration-micro) var(--ease-press);
+}
+
+.composerQueuePanelHeader:active {
+  transform: scale(0.97);
 }
 
 .composerQueueCount {
@@ -1524,7 +1537,11 @@
   border-radius: 6px;
   cursor: pointer;
   flex-shrink: 0;
-  transition: color 120ms ease, background 120ms ease;
+  transition: color 120ms ease, background 120ms ease, transform var(--duration-micro) var(--ease-press);
+}
+
+.composerAttachmentRemove:active {
+  transform: scale(0.97);
 }
 
 .composerFooter {
@@ -1564,10 +1581,15 @@
   padding: 0 2px;
   cursor: pointer;
   flex-shrink: 0;
+  transition: transform var(--duration-micro) var(--ease-press);
 }
 
 .composerErrorDismiss:hover {
   opacity: 1;
+}
+
+.composerErrorDismiss:active {
+  transform: scale(0.97);
 }
 
 .composerActionsLeft {
@@ -1628,7 +1650,12 @@
   cursor: pointer;
   transition:
     color var(--duration-fast, 120ms) var(--ease-out, ease),
-    background var(--duration-fast, 120ms) var(--ease-out, ease);
+    background var(--duration-fast, 120ms) var(--ease-out, ease),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.footerIcon:active {
+  transform: scale(0.97);
 }
 
 /* Shared Conductor composer toolbar chips (reference: boxy rects, warm brown). */
@@ -1905,7 +1932,7 @@
 }
 
 .sendButton:active {
-  transform: scale(0.94);
+  transform: scale(0.96);
 }
 
 .sendButton:disabled {
@@ -1982,10 +2009,15 @@
   font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
+  transition: transform var(--duration-micro) var(--ease-press);
 }
 
 .authSignInBtn:hover {
   background: var(--surface-4, var(--surface-3));
+}
+
+.authSignInBtn:active {
+  transform: scale(0.97);
 }
 
 .authNoticeLink {
@@ -2037,6 +2069,11 @@
   padding: 6px 10px;
   font-size: var(--text-sm);
   cursor: pointer;
+  transition: transform var(--duration-micro) var(--ease-press);
+}
+
+.modelOption:active {
+  transform: scale(0.97);
 }
 
 .modelOptionActive {
@@ -2076,10 +2113,15 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  transition: transform var(--duration-micro) var(--ease-press);
 }
 
 .historyItem:hover {
   background: var(--surface-3);
+}
+
+.historyItem:active {
+  transform: scale(0.97);
 }
 
 .historyItemText {
@@ -2112,10 +2154,15 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  transition: transform var(--duration-micro) var(--ease-press);
 }
 
 .historyTurn:hover {
   background: var(--surface-3);
+}
+
+.historyTurn:active {
+  transform: scale(0.99);
 }
 
 .historyTurnUser {
@@ -2166,6 +2213,14 @@
 /* effort chip — warm boxy rect (Conductor reference) */
 .effortPill {
   /* chip look applied via composerChip + composerChipWarm in JSX */
+}
+
+/* Normal-path press scale for the plan + reasoning toggles. The transform
+   transition is already inherited from .composerChip (co-applied in JSX), and a
+   reduced-motion `transform: none` override for these already exists below. */
+.planToggle:active,
+.effortPill:active {
+  transform: scale(0.97);
 }
 
 .effortPill[data-effort='minimal'] {
@@ -2786,6 +2841,11 @@
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
+  transition: transform var(--duration-micro) var(--ease-press);
+}
+
+.bashHeader:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .bashHeader:disabled {
@@ -3388,11 +3448,16 @@
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
+  transition: transform var(--duration-micro) var(--ease-press);
 }
 
 .jsonCanvasFilePathListCopy:hover {
   color: var(--text-primary);
   border-color: color-mix(in srgb, var(--accent-blue, #7eb8b8) 35%, var(--border-subtle));
+}
+
+.jsonCanvasFilePathListCopy:active {
+  transform: scale(0.97);
 }
 
 .jsonCanvasFilePathListRows {
@@ -3419,10 +3484,15 @@
   line-height: 1.35;
   text-align: left;
   cursor: pointer;
+  transition: transform var(--duration-micro) var(--ease-press);
 }
 
 .jsonCanvasFilePathListRow:hover {
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+}
+
+.jsonCanvasFilePathListRow:active {
+  transform: scale(0.99);
 }
 
 .jsonCanvasFilePathListIcon {
@@ -3665,6 +3735,11 @@
   padding: 4px 2px;
   cursor: pointer;
   text-align: left;
+  transition: transform var(--duration-micro) var(--ease-press);
+}
+
+.conductorSlashNamePromptBrowse:active {
+  transform: scale(0.97);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -3701,6 +3776,14 @@
 .conductorEmbeddedTerminalDone:active,
 .conductorMcpFooterBtn:active,
 .conductorPanelClose:active {
+  transform: scale(0.97);
+  transition: transform 140ms var(--conductor-ease-out);
+}
+
+.conductorSlashMenuItem:active,
+.conductorHashMenuItem:active,
+.conductorAtMenuItem:active,
+.conductorPersonalityMenuItem:active {
   transform: scale(0.97);
   transition: transform 140ms var(--conductor-ease-out);
 }
@@ -4038,6 +4121,13 @@
   .conductorPersonalityMenuItem {
     transition: none;
     animation: none;
+  }
+
+  .conductorSlashMenuItem:active,
+  .conductorHashMenuItem:active,
+  .conductorAtMenuItem:active,
+  .conductorPersonalityMenuItem:active {
+    transform: none;
   }
 
   @starting-style {

@@ -77,7 +77,11 @@
   letter-spacing: 0.5px;
   cursor: pointer;
   text-align: left;
-  transition: border-color var(--motion-fast), background-color var(--motion-fast);
+  transition: border-color var(--motion-fast), background-color var(--motion-fast), transform var(--duration-micro) var(--ease-press);
+}
+
+.sectionToggle:active {
+  transform: scale(0.97);
 }
 
 .sectionToggleLabel {
@@ -441,7 +445,8 @@
   .cancelBtn:active:not(:disabled),
   .removeBtn:active:not(:disabled),
   .addBtn:active:not(:disabled),
-  .saveBtn:active:not(:disabled) {
+  .saveBtn:active:not(:disabled),
+  .sectionToggle:active {
     transform: none;
   }
 

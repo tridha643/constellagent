@@ -246,7 +246,11 @@
   padding: var(--space-4) var(--space-4);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background-color var(--motion-fast);
+  transition: background-color var(--motion-fast), transform var(--duration-micro) var(--ease-press);
+}
+
+.row:active {
+  transform: scale(0.99);
 }
 
 .rowText {
@@ -586,6 +590,10 @@
   transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
 }
 
+.mcpCardMain:active {
+  transform: scale(0.99);
+}
+
 .mcpAvatar {
   display: flex;
   align-items: center;
@@ -797,6 +805,10 @@
   transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
 }
 
+.entryRow:active {
+  transform: scale(0.99);
+}
+
 .removeEntryBtn {
   display: flex;
   align-items: center;
@@ -833,7 +845,11 @@
   justify-content: space-between;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
-  transition: background-color var(--motion-fast);
+  transition: background-color var(--motion-fast), transform var(--duration-micro) var(--ease-press);
+}
+
+.shortcutRow:active {
+  transform: scale(0.99);
 }
 
 .shortcutAction {
@@ -1028,7 +1044,11 @@
   .actionBtnDanger:active:not(:disabled),
   .mcpIconBtn:active,
   .removeEntryBtn:active,
-  .addEntryBtn:active {
+  .addEntryBtn:active,
+  .row:active,
+  .mcpCardMain:active,
+  .entryRow:active,
+  .shortcutRow:active {
     transform: none;
   }
 

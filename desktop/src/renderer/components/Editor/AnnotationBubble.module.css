@@ -109,8 +109,10 @@
   transition: transform var(--motion-slow);
 }
 
-.commentBubble:hover .avatar {
-  transform: scale(1.05);
+@media (hover: hover) and (pointer: fine) {
+  .commentBubble:hover .avatar {
+    transform: scale(1.05);
+  }
 }
 
 .commentContent {

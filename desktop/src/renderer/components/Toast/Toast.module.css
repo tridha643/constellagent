@@ -37,6 +37,21 @@
   transform: translateX(0) scale(1);
 }
 
+/* While a pointer is dragging, kill the base transition so the toast tracks the
+   finger 1:1 (the JS writes el.style.transform directly per pointermove). The
+   class is removed on release; snap-back re-adds a short inline transition.
+   touch-action: pan-y lets the browser keep vertical scrolling but hands us the
+   horizontal axis for the swipe gesture without it being eaten by scrolling. */
+.toast {
+  touch-action: pan-y;
+}
+
+.toast.dragging {
+  transition: none;
+  cursor: grabbing;
+  user-select: none;
+}
+
 /* Stagger stacked toasts so a burst cascades in rather than popping at once
    (Emil principle 7). Newest toast renders last in the column; short 40ms
    steps keep it from feeling slow. Enter-only — exit stays immediate. */
