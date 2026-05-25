@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { MotionConfig } from 'framer-motion'
 import { Allotment } from 'allotment'
 import 'allotment/dist/style.css'
@@ -12,14 +12,28 @@ import { FullFileDiffEditor } from './components/Editor/FullFileDiffEditor'
 import { MarkdownPreview } from './components/MarkdownPreview/MarkdownPreview'
 import { ServicePanel } from './components/Service/ServicePanel'
 import { PiThreadPanel } from './components/PiThread/PiThreadPanel'
-import { SettingsPanel } from './components/Settings/SettingsPanel'
 import { ConductorChatView } from './components/Conductor/ConductorChatView'
-import { AutomationsPanel } from './components/Automations/AutomationsPanel'
-import { LinearWorkspacePanel } from './components/LinearWorkspace/LinearWorkspacePanel'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
 import { ChangesFileFind } from './components/QuickOpen/ChangesFileFind'
-import { PlanPalette } from './components/PlanPalette/PlanPalette'
-import { HunkReview } from './components/HunkReview/HunkReview'
+
+// Overlay/modal routes that are never part of first paint (opened only on
+// explicit user action). Code-split them so their bundles — and heavy
+// transitive deps like linear-api — are parsed on first open, not at startup.
+const SettingsPanel = lazy(() =>
+  import('./components/Settings/SettingsPanel').then((m) => ({ default: m.SettingsPanel })),
+)
+const AutomationsPanel = lazy(() =>
+  import('./components/Automations/AutomationsPanel').then((m) => ({ default: m.AutomationsPanel })),
+)
+const LinearWorkspacePanel = lazy(() =>
+  import('./components/LinearWorkspace/LinearWorkspacePanel').then((m) => ({ default: m.LinearWorkspacePanel })),
+)
+const PlanPalette = lazy(() =>
+  import('./components/PlanPalette/PlanPalette').then((m) => ({ default: m.PlanPalette })),
+)
+const HunkReview = lazy(() =>
+  import('./components/HunkReview/HunkReview').then((m) => ({ default: m.HunkReview })),
+)
 import { FloatingPanel } from './components/FloatingPanel/FloatingPanel'
 import { ConfirmDialog } from './components/Sidebar/ConfirmDialog'
 import { ToastContainer } from './components/Toast/Toast'
@@ -363,11 +377,17 @@ export function App() {
     <div className={styles.app}>
       <div className={styles.layout}>
         {settingsOpen ? (
-          <SettingsPanel />
+          <Suspense fallback={null}>
+            <SettingsPanel />
+          </Suspense>
         ) : automationsOpen ? (
-          <AutomationsPanel />
+          <Suspense fallback={null}>
+            <AutomationsPanel />
+          </Suspense>
         ) : linearPanelOpen ? (
-          <LinearWorkspacePanel />
+          <Suspense fallback={null}>
+            <LinearWorkspacePanel />
+          </Suspense>
         ) : (
           <ErrorBoundary
             fallback={
@@ -569,11 +589,17 @@ export function App() {
       )}
       {changesFileFind && <ChangesFileFind />}
       {planPaletteVisible && workspace && (
-        <PlanPalette worktreePath={workspace.worktreePath} projectWorktrees={planProjectWorktrees} />
+        <Suspense fallback={null}>
+          <PlanPalette worktreePath={workspace.worktreePath} projectWorktrees={planProjectWorktrees} />
+        </Suspense>
       )}
       {hunkReviewOpen && hunkReviewWorkspaceId && (() => {
         const reviewWs = workspaces.find((w) => w.id === hunkReviewWorkspaceId)
-        return reviewWs ? <HunkReview worktreePath={reviewWs.worktreePath} /> : null
+        return reviewWs ? (
+          <Suspense fallback={null}>
+            <HunkReview worktreePath={reviewWs.worktreePath} />
+          </Suspense>
+        ) : null
       })()}
       {confirmDialog && (
         <ConfirmDialog
