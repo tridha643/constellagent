@@ -81,13 +81,13 @@ Use this to jump straight to the owning file for a feature. Subdirs: `agents/` (
 | **Terminal** | `pty-manager.ts` | node-pty processes, OSC titles, scrollback ring buffers, exit callbacks |
 | **Files / search** | `file-service.ts`, `spotlight-service.ts`, `package-scripts-service.ts` | File tree, read/write, quick-open, code search, plan-markdown discovery |
 | **Storage** | `agentfs-service.ts`, `plan-meta.ts`, `annotation-service.ts`, `agent-chat-store.ts` | AgentFS/libSQL access, plan frontmatter, review annotations, chat transcripts |
-| **Agent chat / Conductor** | `agent-chat-host.ts`, `agent-chat-queue.ts`, `conductor-auth.ts`, `conductor-settings.ts`, `conductor-image-picker.ts` | Orchestrates agent sessions, queues, API-key/auth caching |
-| **Agent drivers** | `agents/agent-driver.ts`, `agents/codex-driver*.ts`, `agents/cursor-driver*.ts` + `cursor-sdk-interaction-patch.ts` / `cursor-subagent-config.ts`, `agents/pi-conductor-driver.ts`, `agents/conductor-question-bridge.ts`, `agents/json-canvas-bridge.ts`; root `cursor-sdk-*.ts` | Per-provider CLI/SDK integration (Codex, Cursor, Pi); ask-question + JSON-canvas bridges |
+| **Agent chat / Conductor** | `agent-chat-host.ts`, `agent-chat-queue.ts`, `agent-chat-store.ts`, `conductor-auth.ts`, `conductor-settings.ts`, `conductor-image-picker.ts`, `conductor-generated-image-files.ts` | Orchestrates agent sessions, queues, API-key/auth caching, generated-image persistence |
+| **Agent drivers** | `agents/agent-driver.ts`, `agents/codex-driver*.ts` (+ `codex-driver-collab.ts`), `agents/cursor-driver*.ts` + `cursor-sdk-interaction-patch.ts` / `cursor-subagent-config.ts` / `cursor-interaction-bridge.ts`, `agents/conductor-sdk-cli-permissions.ts`, `agents/pi-conductor-driver.ts`, `agents/conductor-question-bridge.ts`, `agents/json-canvas-bridge.ts`; root `cursor-sdk-*.ts` (`-interaction-config`, `-ripgrep*`) | Per-provider CLI/SDK integration (Codex, Cursor, Pi); ask-question + JSON-canvas bridges |
 | **GitHub / Graphite** | `github-service.ts`, `github-poll-service.ts`, `graphite-service.ts` | PR status via `gh` GraphQL (90s poll), Graphite stacks |
 | **Automations** | `automation-scheduler.ts`, `automation-engine.ts`, `automation-event-bus.ts`, `automation-merge-dedupe.ts`, `automations/*.ts` (`automation-runner.ts`, `delivery-router.ts`, `composio-definition-store.ts`) | Cron + event-driven workspace/agent automations; delivery routing |
 | **Composio** | `composio-webhook-service.ts`, `composio-webhook-subscriptions.ts`, `composio-trigger-client.ts`, `composio-ngrok-service.ts`, `composio-payload.ts`, `composio-pi-draft.ts`, `composio-repo-resolve.ts` | Webhook/trigger ingestion for event automations |
-| **Mobile bridge** | `mobile-service.ts`, `mobile-local-server.ts`, `mobile-method-router.ts`, `mobile-event-bridge.ts`, `mobile-secure-transport.ts`, `mobile-store.ts`, `mobile-git-bridge.ts`, other `mobile-*.ts` | iOS companion: local WS server, E2EE, RPC routing, pairing, device tools |
-| **Pi host** | `pi-host-service.ts`, `pi-run-prompt.ts`, `pi-session-state.ts`, `pi-timeline.ts` | Constellagent as a local Pi SDK host |
+| **Mobile bridge** | `mobile-service.ts`, `mobile-local-server.ts`, `mobile-method-router.ts`, `mobile-event-bridge.ts`, `mobile-rpc-adapter.ts`, `mobile-secure-transport.ts`, `mobile-keychain.ts`, `mobile-store.ts`, `mobile-git-bridge.ts`, `mobile-workspace-registry.ts`, `mobile-project-folders.ts`, `mobile-network.ts`, `mobile-pairing-{code-registry,qr}.ts`, `mobile-ws-path.ts`, `mobile-focus-session.ts`, `mobile-device-tools.ts`, `mobile-debug-log.ts` | iOS companion: local WS server, E2EE, RPC routing, pairing, device tools. `mobile-device-tools.ts` deploys the dev iOS app to a USB-attached device via `xcodebuild` (`MOBILE_DEPLOY_IOS_APP` / `MOBILE_LIST_USB_DEVICES`); `mobile-focus-session.ts` handles `MOBILE_FOCUS_SESSION` |
+| **Pi host** | `pi-host-service.ts`, `pi-run-prompt.ts`, `pi-session-state.ts`, `pi-timeline.ts`, `pi-models.ts`, `pi-app-store-utils.ts` | Constellagent as a local Pi SDK host (`@mariozechner/pi-coding-agent`) |
 | **Skills / MCP / LSP** | `skills-service.ts`, `mcp-config.ts`, `mcp-status-service.ts`, `lsp/lsp-service.ts` + `lsp/lsp-server-manager.ts` + `lsp/lsp-config.ts` | Skill/subagent KV catalog, MCP server config (`~/.claude.json`), language servers (TS + Pyright over WS-JSONRPC) |
 | **CLI config** | `claude-config.ts`, `codex-config.ts`, `cursor-model-catalog.ts`, `project-startup-settings.ts`, `cli-env.ts`, `load-env-local.ts` | Read/write external CLI config, `$PATH` extension, per-project startup commands |
 | **Usage** | `codex-usage-service.ts`, `cursor-usage-service.ts`, `context-window-service.ts` | Rate-limit / token-usage tracking |
@@ -102,20 +102,45 @@ Use this to jump straight to the owning file for a feature. Subdirs: `agents/` (
 | Components | `components/` (30 subdirs) | `Terminal`, `Editor`, `Sidebar`, `TabBar`, `RightPanel`, `Conductor`, `PiThread`, `QuickOpen`, `Spotlight`, `BrowserPanel`, `Markdown`/`MarkdownPreview`/`MarkdownRenderer`, `HunkReview`, `Automations`, `PlanPalette`, `PlanAgentToolbar`, `Settings`, `AddToChat`/`AddToChatButton`, `FloatingPanel`, `SidePanelHost`, `Toast`, `Tooltip`, `Icons`, `Service`, `tool-ui/`, `ui/` (shadcn/base-ui) … |
 | Markdown engine | `lib/prosemark/` | **Primary** markdown renderer — CodeMirror 6 ("prosemark"): `MarkdownStream.tsx` + extensions for headings/tables/code-fences (Shiki), mermaid, file/skill chips, link unfurls, fold/hide. `MarkdownRenderer` wraps it via `useMarkdownSurfaceContext`. (Streamdown is now only the pi-gui chat fallback + global CSS.) |
 | Hooks | `hooks/` (16) | `useShortcuts`, `usePrStatusPoller`, `useWorktreeSyncPoller`, `useContextWindowPoller`, `useUsageLimitsPoller`, `useGraphiteStackPoller`, `useConductorContextUsage`, `useFileWatcher`, `useGitGutter`, `useFocusTrap`, `useExitAnimation`, `useMarkdownSurfaceContext`, `useLinearProjectPickerFff`, `useLinearWorkspacePickerFff`, `use-prefers-reduced-motion`, `use-proximity-hover` |
-| Conductor GUI | `pi-gui/` | Pi/Conductor agent chat UI + hooks (Streamdown via `message-markdown.tsx`) |
+| Conductor GUI | `pi-gui/`, `components/Conductor/` | Pi/Conductor agent chat UI + hooks (Streamdown via `pi-gui/message-markdown.tsx`); `Conductor/chat/` hosts the **JSON canvas** renderer (`JsonCanvasBlock.tsx`, `json-canvas-registry.tsx` — see *JSON canvas* below) |
 | Other dirs | `agents/`, `services/` (`lsp-client-manager.ts`), `lib/`, `utils/` (bridges: `add-to-chat-monaco-bridge.ts`, `changes-file-find-bridge.ts`, …), `types/`, `linear/` (`LinearWorkspace`), `assets/` | Renderer-side helpers, LSP client, Monaco/Changes bridges, Linear UI |
 | Styles / theme | `styles/global.css`, `theme/`, `themes/` | Tailwind v4, Streamdown/KaTeX/Shiki CSS |
 
 ### Shared code (`src/shared/`, source of truth across processes)
 
-- **`ipc-channels.ts`** — all IPC channel-name constants (the main↔renderer contract).
-- **Plan handling** — `agent-plan-path.ts` (`AGENT_PLAN_RELATIVE_DIRS`, `isAgentPlanPath`), `plan-build-command.ts` (`BUILD_HARNESS_OPTIONS`, `PLAN_MODEL_PRESETS`), `plan-meta.ts` helpers consumed via plan-meta in main.
-- **Types** — `agent-chat-types.ts` (`AgentProvider = 'codex'|'cursor'|'pi'`), `diff-annotation-types.ts`, `git-types.ts`, `github-types.ts`, `graphite-types.ts`, `automation-types.ts`, `composio-types.ts`, `mobile-settings-types.ts`, `context-window-types.ts`, plus `pi/` subdir.
-- **Markdown / canvas** — `json-canvas-schema.ts`, `normalize-markdown-*.ts`, `plan-markdown-preview.ts`.
-- **Composer** — `composer-at-mention.ts`, `composer-hash-mention.ts`, `conductor-composer-commands.ts` (slash commands).
-- **Agent markers** — `agent-markers.ts` (terminal activity detection per agent: claude-code, codex, cursor, gemini, opencode, pi-constell).
+~65 `.ts` source files (plus `pi/` subdir). The notable groupings:
 
-Import shared modules from main/renderer via **relative** paths (`../shared/...`) where electron-vite's main bundle needs reliable resolution (e.g. `agent-plan-path.ts`).
+- **`ipc-channels.ts`** — all IPC channel-name constants (the main↔renderer contract).
+- **Plan handling** — `agent-plan-path.ts` (`AGENT_PLAN_RELATIVE_DIRS`, `isAgentPlanPath`), `plan-build-command.ts` (`BUILD_HARNESS_OPTIONS`, `PLAN_MODEL_PRESETS`), `plan-approval.ts`, `plan-markdown-preview.ts` (`plan-meta.ts` itself lives in `src/main/`).
+- **Types** — `agent-chat-types.ts` (`AgentProvider = 'codex'|'cursor'|'pi'`), `diff-annotation-types.ts`, `review-types.ts`, `git-types.ts`, `github-types.ts`, `graphite-types.ts`, `automation-types.ts`, `composio-types.ts`, `mobile-settings-types.ts`, `context-window-types.ts`, `usage-limits-types.ts`, `linear-fff-types.ts`, `quick-open-types.ts`, `spotlight-types.ts`, `code-search-types.ts`, `service-types.ts`, `sync-types.ts` / `worktree-sync-types.ts`, plus `pi/` subdir.
+- **JSON canvas / json-render** — `json-canvas-schema.ts` (spec + Codex structured-output schema + intent detection + partial-JSON repair), `json-canvas-catalog.ts` (`defineCatalog()` component source of truth + prompt strings), `json-canvas-validate.ts` (deep structural diagnostics), `json-canvas-inline.ts` (streaming JSONL/SpecStream compiler), `json-safe.ts` (cycle/BigInt-safe serializer). See **JSON canvas (tool-UI rendering)** below.
+- **Markdown** — `normalize-markdown-canvas.ts`, `normalize-markdown-tables.ts`.
+- **Git hunks / clone** — `git-hunk-action-types.ts`, `git-hunk-patch.ts` (stage/discard individual hunks), `clone-repo.ts`, `github-clone-suggestions.ts`, `github-url.ts`, `pr-url.ts`, `workspace-creation.ts`, `worktree-credentials.ts`.
+- **Search** — `code-search-utils.ts`, `spotlight-types.ts`, `quick-open-types.ts`, `file-path-list-text.ts`.
+- **Conductor helpers** — `conductor-ask-question-types.ts`, `conductor-attachments.ts`, `conductor-thinking.ts`, `conductor-transcript-utils.ts`, `conductor-model-utils.ts`, `conductor-subagent-utils.ts`, `conductor-generated-image{s,-src}.ts`, `conductor-composer-commands.ts` (slash commands).
+- **Model catalogs** — `cursor-cli-models.ts`, `cursor-sdk-model.ts`, `pi-models.ts`, `pi-conductor-model-presets.ts`.
+- **Composer / mentions** — `composer-at-mention.ts`, `composer-hash-mention.ts`.
+- **Codex collab** — `codex-collab-types.ts`, `codex-websockets.ts`.
+- **Misc** — `usage-limits-format.ts`, `status-labels.ts`, `gemini-tab-title.ts`, `skill-tool-utils.ts`, `context-window-utils.ts`.
+- **Agent markers** — `agent-markers.ts` (terminal activity detection per agent: claude, codex, cursor, gemini, opencode, pi-constell).
+
+Import shared modules from main/renderer via **relative** paths (`../shared/...`) where electron-vite's main bundle needs reliable resolution (e.g. `agent-plan-path.ts`); the `@shared` alias also resolves to `src/shared/` in all three processes.
+
+### JSON canvas (tool-UI rendering)
+
+The Conductor chat can render **structured, JSON-described UI** ("JSON canvases" / tool-UIs) that agents emit inline, built on the `@json-render/*` libraries (`core`, `react`, `shadcn`, `devtools-react`).
+
+| File | Role |
+|------|------|
+| `src/shared/json-canvas-catalog.ts` | `defineCatalog()` — single source of truth for the component types models may emit, plus the `JSON_CANVAS_*` prompt strings |
+| `src/shared/json-canvas-schema.ts` | `JsonRenderSpec` shape, `RENDER_JSON_CANVAS_TOOL_NAME`, Codex strict structured-output schema builders, `detectCanvasIntent()`, partial-JSON repair for streaming |
+| `src/shared/json-canvas-inline.ts` | `InlineCanvasStreamCompiler` — incrementally parses inline SpecStream JSONL patches in assistant prose (the **active** generation mode) |
+| `src/shared/json-canvas-validate.ts` | Deep validation: cycles, missing root, orphan/unknown elements → actionable `CanvasDiagnostic`s |
+| `src/renderer/components/Conductor/chat/json-canvas-registry.tsx` | Maps catalog component types → Conductor-styled React components via `defineRegistry()` |
+| `src/renderer/components/Conductor/chat/JsonCanvasBlock.tsx` | Renders one canvas spec (validates → `@json-render/react` `Renderer`, shows diagnostics, supports streaming) |
+| `src/renderer/components/tool-ui/{plan,shared}/` | Tool-UI **contract** layer (`defineToolUiContract`, JSON-safe Zod schemas); `plan/` is the built-in todo-list tool-UI |
+| `src/main/agents/json-canvas-bridge.ts` | **Legacy** synthetic `render_json_canvas` tool emitter (test/transcript compat only; live generation uses inline SpecStream) |
+| `.tool-ui/agent.json` | Binds the active agent to its tool-UI plugin |
 
 ## Storage (AgentFS + Turso libSQL)
 
