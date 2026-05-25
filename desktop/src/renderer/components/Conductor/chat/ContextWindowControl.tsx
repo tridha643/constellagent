@@ -98,7 +98,7 @@ function LimitSection({ window: limit }: { window: UsageLimitWindow }) {
         <span className={styles.contextPopoverLimitPct}>{left.toFixed(0)}% left</span>
       </div>
       <div className={styles.contextPopoverBarTrack} aria-hidden>
-        <div className={styles.contextPopoverBarFill} style={{ width: `${left}%` }} />
+        <div className={styles.contextPopoverBarFill} style={{ transform: `scaleX(${left / 100})` }} />
       </div>
       {resetLabel ? (
         <p className={styles.contextPopoverReset}>Resets {resetLabel}</p>
@@ -133,7 +133,7 @@ function ContextUsagePopoverContent({
           </span>
         </div>
         <div className={styles.contextPopoverBarTrack} aria-hidden>
-          <div className={styles.contextPopoverBarFill} style={{ width: `${pct}%` }} />
+          <div className={styles.contextPopoverBarFill} style={{ transform: `scaleX(${pct / 100})` }} />
         </div>
         <div className={styles.contextPopoverFooter}>
           <span className={styles.contextPopoverLabel}>Window used</span>
