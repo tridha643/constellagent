@@ -257,13 +257,16 @@ const ProgressBar = memo(function ProgressBar({
     >
       <div
         className={cn(
-          "h-full rounded-full transition-[width,background-image,opacity,box-shadow] duration-500 ease-out",
+          // Fill is full-width and scaled with transform: scaleX (GPU-composited)
+          // instead of animating width (layout-triggering). origin-left keeps the
+          // bar growing from the start edge.
+          "h-full w-full origin-left rounded-full motion-safe:transition-transform motion-safe:duration-500 motion-safe:ease-out",
           progress === 100
             ? "bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-400 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500 motion-safe:ease-out"
             : "bg-primary",
         )}
         style={{
-          width: `${progress}%`,
+          transform: `scaleX(${progress / 100})`,
           boxShadow:
             "inset 0 1px 0 rgba(255,255,255,0.3), 0 1px 2px rgba(0,0,0,0.2)",
         }}
