@@ -1,20 +1,37 @@
 # Constellagent App — Universal Agent Instructions
 
-These instructions apply to **any repository** where the constellagent app is in use — not just the constellagent codebase itself. They govern **all** coding agent harnesses (Cursor, Claude Code, Codex, Gemini, etc.).
+These instructions apply to **any repository** where the constellagent app is in use — not just the constellagent codebase itself. They govern **all** coding agent harnesses (Cursor, Claude Code, Codex, Gemini, OpenCode, etc.).
+
+> **Fast navigation:** This file covers cross-repo policy (annotations, Sendblue, mobile, skills) and the monorepo's top-level map. For a file-by-file **service map** of the desktop app (which `*-service.ts` owns which feature), see **`desktop/CLAUDE.md`** → *Main-process service map* / *Renderer map*.
 
 ## Constellagent monorepo layout (this repository)
 
-When working in **this** repo, the codebase spans desktop, mobile, and shared packages:
+Bun workspaces: root `package.json` declares `["packages/*", "desktop"]`.
 
 | Path | Role |
 |------|------|
-| `desktop/` | Electron macOS app (primary product) |
-| `ios/Constellagent/` | SwiftUI iPhone companion app |
-| `packages/constellagent-mobile-protocol/` | Shared Zod schemas and RPC/event types for mobile ↔ desktop |
-| `packages/pi-*` | Pi GUI session driver and catalog packages |
-| `packages/review-annotations/` | Review annotation library (also published as `@tridha643/review-annotations`) |
+| `desktop/` | Electron macOS app — the primary product (`bun run dev` from repo root). Deep architecture: `desktop/CLAUDE.md` |
+| `ios/Constellagent/` | SwiftUI iPhone companion app (Xcode; see `ios/Constellagent/README.md`) |
+| `packages/constellagent-mobile-protocol/` | `@constellagent/mobile-protocol` — shared **Zod** schemas / RPC + event types for mobile ↔ desktop |
+| `packages/review-annotations/` | `@tridha643/review-annotations` — review-annotation + memory library; ships the **`constell-annotate`** CLI |
+| `packages/pi-gui-session-driver/` | `@pi-gui/session-driver` — durable session-driver contract (base, no deps) |
+| `packages/pi-gui-catalogs/` | `@pi-gui/catalogs` — catalog data structures for pi-gui sessions |
+| `packages/pi-gui-pi-sdk-driver/` | `@pi-gui/pi-sdk-driver` — thin SDK session driver over the pi runtime (has its own `AGENTS.md`) |
+| `packages/pi-constell/` | `pi-constell-plan` — Claude-Code-style plan mode for the `pi` CLI |
+| `packages/pi-inline-skill-autocomplete/` | inline skill autocomplete extension for `pi` |
+| `landing-page/` | static marketing site (vanilla HTML/CSS/JS; `bunx serve landing-page`) |
+| `scripts/` | repo-root shell scripts (skill install, isolated dev, worktree sync) |
 
-Root scripts (`package.json`): `bun run setup`, `bun run dev`, `bun run build`, `bun run test`. The mobile protocol package builds automatically on `bun install` (`postinstall`).
+**Root scripts** (`package.json`): `bun run setup`, `bun run dev`, `bun run build`, `bun run test`, `bun run dev-isolated`, `bun run dist`, `bun run rebuild`. `dev`/`build` first build `constellagent-mobile-protocol` and the `pi-gui-*` packages; the mobile-protocol + pi-gui packages also build automatically on `bun install` (`postinstall`).
+
+**Root scripts directory** (`scripts/`):
+
+| Script | Purpose |
+|--------|---------|
+| `install-bundled-skills.sh` | Symlink `desktop/skills/conductor-canvas-*` into gitignored `.codex/skills/`, `.cursor/skills/` |
+| `install-hunk-skill.sh` | Fetch the upstream `modem-dev/hunk` review skill (`HUNK_SKILL_REF` to pin) and symlink for Claude/Cursor/Gemini |
+| `dev-isolated.sh` | Per-checkout isolated Electron profile (`CONSTELLAGENT_ISOLATED_DEV=1`) |
+| `sync-worktrees.sh <repo>` | Stash → rebase onto origin default → pop, across all worktrees |
 
 ## Mobile access (iOS companion)
 
@@ -40,7 +57,9 @@ packages/constellagent-mobile-protocol  ← shared Zod contracts (TypeScript sou
 - `desktop/src/main/mobile-event-bridge.ts` — pushes streaming updates to paired devices
 - `desktop/src/main/mobile-secure-transport.ts` — E2EE handshake (must match Swift byte-for-byte on wire constants)
 - `desktop/src/main/mobile-store.ts` — trusted devices + bridge identity (`mobile-access.db` in app userData)
+- `desktop/src/main/mobile-git-bridge.ts` — phone-initiated git ops; creates `.constellagent/worktrees/<token>/` at runtime
 - `ios/Constellagent/Constellagent/Services/ConstellagentService+ProtocolMapping.swift` — maps legacy codex RPC names to bridge methods at `sendRequest`
+- `ios/Constellagent/Constellagent/Services/ConstellagentService+Incoming*.swift` — rewrites incoming bridge event names back to codex shapes
 - `ios/Constellagent/README.md` — port status, deferred remodex features, verification checklist
 
 **Secure transport constants** (keep Swift and TypeScript in sync):
@@ -87,15 +106,15 @@ When changing RPC params, events, or pairing payloads, update **all three**: the
 
 ## Workspace storage
 
-Constellagent no longer creates a workspace-level `.constellagent/` directory for context capture or session history.
+Constellagent does **not** create a workspace-level `.constellagent/` directory for context capture or session history. The AgentFS/libSQL data that still exists lives under the repo's **`.git/`** directory.
 
-## Cachebro (MCP — auto-configured)
+**Exception:** the mobile bridge creates `.constellagent/worktrees/<token>/` at runtime for phone-initiated git operations (`mobile-git-bridge.ts`; detected via `mobile-workspace-registry.ts`). This is a runtime artifact, not committed context.
 
-Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) instead of raw file reads to save tokens.
+Databases (see `desktop/CLAUDE.md` for the full table): `review-annotations.db` (git common dir), `<sessionId>.db` (repo `.git/`), and `conductor-chat.db` / `mobile-access.db` (app `userData`).
 
-## AgentFS database
+## Cachebro (MCP — optional, per-machine)
 
-AgentFS-backed storage that still exists for app internals lives under the repo’s `.git/` directory instead of `.constellagent/`.
+`cachebro` is a `desktop/` dependency (CLI MCP server `cachebro serve`) exposing `read_file`, `read_files`, `cache_status`, `cache_clear` tools that return diffs instead of full re-reads. It is **not** wired up by any committed config file in this repo; configure it once per machine with `npx cachebro init` (writes your global `~/.claude.json` / Cursor MCP config). When the cachebro tools are available, prefer them over raw file reads to save tokens.
 
 ## Bundled agent skills
 
@@ -113,9 +132,9 @@ This installs bundled Conductor canvas skills and the optional hunk-review skill
 |---------|-----------------|------|
 | Codex | `conductor-canvas-codex` | `.codex/skills/conductor-canvas-codex/` |
 | Cursor | `conductor-canvas-cursor` | `.cursor/skills/conductor-canvas-cursor/` |
-| Claude / Cursor / Gemini | `hunk-review` (optional) | `desktop/.claude/skills/hunk-review/` (+ symlinks for Cursor/Gemini) |
+| Claude / Cursor / Gemini | `hunk-review` (optional, fetched from `modem-dev/hunk`) | `desktop/.claude/skills/hunk-review/` (+ symlinks for Cursor/Gemini) |
 
-Source files for bundled skills live under `desktop/skills/` (tracked in git). The setup scripts symlink them into agent dirs locally — nothing is written into git by the app.
+Source files for the bundled canvas skills live under `desktop/skills/` (tracked in git: `conductor-canvas-codex/`, `conductor-canvas-cursor/`). The setup scripts symlink them into agent dirs locally — nothing is written into git by the app.
 
 ### Conductor chat formatting
 
@@ -127,7 +146,7 @@ Constellagent Settings can catalog additional skill directories and subagent fil
 
 ## Review annotations (human ↔ agent)
 
-The **Review Changes** panel and the **Changes** diff use **review annotations** backed by a local libSQL database (`.git/review-annotations.db`). The `constell-annotate` CLI (from `@tridha643/review-annotations`) is the agent-facing tool.
+The **Review Changes** panel and the **Changes** diff use **review annotations** backed by a local libSQL database (`review-annotations.db` in the git common dir). The `constell-annotate` CLI (from `@tridha643/review-annotations`) is the agent-facing tool. Desktop consumes the library via a workspace dependency (`workspace:*`) — no global install needed for the Electron app.
 
 - **In the desktop UI:** After non-trivial edits, add review notes on the relevant **new-side** lines (or old-side when appropriate). The diff shows **what** changed; comments explain **why** something needs attention.
 - **In a terminal (Claude Code, Codex, Cursor, etc.):** Use `constell-annotate` — no daemon, no session resolution needed.
@@ -156,6 +175,7 @@ constell-annotate add --file src/foo.ts --old-line 10 --summary "Removed depreca
 constell-annotate list [--file <path>] [--json] [--include-stale]
 constell-annotate remove <id>
 constell-annotate clear [--file <path>]
+constell-annotate clean-deleted
 constell-annotate resolve <id>
 constell-annotate unresolve <id>
 ```
@@ -177,7 +197,7 @@ By default, `add` validates that the target line is inside a `git diff HEAD` hun
 
 ### Where comments are stored
 
-- In Constellagent-managed repos: `.git/review-annotations.db`
+- In Constellagent-managed repos: `<git-common-dir>/review-annotations.db`
 - In standalone CLI use: `~/.local/share/constellagent/review-annotations.db`, scoped by `repo_root`
 - Comments persist in SQLite — no daemon or watch process needed
 
@@ -185,15 +205,19 @@ By default, `add` validates that the target line is inside a `git diff HEAD` hun
 
 **Always pass `--author "<agent-name>"` when adding comments** (e.g. `--author "claude-code"`, `--author "cursor"`, `--author "codex"`, `--author "gemini"`, `--author "opencode"`). This tags review notes so human reviewers can distinguish AI annotations from human comments in the UI. Omitting `--author` makes comments appear as human-authored.
 
-### Install
+In the Review Changes panel, **AI-authored comments are display-only** (non-toggleable context) and are never included in the text submitted to the agent; only **selected human** comments are submitted.
+
+### Install (standalone CLI)
 
 ```bash
 npm i -g @tridha643/review-annotations
 ```
 
-Constellagent desktop uses the library via a workspace dependency (`workspace:*`) — no global install needed for the Electron app.
-
 Shared types: `desktop/src/shared/diff-annotation-types.ts`.
+
+## Mandatory AI annotations on code changes
+
+After a successful build and **before** reporting work done, annotate **every source file you modified** with at least one `constell-annotate add … --author "<agent-name>"` comment explaining **why** the change was made (not what). Skip auto-generated files (`bun.lock`). Failure to annotate is equivalent to leaving the task incomplete.
 
 ## Mandatory Sendblue CLI notifications
 
