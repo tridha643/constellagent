@@ -142,6 +142,10 @@ The Conductor chat can render **structured, JSON-described UI** ("JSON canvases"
 | `src/main/agents/json-canvas-bridge.ts` | **Legacy** synthetic `render_json_canvas` tool emitter (test/transcript compat only; live generation uses inline SpecStream) |
 | `.tool-ui/agent.json` | Binds the active agent to its tool-UI plugin |
 
+**Available components.** Constellagent-owned: `Card`, `Stack`, `Text`, `Callout`, `Metric`, `Badge`, `Divider`, `FilePathList`. Imported from shadcn: `Grid`, `Heading`, `Button`, `Table`, `Progress`, `Alert`. `Callout` takes `{ text, variant?: info|warning|error|success|neutral (default info), title? }` and renders a semantic note. To add a type, declare its prop schema in `json-canvas-catalog.ts` (add owned types to `constellComponentPropSchemas`) and implement it in `json-canvas-registry.tsx`.
+
+**Prop validation.** `catalog.validate()` only checks element *type* and shape — it does **not** validate `props`. `json-canvas-validate.ts` fills that gap for the constellagent-owned components (`constellComponentPropSchemas`): a missing required prop is an `error`, an out-of-range value (e.g. a bad `variant`) is a `warning`, and state-binding expressions (`$state.x`) plus shadcn props are skipped to avoid false positives.
+
 ## Storage (AgentFS + Turso libSQL)
 
 Constellagent no longer writes workspace context-capture files or creates a `.constellagent/` directory **for context/session history**. Embedded Turso/libSQL files live under the repo's `.git/` directory (so they don't pollute the working tree and travel with the repo's git dir). **Exception:** the mobile bridge creates `.constellagent/worktrees/<token>/` at runtime when a paired phone runs git operations (`mobile-git-bridge.ts`; detected by `mobile-workspace-registry.ts`).

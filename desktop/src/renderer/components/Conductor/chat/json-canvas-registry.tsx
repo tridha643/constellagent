@@ -5,6 +5,15 @@ import { parseFilePathListText } from '../../../../shared/file-path-list-text'
 import { FilePathListPanel } from './FilePathListPanel'
 import styles from '../Conductor.module.css'
 
+/** Map each Callout variant to its CSS-module accent class; "info" is the default. */
+const CALLOUT_VARIANT_CLASS: Record<string, string> = {
+  info: styles.jsonCanvasCalloutInfo,
+  warning: styles.jsonCanvasCalloutWarning,
+  error: styles.jsonCanvasCalloutError,
+  success: styles.jsonCanvasCalloutSuccess,
+  neutral: styles.jsonCanvasCalloutNeutral,
+}
+
 const { registry } = defineRegistry(jsonCanvasCatalog, {
   components: {
     Card: ({ props, children }) => (
@@ -51,6 +60,20 @@ const { registry } = defineRegistry(jsonCanvasCatalog, {
       </div>
     ),
     Badge: ({ props }) => <span className={styles.jsonCanvasBadge}>{props.label}</span>,
+    Callout: ({ props }) => {
+      // Unknown/absent variants fall back to "info" so a partial stream still renders sensibly.
+      const variant = CALLOUT_VARIANT_CLASS[props.variant ?? 'info'] ?? CALLOUT_VARIANT_CLASS.info
+      return (
+        <div
+          className={[styles.jsonCanvasCallout, variant].filter(Boolean).join(' ')}
+          role="note"
+          data-variant={props.variant ?? 'info'}
+        >
+          {props.title ? <div className={styles.jsonCanvasCalloutTitle}>{props.title}</div> : null}
+          <div className={styles.jsonCanvasCalloutBody}>{props.text}</div>
+        </div>
+      )
+    },
     Divider: () => <hr className={styles.jsonCanvasDivider} />,
     Grid: shadcnComponents.Grid,
     Heading: shadcnComponents.Heading,

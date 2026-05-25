@@ -1,4 +1,4 @@
-import { jsonCanvasCatalog } from './json-canvas-catalog'
+import { jsonCanvasCatalog, constellComponentPropSchemas } from './json-canvas-catalog'
 
 /**
  * Structural / referential-integrity validation for json-render canvas specs.
@@ -25,6 +25,7 @@ export type CanvasDiagnosticCode =
   | 'dangling-child'
   | 'cyclic-reference'
   | 'orphan-element'
+  | 'invalid-props'
 
 export interface CanvasDiagnostic {
   severity: CanvasDiagnosticSeverity
@@ -96,6 +97,62 @@ function suggestId(missing: string, ids: readonly string[]): string {
   return near
     ? `Did you mean "${near}"? Available ids: ${quoteList(ids)}.`
     : `Available ids: ${quoteList(ids)}.`
+}
+
+/**
+ * json-render lets prop values be state-binding expressions (e.g. `"$state.count"`) or
+ * `DynamicValue`/template objects that are resolved at render time. Those legitimately fail
+ * a literal Zod check, so we must not flag them. A leading `$` / `{{` marks a string binding;
+ * any non-primitive (object/array) is treated as a possible expression and left alone.
+ */
+function looksLikeBinding(value: unknown): boolean {
+  if (typeof value === 'string') return value.startsWith('$') || value.startsWith('{{')
+  return value !== null && typeof value === 'object'
+}
+
+/** Walk a Zod issue path into the raw props to recover the offending value. */
+function valueAtPath(root: unknown, path: ReadonlyArray<PropertyKey>): unknown {
+  let current: unknown = root
+  for (const key of path) {
+    if (current == null || typeof current !== 'object') return undefined
+    current = (current as Record<PropertyKey, unknown>)[key as keyof object]
+  }
+  return current
+}
+
+/**
+ * Validate an element's `props` against its component's Zod schema and translate any failures
+ * into canvas diagnostics with exact `/elements/<id>/props/...` paths. Only constellagent-owned
+ * components are checked (their schemas are literal-valued); binding expressions are skipped so
+ * they never produce false positives. A genuinely-missing required prop is an `error` (it breaks
+ * the render); a present-but-wrong value is a `warning` so it can't regress a previously-valid spec.
+ */
+function collectPropDiagnostics(id: string, type: string, props: unknown): CanvasDiagnostic[] {
+  const schema = constellComponentPropSchemas[type]
+  if (!schema) return []
+  const candidate = props === undefined ? {} : props
+  const result = schema.safeParse(candidate)
+  if (result.success) return []
+
+  const diagnostics: CanvasDiagnostic[] = []
+  for (const issue of result.error.issues) {
+    const value = valueAtPath(candidate, issue.path)
+    const field = issue.path.map((segment) => String(segment)).join('.')
+    const path = `/elements/${id}/props${issue.path.map((segment) => `/${String(segment)}`).join('')}`
+    const missingRequired = issue.code === 'invalid_type' && value === undefined
+    // A present binding expression isn't malformed — skip everything except a missing required prop.
+    if (!missingRequired && looksLikeBinding(value)) continue
+    diagnostics.push({
+      severity: missingRequired ? 'error' : 'warning',
+      code: 'invalid-props',
+      path,
+      message: field
+        ? `Element "${id}" has invalid prop "${field}": ${issue.message}`
+        : `Element "${id}" has invalid props: ${issue.message}`,
+      suggestion: missingRequired ? `Add a "${field}" value to props.` : undefined,
+    })
+  }
+  return diagnostics
 }
 
 function getChildIds(element: unknown): string[] {
@@ -258,6 +315,9 @@ export function validateJsonCanvasSpec(
           ? `Did you mean "${near}"? Known types: ${quoteList(knownList)}.`
           : `Known types: ${quoteList(knownList)}.`,
       })
+    } else {
+      // Type is a recognized component — check its props against the real contract.
+      diagnostics.push(...collectPropDiagnostics(id, type, elementRecord.props))
     }
 
     const children = elementRecord.children

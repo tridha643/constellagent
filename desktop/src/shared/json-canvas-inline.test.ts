@@ -26,6 +26,19 @@ describe('json-canvas-inline', () => {
     expect(result.canvasLoading).toBe(false)
   })
 
+  it('compiles a Callout nested in a Card (realistic deploy-status example)', () => {
+    const example = `Deploy finished — here's the summary:
+
+{"op":"add","path":"/root","value":"card-1"}
+{"op":"add","path":"/elements/card-1","value":{"type":"Card","props":{"title":"Deploy"},"children":["note-1"]}}
+{"op":"add","path":"/elements/note-1","value":{"type":"Callout","props":{"variant":"success","title":"Live","text":"v2.3.1 is serving 100% of traffic."}}}`
+    const result = splitInlineCanvasMessage(example)
+    expect(result.prose).toBe("Deploy finished — here's the summary:")
+    expect(result.canvas?.elements['note-1']?.type).toBe('Callout')
+    expect(result.canvas?.elements['note-1']?.props?.variant).toBe('success')
+    expect(result.canvasLoading).toBe(false)
+  })
+
   it('returns original text when no patches are present', () => {
     const text = 'No UI needed — BTC stands for Bitcoin.'
     expect(splitInlineCanvasMessage(text)).toEqual({

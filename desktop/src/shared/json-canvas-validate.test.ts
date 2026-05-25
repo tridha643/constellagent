@@ -26,6 +26,7 @@ describe('json-canvas-validate', () => {
     expect(known.has('Card')).toBe(true)
     expect(known.has('Metric')).toBe(true)
     expect(known.has('Table')).toBe(true)
+    expect(known.has('Callout')).toBe(true)
     expect(known.has('DefinitelyNotAComponent')).toBe(false)
   })
 
@@ -146,6 +147,70 @@ describe('json-canvas-validate', () => {
     // Orphans don't block rendering of the connected tree.
     expect(result.valid).toBe(true)
     expect(result.renderable).toBe(true)
+  })
+
+  it('accepts a well-formed Callout with every supported variant', () => {
+    for (const variant of ['info', 'warning', 'error', 'success', 'neutral']) {
+      const result = validateJsonCanvasSpec({
+        root: 'c',
+        elements: { c: { type: 'Callout', props: { text: 'Heads up', variant, title: 'Note' } } },
+      })
+      expect(result.valid).toBe(true)
+      expect(result.renderable).toBe(true)
+      expect(result.diagnostics).toEqual([])
+    }
+  })
+
+  it('accepts a Callout without a variant (defaults at render time)', () => {
+    const result = validateJsonCanvasSpec({
+      root: 'c',
+      elements: { c: { type: 'Callout', props: { text: 'Just a note' } } },
+    })
+    expect(result.valid).toBe(true)
+    expect(result.diagnostics).toEqual([])
+  })
+
+  it('errors with an exact path when a required prop is missing', () => {
+    const result = validateJsonCanvasSpec({
+      root: 'm',
+      elements: { m: { type: 'Metric', props: { label: 'Total' } } },
+    })
+    const diag = result.diagnostics.find((d) => d.code === 'invalid-props')
+    expect(diag?.severity).toBe('error')
+    expect(diag?.path).toBe('/elements/m/props/value')
+    expect(diag?.suggestion).toContain('"value"')
+    expect(result.valid).toBe(false)
+    // A missing prop is malformed input, but the element still has a type, so it can render.
+    expect(result.renderable).toBe(true)
+  })
+
+  it('warns (not errors) on an out-of-range enum prop so it cannot regress a valid spec', () => {
+    const result = validateJsonCanvasSpec({
+      root: 'c',
+      elements: { c: { type: 'Callout', props: { text: 'x', variant: 'danger' } } },
+    })
+    const diag = result.diagnostics.find((d) => d.code === 'invalid-props')
+    expect(diag?.severity).toBe('warning')
+    expect(diag?.path).toBe('/elements/c/props/variant')
+    expect(diag?.message).toContain('"info"')
+    expect(result.valid).toBe(true)
+  })
+
+  it('does not flag prop values that are state-binding expressions', () => {
+    const result = validateJsonCanvasSpec({
+      root: 'm',
+      elements: { m: { type: 'Metric', props: { label: 'Total', value: '$state.total' } } },
+    })
+    expect(result.diagnostics.some((d) => d.code === 'invalid-props')).toBe(false)
+    expect(result.valid).toBe(true)
+  })
+
+  it('does not prop-check shadcn components (their schemas allow bindings)', () => {
+    const result = validateJsonCanvasSpec({
+      root: 't',
+      elements: { t: { type: 'Table', props: { unexpected: 1 } } },
+    })
+    expect(result.diagnostics.some((d) => d.code === 'invalid-props')).toBe(false)
   })
 
   it('formats diagnostics as compact, deterministic lines', () => {
