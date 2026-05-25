@@ -10,7 +10,7 @@ Bun workspaces (`["packages/*", "desktop"]`). For a file-by-file service map of 
 
 | Area | Path | Notes |
 |------|------|-------|
-| Desktop app (primary) | `desktop/` | Electron; `bun run dev` from repo root. Deep architecture: `desktop/CLAUDE.md` |
+| Desktop app (primary) | `desktop/` | Electron; `bun run dev` from repo root. Deep architecture, service/renderer maps, prosemark markdown engine, and the OpenSpec (`/opsx:*`) workflow: `desktop/CLAUDE.md` |
 | iOS companion | `ios/Constellagent/` | SwiftUI; see `ios/Constellagent/README.md` |
 | Mobile wire protocol | `packages/constellagent-mobile-protocol/` | `@constellagent/mobile-protocol`; Zod schemas; built on `bun install` |
 | Review annotations | `packages/review-annotations/` | `@tridha643/review-annotations`; ships the `constell-annotate` CLI |

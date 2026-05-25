@@ -2,7 +2,7 @@
 
 These instructions apply to **any repository** where the constellagent app is in use — not just the constellagent codebase itself. They govern **all** coding agent harnesses (Cursor, Claude Code, Codex, Gemini, OpenCode, etc.).
 
-> **Fast navigation:** This file covers cross-repo policy (annotations, Sendblue, mobile, skills) and the monorepo's top-level map. For a file-by-file **service map** of the desktop app (which `*-service.ts` owns which feature), see **`desktop/CLAUDE.md`** → *Main-process service map* / *Renderer map*.
+> **Fast navigation:** This file covers cross-repo policy (annotations, Sendblue, mobile, skills) and the monorepo's top-level map. For a file-by-file **service map** of the desktop app (which `*-service.ts` owns which feature), the **markdown engine (prosemark/CodeMirror)**, and the **OpenSpec change workflow** (`/opsx:*`), see **`desktop/CLAUDE.md`** → *Main-process service map* / *Renderer map* / *OpenSpec change workflow*. Cursor users: repo rules live in `.cursor/rules/constellagent.mdc`.
 
 ## Constellagent monorepo layout (this repository)
 
