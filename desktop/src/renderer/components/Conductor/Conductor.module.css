@@ -3400,6 +3400,56 @@
   margin: 4px 0;
 }
 
+.jsonCanvasCallout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  border-left-width: 3px;
+  background: var(--surface-1);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.jsonCanvasCalloutTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.jsonCanvasCalloutBody {
+  color: var(--text-secondary);
+}
+
+/* Variant accents reuse the same token palette as badges/errors for theme consistency. */
+.jsonCanvasCalloutInfo {
+  border-left-color: var(--accent-blue, #7eb8b8);
+  background: color-mix(in srgb, var(--accent-blue, #7eb8b8) 8%, var(--surface-1));
+}
+
+.jsonCanvasCalloutWarning {
+  border-left-color: var(--accent-amber, #d4a574);
+  background: color-mix(in srgb, var(--accent-amber, #d4a574) 10%, var(--surface-1));
+}
+
+.jsonCanvasCalloutError {
+  border-left-color: var(--accent-red, #e07070);
+  background: color-mix(in srgb, var(--accent-red, #e07070) 8%, var(--surface-1));
+}
+
+.jsonCanvasCalloutSuccess {
+  border-left-color: var(--accent-green, #7cc77c);
+  background: color-mix(in srgb, var(--accent-green, #7cc77c) 9%, var(--surface-1));
+}
+
+.jsonCanvasCalloutNeutral {
+  border-left-color: var(--border-strong, var(--border-subtle));
+  background: color-mix(in srgb, var(--surface-2, #1a1a1a) 60%, transparent);
+}
+
 .jsonCanvasError {
   padding: 10px 12px;
   border-radius: 8px;
