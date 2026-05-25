@@ -98,6 +98,34 @@ export function App() {
     return unsub
   }, [])
 
+  // When the iPhone starts a Conductor session, mirror the desktop UI focus.
+  useEffect(() => {
+    const unsub = window.api.mobile.onFocusSession(({ sessionId, workspaceId, title }) => {
+      const state = useAppStore.getState()
+      if (state.workspaces.some((workspace) => workspace.id === workspaceId)) {
+        state.setActiveWorkspace(workspaceId)
+      }
+      state.openConductorSessionTab(sessionId, title)
+    })
+    return unsub
+  }, [])
+
+  // When the iPhone creates a managed git worktree, register it in the desktop sidebar.
+  useEffect(() => {
+    const unsub = window.api.mobile.onWorkspaceCreated(({ project, workspace }) => {
+      const state = useAppStore.getState()
+      if (!state.projects.some((entry) => entry.id === project.id)) {
+        state.addProject(project)
+      }
+      if (!state.workspaces.some((entry) => entry.id === workspace.id)) {
+        state.addWorkspace(workspace)
+      } else {
+        state.setActiveWorkspace(workspace.id)
+      }
+    })
+    return unsub
+  }, [])
+
   // Listen for agent activity updates (Claude hooks + Codex submit/notify markers)
   useEffect(() => {
     let prevActive = new Set<string>()

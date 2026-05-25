@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import type { TranscriptMessage } from '../../shared/pi/pi-desktop-state'
-import { buildAgentPrompt, PLAN_PROMPT_PREFIX } from './agent-driver'
+import {
+  buildAgentPrompt,
+  computeTextDelta,
+  needsAssistantWordBoundarySpace,
+  normalizeAssistantStreamDelta,
+  PLAN_PROMPT_PREFIX,
+} from './agent-driver'
 
 function msg(
   id: string,
@@ -80,5 +86,35 @@ describe('agent-driver prompt construction', () => {
     expect(buildAgentPrompt('/ask-user-question align on scope', false, undefined, 'pi')).toBe(
       '/ask-user-question align on scope',
     )
+  })
+})
+
+describe('assistant stream delta normalization', () => {
+  test('computeTextDelta handles cumulative snapshots', () => {
+    expect(computeTextDelta('Hello', 'Hello world')).toEqual({
+      delta: ' world',
+      emitted: 'Hello world',
+    })
+  })
+
+  test('normalizeAssistantStreamDelta inserts word boundaries for Pi tokens', () => {
+    let emitted = ''
+    for (const token of ["I'm", 'an', 'AI']) {
+      const next = normalizeAssistantStreamDelta(emitted, token)
+      emitted = next.emitted
+    }
+    expect(emitted).toBe("I'm an AI")
+  })
+
+  test('normalizeAssistantStreamDelta avoids double spaces', () => {
+    const result = normalizeAssistantStreamDelta("I'm", ' an')
+    expect(result.delta).toBe(' an')
+    expect(result.emitted).toBe("I'm an")
+  })
+
+  test('needsAssistantWordBoundarySpace ignores punctuation joins', () => {
+    expect(needsAssistantWordBoundarySpace('Hello', 'world')).toBe(true)
+    expect(needsAssistantWordBoundarySpace('Hello.', 'Next')).toBe(false)
+    expect(needsAssistantWordBoundarySpace('Hello', ' world')).toBe(false)
   })
 })

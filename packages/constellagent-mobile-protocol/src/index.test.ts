@@ -3,6 +3,8 @@ import {
   createMobileCommandRequestSchema,
   mobileAccessStatusSchema,
   mobileCommandSchema,
+  modelListParamsSchema,
+  modelListResponseSchema,
 } from './index'
 
 describe('mobile protocol schemas', () => {
@@ -43,5 +45,22 @@ describe('mobile protocol schemas', () => {
         createdAt: '2026-05-24T12:00:00.000Z',
       }),
     ).toThrow()
+  })
+
+  test('accepts model.list params and response shapes', () => {
+    const params = modelListParamsSchema.parse({ workspacePath: '/tmp/ws' })
+    expect(params.workspacePath).toBe('/tmp/ws')
+
+    const response = modelListResponseSchema.parse({
+      items: [
+        {
+          id: 'claude-sonnet-4',
+          model: 'claude-sonnet-4',
+          displayName: 'Sonnet 4',
+          isDefault: true,
+        },
+      ],
+    })
+    expect(response.items[0]?.displayName).toBe('Sonnet 4')
   })
 })

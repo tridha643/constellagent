@@ -37,6 +37,14 @@ import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 import type { GithubCloneRepoSuggestion } from '../shared/github-clone-suggestions'
 import type { ComposioAutomationDefinition, ComposioAutomationAgent, ComposioNgrokStatus, ComposioWebhookSettings } from '../shared/composio-types'
+import type {
+  MobileConnectionSnapshot,
+  MobileDeployIosAppInput,
+  MobileDeployIosAppResult,
+  MobilePairingPayloadResult,
+  MobileTrustedPhoneSummary,
+  MobileUsbIosDevice,
+} from '../shared/mobile-settings-types'
 import type { CodexWebSocketsSetting } from '../shared/codex-websockets'
 import type { SpotlightStatus } from '../shared/spotlight-types'
 
@@ -475,6 +483,65 @@ const api = {
       ipcRenderer.invoke(IPC.COMPOSIO_SET_AUTOMATION_DEFINITION_INSTRUCTIONS, input) as Promise<ComposioAutomationDefinition>,
     setAutomationDefinitionAgent: (input: { repoPath: string; id: string; agent: ComposioAutomationAgent }) =>
       ipcRenderer.invoke(IPC.COMPOSIO_SET_AUTOMATION_DEFINITION_AGENT, input) as Promise<ComposioAutomationDefinition>,
+  },
+
+  mobile: {
+    getStatus: () => ipcRenderer.invoke(IPC.MOBILE_GET_STATUS) as Promise<MobileConnectionSnapshot>,
+    createPairingPayload: () =>
+      ipcRenderer.invoke(IPC.MOBILE_CREATE_PAIRING_PAYLOAD) as Promise<MobilePairingPayloadResult>,
+    listTrustedDevices: () =>
+      ipcRenderer.invoke(IPC.MOBILE_LIST_TRUSTED_DEVICES) as Promise<MobileTrustedPhoneSummary[]>,
+    revokeTrustedDevice: (phoneDeviceId: string) =>
+      ipcRenderer.invoke(IPC.MOBILE_REVOKE_TRUSTED_DEVICE, phoneDeviceId) as Promise<{ ok: boolean }>,
+    listUsbDevices: () => ipcRenderer.invoke(IPC.MOBILE_LIST_USB_DEVICES) as Promise<MobileUsbIosDevice[]>,
+    deployIosApp: (input: MobileDeployIosAppInput) =>
+      ipcRenderer.invoke(IPC.MOBILE_DEPLOY_IOS_APP, input) as Promise<MobileDeployIosAppResult>,
+    onFocusSession: (
+      listener: (payload: {
+        sessionId: string
+        workspaceId: string
+        workspacePath: string
+        title?: string
+      }) => void,
+    ) => {
+      const handle = (_event: unknown, payload: {
+        sessionId: string
+        workspaceId: string
+        workspacePath: string
+        title?: string
+      }) => listener(payload)
+      ipcRenderer.on(IPC.MOBILE_FOCUS_SESSION, handle)
+      return () => {
+        ipcRenderer.removeListener(IPC.MOBILE_FOCUS_SESSION, handle)
+      }
+    },
+    onWorkspaceCreated: (
+      listener: (payload: {
+        project: { id: string; name: string; repoPath: string }
+        workspace: {
+          id: string
+          name: string
+          branch: string
+          worktreePath: string
+          projectId: string
+        }
+      }) => void,
+    ) => {
+      const handle = (_event: unknown, payload: {
+        project: { id: string; name: string; repoPath: string }
+        workspace: {
+          id: string
+          name: string
+          branch: string
+          worktreePath: string
+          projectId: string
+        }
+      }) => listener(payload)
+      ipcRenderer.on(IPC.MOBILE_WORKSPACE_CREATED, handle)
+      return () => {
+        ipcRenderer.removeListener(IPC.MOBILE_WORKSPACE_CREATED, handle)
+      }
+    },
   },
 
   github: {

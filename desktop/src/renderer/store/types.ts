@@ -496,6 +496,7 @@ export type SettingsSectionId =
   | 'mcp'
   | 'integrations'
   | 'composio'
+  | 'mobile'
   | 'worktree'
   | 'skills'
   | 'shortcuts'

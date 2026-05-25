@@ -26,3 +26,14 @@ desktop/.claude/skills/hunk-review/
 .gemini/AGENTS.md
 .gemini/settings.json
 .bun-cache/
+
+# iOS / Xcode (Constellagent mobile app)
+ios/**/build/
+ios/**/DerivedData/
+ios/**/*.xcuserstate
+ios/**/xcuserdata/
+ios/Constellagent/BuildSupport/PrivateOverrides.xcconfig
+ios/**/.build/
+*.ipa
+*.dSYM
+*.dSYM.zip

@@ -292,6 +292,13 @@ export const IPC = {
 
   // Mobile over Tailscale
   MOBILE_GET_STATUS: 'mobile:get-status',
+  MOBILE_LIST_TRUSTED_DEVICES: 'mobile:list-trusted-devices',
+  MOBILE_REVOKE_TRUSTED_DEVICE: 'mobile:revoke-trusted-device',
+  MOBILE_CREATE_PAIRING_PAYLOAD: 'mobile:create-pairing-payload',
+  MOBILE_LIST_USB_DEVICES: 'mobile:list-usb-devices',
+  MOBILE_DEPLOY_IOS_APP: 'mobile:deploy-ios-app',
+  MOBILE_FOCUS_SESSION: 'mobile:focus-session',
+  MOBILE_WORKSPACE_CREATED: 'mobile:workspace-created',
   COMPOSIO_SUBSCRIBE_WEBHOOK: 'composio:subscribe-webhook',
   COMPOSIO_NGROK_STATUS: 'composio:ngrok-status',
   COMPOSIO_NGROK_START: 'composio:ngrok-start',

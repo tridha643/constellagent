@@ -1,0 +1,699 @@
+// FILE: ConstellagentService+RuntimeConfig.swift
+// Purpose: Runtime model/reasoning/access preferences, per-thread overrides, and model/list loading.
+// Layer: Service
+// Exports: ConstellagentService runtime config APIs
+// Depends on: ConstellagentModelOption, ConstellagentReasoningEffortOption, ConstellagentAccessMode
+
+import Foundation
+
+private let runtimeDebugTimestampFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "HH:mm:ss.SSS"
+    return formatter
+}()
+
+private enum RuntimeConfigLoadingPolicy {
+    static let modelListTimeoutNanoseconds: UInt64 = 8_000_000_000
+}
+
+private enum RuntimeSelectionDefaults {
+    static let modelId = "gpt-5.5"
+    static let reasoningEffort = "medium"
+
+    static func reasoningEffort(for unresolvedModelId: String?) -> String? {
+        guard let unresolvedModelId,
+              unresolvedModelId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == modelId else {
+            return nil
+        }
+        return reasoningEffort
+    }
+}
+
+extension ConstellagentService {
+    // Resolves the effective per-chat override record after normalizing the thread id.
+    func threadRuntimeOverride(for threadId: String?) -> ConstellagentThreadRuntimeOverride? {
+        guard let normalizedThreadID = normalizedInterruptIdentifier(threadId) else {
+            return nil
+        }
+        return threadRuntimeOverridesByThreadID[normalizedThreadID]
+    }
+
+    // Sends one request while trying approvalPolicy enum variants for cross-version compatibility.
+    func sendRequestWithApprovalPolicyFallback(
+        method: String,
+        baseParams: RPCObject,
+        context: String,
+        timeoutNanoseconds: UInt64? = nil,
+        timeoutMessage: String? = nil
+    ) async throws -> RPCMessage {
+        let policies = selectedAccessMode.approvalPolicyCandidates
+        var lastError: Error?
+
+        for (index, policy) in policies.enumerated() {
+            var params = baseParams
+            params["approvalPolicy"] = .string(policy)
+
+            do {
+                return try await sendRequest(
+                    method: method,
+                    params: .object(params),
+                    timeoutNanoseconds: timeoutNanoseconds,
+                    timeoutMessage: timeoutMessage
+                )
+            } catch {
+                lastError = error
+                let hasMorePolicies = index < (policies.count - 1)
+                if hasMorePolicies, shouldRetryWithApprovalPolicyFallback(error) {
+                    debugRuntimeLog("\(method) \(context) fallback approvalPolicy=\(policy)")
+                    continue
+                }
+                throw error
+            }
+        }
+
+        throw lastError ?? ConstellagentServiceError.invalidResponse("\(method) failed with unknown approvalPolicy error")
+    }
+
+    func listModels() async throws {
+        isLoadingModels = true
+        defer { isLoadingModels = false }
+
+        do {
+            let response = try await sendRequest(
+                method: "model/list",
+                params: .object([
+                    "cursor": .null,
+                    "limit": .integer(50),
+                    "includeHidden": .bool(false),
+                ]),
+                timeoutNanoseconds: RuntimeConfigLoadingPolicy.modelListTimeoutNanoseconds,
+                timeoutMessage: "model/list timed out while syncing runtime options."
+            )
+
+            guard let resultObject = response.result?.objectValue else {
+                throw ConstellagentServiceError.invalidResponse("model/list response missing payload")
+            }
+
+            let items =
+                resultObject["items"]?.arrayValue
+                ?? resultObject["data"]?.arrayValue
+                ?? resultObject["models"]?.arrayValue
+                ?? []
+
+            let decodedModels = items.compactMap { decodeModel(ConstellagentModelOption.self, from: $0) }
+            availableModels = decodedModels
+            modelsErrorMessage = nil
+            normalizeRuntimeSelectionsAfterModelsUpdate()
+
+            debugRuntimeLog("model/list success count=\(decodedModels.count)")
+        } catch {
+            handleModelListFailure(error)
+            throw error
+        }
+    }
+
+    func setSelectedModelId(_ modelId: String?) {
+        let normalized = modelId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized?.isEmpty == false {
+            selectedModelId = normalized
+        } else {
+            selectedModelId = RuntimeSelectionDefaults.modelId
+            selectedReasoningEffort = RuntimeSelectionDefaults.reasoningEffort
+        }
+        hasPersistedSelectedModelId = true
+        normalizeRuntimeSelectionsAfterModelsUpdate()
+    }
+
+    func setSelectedGitWriterModelId(_ modelId: String?) {
+        let normalized = modelId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        selectedGitWriterModelId = (normalized?.isEmpty == false) ? normalized : nil
+        normalizeRuntimeSelectionsAfterModelsUpdate()
+    }
+
+    func setSelectedReasoningEffort(_ effort: String?) {
+        let normalized = effort?.trimmingCharacters(in: .whitespacesAndNewlines)
+        selectedReasoningEffort = (normalized?.isEmpty == false) ? normalized : nil
+        normalizeRuntimeSelectionsAfterModelsUpdate()
+    }
+
+    func setThreadReasoningEffortOverride(_ effort: String, for threadId: String?) {
+        guard let normalizedThreadID = normalizedInterruptIdentifier(threadId) else {
+            return
+        }
+
+        let normalizedEffort = effort.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedEffort.isEmpty else {
+            clearThreadReasoningEffortOverride(for: normalizedThreadID)
+            return
+        }
+
+        mutateThreadRuntimeOverride(for: normalizedThreadID) { override in
+            override.reasoningEffort = normalizedEffort
+            override.overridesReasoning = true
+        }
+    }
+
+    func clearThreadReasoningEffortOverride(for threadId: String?) {
+        guard let normalizedThreadID = normalizedInterruptIdentifier(threadId) else {
+            return
+        }
+
+        mutateThreadRuntimeOverride(for: normalizedThreadID) { override in
+            override.reasoningEffort = nil
+            override.overridesReasoning = false
+        }
+    }
+
+    func setSelectedServiceTier(_ serviceTier: ConstellagentServiceTier?) {
+        selectedServiceTier = normalizedServiceTierForSelectedModel(serviceTier)
+        persistRuntimeSelections()
+    }
+
+    func setThreadServiceTierOverride(_ serviceTier: ConstellagentServiceTier?, for threadId: String?) {
+        guard let normalizedThreadID = normalizedInterruptIdentifier(threadId) else {
+            return
+        }
+
+        let normalizedServiceTier = normalizedServiceTierForSelectedModel(serviceTier)
+        mutateThreadRuntimeOverride(for: normalizedThreadID) { override in
+            override.serviceTierRawValue = normalizedServiceTier?.rawValue
+            override.overridesServiceTier = true
+        }
+    }
+
+    func clearThreadServiceTierOverride(for threadId: String?) {
+        guard let normalizedThreadID = normalizedInterruptIdentifier(threadId) else {
+            return
+        }
+
+        mutateThreadRuntimeOverride(for: normalizedThreadID) { override in
+            override.serviceTierRawValue = nil
+            override.overridesServiceTier = false
+        }
+    }
+
+    func applyThreadRuntimeOverride(_ runtimeOverride: ConstellagentThreadRuntimeOverride?, to threadId: String?) {
+        guard let normalizedThreadID = normalizedInterruptIdentifier(threadId) else {
+            return
+        }
+
+        guard let runtimeOverride, !runtimeOverride.isEmpty else {
+            threadRuntimeOverridesByThreadID.removeValue(forKey: normalizedThreadID)
+            persistThreadRuntimeOverrides()
+            return
+        }
+
+        threadRuntimeOverridesByThreadID[normalizedThreadID] = runtimeOverride
+        persistThreadRuntimeOverrides()
+    }
+
+    func setSelectedAccessMode(_ accessMode: ConstellagentAccessMode) {
+        selectedAccessMode = accessMode
+        persistRuntimeSelections()
+    }
+
+    func selectedModelOption() -> ConstellagentModelOption? {
+        selectedModelOption(from: availableModels)
+    }
+
+    // Composer chrome should not present the canonical fallback as a loaded user choice.
+    func visibleSelectedModelIDForComposer() -> String? {
+        if let selectedModel = selectedModelOption() {
+            return selectedModel.id
+        }
+
+        guard hasPersistedSelectedModelId else {
+            return nil
+        }
+
+        if shouldHidePersistedDefaultWhileRuntimeLoads {
+            return nil
+        }
+
+        return selectedModelId
+    }
+
+    // Keeps the model pill honest while bridge runtime metadata is still in flight.
+    func isRuntimeSelectionLoadingForComposer() -> Bool {
+        guard visibleSelectedModelIDForComposer() == nil else {
+            return false
+        }
+        return isBootstrappingConnectionSync || isLoadingThreads || isLoadingModels
+    }
+
+    func selectedGitWriterModelOption() -> ConstellagentModelOption? {
+        selectedGitWriterModelOption(from: availableModels)
+    }
+
+    func selectedModelSupportsServiceTier(_ serviceTier: ConstellagentServiceTier) -> Bool {
+        selectedModelOption()?.supportsServiceTier(serviceTier) == true
+    }
+
+    func gitWriterModelIdentifier() -> String? {
+        selectedGitWriterModelOption()?.model
+    }
+
+    func supportedReasoningEffortsForSelectedModel() -> [ConstellagentReasoningEffortOption] {
+        selectedModelOption()?.supportedReasoningEfforts ?? []
+    }
+
+    func isThreadReasoningEffortOverridden(_ threadId: String?) -> Bool {
+        guard let threadOverride = threadRuntimeOverride(for: threadId),
+              threadOverride.overridesReasoning,
+              let selectedReasoning = threadOverride.reasoningEffort else {
+            return false
+        }
+
+        let supportedReasoningEfforts = Set(
+            supportedReasoningEffortsForSelectedModel().map(\.reasoningEffort)
+        )
+        return supportedReasoningEfforts.contains(selectedReasoning)
+    }
+
+    func isThreadServiceTierOverridden(_ threadId: String?) -> Bool {
+        threadRuntimeOverride(for: threadId)?.overridesServiceTier == true
+    }
+
+    func selectedReasoningEffortForSelectedModel(threadId: String? = nil) -> String? {
+        guard let model = selectedModelOption() else {
+            return RuntimeSelectionDefaults.reasoningEffort(for: selectedModelId)
+                ?? selectedReasoningEffort
+                ?? RuntimeSelectionDefaults.reasoningEffort
+        }
+
+        let supported = Set(model.supportedReasoningEfforts.map { $0.reasoningEffort })
+        guard !supported.isEmpty else {
+            return nil
+        }
+
+        if let threadOverride = threadRuntimeOverride(for: threadId),
+           threadOverride.overridesReasoning,
+           let selected = threadOverride.reasoningEffort,
+           supported.contains(selected) {
+            return selected
+        }
+
+        if let selected = selectedReasoningEffort,
+           supported.contains(selected) {
+            return selected
+        }
+
+        if let defaultEffort = model.defaultReasoningEffort,
+           supported.contains(defaultEffort) {
+            return defaultEffort
+        }
+
+        if supported.contains("medium") {
+            return "medium"
+        }
+
+        return model.supportedReasoningEfforts.first?.reasoningEffort
+    }
+
+    func runtimeModelIdentifierForTurn() -> String? {
+        selectedModelOption()?.model ?? selectedModelId ?? RuntimeSelectionDefaults.modelId
+    }
+
+    func effectiveServiceTier(for threadId: String? = nil) -> ConstellagentServiceTier? {
+        let candidate: ConstellagentServiceTier?
+        if let threadOverride = threadRuntimeOverride(for: threadId),
+           threadOverride.overridesServiceTier {
+            candidate = threadOverride.serviceTier
+        } else {
+            candidate = selectedServiceTier
+        }
+
+        guard let candidate else {
+            return nil
+        }
+        return selectedModelSupportsServiceTier(candidate) ? candidate : nil
+    }
+
+    func runtimeServiceTierForTurn(threadId: String? = nil) -> String? {
+        guard supportsServiceTier else {
+            return nil
+        }
+        return effectiveServiceTier(for: threadId)?.rawValue
+    }
+
+    // Copies per-chat runtime overrides forward when we continue an archived thread.
+    func inheritThreadRuntimeOverrides(from sourceThreadId: String?, to destinationThreadId: String?) {
+        guard let normalizedSourceThreadID = normalizedInterruptIdentifier(sourceThreadId),
+              let normalizedDestinationThreadID = normalizedInterruptIdentifier(destinationThreadId),
+              normalizedSourceThreadID != normalizedDestinationThreadID else {
+            return
+        }
+
+        guard let sourceOverride = threadRuntimeOverridesByThreadID[normalizedSourceThreadID] else {
+            applyThreadRuntimeOverride(nil, to: normalizedDestinationThreadID)
+            return
+        }
+
+        applyThreadRuntimeOverride(sourceOverride, to: normalizedDestinationThreadID)
+    }
+
+    func runtimeSandboxPolicyObject(for accessMode: ConstellagentAccessMode) -> JSONValue {
+        switch accessMode {
+        case .onRequest:
+            return .object([
+                "type": .string("workspaceWrite"),
+                "networkAccess": .bool(true),
+            ])
+        case .fullAccess:
+            return .object([
+                "type": .string("dangerFullAccess"),
+            ])
+        }
+    }
+
+    func shouldFallbackFromSandboxPolicy(_ error: Error) -> Bool {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return false
+        }
+
+        if rpcError.code != -32602 && rpcError.code != -32600 {
+            return false
+        }
+
+        let loweredMessage = rpcError.message.lowercased()
+        if loweredMessage.contains("thread not found") || loweredMessage.contains("unknown thread") {
+            return false
+        }
+
+        return loweredMessage.contains("invalid params")
+            || loweredMessage.contains("invalid param")
+            || loweredMessage.contains("unknown field")
+            || loweredMessage.contains("unexpected field")
+            || loweredMessage.contains("unrecognized field")
+            || loweredMessage.contains("failed to parse")
+            || loweredMessage.contains("unsupported")
+    }
+
+    func sendRequestWithSandboxFallback(
+        method: String,
+        baseParams: RPCObject,
+        timeoutNanoseconds: UInt64? = nil,
+        timeoutMessage: String? = nil
+    ) async throws -> RPCMessage {
+        var firstAttemptParams = baseParams
+        firstAttemptParams["sandboxPolicy"] = runtimeSandboxPolicyObject(for: selectedAccessMode)
+
+        do {
+            debugRuntimeLog("\(method) using sandboxPolicy")
+            return try await sendRequestWithApprovalPolicyFallback(
+                method: method,
+                baseParams: firstAttemptParams,
+                context: "sandboxPolicy",
+                timeoutNanoseconds: timeoutNanoseconds,
+                timeoutMessage: timeoutMessage
+            )
+        } catch {
+            guard shouldFallbackFromSandboxPolicy(error) else {
+                throw error
+            }
+        }
+
+        var secondAttemptParams = baseParams
+        secondAttemptParams["sandbox"] = .string(selectedAccessMode.sandboxLegacyValue)
+
+        do {
+            debugRuntimeLog("\(method) fallback using sandbox")
+            return try await sendRequestWithApprovalPolicyFallback(
+                method: method,
+                baseParams: secondAttemptParams,
+                context: "sandbox",
+                timeoutNanoseconds: timeoutNanoseconds,
+                timeoutMessage: timeoutMessage
+            )
+        } catch {
+            guard shouldFallbackFromSandboxPolicy(error) else {
+                throw error
+            }
+        }
+
+        let finalAttemptParams = baseParams
+        debugRuntimeLog("\(method) fallback using minimal payload")
+        return try await sendRequestWithApprovalPolicyFallback(
+            method: method,
+            baseParams: finalAttemptParams,
+            context: "minimal",
+            timeoutNanoseconds: timeoutNanoseconds,
+            timeoutMessage: timeoutMessage
+        )
+    }
+
+    func handleModelListFailure(_ error: Error) {
+        let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = message.isEmpty ? "Unable to load models" : message
+        modelsErrorMessage = normalized
+        debugRuntimeLog("model/list failed: \(normalized)")
+    }
+
+    func debugRuntimeLog(_ message: String) {
+        let entry = "[\(runtimeDebugTimestampFormatter.string(from: Date()))] \(message)"
+        runtimeDebugLogEntries.append(entry)
+        if runtimeDebugLogEntries.count > 400 {
+            runtimeDebugLogEntries.removeFirst(runtimeDebugLogEntries.count - 400)
+        }
+#if DEBUG
+        print("[ConstellagentRuntime] \(entry)")
+#endif
+    }
+
+    static var isMobileDebugLoggingEnabled: Bool {
+        if ProcessInfo.processInfo.environment["CONSTELLAGENT_MOBILE_DEBUG"] == "1" {
+            return true
+        }
+#if DEBUG
+        return UserDefaults.standard.bool(forKey: "ConstellagentMobileDebug")
+#else
+        return false
+#endif
+    }
+
+    func debugMobileLog(_ message: String) {
+        guard Self.isMobileDebugLoggingEnabled else { return }
+        debugRuntimeLog("[mobile] \(message)")
+    }
+
+    static func shouldSampleMobileDelta(_ sequence: Int, every: Int = 25) -> Bool {
+        sequence == 1 || sequence % every == 0
+    }
+
+    func clearRuntimeDebugLog() {
+        runtimeDebugLogEntries.removeAll()
+    }
+
+    func shouldRetryWithApprovalPolicyFallback(_ error: Error) -> Bool {
+        guard let serviceError = error as? ConstellagentServiceError,
+              case .rpcError(let rpcError) = serviceError else {
+            return false
+        }
+
+        if rpcError.code != -32600 && rpcError.code != -32602 {
+            return false
+        }
+
+        let message = rpcError.message.lowercased()
+        return message.contains("approval")
+            || message.contains("unknown variant")
+            || message.contains("expected one of")
+            || message.contains("onrequest")
+            || message.contains("on-request")
+    }
+
+    func normalizedServiceTierForSelectedModel(_ serviceTier: ConstellagentServiceTier?) -> ConstellagentServiceTier? {
+        guard let serviceTier else {
+            return nil
+        }
+        guard let selectedModel = selectedModelOption() else {
+            return serviceTier
+        }
+        return selectedModel.supportsServiceTier(serviceTier) ? serviceTier : nil
+    }
+}
+
+private extension ConstellagentService {
+    var shouldHidePersistedDefaultWhileRuntimeLoads: Bool {
+        guard availableModels.isEmpty else {
+            return false
+        }
+
+        guard let selectedModelId else {
+            return false
+        }
+
+        let normalizedSelection = selectedModelId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalizedSelection == RuntimeSelectionDefaults.modelId
+            && (isBootstrappingConnectionSync || isLoadingModels)
+    }
+
+    // Centralizes thread-override mutation so empty records never linger in storage.
+    func mutateThreadRuntimeOverride(
+        for threadId: String,
+        mutate: (inout ConstellagentThreadRuntimeOverride) -> Void
+    ) {
+        var currentOverride = threadRuntimeOverridesByThreadID[threadId] ?? ConstellagentThreadRuntimeOverride(
+            reasoningEffort: nil,
+            serviceTierRawValue: nil,
+            overridesReasoning: false,
+            overridesServiceTier: false
+        )
+
+        mutate(&currentOverride)
+
+        if currentOverride.isEmpty {
+            threadRuntimeOverridesByThreadID.removeValue(forKey: threadId)
+        } else {
+            threadRuntimeOverridesByThreadID[threadId] = currentOverride
+        }
+
+        persistThreadRuntimeOverrides()
+    }
+
+    func selectedModelOption(from models: [ConstellagentModelOption]) -> ConstellagentModelOption? {
+        guard !models.isEmpty else {
+            return nil
+        }
+
+        if let selectedModelId,
+           let directMatch = models.first(where: { $0.id == selectedModelId || $0.model == selectedModelId }) {
+            return directMatch
+        }
+
+        return nil
+    }
+
+    func selectedGitWriterModelOption(
+        from models: [ConstellagentModelOption],
+        explicitModelId: String? = nil
+    ) -> ConstellagentModelOption? {
+        guard !models.isEmpty else {
+            return nil
+        }
+
+        let savedSelection = explicitModelId ?? selectedGitWriterModelId
+        if let savedSelection,
+           let directMatch = models.first(where: { $0.id == savedSelection || $0.model == savedSelection }) {
+            return directMatch
+        }
+
+        if let miniModel = models.first(where: { $0.id == "gpt-5.4-mini" || $0.model == "gpt-5.4-mini" }) {
+            return miniModel
+        }
+
+        if let runtimeSelected = selectedModelOption(from: models) {
+            return runtimeSelected
+        }
+
+        return fallbackModel(from: models)
+    }
+
+    func fallbackModel(from models: [ConstellagentModelOption]) -> ConstellagentModelOption? {
+        // Prefer GPT-5.5 when the bridge advertises it; the rest of the app treats
+        // it as the canonical default regardless of the bridge's `isDefault` flag.
+        if let preferred = models.first(where: {
+            $0.id.lowercased() == "gpt-5.5" || $0.model.lowercased() == "gpt-5.5"
+        }) {
+            return preferred
+        }
+        if let defaultModel = models.first(where: { $0.isDefault }) {
+            return defaultModel
+        }
+        return models.first
+    }
+
+    func persistRuntimeSelections() {
+        if let selectedModelId, !selectedModelId.isEmpty, hasPersistedSelectedModelId {
+            defaults.set(selectedModelId, forKey: Self.selectedModelIdDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: Self.selectedModelIdDefaultsKey)
+        }
+
+        if let selectedGitWriterModelId, !selectedGitWriterModelId.isEmpty {
+            defaults.set(selectedGitWriterModelId, forKey: Self.selectedGitWriterModelIdDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: Self.selectedGitWriterModelIdDefaultsKey)
+        }
+
+        if let selectedReasoningEffort, !selectedReasoningEffort.isEmpty {
+            defaults.set(selectedReasoningEffort, forKey: Self.selectedReasoningEffortDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: Self.selectedReasoningEffortDefaultsKey)
+        }
+
+        if let selectedServiceTier {
+            defaults.set(selectedServiceTier.rawValue, forKey: Self.selectedServiceTierDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: Self.selectedServiceTierDefaultsKey)
+        }
+
+        defaults.set(selectedAccessMode.rawValue, forKey: Self.selectedAccessModeDefaultsKey)
+        persistThreadRuntimeOverrides()
+    }
+
+    func persistThreadRuntimeOverrides() {
+        guard !threadRuntimeOverridesByThreadID.isEmpty,
+              let encodedOverrides = try? encoder.encode(threadRuntimeOverridesByThreadID) else {
+            defaults.removeObject(forKey: macScopedDefaultsKey(Self.threadRuntimeOverridesDefaultsKey))
+            return
+        }
+
+        defaults.set(encodedOverrides, forKey: macScopedDefaultsKey(Self.threadRuntimeOverridesDefaultsKey))
+    }
+}
+
+extension ConstellagentService {
+    func normalizeRuntimeSelectionsAfterModelsUpdate() {
+        guard !availableModels.isEmpty else {
+            if selectedModelId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                selectedModelId = nil
+            }
+            if selectedReasoningEffort?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                selectedReasoningEffort = nil
+            }
+            persistRuntimeSelections()
+            return
+        }
+
+        let resolvedModel = selectedModelOption(from: availableModels) ?? fallbackModel(from: availableModels)
+        selectedModelId = resolvedModel?.id
+        hasPersistedSelectedModelId = resolvedModel != nil
+
+        if let resolvedModel {
+            let supported = Set(resolvedModel.supportedReasoningEfforts.map { $0.reasoningEffort })
+            if supported.isEmpty {
+                selectedReasoningEffort = nil
+            } else if let selectedReasoningEffort,
+                      supported.contains(selectedReasoningEffort) {
+                // Keep current reasoning.
+            } else if let modelDefault = resolvedModel.defaultReasoningEffort,
+                      supported.contains(modelDefault) {
+                selectedReasoningEffort = modelDefault
+            } else if supported.contains("medium") {
+                selectedReasoningEffort = "medium"
+            } else {
+                selectedReasoningEffort = resolvedModel.supportedReasoningEfforts.first?.reasoningEffort
+            }
+
+            if let selectedServiceTier,
+               !resolvedModel.supportsServiceTier(selectedServiceTier) {
+                self.selectedServiceTier = nil
+            }
+        } else {
+            selectedReasoningEffort = nil
+            selectedServiceTier = nil
+        }
+
+        if let selectedGitWriterModelId,
+           !availableModels.contains(where: {
+               $0.id == selectedGitWriterModelId || $0.model == selectedGitWriterModelId
+           }) {
+            self.selectedGitWriterModelId = nil
+        }
+
+        persistRuntimeSelections()
+    }
+}
