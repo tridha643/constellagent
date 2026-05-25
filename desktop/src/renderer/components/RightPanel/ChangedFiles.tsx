@@ -40,8 +40,15 @@ function errorMessage(err: unknown, fallback: string): string {
 }
 
 export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
-  const [files, setFiles] = useState<FileStatus[]>([])
-  const [loading, setLoading] = useState(true)
+  // Local-first seed: render the last-known working-tree statuses from the
+  // in-memory snapshot synchronously on first paint instead of waiting on a git
+  // round-trip. Mirrors the diff viewer's warm-snapshot reuse (DiffEditor.loadFiles).
+  const [files, setFiles] = useState<FileStatus[]>(
+    () => useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath)?.statuses ?? [],
+  )
+  const [loading, setLoading] = useState(
+    () => !useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath),
+  )
   const [busy, setBusy] = useState(false)
   const [busyAction, setBusyAction] = useState<'commit' | 'pr' | 'graphite' | 'generate-commit-message' | null>(null)
   const [busyLabel, setBusyLabel] = useState('')
@@ -93,7 +100,17 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    // Render-first / verify-in-background: if a snapshot for this worktree is
+    // already cached (e.g. the diff viewer warmed it, or we mounted this panel
+    // before), paint it immediately and skip the "Checking changes…" spinner.
+    // The fetch below then reconciles in place. Only show the spinner cold.
+    const cached = useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath)
+    if (cached) {
+      setFiles(cached.statuses)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
     Promise.all([
       window.api.git.getStatus(worktreePath),
       window.api.git.getHeadHash(worktreePath),
