@@ -1,17 +1,14 @@
-# Constellagent Cross-Agent Context
+# Constellagent — Gemini Agent Context
 
-## Session & Activity Context
-Read these files to see what other agents (and you) have been doing recently:
-- `.constellagent/context/sliding-window.md` — Compact table of last 20 agent actions across all agents
-- `.constellagent/context/agent-context.md` — Rich context summary (files touched, tool details, activity timeline)
-- `.constellagent/sessions/` — Session-end summaries with timestamps
+**Authoritative instructions live in the repo-root `../AGENTS.md`.** This file is the Gemini-specific companion; read root `AGENTS.md` (and `desktop/CLAUDE.md` for the desktop service map) for the full policy. Use `--author "gemini"` on every annotation.
 
-## Cachebro (MCP — auto-configured)
-Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) instead of raw file reads to save tokens.
+## Session & activity context
 
-## Context Database
-Agent tool calls and activity are recorded in `.constellagent/constellagent.db` (libSQL/SQLite via AgentFS).
-The `entries` table stores: workspace_id, agent_type, session_id, tool_name, tool_input, file_path, tool_response, timestamp.
+This repo does **not** ship `.constellagent/context/*.md` or `.constellagent/sessions/` files. AgentFS/libSQL data lives under the repo's **`.git/`** directory (DB table in `desktop/CLAUDE.md`). The mobile bridge may create `.constellagent/worktrees/<token>/` at runtime — that is a runtime artifact, not committed context.
+
+## Cachebro (MCP — optional, per-machine)
+
+Cachebro is **not** auto-configured by any committed file in this repo. Configure it once per machine with `npx cachebro init`. When its tools are available, prefer the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) over raw file reads to save tokens.
 
 ## Review annotations (human ↔ agent)
 
