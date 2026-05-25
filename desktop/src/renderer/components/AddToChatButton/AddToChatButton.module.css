@@ -13,8 +13,20 @@
   font-size: 11px;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  transition: background-color var(--motion-fast), color var(--motion-fast), transform 100ms var(--ease-out);
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--duration-fast) var(--ease-press),
+    opacity var(--motion-fast);
   pointer-events: auto;
+  /* Subtle settle when the button appears next to a fresh selection (never from scale 0). */
+  transform-origin: top left;
+  opacity: 1;
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
 }
 
 .button:active {
@@ -25,6 +37,23 @@
   .button:hover {
     background: var(--surface-4, rgba(255, 255, 255, 0.06));
     color: var(--text-primary, #c0caf5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: background-color var(--motion-fast), color var(--motion-fast);
+  }
+
+  .button:active {
+    transform: none;
+  }
+
+  .button {
+    @starting-style {
+      opacity: 1;
+      transform: none;
+    }
   }
 }
 

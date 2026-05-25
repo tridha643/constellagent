@@ -8,3 +8,10 @@
   animation: token-stream calc(2s / var(--speed, 1)) linear infinite;
   animation-delay: calc(var(--col, 0) * 320ms / var(--speed, 1));
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .loader :global(.dot) {
+    animation: none;
+    opacity: 1;
+  }
+}

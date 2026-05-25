@@ -164,7 +164,6 @@
   transition: transform 160ms var(--ease-out-spotlight), background-color 160ms var(--ease-out-spotlight);
 }
 .toastAction:active { transform: scale(0.97); }
-.toastAction:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
 
 .toastDismiss {
   appearance: none;
@@ -175,21 +174,44 @@
   cursor: pointer;
   font-size: 14px;
   padding: 2px 4px;
+  transition: opacity var(--motion-fast);
 }
-.toastDismiss:hover { opacity: 1; }
+
+/* Gate hover affordances behind real pointers — touch taps otherwise fire a
+   sticky :hover and leave the action highlighted (Emil principle 8). */
+@media (hover: hover) and (pointer: fine) {
+  .toastAction:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+  .toastDismiss:hover { opacity: 1; }
+}
 
 /* ── Reduced motion ─────────────────────────────────────────────────── */
+/* Strip movement (transforms) + looping keyframes, but keep opacity/color
+   crossfades so state changes still read smoothly instead of hard-popping
+   (Emil principle 6: reduced motion ≠ no motion). */
 @media (prefers-reduced-motion: reduce) {
   .dot,
   .dot_preparing,
   .dot_syncing,
   .dot_restoring,
-  .dotWobble,
-  .glow,
-  .toast,
-  .toastExiting,
-  .toastAction {
+  .dotWobble {
     animation: none !important;
-    transition: none !important;
+    transform: none !important;
+    transition: background-color var(--spotlight-dot-color) var(--ease-in-out-spotlight),
+      opacity var(--spotlight-dot-fade) var(--ease-out-spotlight);
+  }
+
+  .glow {
+    transition: box-shadow var(--spotlight-ring-fade) var(--ease-out-spotlight),
+      opacity var(--spotlight-ring-fade) var(--ease-out-spotlight);
+  }
+
+  .toast,
+  .toastExiting {
+    transform: none !important;
+    transition: opacity var(--spotlight-toast-enter) var(--ease-out-spotlight);
+  }
+
+  .toastAction:active {
+    transform: none;
   }
 }

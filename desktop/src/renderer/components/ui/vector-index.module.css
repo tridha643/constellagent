@@ -8,3 +8,10 @@
   animation: vector-index calc(2.4s / var(--speed, 1)) linear infinite;
   animation-delay: calc(var(--diag, 0) * 220ms / var(--speed, 1));
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .loader :global(.dot) {
+    animation: none;
+    opacity: 1;
+  }
+}

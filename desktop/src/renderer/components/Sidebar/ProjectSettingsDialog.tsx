@@ -1,5 +1,6 @@
 import { useState, useCallback, useLayoutEffect, useRef, useEffect } from 'react'
 import { useAppStore } from '../../store/app-store'
+import { useExitAnimation } from '../../hooks/useExitAnimation'
 import type {
   Project,
   PrLinkProvider,
@@ -21,6 +22,9 @@ interface Props {
   }) => void
   onCancel: () => void
 }
+
+/** Match `constellagent-dialog-*--exiting` duration (`--duration-exit`). */
+const EXIT_MS = 140
 
 function getRendererApi(): Window['api'] | null {
   return (window as Window & { api?: Window['api'] }).api ?? null
@@ -152,6 +156,26 @@ function StartupCommandRow({
 export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
   const { settings, addToast } = useAppStore()
   const nextIdRef = useRef(0)
+  // Play the shared dialog exit before unmounting so close mirrors open as one
+  // unit (Emil principle 5) instead of the dialog vanishing instantly.
+  const [open, setOpen] = useState(true)
+  const { shouldRender, animating } = useExitAnimation(open, EXIT_MS)
+  const exiting = animating === 'exit'
+  const pendingRef = useRef<(() => void) | null>(null)
+
+  const beginExit = useCallback((cb: () => void) => {
+    if (exiting) return
+    pendingRef.current = cb
+    setOpen(false)
+  }, [exiting])
+
+  useEffect(() => {
+    if (!shouldRender && pendingRef.current) {
+      const fn = pendingRef.current
+      pendingRef.current = null
+      fn()
+    }
+  }, [shouldRender])
 
   const assignIds = useCallback((list: StartupCommand[]): CommandWithId[] => {
     return list.map((c) => ({ ...c, _id: nextIdRef.current++ }))
@@ -278,21 +302,25 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
     setDropTargetId(null)
   }, [handleReorder])
 
+  const handleCancel = useCallback(() => {
+    beginExit(onCancel)
+  }, [beginExit, onCancel])
+
   const handleSave = useCallback(() => {
     // Strip _id before saving
     const stripped: StartupCommand[] = commands.map(({ _id, ...rest }) => rest)
     const normalized = normalizeStartupCommands(stripped)
-    onSave({
+    beginExit(() => onSave({
       startupCommands: normalized.length > 0 ? normalized : [],
       prLinkProvider,
-    })
-  }, [commands, onSave, prLinkProvider])
+    }))
+  }, [beginExit, commands, onSave, prLinkProvider])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
+      if (e.key === 'Escape') handleCancel()
     },
-    [onCancel]
+    [handleCancel]
   )
 
   const configuredStartupCount = commands.filter((c) => c.command.trim()).length
@@ -317,10 +345,17 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
     }
   }, [])
 
+  if (!shouldRender) {
+    return null
+  }
+
   return (
-    <div className={`${styles.overlay} constellagent-dialog-overlay`} onClick={onCancel}>
+    <div
+      className={`${styles.overlay} constellagent-dialog-overlay ${exiting ? 'constellagent-dialog-overlay--exiting' : ''}`}
+      onClick={handleCancel}
+    >
       <div
-        className={`${styles.dialog} constellagent-dialog-body`}
+        className={`${styles.dialog} constellagent-dialog-body ${exiting ? 'constellagent-dialog-body--exiting' : ''}`}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
@@ -424,10 +459,10 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
         </div>
 
         <div className={styles.actions}>
-          <button className={styles.cancelBtn} onClick={onCancel}>
+          <button className={styles.cancelBtn} onClick={handleCancel} disabled={exiting}>
             Cancel
           </button>
-          <button className={styles.saveBtn} onClick={handleSave}>
+          <button className={styles.saveBtn} onClick={handleSave} disabled={exiting}>
             Save
           </button>
         </div>

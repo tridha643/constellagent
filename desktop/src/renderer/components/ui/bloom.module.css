@@ -17,3 +17,11 @@
   animation: bloom calc(2.6s / var(--speed, 1)) cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
   animation-delay: calc(var(--diag, 0) * 260ms / var(--speed, 1));
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .loader :global(.dot) {
+    animation: none;
+    opacity: 1;
+    transform: translateZ(0) scale(1);
+  }
+}

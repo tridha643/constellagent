@@ -97,7 +97,12 @@
   font-size: var(--text-xs);
   font-family: var(--font-ui);
   cursor: pointer;
-  transition: background-color var(--motion-fast), color var(--motion-fast);
+  transition: background-color var(--motion-fast), color var(--motion-fast),
+    transform 100ms var(--ease-out);
+}
+
+.toggleBtn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .toggleBtn.active {
@@ -196,6 +201,17 @@
     animation: none;
     opacity: 0.92;
   }
+
+  .pickerDropdown {
+    animation: none;
+  }
+
+  .toggleBtn:active:not(:disabled),
+  .pickerBtn:active:not(:disabled),
+  .cancelBtn:active:not(:disabled),
+  .createBtn:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 .branchInputRow {
@@ -217,8 +233,13 @@
   color: var(--text-secondary);
   font-size: var(--text-sm);
   cursor: pointer;
-  transition: background-color var(--motion-fast), color var(--motion-fast);
+  transition: background-color var(--motion-fast), color var(--motion-fast),
+    transform 100ms var(--ease-out);
   flex-shrink: 0;
+}
+
+.pickerBtn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .pickerBtn:disabled {
@@ -241,6 +262,21 @@
   overflow-y: auto;
   z-index: 10;
   box-shadow: var(--shadow-overlay, var(--shadow-lg));
+  /* Branch picker scales out of its trigger row's top edge (not center) so it
+     reads as anchored to the chevron button — Emil principle 1. */
+  transform-origin: top left;
+  animation: pickerDropdownIn var(--motion-palette-enter);
+}
+
+@keyframes pickerDropdownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .pickerOption {

@@ -16,21 +16,21 @@
 }
 
 .top {
-  transform: translateX(-50%) translateY(calc(-100% + 4px));
+  transform: translateX(-50%) translateY(calc(-100% + 4px)) scale(0.97);
 }
 
 .bottom {
-  transform: translateX(-50%) translateY(-4px);
+  transform: translateX(-50%) translateY(-4px) scale(0.97);
 }
 
 .tooltip[data-entered='true'].top {
   opacity: 1;
-  transform: translateX(-50%) translateY(-100%);
+  transform: translateX(-50%) translateY(-100%) scale(1);
 }
 
 .tooltip[data-entered='true'].bottom {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translateX(-50%) translateY(0) scale(1);
 }
 
 .tooltip[data-instant='true'] {

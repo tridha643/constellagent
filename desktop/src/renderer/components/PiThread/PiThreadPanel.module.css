@@ -67,12 +67,19 @@
   background: var(--surface-0);
   color: var(--text-primary);
   cursor: pointer;
+  transition:
+    background-color var(--motion-fast),
+    transform var(--motion-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .toolbarBtn:hover {
     background: color-mix(in srgb, var(--text-primary) 8%, var(--surface-0));
   }
+}
+
+.toolbarBtn:active {
+  transform: scale(0.97);
 }
 
 .retryLink {
@@ -83,6 +90,11 @@
   color: var(--accent-blue);
   cursor: pointer;
   text-decoration: underline;
+  transition: transform var(--motion-fast);
+}
+
+.retryLink:active {
+  transform: scale(0.97);
 }
 
 .errorBox {
@@ -113,6 +125,20 @@
   border-radius: 8px;
   padding: 10px 12px;
   max-width: 92%;
+  /* Gentle settle as each message bubble mounts. Transform+opacity only so the
+     GPU handles it while the transcript stream keeps the main thread busy. */
+  animation: piRowEnter var(--duration-enter) var(--ease-out) both;
+}
+
+@keyframes piRowEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .msgUser {
@@ -206,6 +232,12 @@
   border: none;
   cursor: pointer;
   font-size: 12px;
+  transition: transform var(--motion-fast);
+}
+
+.sendBtn:active,
+.stopBtn:active {
+  transform: scale(0.97);
 }
 
 .sendBtn {
@@ -216,4 +248,22 @@
 .stopBtn {
   background: var(--accent-red-dim);
   color: var(--accent-red);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    animation: none;
+  }
+  .toolbarBtn,
+  .retryLink,
+  .sendBtn,
+  .stopBtn {
+    transition: background-color var(--motion-fast);
+  }
+  .toolbarBtn:active,
+  .retryLink:active,
+  .sendBtn:active,
+  .stopBtn:active {
+    transform: none;
+  }
 }

@@ -13,3 +13,10 @@
     calc((1.4s + var(--rev, 0) * 240ms) / var(--speed, 1));
   animation-composition: add;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .loader :global(.dot) {
+    animation: none;
+    opacity: 0.84;
+  }
+}

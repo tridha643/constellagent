@@ -130,6 +130,14 @@
   color: var(--text-primary);
 }
 
+.title {
+  transition: transform var(--motion-fast);
+}
+
+.title:active {
+  transform: scale(0.99);
+}
+
 .title:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--accent-blue);
@@ -259,7 +267,8 @@
   }
 
   .identifier:active,
-  .launchBtn:active {
+  .launchBtn:active,
+  .title:active {
     transform: none;
   }
 }
