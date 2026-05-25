@@ -121,8 +121,8 @@
   font-family: var(--font-mono, ui-monospace, monospace);
   outline: none;
   transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease;
+    border-color var(--duration-default) ease,
+    box-shadow var(--duration-default) ease;
 }
 
 .input:focus {
@@ -155,8 +155,8 @@
   color: var(--text-secondary);
   border-radius: var(--radius-md);
   transition:
-    background-color 150ms ease,
-    color 150ms ease,
+    background-color var(--duration-default) ease,
+    color var(--duration-default) ease,
     transform var(--duration-micro) var(--ease-press);
 }
 

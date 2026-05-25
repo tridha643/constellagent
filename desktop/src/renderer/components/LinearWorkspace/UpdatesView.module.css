@@ -72,7 +72,7 @@
   background: color-mix(in srgb, var(--text-primary) 4%, transparent);
   border: 1px solid var(--panel-border-inner, var(--border-subtle));
   min-width: 220px;
-  transition: border-color 120ms var(--ease-out);
+  transition: border-color var(--duration-exit-fast) var(--ease-out);
 }
 
 .searchWrap:focus-within {
@@ -121,7 +121,7 @@
   color: var(--text-tertiary);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out),
+  transition: background-color var(--duration-exit) var(--ease-out), color var(--duration-exit) var(--ease-out),
     transform var(--duration-micro) var(--ease-press);
 }
 

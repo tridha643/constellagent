@@ -163,9 +163,9 @@
   line-height: 1;
   opacity: 0;
   transition:
-    opacity 120ms ease-out,
-    background-color 120ms ease-out,
-    color 120ms ease-out,
+    opacity var(--duration-exit-fast) ease-out,
+    background-color var(--duration-exit-fast) ease-out,
+    color var(--duration-exit-fast) ease-out,
     transform var(--duration-micro) var(--ease-press);
 }
 
@@ -204,9 +204,9 @@
   .cm-mermaid-canvas-zoom-btn,
   .cm-mermaid-canvas-icon-btn {
     transition:
-      opacity 120ms ease-out,
-      background-color 120ms ease-out,
-      color 120ms ease-out;
+      opacity var(--duration-exit-fast) ease-out,
+      background-color var(--duration-exit-fast) ease-out,
+      color var(--duration-exit-fast) ease-out;
   }
 
   .cm-mermaid-canvas-edit:active,
@@ -312,7 +312,7 @@
   backdrop-filter: blur(4px);
   overflow: hidden;
   opacity: 0;
-  transition: opacity 180ms ease-out;
+  transition: opacity var(--duration-enter) ease-out;
 }
 
 .cm-mermaid-fullscreen.is-open {
@@ -328,8 +328,8 @@
   transform: scale(0.95);
   opacity: 0;
   transition:
-    transform 180ms ease-out,
-    opacity 180ms ease-out;
+    transform var(--duration-enter) ease-out,
+    opacity var(--duration-enter) ease-out;
 }
 
 .cm-mermaid-fullscreen.is-open .cm-mermaid-fullscreen-canvas {

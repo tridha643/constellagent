@@ -59,9 +59,9 @@
   background: var(--surface-2);
   color: var(--text-secondary);
   transition:
-    color 150ms ease,
-    border-color 150ms ease,
-    background-color 150ms ease;
+    color var(--duration-default) ease,
+    border-color var(--duration-default) ease,
+    background-color var(--duration-default) ease;
 }
 
 .headerUserChipMuted {
@@ -99,9 +99,9 @@
   cursor: pointer;
   flex-shrink: 0;
   transition:
-    transform 120ms var(--ease-press),
-    color 150ms ease,
-    background-color 150ms ease;
+    transform var(--duration-exit-fast) var(--ease-press),
+    color var(--duration-default) ease,
+    background-color var(--duration-default) ease;
 }
 
 .backBtn:hover {
@@ -115,7 +115,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .backBtn {
-    transition: color 150ms ease, background-color 150ms ease;
+    transition: color var(--duration-default) ease, background-color var(--duration-default) ease;
   }
 
   .backBtn:active {
@@ -156,10 +156,10 @@
   color: var(--text-secondary);
   cursor: pointer;
   transition:
-    background-color 150ms ease,
-    color 150ms ease,
-    border-color 150ms ease,
-    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+    background-color var(--duration-default) ease,
+    color var(--duration-default) ease,
+    border-color var(--duration-default) ease,
+    transform 160ms var(--ease-out);
 }
 
 .headerToolMenuTriggerLabel {
@@ -204,7 +204,7 @@
   line-height: 1.25;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color var(--duration-default) ease, color var(--duration-default) ease;
 }
 
 .headerToolMenuItemActive {
@@ -240,7 +240,7 @@
 @media (prefers-reduced-motion: reduce) {
   .headerToolMenuTrigger,
   .headerToolMenuItem {
-    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+    transition: background-color var(--duration-default) ease, color var(--duration-default) ease, border-color var(--duration-default) ease;
   }
 
   .headerToolMenuTrigger:active,
@@ -267,10 +267,10 @@
   cursor: pointer;
   flex-shrink: 0;
   transition:
-    background-color 150ms ease,
-    color 150ms ease,
-    border-color 150ms ease,
-    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+    background-color var(--duration-default) ease,
+    color var(--duration-default) ease,
+    border-color var(--duration-default) ease,
+    transform 160ms var(--ease-out);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -306,7 +306,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .headerToolBtn {
-    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+    transition: background-color var(--duration-default) ease, color var(--duration-default) ease, border-color var(--duration-default) ease;
   }
 
   .headerToolBtn:active:not(:disabled) {
@@ -323,8 +323,8 @@
   opacity: 1;
   filter: blur(0);
   transition:
-    opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
-    filter 180ms cubic-bezier(0.23, 1, 0.32, 1);
+    opacity var(--duration-enter) var(--ease-out),
+    filter var(--duration-enter) var(--ease-out);
 }
 
 @starting-style {
@@ -336,7 +336,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .headerToolBtnLabel {
-    transition: opacity 120ms ease;
+    transition: opacity var(--duration-exit-fast) ease;
   }
 
   @starting-style {

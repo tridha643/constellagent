@@ -6,7 +6,7 @@
 }
 
 .loader :global(.dot) {
-  animation: gradient-descent calc(2.4s / var(--speed, 1)) cubic-bezier(0.55, 0.085, 0.68, 0.53) infinite;
+  animation: gradient-descent calc(2.4s / var(--speed, 1)) var(--ease-in-out) infinite;
   animation-delay: calc(var(--row, 0) * 320ms / var(--speed, 1));
 }
 

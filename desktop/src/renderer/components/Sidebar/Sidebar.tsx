@@ -1489,6 +1489,13 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
             <span className={styles.emptyCopy}>
               Add a directory or git repository to start building parallel workspaces.
             </span>
+            <button
+              type="button"
+              className={styles.emptyBtn}
+              onClick={() => setAddProjectDialogOpen(true)}
+            >
+              + Add a project
+            </button>
           </div>
         )}
 

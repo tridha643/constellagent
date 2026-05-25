@@ -25,8 +25,8 @@
   line-height: 1.2;
   cursor: pointer;
   transition:
-    color 150ms ease,
-    background-color 150ms ease,
+    color var(--duration-default) ease,
+    background-color var(--duration-default) ease,
     transform var(--duration-micro) var(--ease-press);
 }
 
@@ -102,7 +102,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .segment {
-    transition: color 150ms ease, background-color 150ms ease;
+    transition: color var(--duration-default) ease, background-color var(--duration-default) ease;
   }
 
   .segment:active {

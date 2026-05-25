@@ -28,7 +28,7 @@
   min-width: 220px;
   max-width: 320px;
   flex: 1 1 220px;
-  transition: border-color 120ms var(--ease-out);
+  transition: border-color var(--duration-exit-fast) var(--ease-out);
 }
 
 .searchWrap:focus-within {
@@ -77,7 +77,7 @@
   color: var(--text-tertiary);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out),
+  transition: background-color var(--duration-exit) var(--ease-out), color var(--duration-exit) var(--ease-out),
     transform var(--duration-micro) var(--ease-press);
 }
 
@@ -114,7 +114,7 @@
   border: 1px solid var(--panel-border-inner, var(--border-subtle));
   background: color-mix(in srgb, var(--surface-2) 70%, transparent);
   transition: background-color 160ms var(--ease-out), border-color 160ms var(--ease-out),
-    transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+    transform var(--duration-enter) var(--ease-out);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -174,7 +174,7 @@
   color: var(--text-tertiary);
   cursor: pointer;
   border-radius: 999px;
-  transition: color 140ms var(--ease-out), background-color 140ms var(--ease-out),
+  transition: color var(--duration-exit) var(--ease-out), background-color var(--duration-exit) var(--ease-out),
     transform var(--duration-micro) var(--ease-press);
 }
 
@@ -257,8 +257,8 @@
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
-  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out),
-    border-color 140ms var(--ease-out),
+  transition: background-color var(--duration-exit) var(--ease-out), color var(--duration-exit) var(--ease-out),
+    border-color var(--duration-exit) var(--ease-out),
     transform var(--duration-micro) var(--ease-press);
 }
 

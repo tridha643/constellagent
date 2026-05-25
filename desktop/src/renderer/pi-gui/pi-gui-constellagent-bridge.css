@@ -217,9 +217,9 @@
   border-radius: 12px;
   cursor: pointer;
   transition:
-    background 140ms var(--ease-ui),
-    border-color 140ms var(--ease-ui),
-    box-shadow 140ms var(--ease-out);
+    background var(--duration-exit) var(--ease-ui),
+    border-color var(--duration-exit) var(--ease-ui),
+    box-shadow var(--duration-exit) var(--ease-out);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -248,8 +248,8 @@
 :root.dark .pi-gui-scope .composer__surface {
   transition:
     border-color 200ms var(--ease-out),
-    box-shadow 220ms var(--ease-out),
-    background-color 180ms var(--ease-ui);
+    box-shadow var(--duration-slow) var(--ease-out),
+    background-color var(--duration-enter) var(--ease-ui);
 }
 
 /* Dark Pi shell: keep the outer composer shell focus treatment. */

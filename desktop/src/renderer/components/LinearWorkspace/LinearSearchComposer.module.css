@@ -137,8 +137,8 @@
   cursor: pointer;
   text-align: left;
   transition:
-    transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
-    background-color 150ms ease;
+    transform 160ms var(--ease-out),
+    background-color var(--duration-default) ease;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -330,7 +330,7 @@
   font-size: 12px;
   font-family: var(--font-ui);
   cursor: pointer;
-  transition: background-color 120ms ease,
+  transition: background-color var(--duration-exit-fast) ease,
     transform var(--duration-micro) var(--ease-press);
   animation: staggerItem 160ms var(--ease-out) both;
 }
@@ -423,10 +423,10 @@
   justify-content: center;
   cursor: pointer;
   transition:
-    transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
-    background-color 150ms ease,
-    opacity 150ms ease,
-    filter 150ms ease;
+    transform 160ms var(--ease-out),
+    background-color var(--duration-default) ease,
+    opacity var(--duration-default) ease,
+    filter var(--duration-default) ease;
 }
 
 .sendBtn:disabled {

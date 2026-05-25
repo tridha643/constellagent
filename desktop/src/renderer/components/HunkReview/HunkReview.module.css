@@ -97,7 +97,7 @@
   user-select: none;
   touch-action: none;
   z-index: 2;
-  transition: transform 120ms var(--ease-press);
+  transition: transform var(--duration-exit-fast) var(--ease-press);
 }
 
 .resizeGrip {

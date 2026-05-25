@@ -84,6 +84,35 @@
   max-width: 26ch;
 }
 
+/* CTA on the empty project list — an empty state should point at the next
+   action, mirroring the Automations "Create your first…" button. */
+.emptyBtn {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border: 1px dashed var(--panel-border);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-default) var(--ease),
+    color var(--duration-default) var(--ease),
+    transform var(--duration-exit-fast) var(--ease-press);
+}
+
+.emptyBtn:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .emptyBtn:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+  }
+}
+
 /* ── Project Section ── */
 
 .projectSection {
@@ -996,7 +1025,7 @@
   transition: background-color var(--motion-fast),
               border-color var(--motion-fast),
               color var(--motion-fast),
-              transform 140ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+              transform var(--duration-exit) var(--ease-out, var(--ease-out)),
               opacity var(--motion-default);
   position: relative;
 }
@@ -1158,7 +1187,7 @@
 .workspaceGlyph {
   color: var(--text-tertiary);
   flex-shrink: 0;
-  transition: color 140ms ease, opacity 140ms ease;
+  transition: color var(--duration-exit) ease, opacity var(--duration-exit) ease;
 }
 
 .workspaceGlyphSlot {
@@ -1355,10 +1384,10 @@
   white-space: nowrap;
   overflow: hidden;
   transition:
-    background-color 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
-    border-color 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
-    color 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
-    opacity 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+    background-color 160ms var(--ease-out, var(--ease-out)),
+    border-color 160ms var(--ease-out, var(--ease-out)),
+    color 160ms var(--ease-out, var(--ease-out)),
+    opacity 160ms var(--ease-out, var(--ease-out));
 }
 
 .spotlightChip[data-spotlight-state="preparing"],
@@ -1751,10 +1780,10 @@
   font-family: var(--font-ui);
   cursor: pointer;
   transition:
-    background-color 150ms var(--ease-out),
-    border-color 150ms var(--ease-out),
-    color 150ms var(--ease-out),
-    transform 120ms var(--ease-press);
+    background-color var(--duration-default) var(--ease-out),
+    border-color var(--duration-default) var(--ease-out),
+    color var(--duration-default) var(--ease-out),
+    transform var(--duration-exit-fast) var(--ease-press);
   width: 100%;
   text-align: left;
   box-shadow: none;
@@ -1766,7 +1795,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .actionButton {
-    transition: background-color 150ms ease, color 150ms ease;
+    transition: background-color var(--duration-default) ease, color var(--duration-default) ease;
   }
   .actionButton:active:not(:disabled) {
     transform: none;
@@ -1815,7 +1844,7 @@
   position: relative;
   flex-shrink: 0;
   cursor: grab;
-  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform 200ms var(--ease-out);
 }
 
 .actionButtonWrapper:active {
@@ -1826,8 +1855,8 @@
 .actionButtonDragging {
   opacity: 0.35;
   transform: scale(0.97);
-  transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1),
-              transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 160ms var(--ease-out),
+              transform 160ms var(--ease-out);
 }
 
 /* Drop indicator — 2px blue line, matching workspace DnD style */
@@ -1840,7 +1869,7 @@
   height: 2px;
   background: var(--accent-blue);
   border-radius: 1px;
-  animation: dropIndicatorIn 120ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  animation: dropIndicatorIn var(--duration-exit-fast) var(--ease-out) forwards;
 }
 
 @keyframes dropIndicatorIn {
@@ -1955,8 +1984,8 @@
   font-size: var(--text-sm);
   font-family: var(--font-ui);
   user-select: none;
-  transition: background-color 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
-    box-shadow 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+  transition: background-color 160ms var(--ease-out, var(--ease-out)),
+    box-shadow 160ms var(--ease-out, var(--ease-out)),
     color 160ms ease;
 }
 
@@ -1995,7 +2024,7 @@
   height: 2px;
   background: var(--accent-blue);
   border-radius: 1px;
-  animation: dropIndicatorIn 120ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  animation: dropIndicatorIn var(--duration-exit-fast) var(--ease-out) forwards;
 }
 
 .folderIcon {
@@ -2140,9 +2169,9 @@
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   transition:
-    border-color 180ms ease,
-    background-color 180ms ease,
-    box-shadow 180ms ease;
+    border-color var(--duration-enter) ease,
+    background-color var(--duration-enter) ease,
+    box-shadow var(--duration-enter) ease;
 }
 
 .projectAddDetails[open] {
@@ -2166,7 +2195,7 @@
   cursor: pointer;
   user-select: none;
   border-radius: var(--radius-md);
-  transition: background-color 140ms ease, color 140ms ease, transform var(--duration-micro) var(--ease-press);
+  transition: background-color var(--duration-exit) ease, color var(--duration-exit) ease, transform var(--duration-micro) var(--ease-press);
 }
 
 .projectAddSummary:active {
@@ -2185,7 +2214,7 @@
 .projectAddChevron {
   flex-shrink: 0;
   color: var(--text-tertiary);
-  transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform var(--duration-enter) var(--ease-out);
 }
 
 .projectAddDetails[open] .projectAddChevron {
@@ -2195,7 +2224,7 @@
 .projectAddExpand {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: grid-template-rows 200ms var(--ease-out);
 }
 
 .projectAddDetails[open] .projectAddExpand {
@@ -2224,7 +2253,7 @@
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   cursor: pointer;
-  transition: background-color 140ms ease, color 140ms ease;
+  transition: background-color var(--duration-exit) ease, color var(--duration-exit) ease;
 }
 
 .projectAddMenuItem:hover {
