@@ -3409,6 +3409,38 @@
   color: var(--text-secondary);
 }
 
+.jsonCanvasErrorTitle {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.jsonCanvasErrorList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.jsonCanvasErrorList li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.4;
+}
+
+.jsonCanvasErrorPath {
+  align-self: flex-start;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-red, #e07070) 14%, var(--surface-2));
+  color: var(--text-primary);
+}
+
 .jsonCanvasFilePathList {
   display: flex;
   flex-direction: column;
