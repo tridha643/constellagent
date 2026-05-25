@@ -229,6 +229,14 @@
   .suggestPopover {
     animation: none;
   }
+
+  .tabBtn:active:not(:disabled),
+  .suggestTrigger:active:not(:disabled),
+  .suggestItem:active,
+  .secondaryBtn:active:not(:disabled),
+  .primaryBtn:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 .suggestItem {
@@ -246,6 +254,13 @@
   transition:
     background-color var(--motion-fast),
     transform 100ms var(--ease-out);
+}
+
+/* The suggest rows already declare a transform transition but had no press
+   state — give them the same scale(0.97) feedback as every other pressable
+   so a tap registers (Emil principle 9). */
+.suggestItem:active {
+  transform: scale(0.99);
 }
 
 .suggestName {

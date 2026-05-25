@@ -436,6 +436,24 @@
   transform: scale(0.97);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .expandCmdBtn:active:not(:disabled),
+  .cancelBtn:active:not(:disabled),
+  .removeBtn:active:not(:disabled),
+  .addBtn:active:not(:disabled),
+  .saveBtn:active:not(:disabled) {
+    transform: none;
+  }
+
+  .commandBlock {
+    transition: none;
+  }
+
+  .sectionChevron {
+    transition: none;
+  }
+}
+
 @media (hover: hover) and (pointer: fine) {
   .sectionToggle:hover {
     border-color: var(--border-strong);

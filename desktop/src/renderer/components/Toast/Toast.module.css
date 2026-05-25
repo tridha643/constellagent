@@ -37,11 +37,28 @@
   transform: translateX(0) scale(1);
 }
 
+/* Stagger stacked toasts so a burst cascades in rather than popping at once
+   (Emil principle 7). Newest toast renders last in the column; short 40ms
+   steps keep it from feeling slow. Enter-only — exit stays immediate. */
+.toast:nth-child(2) {
+  transition-delay: 40ms;
+}
+
+.toast:nth-child(3) {
+  transition-delay: 80ms;
+}
+
+.toast:nth-child(n + 4) {
+  transition-delay: 120ms;
+}
+
 .toast[data-exiting='true'] {
   opacity: 0;
   transform: translateX(14px) scale(0.985);
   pointer-events: none;
   transition-duration: var(--duration-exit);
+  /* Exit is immediate even for stacked toasts — only the entrance staggers. */
+  transition-delay: 0ms;
 }
 
 .toast.error {
@@ -93,6 +110,12 @@
   .toast {
     transform: none;
     transition-property: opacity, border-color, background-color;
+  }
+
+  .toast:nth-child(2),
+  .toast:nth-child(3),
+  .toast:nth-child(n + 4) {
+    transition-delay: 0ms;
   }
 
   .toast[data-mounted='true'],

@@ -99,6 +99,38 @@
   padding: 2px 0;
 }
 
+/* Cascade rows in as a lane expands. Short per-row delay (capped so deep lists
+   don't feel slow); transform+opacity only so it stays cheap. Decorative — rows
+   remain clickable immediately. */
+.body > * {
+  animation: issueRowEnter var(--duration-enter) var(--ease-out) both;
+}
+
+.body > *:nth-child(1) { animation-delay: 0ms; }
+.body > *:nth-child(2) { animation-delay: 30ms; }
+.body > *:nth-child(3) { animation-delay: 60ms; }
+.body > *:nth-child(4) { animation-delay: 90ms; }
+.body > *:nth-child(5) { animation-delay: 120ms; }
+.body > *:nth-child(6) { animation-delay: 150ms; }
+.body > *:nth-child(n + 7) { animation-delay: 180ms; }
+
+@keyframes issueRowEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .body > * {
+    animation: none;
+  }
+}
+
 /* --- drag-and-drop --------------------------------------------------------- */
 
 .group[data-drop-active='true'] {

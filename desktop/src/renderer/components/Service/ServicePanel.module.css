@@ -87,16 +87,38 @@
   border: 1px solid var(--border-subtle, #333);
   border-radius: 4px;
   cursor: pointer;
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--duration-fast) var(--ease-press);
 }
 
-.actionButton:hover:not(:disabled) {
-  background: var(--background-tertiary, #2a2a2a);
-  color: var(--text-primary, #fff);
+@media (hover: hover) and (pointer: fine) {
+  .actionButton:hover:not(:disabled) {
+    background: var(--background-tertiary, #2a2a2a);
+    color: var(--text-primary, #fff);
+  }
+}
+
+.actionButton:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .actionButton:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actionButton {
+    transition:
+      background-color var(--motion-fast),
+      color var(--motion-fast);
+  }
+
+  .actionButton:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 .terminalArea {

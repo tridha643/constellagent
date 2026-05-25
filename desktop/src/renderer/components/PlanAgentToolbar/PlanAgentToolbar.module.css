@@ -124,8 +124,19 @@
   transition:
     border-color var(--motion-fast),
     color var(--motion-fast),
-    opacity var(--motion-fast);
+    opacity var(--motion-fast),
+    transform var(--duration-fast) var(--ease-press);
   white-space: nowrap;
+}
+
+.builtBadge:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .builtBadge:active {
+    transform: none;
+  }
 }
 
 .builtBadgeYes {
@@ -260,13 +271,24 @@
   white-space: nowrap;
   transition:
     background var(--motion-fast),
-    color var(--motion-fast);
+    color var(--motion-fast),
+    transform var(--duration-fast) var(--ease-press);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .relocateItem:hover {
     background: color-mix(in srgb, var(--text-primary) 5%, transparent);
     color: var(--text-primary);
+  }
+}
+
+.relocateItem:active {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relocateItem:active {
+    transform: none;
   }
 }
 

@@ -33,6 +33,9 @@
   position: relative;
   border-left: 1px solid transparent;
   border-top: 1px solid transparent;
+  /* Only the focus-indicator border fades — never transform/opacity on the pane,
+     so xterm's render path stays untouched. Color-only is reduced-motion safe. */
+  transition: border-color var(--motion-default);
 }
 
 /* First child in a split doesn't need the separator border */

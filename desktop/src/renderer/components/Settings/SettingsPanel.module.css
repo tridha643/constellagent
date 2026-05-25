@@ -1021,7 +1021,14 @@
 
   .themePresetCard:active,
   .settingsTab:active,
-  .backBtn:active {
+  .backBtn:active,
+  .stepperBtn:active,
+  .actionBtn:active:not(:disabled),
+  .actionBtnSuccess:active:not(:disabled),
+  .actionBtnDanger:active:not(:disabled),
+  .mcpIconBtn:active,
+  .removeEntryBtn:active,
+  .addEntryBtn:active {
     transform: none;
   }
 

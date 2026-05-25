@@ -87,6 +87,19 @@
   background: var(--accent-blue);
   box-shadow: 0 0 0 2px var(--accent-blue-dim);
   flex-shrink: 0;
+  /* Live "picking" indicator — opacity-only breathing so it reads as active
+     without layout cost; the reduced-motion guard below stills it. */
+  animation: bpPickingPulse 1.4s var(--ease-in-out) infinite;
+}
+
+@keyframes bpPickingPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -279,6 +292,20 @@
   transition:
     border-color var(--bp-duration-surface) var(--bp-ease-ui),
     background-color var(--bp-duration-surface) var(--bp-ease-ui);
+  /* Saved-selector rows settle in as they are added; transform+opacity keeps it
+     off the layout/paint path. */
+  animation: bpItemEnter var(--duration-enter) var(--bp-ease-out) both;
+}
+
+@keyframes bpItemEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -398,6 +425,7 @@
 
   .item {
     transition: none;
+    animation: none;
   }
 }
 

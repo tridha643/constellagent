@@ -8,3 +8,10 @@
   animation: attention calc(1.8s / var(--speed, 1)) linear infinite;
   animation-delay: calc(var(--row, 0) * 280ms / var(--speed, 1));
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .loader :global(.dot) {
+    animation: none;
+    opacity: 1;
+  }
+}

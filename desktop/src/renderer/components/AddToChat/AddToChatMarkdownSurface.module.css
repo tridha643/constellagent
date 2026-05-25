@@ -7,7 +7,10 @@
 .floatBtn {
   position: absolute;
   z-index: 20;
-  transform: translateX(-50%);
+  /* Centering translate kept in a custom prop so :active scale can compose with it */
+  --float-press-scale: 1;
+  transform: translateX(-50%) scale(var(--float-press-scale));
+  transform-origin: center;
   padding: 6px 12px;
   border-radius: var(--radius-full, 999px);
   border: 1px solid var(--border-subtle, #3b3d57);
@@ -19,6 +22,9 @@
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   user-select: none;
+  transition:
+    background-color var(--motion-fast),
+    transform var(--duration-fast) var(--ease-press);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -27,7 +33,21 @@
   }
 }
 
+.floatBtn:active {
+  --float-press-scale: 0.97;
+}
+
 .floatBtn:focus-visible {
   outline: 2px solid var(--accent-blue, #7aa2f7);
   outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floatBtn {
+    transition: background-color var(--motion-fast);
+  }
+
+  .floatBtn:active {
+    --float-press-scale: 1;
+  }
 }

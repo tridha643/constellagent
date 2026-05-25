@@ -20,7 +20,9 @@
 .arcCircle {
   fill: none;
   stroke-linecap: round;
-  transition: stroke-dashoffset 0.4s ease, stroke 0.3s ease;
+  /* Token easing instead of the weak `ease` keyword so the arc sweep matches
+     the rest of the app's deceleration curve. */
+  transition: stroke-dashoffset var(--duration-slow) var(--ease-out), stroke var(--duration-default) var(--ease-out);
 }
 
 .centerText {
@@ -62,4 +64,13 @@
 
 .container:hover .tooltip {
   opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arcCircle {
+    /* Drop the sweeping motion of the progress arc; the offset still updates,
+       just without the animated tween. Stroke recolor (red/yellow/green) is a
+       comprehension cue, so keep it. */
+    transition: stroke var(--duration-default) var(--ease-out);
+  }
 }

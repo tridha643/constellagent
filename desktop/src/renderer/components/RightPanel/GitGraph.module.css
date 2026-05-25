@@ -33,7 +33,9 @@
   display: flex;
   align-items: flex-start;
   cursor: pointer;
-  transition: background var(--motion-fast);
+  /* Press feedback: the whole row is clickable (selects the commit), so give
+     it the same subtle scale-down as other pressable rows in the app. */
+  transition: background var(--motion-fast), transform var(--duration-micro) var(--ease-press);
   height: 36px;
   min-height: 36px;
 }
@@ -44,8 +46,22 @@
   }
 }
 
+.commitRow:active {
+  transform: scale(0.995);
+}
+
 .commitRow.selected {
   background: var(--accent-blue-glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .commitRow {
+    transition: background var(--motion-fast);
+  }
+
+  .commitRow:active {
+    transform: none;
+  }
 }
 
 /* ── Graph Column (fixed-width spacer) ── */
