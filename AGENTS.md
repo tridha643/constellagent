@@ -2,7 +2,7 @@
 
 These instructions apply to **any repository** where the constellagent app is in use — not just the constellagent codebase itself. They govern **all** coding agent harnesses (Cursor, Claude Code, Codex, Gemini, OpenCode, etc.).
 
-> **Fast navigation:** This file covers cross-repo policy (annotations, Sendblue, mobile, skills) and the monorepo's top-level map. For a file-by-file **service map** of the desktop app (which `*-service.ts` owns which feature), the **markdown engine (prosemark/CodeMirror)**, and the **OpenSpec change workflow** (`/opsx:*`), see **`desktop/CLAUDE.md`** → *Main-process service map* / *Renderer map* / *OpenSpec change workflow*. Cursor users: repo rules live in `.cursor/rules/constellagent.mdc`.
+> **Fast navigation:** This file covers cross-repo policy (annotations, Sendblue, mobile, skills) and the monorepo's top-level map. For a file-by-file **service map** of the desktop app (which `*-service.ts` owns which feature), the **markdown engine (prosemark/CodeMirror)**, the **JSON canvas / tool-UI rendering** subsystem (`@json-render/*`), and the **OpenSpec change workflow** (`/opsx:*`), see **`desktop/CLAUDE.md`** → *Main-process service map* / *Renderer map* / *JSON canvas* / *OpenSpec change workflow*. Cursor users: repo rules live in `.cursor/rules/constellagent.mdc`.
 
 ## Constellagent monorepo layout (this repository)
 
@@ -54,9 +54,12 @@ packages/constellagent-mobile-protocol  ← shared Zod contracts (TypeScript sou
 - `packages/constellagent-mobile-protocol/src/index.ts` — RPC methods, events, pairing payloads, secure-transport constants
 - `desktop/src/main/mobile-local-server.ts` — HTTP status + WebSocket upgrade, pairing codes, command queue
 - `desktop/src/main/mobile-method-router.ts` — JSON-RPC dispatch (`session.*`, `git.*`, `workspace.*`, `annotation.*`, `plan.*`)
+- `desktop/src/main/mobile-rpc-adapter.ts` — normalizes RPC params/results between the wire protocol and the desktop services
 - `desktop/src/main/mobile-event-bridge.ts` — pushes streaming updates to paired devices
 - `desktop/src/main/mobile-secure-transport.ts` — E2EE handshake (must match Swift byte-for-byte on wire constants)
+- `desktop/src/main/mobile-keychain.ts` — at-rest key material for the bridge identity / device trust
 - `desktop/src/main/mobile-store.ts` — trusted devices + bridge identity (`mobile-access.db` in app userData)
+- `desktop/src/main/mobile-device-tools.ts` — USB iOS dev-deploy (`xcodebuild`); `mobile-focus-session.ts` — bring a session to the foreground from the phone
 - `desktop/src/main/mobile-git-bridge.ts` — phone-initiated git ops; creates `.constellagent/worktrees/<token>/` at runtime
 - `ios/Constellagent/Constellagent/Services/ConstellagentService+ProtocolMapping.swift` — maps legacy codex RPC names to bridge methods at `sendRequest`
 - `ios/Constellagent/Constellagent/Services/ConstellagentService+Incoming*.swift` — rewrites incoming bridge event names back to codex shapes
@@ -72,7 +75,11 @@ packages/constellagent-mobile-protocol  ← shared Zod contracts (TypeScript sou
 
 - UI: Settings → Mobile
 - Env: `CONSTELLAGENT_MOBILE_ACCESS=1` (optional: `CONSTELLAGENT_MOBILE_HOST`, `CONSTELLAGENT_MOBILE_PORT`, `CONSTELLAGENT_MOBILE_TOKEN`, `CONSTELLAGENT_MOBILE_KEYCHAIN_DIR`)
-- IPC: `MOBILE_GET_STATUS`, `MOBILE_LIST_TRUSTED_DEVICES`, `MOBILE_REVOKE_TRUSTED_DEVICE`, `MOBILE_CREATE_PAIRING_PAYLOAD` in `desktop/src/shared/ipc-channels.ts`
+- IPC (`desktop/src/shared/ipc-channels.ts`): `MOBILE_GET_STATUS`, `MOBILE_LIST_TRUSTED_DEVICES`, `MOBILE_REVOKE_TRUSTED_DEVICE`, `MOBILE_CREATE_PAIRING_PAYLOAD`, `MOBILE_FOCUS_SESSION`, `MOBILE_WORKSPACE_CREATED`, and the USB dev-deploy pair `MOBILE_LIST_USB_DEVICES` / `MOBILE_DEPLOY_IOS_APP`
+
+### Local USB dev deploy
+
+`mobile-device-tools.ts` can build and install the dev iOS app (`com.tridhatri.constellagent.devlocal`, scheme `Constellagent`) onto a USB-attached iPhone via `xcodebuild` (derived data at `/tmp/ConstellagentDerivedData`). Surfaced in Settings → Mobile through `MOBILE_LIST_USB_DEVICES` / `MOBILE_DEPLOY_IOS_APP`.
 
 ### iOS development
 
