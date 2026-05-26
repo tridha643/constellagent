@@ -29,21 +29,25 @@ export function MobileSettingsSection() {
   const [, setTick] = useState(0)
 
   const refreshStatus = useCallback(async () => {
-    try {
-      const [nextStatus, nextTrusted, nextUsb] = await Promise.all([
-        window.api.mobile.getStatus(),
-        window.api.mobile.listTrustedDevices(),
-        window.api.mobile.listUsbDevices(),
-      ])
-      setStatus(nextStatus)
-      setTrustedDevices(nextTrusted)
+    const [statusResult, trustedResult, usbResult] = await Promise.allSettled([
+      window.api.mobile.getStatus(),
+      window.api.mobile.listTrustedDevices(),
+      window.api.mobile.listUsbDevices(),
+    ])
+
+    if (statusResult.status === 'fulfilled') {
+      setStatus(statusResult.value)
+    }
+    if (trustedResult.status === 'fulfilled') {
+      setTrustedDevices(trustedResult.value)
+    }
+    if (usbResult.status === 'fulfilled') {
+      const nextUsb = usbResult.value
       setUsbDevices(nextUsb)
       setSelectedUdid((current) => {
         if (current && nextUsb.some((device) => device.udid === current)) return current
         return nextUsb[0]?.udid ?? ''
       })
-    } catch {
-      /* panel stays usable with stale values */
     }
   }, [])
 

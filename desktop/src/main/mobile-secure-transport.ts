@@ -42,6 +42,8 @@ export interface CreateBridgeSecureTransportOptions {
   readonly deviceState: BridgeSecureTransportDeviceState
   readonly displayName?: string
   readonly persistTrustedPhone?: boolean
+  /** When set (e.g. from the active QR pairing registry), QR bootstrap expiry follows the scanned code. */
+  readonly pairingExpiresAtMs?: number
   readonly nowMs?: () => number
   readonly onTrustedPhoneUpdate?: (info: {
     phoneDeviceId: string
@@ -135,6 +137,7 @@ export function createBridgeSecureTransport(
     relayUrl,
     displayName = '',
     persistTrustedPhone: _persistTrustedPhone = true,
+    pairingExpiresAtMs,
     nowMs = () => Date.now(),
     onTrustedPhoneUpdate,
   } = options
@@ -148,7 +151,9 @@ export function createBridgeSecureTransport(
   let activeSession: ActiveSession | null = null
   let liveSendWireMessage: SendWireMessage | null = null
   let lastRelayedBridgeOutboundSeq = 0
-  let currentPairingExpiresAt = nowMs() + MAX_PAIRING_AGE_MS
+  let currentPairingExpiresAt = pairingExpiresAtMs && pairingExpiresAtMs > nowMs()
+    ? pairingExpiresAtMs
+    : nowMs() + MAX_PAIRING_AGE_MS
   let nextKeyEpoch = 1
   let nextBridgeOutboundSeq = 1
   let outboundBufferBytes = 0

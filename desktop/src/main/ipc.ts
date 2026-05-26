@@ -1679,7 +1679,14 @@ export function registerIpcHandlers(): void {
     return getMobileLocalServer().createPairingPayload()
   })
 
-  ipcMain.handle(IPC.MOBILE_LIST_USB_DEVICES, async () => listUsbConnectedIosDevices())
+  ipcMain.handle(IPC.MOBILE_LIST_USB_DEVICES, async () => {
+    try {
+      return await listUsbConnectedIosDevices()
+    } catch (error) {
+      console.warn('[mobile] USB device listing failed:', error)
+      return []
+    }
+  })
 
   ipcMain.handle(
     IPC.MOBILE_DEPLOY_IOS_APP,

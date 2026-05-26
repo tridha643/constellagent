@@ -6,8 +6,10 @@ import {
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
-import type { AgentProvider } from '../../../../shared/agent-chat-types'
+import type { AgentProvider, QueuedAgentMessage } from '../../../../shared/agent-chat-types'
+import type { ConductorComposerAttachment } from '../../../../shared/conductor-attachments'
 import type { ContextWindowData } from '../../../../shared/context-window-types'
+import type { TranscriptMessage } from '../../../../shared/pi/pi-desktop-state'
 import type { UsageLimitWindow, UsageLimitsData } from '../../../../shared/usage-limits-types'
 import {
   formatLimitResetAt,
@@ -81,7 +83,7 @@ function ContextUsageIcon({
         strokeDashoffset={dashOffset}
         strokeLinecap="round"
         strokeWidth={ICON_STROKE_WIDTH}
-        style={{ transformOrigin: 'center', transform: 'rotate(-90deg)' }}
+        style={{ transformBox: 'fill-box', transformOrigin: 'center', transform: 'rotate(-90deg)' }}
       />
     </svg>
   )
@@ -162,11 +164,27 @@ function ContextUsagePopoverContent({
 export function ContextUsageHover({
   provider,
   sessionId,
+  model,
+  transcript,
+  queuedMessages,
+  draftText,
+  draftAttachments,
 }: {
   provider: AgentProvider
   sessionId: string | null
+  model: string
+  transcript?: readonly TranscriptMessage[]
+  queuedMessages?: readonly QueuedAgentMessage[]
+  draftText?: string
+  draftAttachments?: readonly ConductorComposerAttachment[]
 }) {
-  const { data, idle } = useConductorContextUsage(sessionId)
+  const { data, idle } = useConductorContextUsage(sessionId, {
+    model,
+    transcript,
+    queuedMessages,
+    draftText,
+    draftAttachments,
+  })
   useUsageLimitsPoller(provider)
   const { data: limits } = useConductorUsageLimits()
 
@@ -253,6 +271,7 @@ export function ContextUsageHover({
       <span
         ref={wrapperRef}
         className={styles.contextRingWrap}
+        data-testid="conductor-context-ring"
         aria-label={`Context window ${pct}% used`}
         onMouseEnter={onEnter}
         onMouseLeave={onLeave}
@@ -267,6 +286,7 @@ export function ContextUsageHover({
             <div
               ref={popoverRef}
               className={styles.contextPopoverPortal}
+              data-testid="conductor-context-popover"
               style={{
                 left: coords.x,
                 top: coords.y,

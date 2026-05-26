@@ -25,7 +25,7 @@ function tailLines(text: string, maxLines = 12): string {
   return lines.slice(-maxLines).join('\n')
 }
 
-function parseXctracePhysicalDevices(stdout: string): MobileUsbIosDevice[] {
+export function parseXctracePhysicalDevices(stdout: string): MobileUsbIosDevice[] {
   const devices: MobileUsbIosDevice[] = []
   let inDevicesSection = false
 
@@ -57,15 +57,36 @@ function parseXctracePhysicalDevices(stdout: string): MobileUsbIosDevice[] {
   return devices
 }
 
+function isMissingDeveloperToolError(message: string): boolean {
+  return (
+    message.includes('unable to find utility') ||
+    message.includes('not a developer tool') ||
+    message.includes('xcode-select')
+  )
+}
+
+let loggedMissingXcodeWarning = false
+
 export async function listUsbConnectedIosDevices(): Promise<MobileUsbIosDevice[]> {
   try {
     const { stdout } = await execFileAsync('xcrun', ['xctrace', 'list', 'devices'], {
       maxBuffer: 4 * 1024 * 1024,
     })
+    loggedMissingXcodeWarning = false
     return parseXctracePhysicalDevices(stdout)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`Could not list USB-connected iOS devices: ${message}`)
+    if (isMissingDeveloperToolError(message)) {
+      if (!loggedMissingXcodeWarning) {
+        loggedMissingXcodeWarning = true
+        console.warn(
+          '[mobile] USB iPhone detection unavailable: install Xcode (not just Command Line Tools) to deploy over USB.',
+        )
+      }
+      return []
+    }
+    console.warn('[mobile] Could not list USB-connected iOS devices:', message)
+    return []
   }
 }
 

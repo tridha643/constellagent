@@ -649,6 +649,7 @@ export function ConductorChatView({
         running={running}
         disabled={!worktreePath || awaitingUser}
         queuedMessages={controller.state?.queuedMessages ?? []}
+        transcript={controller.transcript}
         onSubmit={handleSubmit}
         onCancel={controller.cancel}
         onReplaceQueue={handleReplaceQueue}

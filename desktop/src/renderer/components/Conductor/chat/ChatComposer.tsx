@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
 import { Plus, X } from 'lucide-react'
 import type { AgentProvider, QueuedAgentMessage, QueuedAgentMessageMode } from '../../../../shared/agent-chat-types'
 import type { ConductorComposerAttachment } from '../../../../shared/conductor-attachments'
+import type { TranscriptMessage } from '../../../../shared/pi/pi-desktop-state'
 import type { ConductorSlashCommand } from '../../../../shared/conductor-composer-commands'
 import { hasEffortVariants, hasFastVariant, isFastModel } from '../../../../shared/conductor-model-utils'
 import { normalizeThinkingLevel, isReasoningEffortActive, type ThinkingLevel } from '../../../../shared/conductor-thinking'
@@ -58,6 +59,7 @@ export function ChatComposer({
   running,
   disabled,
   queuedMessages,
+  transcript,
   onSubmit,
   onCancel,
   onReplaceQueue,
@@ -81,6 +83,7 @@ export function ChatComposer({
   running: boolean
   disabled?: boolean
   queuedMessages: readonly QueuedAgentMessage[]
+  transcript: readonly TranscriptMessage[]
   onSubmit: (
     text: string,
     deliverAs?: QueuedAgentMessageMode,
@@ -237,6 +240,23 @@ export function ChatComposer({
       ? 'Describe what you want about the attached image…'
       : 'Ask to make changes, @mention files, reference PRs with #, run /commands'
 
+  const composerPayload = useMemo(() => {
+    const messagePayload = serializeComposerTextWithFileMentions(text, fileMentions)
+    const skillPayload = skillMentions.map((mention) => mention.command).join(' ')
+    return [skillPayload, messagePayload].filter(Boolean).join(' ').trim()
+  }, [fileMentions, skillMentions, text])
+
+  const contextQueuedMessages = useMemo(() => {
+    if (!editingQueueId) return queuedMessages
+    return queuedMessages.map((message) =>
+      message.id === editingQueueId
+        ? { ...message, text: composerPayload, attachments: [...attachments] }
+        : message,
+    )
+  }, [attachments, composerPayload, editingQueueId, queuedMessages])
+  const contextDraftText = editingQueueId ? '' : composerPayload
+  const contextDraftAttachments = editingQueueId ? [] : attachments
+
   const composerInnerClass = [
     styles.composerInner,
     plan ? styles.composerInnerPlan : '',
@@ -273,16 +293,13 @@ export function ChatComposer({
   }, [composerRef])
 
   const submit = (deliverAs?: QueuedAgentMessageMode) => {
-    const messagePayload = serializeComposerTextWithFileMentions(text, fileMentions)
-    const skillPayload = skillMentions.map((mention) => mention.command).join(' ')
-    const payload = [skillPayload, messagePayload].filter(Boolean).join(' ').trim()
     if (!hasInput || disabled) return
 
     if (editingQueueId) {
       onReplaceQueue(
         queuedMessages.map((message) =>
           message.id === editingQueueId
-            ? { ...message, text: payload, attachments: [...attachments] }
+            ? { ...message, text: composerPayload, attachments: [...attachments] }
             : message,
         ),
       )
@@ -295,7 +312,7 @@ export function ChatComposer({
       return
     }
 
-    onSubmit(payload, running ? deliverAs ?? 'followUp' : undefined, attachments)
+    onSubmit(composerPayload, running ? deliverAs ?? 'followUp' : undefined, attachments)
     setText('')
     setFileMentions([])
     setSkillMentions([])
@@ -694,7 +711,15 @@ export function ChatComposer({
             </button>
           </div>
           <div className={styles.composerActionsRight}>
-            <ContextUsageHover provider={provider} sessionId={sessionId} />
+            <ContextUsageHover
+              provider={provider}
+              sessionId={sessionId}
+              model={model}
+              transcript={transcript}
+              queuedMessages={contextQueuedMessages}
+              draftText={contextDraftText}
+              draftAttachments={contextDraftAttachments}
+            />
             <button
               type="button"
               className={styles.composerAttachBtn}

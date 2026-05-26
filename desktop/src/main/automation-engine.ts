@@ -1,4 +1,5 @@
 import * as cron from 'node-cron'
+import { randomBytes } from 'crypto'
 import { exec as execCallback } from 'child_process'
 import { promisify } from 'util'
 import type { BrowserWindow } from 'electron'
@@ -237,9 +238,17 @@ export class AutomationEngine {
     const pad = (n: number) => String(n).padStart(2, '0')
     const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
 
-    const branch = `auto/${sanitized}/${timestamp}`
-    const wtName = `auto-${sanitized}-${timestamp}`
-    const worktreePath = await GitService.createWorktree(config.repoPath, wtName, branch, true)
+    const uniq = randomBytes(3).toString('hex')
+    const branch = `auto/${sanitized}/${timestamp}-${uniq}`
+    const wtName = `auto-${sanitized}-${timestamp}-${uniq}`
+    const worktreePath = await GitService.createWorktree(
+      config.repoPath,
+      wtName,
+      branch,
+      true,
+      undefined,
+      true,
+    )
 
     try {
       await trustPathForClaude(worktreePath)

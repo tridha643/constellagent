@@ -216,6 +216,28 @@ test.describe('Conductor chat view', () => {
     await expect(modelButton).toContainText('GPT-5.4 mini')
   })
 
+  test('context ring estimates draft composer tokens before a session exists', async () => {
+    const repoPath = createTestRepo('conductor-context-ring-draft')
+    await setupWorkspace(window, repoPath)
+
+    await window.evaluate(() => {
+      const store = (window as unknown as { __store: { getState: () => any } }).__store.getState()
+      store.updateSettings({
+        conductorDefaultProvider: 'codex',
+        conductorDefaultModel: 'gpt-5.4',
+      })
+    })
+
+    await openConductorTab(window)
+
+    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    await expect(composer).toBeVisible({ timeout: 5000 })
+    await composer.fill('a'.repeat(4_000))
+
+    const ring = window.getByTestId('conductor-context-ring')
+    await expect(ring).toHaveAttribute('aria-label', 'Context window 0.1% used')
+  })
+
   test('opens previous messages panel from turn rail', async () => {
     const repoPath = createTestRepo('conductor-history')
     await setupWorkspace(window, repoPath)

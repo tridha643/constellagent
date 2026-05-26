@@ -3,6 +3,47 @@ interface ParsedGitHunkPatch {
   hunkBlocks: string[]
 }
 
+export interface GitPatchHunkSpan {
+  deletionStart: number
+  additionStart: number
+}
+
+const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
+
+export function listGitPatchHunkSpans(patch: string): GitPatchHunkSpan[] {
+  const spans: GitPatchHunkSpan[] = []
+  for (const line of patch.split('\n')) {
+    const match = line.match(HUNK_HEADER)
+    if (!match) continue
+    spans.push({
+      deletionStart: parseInt(match[1], 10),
+      additionStart: parseInt(match[3], 10),
+    })
+  }
+  return spans
+}
+
+/** Map a Pierre/UI hunk to the git patch hunk index using stable @@ line anchors. */
+export function resolveGitPatchHunkIndex(
+  patch: string,
+  span: GitPatchHunkSpan,
+  fallbackIndex?: number,
+): number {
+  const spans = listGitPatchHunkSpans(patch)
+  const exact = spans.findIndex(
+    (candidate) =>
+      candidate.deletionStart === span.deletionStart
+      && candidate.additionStart === span.additionStart,
+  )
+  if (exact >= 0) return exact
+  if (fallbackIndex != null && fallbackIndex >= 0 && fallbackIndex < spans.length) {
+    return fallbackIndex
+  }
+  throw new Error(
+    `No git patch hunk matches @@ -${span.deletionStart} +${span.additionStart} (${spans.length} hunk(s) in patch)`,
+  )
+}
+
 export function parseGitPatchHunks(patch: string): ParsedGitHunkPatch {
   const normalizedPatch = patch.trimEnd()
   if (!normalizedPatch) {
@@ -43,11 +84,18 @@ export function parseGitPatchHunks(patch: string): ParsedGitHunkPatch {
   return { headerLines, hunkBlocks }
 }
 
-export function buildSingleHunkGitPatch(patch: string, hunkIndex: number): string {
+export function buildSingleHunkGitPatch(
+  patch: string,
+  hunkIndex: number,
+  span?: GitPatchHunkSpan,
+): string {
   const { headerLines, hunkBlocks } = parseGitPatchHunks(patch)
-  const hunk = hunkBlocks[hunkIndex]
+  const resolvedIndex = span
+    ? resolveGitPatchHunkIndex(patch, span, hunkIndex)
+    : hunkIndex
+  const hunk = hunkBlocks[resolvedIndex]
   if (!hunk) {
-    throw new Error(`Hunk ${hunkIndex} is out of range`)
+    throw new Error(`Hunk ${resolvedIndex} is out of range`)
   }
   return [...headerLines, hunk].join('\n') + '\n'
 }
