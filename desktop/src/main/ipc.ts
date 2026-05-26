@@ -42,7 +42,11 @@ import { CursorUsageService } from './cursor-usage-service'
 import { closeAllAgentFS } from './agentfs-service'
 import { AnnotationService } from './annotation-service'
 import { emitAutomationEvent, onAutomationEvent } from './automation-event-bus'
-import { lookupPersistedProjectRepo, readPersistedPiCommitMessageModel } from './persisted-state'
+import {
+  invalidatePersistedStateCache,
+  lookupPersistedProjectRepo,
+  readPersistedPiCommitMessageModel,
+} from './persisted-state'
 import { GithubPollService } from './github-poll-service'
 import { listPiModels } from './pi-models'
 import { CommitMessageService } from './commit-message-service'
@@ -1607,6 +1611,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.STATE_SAVE, async (_e, data: unknown) => {
     await mkdir(app.getPath('userData'), { recursive: true })
     await saveJsonFile(stateFilePath(), data)
+    invalidatePersistedStateCache()
     composioWebhookService.applyFromPersistedState(data)
     applyConductorAuthFromPersistedState(data)
     applyConductorSettingsFromPersistedState(data)
@@ -1617,6 +1622,7 @@ export function registerIpcHandlers(): void {
     try {
       mkdirSync(app.getPath('userData'), { recursive: true })
       writeFileSync(stateFilePath(), JSON.stringify(data, null, 2), 'utf-8')
+      invalidatePersistedStateCache()
       composioWebhookService.applyFromPersistedState(data)
       applyConductorAuthFromPersistedState(data)
       applyConductorSettingsFromPersistedState(data)
@@ -1631,6 +1637,7 @@ export function registerIpcHandlers(): void {
     const sanitized = sanitizeLoadedState(loaded)
     if (sanitized.changed) {
       await saveJsonFile(stateFilePath(), sanitized.data).catch(() => {})
+      invalidatePersistedStateCache()
       const count = sanitized.removedWorkspaceCount
       if (count > 0) {
         console.info(`[state] removed ${count} stale workspace${count === 1 ? '' : 's'}`)
