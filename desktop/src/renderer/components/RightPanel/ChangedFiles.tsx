@@ -95,40 +95,9 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
       })
     } catch {
       // Best effort — empty state already communicates enough.
-    }
-  }, [worktreePath, updateGitStatusSnapshot])
-
-  useEffect(() => {
-    let cancelled = false
-    // Render-first / verify-in-background: if a snapshot for this worktree is
-    // already cached (e.g. the diff viewer warmed it, or we mounted this panel
-    // before), paint it immediately and skip the "Checking changes…" spinner.
-    // The fetch below then reconciles in place. Only show the spinner cold.
-    const cached = useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath)
-    if (cached) {
-      setFiles(cached.statuses)
+    } finally {
       setLoading(false)
-    } else {
-      setLoading(true)
     }
-    Promise.all([
-      window.api.git.getStatus(worktreePath),
-      window.api.git.getHeadHash(worktreePath),
-    ]).then(([statuses, headHash]) => {
-      if (!cancelled) {
-        setFiles(statuses)
-        updateGitStatusSnapshot(worktreePath, {
-          statuses,
-          headHash,
-          signature: buildWorkingTreeStatusSignature(statuses, headHash),
-          updatedAt: Date.now(),
-        })
-        setLoading(false)
-      }
-    }).catch(() => {
-      if (!cancelled) setLoading(false)
-    })
-    return () => { cancelled = true }
   }, [worktreePath, updateGitStatusSnapshot])
 
   useEffect(() => {
