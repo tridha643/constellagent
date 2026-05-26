@@ -22,6 +22,7 @@ import { Tooltip } from '../Tooltip/Tooltip'
 import styles from './AutomationsPanel.module.css'
 
 const SCHEDULE_PRESETS = [
+  { label: 'Every 30 minutes', cron: '*/30 * * * *' },
   { label: 'Every hour', cron: '0 * * * *' },
   { label: 'Every 6 hours', cron: '0 */6 * * *' },
   { label: 'Daily at 9am', cron: '0 9 * * *' },

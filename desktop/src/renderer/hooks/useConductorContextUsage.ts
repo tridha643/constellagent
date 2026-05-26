@@ -1,17 +1,33 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { QueuedAgentMessage } from '../../shared/agent-chat-types'
+import type { ConductorComposerAttachment } from '../../shared/conductor-attachments'
 import type { ContextWindowData } from '../../shared/context-window-types'
-import { CONDUCTOR_CONTEXT_IDLE } from '../../shared/context-window-utils'
+import type { TranscriptMessage } from '../../shared/pi/pi-desktop-state'
+import {
+  buildComposerContextWindowData,
+  CONDUCTOR_CONTEXT_IDLE,
+} from '../../shared/context-window-utils'
 
-export function useConductorContextUsage(sessionId: string | null): {
+export interface ConductorContextUsageOptions {
+  model?: string
+  transcript?: readonly TranscriptMessage[]
+  queuedMessages?: readonly QueuedAgentMessage[]
+  draftText?: string
+  draftAttachments?: readonly ConductorComposerAttachment[]
+}
+
+export function useConductorContextUsage(
+  sessionId: string | null,
+  options: ConductorContextUsageOptions = {},
+): {
   data: ContextWindowData
   idle: boolean
 } {
-  const [data, setData] = useState<ContextWindowData>(CONDUCTOR_CONTEXT_IDLE)
-  const idle = !sessionId
+  const [baseUsage, setBaseUsage] = useState<ContextWindowData | null>(null)
 
   useEffect(() => {
     if (!sessionId) {
-      setData(CONDUCTOR_CONTEXT_IDLE)
+      setBaseUsage(null)
       return undefined
     }
 
@@ -19,14 +35,15 @@ export function useConductorContextUsage(sessionId: string | null): {
 
     const apply = (next: ContextWindowData | null) => {
       if (cancelled) return
-      setData(next ?? { ...CONDUCTOR_CONTEXT_IDLE, sessionId })
+      setBaseUsage(next)
     }
 
+    setBaseUsage(null)
     void window.api.agentChat
       .getContextUsage(sessionId)
       .then(apply)
       .catch(() => {
-        if (!cancelled) setData({ ...CONDUCTOR_CONTEXT_IDLE, sessionId })
+        if (!cancelled) setBaseUsage(null)
       })
 
     const offContext = window.api.agentChat.onContextChanged((payload) => {
@@ -40,6 +57,38 @@ export function useConductorContextUsage(sessionId: string | null): {
       offContext()
     }
   }, [sessionId])
+
+  const data = useMemo(() => {
+    if (
+      !sessionId &&
+      !options.model &&
+      !options.transcript?.length &&
+      !options.queuedMessages?.length &&
+      !options.draftText &&
+      !options.draftAttachments?.length
+    ) {
+      return CONDUCTOR_CONTEXT_IDLE
+    }
+    return buildComposerContextWindowData({
+      model: options.model ?? baseUsage?.model ?? '',
+      sessionId,
+      baseUsage,
+      transcript: options.transcript,
+      queuedMessages: options.queuedMessages,
+      draftText: options.draftText,
+      draftAttachments: options.draftAttachments,
+    })
+  }, [
+    baseUsage,
+    options.draftAttachments,
+    options.draftText,
+    options.model,
+    options.queuedMessages,
+    options.transcript,
+    sessionId,
+  ])
+
+  const idle = data.usedTokens === 0 && !sessionId
 
   return { data, idle }
 }

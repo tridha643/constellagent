@@ -53,6 +53,14 @@ export class MobilePairingCodeRegistry {
     return this.active
   }
 
+  getActivePayloadForSessionId(sessionId: string): PairingQrPayload | null {
+    const active = this.getActive()
+    if (!active || active.payload.sessionId !== sessionId.trim()) {
+      return null
+    }
+    return active.payload
+  }
+
   resolve(rawCode: string, nowMs = Date.now()): PairingCodeResolveResult {
     const code = normalizePairingCode(rawCode)
     if (!code) {

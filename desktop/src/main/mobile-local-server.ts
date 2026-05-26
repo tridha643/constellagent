@@ -24,6 +24,7 @@ import QRCode from 'qrcode'
 import { buildPairingPayload, serializePairingPayload } from './mobile-pairing-qr'
 import type { MobileConnectionSnapshot, MobilePairingPayloadResult } from '../shared/mobile-settings-types'
 import { MobilePairingCodeRegistry } from './mobile-pairing-code-registry'
+import { resolveTrustedSession, type TrustedSessionResolveRequest } from './mobile-trusted-session-resolve'
 import { createMobileMethodRouter, type MobileRouter } from './mobile-method-router'
 import { GitService } from './git-service'
 import { AnnotationService } from './annotation-service'
@@ -484,6 +485,9 @@ export class MobileLocalServer {
     // iPhone connects to `{relay}/{sessionId}` (e.g. `/ws/<uuid>`). Reuse that id so
     // the QR bootstrap handshake matches the transport the bridge expects.
     const sessionId = pairingSessionId?.trim() || randomUUID()
+    const activePairingPayload = pairingSessionId
+      ? this.pairingCodeRegistry.getActivePayloadForSessionId(sessionId)
+      : null
     const status = this.getStatus()
     const wsUrl = buildMobileRelayWsUrl(status.host, status.port)
     const transport = createBridgeSecureTransport({
@@ -491,6 +495,7 @@ export class MobileLocalServer {
       relayUrl: wsUrl,
       deviceState: identity,
       displayName: this.displayName,
+      pairingExpiresAtMs: activePairingPayload?.expiresAt,
       onTrustedPhoneUpdate: ({ phoneDeviceId, phoneIdentityPublicKey }) => {
         // Persist the newly trusted phone so future reconnects skip the QR flow.
         void this.store
@@ -557,6 +562,11 @@ export class MobileLocalServer {
       return
     }
 
+    if (req.method === 'POST' && url.pathname === '/v1/trusted/session/resolve') {
+      await this.handleTrustedSessionResolve(req, res)
+      return
+    }
+
     const auth = this.authenticate(req, url)
     if (!auth.ok) {
       writeJson(res, 401, { error: 'Mobile access token required', code: 'unauthorized' })
@@ -611,6 +621,53 @@ export class MobileLocalServer {
       })
     }
     return command
+  }
+
+  private async handleTrustedSessionResolve(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const raw = await readBody(req)
+    let request: TrustedSessionResolveRequest
+    try {
+      const parsed = JSON.parse(raw || '{}') as Partial<TrustedSessionResolveRequest>
+      request = {
+        macDeviceId: typeof parsed.macDeviceId === 'string' ? parsed.macDeviceId : '',
+        phoneDeviceId: typeof parsed.phoneDeviceId === 'string' ? parsed.phoneDeviceId : '',
+        phoneIdentityPublicKey:
+          typeof parsed.phoneIdentityPublicKey === 'string' ? parsed.phoneIdentityPublicKey : '',
+        nonce: typeof parsed.nonce === 'string' ? parsed.nonce : '',
+        timestamp: typeof parsed.timestamp === 'number' ? parsed.timestamp : Number.NaN,
+        signature: typeof parsed.signature === 'string' ? parsed.signature : '',
+      }
+    } catch {
+      writeJson(res, 400, {
+        ok: false,
+        code: 'invalid_signature',
+        error: 'Invalid trusted reconnect request.',
+      })
+      return
+    }
+
+    const identity = await this.ensureBridgeIdentity()
+    const trustedPhonePublicKey = identity.trustedPhones[request.phoneDeviceId.trim()] ?? null
+    const result = resolveTrustedSession({
+      request,
+      bridgeMacDeviceId: identity.macDeviceId,
+      bridgeMacIdentityPublicKey: identity.macIdentityPublicKey,
+      bridgeDisplayName: this.displayName,
+      trustedPhonePublicKey,
+      bridgeRunning: this.server !== null,
+    })
+
+    if (!result.ok) {
+      const status = result.code === 'session_unavailable'
+        ? 503
+        : result.code === 'resolve_request_expired' || result.code === 'resolve_request_replayed'
+          ? 409
+          : 403
+      writeJson(res, status, result)
+      return
+    }
+
+    writeJson(res, 200, result)
   }
 
   private async handlePairingCodeResolve(req: IncomingMessage, res: ServerResponse): Promise<void> {

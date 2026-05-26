@@ -1504,7 +1504,10 @@ export class GitService {
     if (request.status !== 'modified') {
       throw new Error('Partial Keep/Undo currently only supports modified tracked files')
     }
-    const singleHunkPatch = buildSingleHunkGitPatch(request.patch, request.hunkIndex)
+    const singleHunkPatch = buildSingleHunkGitPatch(request.patch, request.hunkIndex, {
+      deletionStart: request.deletionStart,
+      additionStart: request.additionStart,
+    })
     if (request.action === 'keep') {
       await applyGitPatch(
         worktreePath,

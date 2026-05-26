@@ -409,6 +409,8 @@ export const DiffFileSection = memo(function DiffFileSection({
         filePath: data.filePath,
         patch: data.patch,
         hunkIndex,
+        deletionStart: hunk.deletionStart,
+        additionStart: hunk.additionStart,
         action,
         status: data.status,
       }
