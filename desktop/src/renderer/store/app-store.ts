@@ -135,6 +135,7 @@ import {
   toggleSidePanel as toggleSidePanelLayout,
 } from './side-panels'
 import { pathsEqualOrAlias } from '../../shared/agent-plan-path'
+import type { GitStatusSnapshot, WorkingTreeDiffSnapshot } from '../types/working-tree-diff'
 import { normalizeEditorLanguageOverrideMap } from '../utils/language-map'
 import type { DesktopAppState } from '../../shared/pi/pi-desktop-state'
 import {
@@ -3199,6 +3200,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
     const activeTabId = data.activeTabId ?? null
     const seeded = seedFoldersForProjects(projects, workspaces, normalizeFolders(data.folders))
+    // Seed working-tree snapshots from persisted statuses so the Changes panel
+    // can render synchronously at cold boot. Diff bodies aren't persisted —
+    // they're regenerated on demand by the diff viewer.
+    const seededWorkingTree = new Map<string, WorkingTreeDiffSnapshot>()
+    const persistedStatuses = (data as { workingTreeStatusByPath?: Record<string, GitStatusSnapshot> }).workingTreeStatusByPath
+    if (persistedStatuses) {
+      for (const [path, snap] of Object.entries(persistedStatuses)) {
+        if (!snap || !Array.isArray(snap.statuses)) continue
+        seededWorkingTree.set(path, {
+          statuses: snap.statuses,
+          headHash: snap.headHash ?? '',
+          signature: snap.signature ?? '',
+          updatedAt: typeof snap.updatedAt === 'number' ? snap.updatedAt : 0,
+          files: [],
+          complete: false,
+        })
+      }
+    }
     set({
       projects: seeded.projects,
       workspaces: seeded.workspaces,
@@ -3219,6 +3238,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         : {},
       settings,
       composioWebhook: normalizeComposioWebhook(data.composioWebhook),
+      workingTreeDiffSnapshots: seededWorkingTree,
       worktreeSyncStatus: new Map(),
       graphiteStacks: new Map(),
       graphiteStackExpanded: false,
@@ -3440,6 +3460,17 @@ async function reconcileGitWorktreesForStore(projectIdFilter: string | null): Pr
 // ── State persistence ──
 
 function getPersistedSlice(state: AppState): PersistedState {
+  // Strip diff bodies; we only persist the lightweight status fields so the
+  // Changes panel can seed instantly at next boot. Diff bodies regenerate.
+  const workingTreeStatusByPath: Record<string, GitStatusSnapshot> = {}
+  for (const [path, snap] of state.workingTreeDiffSnapshots) {
+    workingTreeStatusByPath[path] = {
+      statuses: snap.statuses,
+      headHash: snap.headHash,
+      signature: snap.signature,
+      updatedAt: snap.updatedAt,
+    }
+  }
   return {
     projects: state.projects.map(({ startupCommands, ...project }) => project),
     workspaces: state.workspaces,
@@ -3459,6 +3490,7 @@ function getPersistedSlice(state: AppState): PersistedState {
     stagedSelectionByWorkspace: state.stagedSelectionByWorkspace,
     sidebarActionOrder: state.sidebarActionOrder,
     spotlightWorkspaceIdByProject: state.spotlightWorkspaceIdByProject,
+    workingTreeStatusByPath,
   }
 }
 

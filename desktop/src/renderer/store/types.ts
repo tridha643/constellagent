@@ -1056,4 +1056,12 @@ export interface PersistedState {
   sidebarActionOrder?: SidebarActionId[]
   composioWebhook?: ComposioWebhookSettings
   spotlightWorkspaceIdByProject?: Record<string, string | null>
+  /**
+   * Last-known working-tree status per worktree path (lightweight subset of the
+   * in-memory `workingTreeDiffSnapshots`). Persisted so the Changes panel can
+   * render its file list synchronously on cold app boot — the fetched truth
+   * reconciles in place. Diff bodies are NOT persisted (they belong to the
+   * diff viewer and are regenerated on demand).
+   */
+  workingTreeStatusByPath?: Record<string, GitStatusSnapshot>
 }
