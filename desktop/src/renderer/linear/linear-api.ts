@@ -869,11 +869,6 @@ export async function getCachedTeamWorkflowStates(
   return errors?.length ? { nodes, errors } : { nodes }
 }
 
-/** Test-only — invalidate the workflow-state cache (call between cases). */
-export function __resetWorkflowStateCache(): void {
-  workflowStateCache.clear()
-}
-
 /**
  * Single-mutation issue move: change `stateId` (and optionally clear `parentId`)
  * in one `IssueUpdateInput`. Used by the drag-to-state-group flow.

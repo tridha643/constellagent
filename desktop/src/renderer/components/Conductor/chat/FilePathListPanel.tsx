@@ -2,7 +2,6 @@ import { useCallback, useState } from 'react'
 import { useAppStore } from '../../../store/app-store'
 import { SharedFileIcon } from '../../../utils/file-presentation'
 import { isMarkdownDocumentPath } from '../../../utils/markdown-path'
-import { parseFilePathListText } from '../../../../shared/file-path-list-text'
 import { resolveToolFileAbsolutePath } from './tools/tool-file-path'
 import styles from '../Conductor.module.css'
 
@@ -100,9 +99,3 @@ export function FilePathListPanel({
   )
 }
 
-/** Upgrade plain newline-separated path text to a rich file list when possible. */
-export function FilePathListFromText({ text }: { text: string }) {
-  const paths = parseFilePathListText(text)
-  if (!paths) return null
-  return <FilePathListPanel paths={paths} />
-}
