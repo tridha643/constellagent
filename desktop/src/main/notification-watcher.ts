@@ -1,4 +1,5 @@
-import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'fs'
+import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, watch } from 'fs'
+import type { FSWatcher } from 'fs'
 import { join } from 'path'
 import { BrowserWindow } from 'electron'
 import { IPC } from '../shared/ipc-channels'
@@ -15,7 +16,12 @@ import {
 import { lookupPersistedWorkspace } from './persisted-state'
 
 const DEFAULT_NOTIFY_DIR = '/tmp/constellagent-notify'
-const POLL_INTERVAL = 500
+// fs.watch delivers an event per atomic mv/unlink; we debounce briefly so the
+// file mtime crosses FILE_SETTLE_MS before we read it, and to coalesce bursts.
+const WATCH_DEBOUNCE_MS = 120
+// Safety-net for environments where fs.watch may miss events (network FS, etc).
+// Far less aggressive than the previous 500ms steady-state poll.
+const FALLBACK_POLL_INTERVAL = 5000
 const FILE_SETTLE_MS = 100
 
 interface ActivityEntry {
@@ -32,26 +38,115 @@ export class NotificationWatcher {
     private readonly activityDir = process.env.CONSTELLAGENT_ACTIVITY_DIR || DEFAULT_ACTIVITY_DIR,
   ) {}
 
-  private timer: ReturnType<typeof setInterval> | null = null
+  private fallbackTimer: ReturnType<typeof setInterval> | null = null
+  private notifyWatcher: FSWatcher | null = null
+  private activityWatcher: FSWatcher | null = null
+  private notifyDebounce: ReturnType<typeof setTimeout> | null = null
+  private activityDebounce: ReturnType<typeof setTimeout> | null = null
+  private retryWatchersTimer: ReturnType<typeof setTimeout> | null = null
+  private stopped = true
   private lastActiveAgents = new Map<string, Set<AutomationAgentType>>()
 
   start(): void {
     mkdirSync(this.notifyDir, { recursive: true })
     mkdirSync(this.activityDir, { recursive: true })
-    this.pollOnce()
-    this.timer = setInterval(() => this.pollOnce(), POLL_INTERVAL)
+    this.stopped = false
+    this.pollNotifications()
+    this.pollActivity()
+    this.attachWatchers()
+    this.fallbackTimer = setInterval(() => {
+      this.pollNotifications()
+      this.pollActivity()
+    }, FALLBACK_POLL_INTERVAL)
   }
 
   stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer)
-      this.timer = null
+    this.stopped = true
+    if (this.fallbackTimer) {
+      clearInterval(this.fallbackTimer)
+      this.fallbackTimer = null
+    }
+    if (this.notifyDebounce) {
+      clearTimeout(this.notifyDebounce)
+      this.notifyDebounce = null
+    }
+    if (this.activityDebounce) {
+      clearTimeout(this.activityDebounce)
+      this.activityDebounce = null
+    }
+    if (this.retryWatchersTimer) {
+      clearTimeout(this.retryWatchersTimer)
+      this.retryWatchersTimer = null
+    }
+    this.detachWatcher('notify')
+    this.detachWatcher('activity')
+  }
+
+  private attachWatchers(): void {
+    this.notifyWatcher = this.openWatcher(this.notifyDir, () => this.scheduleNotifyPoll(), 'notify')
+    this.activityWatcher = this.openWatcher(this.activityDir, () => this.scheduleActivityPoll(), 'activity')
+  }
+
+  private openWatcher(dir: string, onEvent: () => void, kind: 'notify' | 'activity'): FSWatcher | null {
+    try {
+      const w = watch(dir, { persistent: false }, () => onEvent())
+      w.on('error', () => this.handleWatcherFailure(kind))
+      w.on('close', () => {
+        // If the watcher closes unexpectedly while we're running, try to re-attach.
+        if (!this.stopped) this.handleWatcherFailure(kind)
+      })
+      return w
+    } catch {
+      // fs.watch unsupported or dir vanished — fallback poll keeps us correct.
+      this.handleWatcherFailure(kind)
+      return null
     }
   }
 
-  private pollOnce(): void {
-    this.pollNotifications()
-    this.pollActivity()
+  private detachWatcher(kind: 'notify' | 'activity'): void {
+    const ref = kind === 'notify' ? this.notifyWatcher : this.activityWatcher
+    if (ref) {
+      try {
+        ref.removeAllListeners()
+        ref.close()
+      } catch {
+        // ignore
+      }
+    }
+    if (kind === 'notify') this.notifyWatcher = null
+    else this.activityWatcher = null
+  }
+
+  private handleWatcherFailure(kind: 'notify' | 'activity'): void {
+    if (this.stopped) return
+    this.detachWatcher(kind)
+    if (this.retryWatchersTimer) return
+    this.retryWatchersTimer = setTimeout(() => {
+      this.retryWatchersTimer = null
+      if (this.stopped) return
+      if (!this.notifyWatcher) {
+        this.notifyWatcher = this.openWatcher(this.notifyDir, () => this.scheduleNotifyPoll(), 'notify')
+      }
+      if (!this.activityWatcher) {
+        this.activityWatcher = this.openWatcher(this.activityDir, () => this.scheduleActivityPoll(), 'activity')
+      }
+    }, FALLBACK_POLL_INTERVAL)
+  }
+
+  private scheduleNotifyPoll(): void {
+    if (this.notifyDebounce || this.stopped) return
+    this.notifyDebounce = setTimeout(() => {
+      this.notifyDebounce = null
+      if (!this.stopped) this.pollNotifications()
+    }, WATCH_DEBOUNCE_MS)
+  }
+
+  private scheduleActivityPoll(): void {
+    if (this.activityDebounce || this.stopped) return
+    this.activityDebounce = setTimeout(() => {
+      this.activityDebounce = null
+      if (!this.stopped) this.pollActivity()
+    }, WATCH_DEBOUNCE_MS)
   }
 
   private pollNotifications(): void {
