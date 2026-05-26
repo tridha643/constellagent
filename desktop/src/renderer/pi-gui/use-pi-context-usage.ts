@@ -31,6 +31,7 @@ export function usePiContextUsage(sessionRef: SessionRef | undefined, enabled: b
     };
 
     let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
 
     const poll = () => {
       void window.api.pi
@@ -43,11 +44,40 @@ export function usePiContextUsage(sessionRef: SessionRef | undefined, enabled: b
         });
     };
 
-    poll();
-    const id = setInterval(poll, POLL_MS);
+    const stopTimer = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+
+    // Pause the 4 s IPC poll while the window is hidden — the user can't see
+    // the context ring and the underlying snapshot is in-memory, so resuming
+    // with an immediate fetch on visibility is sufficient.
+    const startTimer = () => {
+      stopTimer();
+      timer = setInterval(poll, POLL_MS);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stopTimer();
+        return;
+      }
+      poll();
+      startTimer();
+    };
+
+    if (!document.hidden) {
+      poll();
+      startTimer();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       cancelled = true;
-      clearInterval(id);
+      stopTimer();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [enabled, sessionRef?.workspaceId, sessionRef?.sessionId]);
 
