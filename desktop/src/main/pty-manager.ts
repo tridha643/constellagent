@@ -14,6 +14,7 @@ import {
   OPENCODE_MARKER_SEGMENT,
   PI_CONSTELL_MARKER_SEGMENT,
 } from '../shared/agent-markers'
+import { PtyOutputRing } from './pty-output-ring'
 
 const TAB_TITLE_LOG = '[constellagent:tab-title]'
 
@@ -35,7 +36,7 @@ interface PtyInstance {
   /** Unterminated OSC chunks (Codex / crossterm often use ST + split writes) */
   oscTitleCarry: string
   /** Recent PTY output for renderer remounts; PTY stays alive while xterm UI is unmounted. */
-  outputRing: string
+  outputRing: PtyOutputRing
 }
 
 interface ProcessEntry {
@@ -234,10 +235,7 @@ export class PtyManager {
   onPtyExit?: (ptyId: string, exitCode: number, workspaceId: string | undefined) => void
 
   private appendOutputRing(instance: PtyInstance, data: string): void {
-    const next = instance.outputRing + data
-    instance.outputRing = next.length > MAIN_OUTPUT_RING_MAX_BYTES
-      ? next.slice(next.length - MAIN_OUTPUT_RING_MAX_BYTES)
-      : next
+    instance.outputRing.append(data)
   }
 
   create(workingDir: string, webContents: WebContents, shell?: string, command?: string[], initialWrite?: string, extraEnv?: Record<string, string>): string {
@@ -283,7 +281,7 @@ export class PtyManager {
       pendingOscTitle: null,
       oscTitleTimer: null,
       oscTitleCarry: '',
-      outputRing: '',
+      outputRing: new PtyOutputRing(MAIN_OUTPUT_RING_MAX_BYTES),
     }
 
     proc.onData((data) => {
@@ -479,7 +477,7 @@ export class PtyManager {
 
   /** Recent output for rehydrating xterm after inactive terminal UIs unmount. */
   snapshot(ptyId: string): string {
-    return this.ptys.get(ptyId)?.outputRing ?? ''
+    return this.ptys.get(ptyId)?.outputRing.snapshot() ?? ''
   }
 
   getPtyIdsForWorkspace(workspaceId: string): string[] {
