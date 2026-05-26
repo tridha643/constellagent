@@ -41,6 +41,7 @@ export interface ValidationResult {
 }
 
 export interface AddAnnotationInput {
+  id?: string
   workspace_id?: string | null
   repo_root: string
   worktree_path?: string | null
@@ -400,7 +401,7 @@ export async function addAnnotation(
     }
   }
 
-  const id = generateId()
+  const id = input.id ?? generateId()
   const now = new Date().toISOString().replace('T', ' ').replace('Z', '')
 
   await db.execute({

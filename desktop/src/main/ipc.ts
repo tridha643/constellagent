@@ -1539,7 +1539,7 @@ export function registerIpcHandlers(): void {
   })
 
   // ── Review annotations (libSQL-backed) ──
-  ipcMain.handle(IPC.REVIEW_COMMENT_ADD, async (_e, worktreePath: string, file: string, newLine: number, summary: string, opts?: { rationale?: string; author?: string; focus?: boolean; oldLine?: number; force?: boolean; lineEnd?: number; workspaceId?: string }) => {
+  ipcMain.handle(IPC.REVIEW_COMMENT_ADD, async (_e, worktreePath: string, file: string, newLine: number, summary: string, opts?: { id?: string; rationale?: string; author?: string; focus?: boolean; oldLine?: number; force?: boolean; lineEnd?: number; workspaceId?: string }) => {
     await AnnotationService.addComment(worktreePath, file, newLine, summary, opts)
   })
 

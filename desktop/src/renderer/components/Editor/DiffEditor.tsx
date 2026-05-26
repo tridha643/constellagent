@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import type { DiffAnnotation } from '@shared/diff-annotation-types'
+import type { AnnotationPatch, DiffAnnotation } from '@shared/diff-annotation-types'
 import type { GitHunkActionRequest } from '@shared/git-hunk-action-types'
 import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
@@ -30,12 +30,53 @@ const AUTO_EXPAND_MIN_FILES = 10
 const AUTO_EXPAND_MAX_FILES = 15
 const AUTO_EXPAND_PATCH_LINE_BUDGET = 1500
 
+/**
+ * Merge a refreshed list of libSQL annotations into the prior in-memory list,
+ * preserving existing object identity for rows whose visible fields are
+ * unchanged. Keeps memos/Pierre anchors stable across drift reconciliation.
+ */
+function mergeDiffEditorAnnotations(
+  prev: DiffAnnotation[],
+  next: DiffAnnotation[],
+): DiffAnnotation[] {
+  const prevById = new Map(prev.map((a) => [a.id, a]))
+  let changed = prev.length !== next.length
+  const merged = next.map((row) => {
+    const existing = prevById.get(row.id)
+    if (
+      existing &&
+      existing.body === row.body &&
+      existing.resolved === row.resolved &&
+      existing.lineNumber === row.lineNumber &&
+      existing.lineEnd === row.lineEnd &&
+      existing.filePath === row.filePath &&
+      existing.side === row.side &&
+      existing.author === row.author &&
+      existing.createdAt === row.createdAt &&
+      existing.rationale === row.rationale
+    ) {
+      return existing
+    }
+    changed = true
+    return row
+  })
+  return changed ? merged : prev
+}
+
 // ── Main DiffViewer ──
 
 export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: Props) {
   const [files, setFiles] = useState<DiffFileData[]>([])
   const [loading, setLoading] = useState(true)
-  const [annotations, setAnnotations] = useState<DiffAnnotation[]>([])
+  // Split libSQL annotations from GitHub PR comments so a libSQL reconcile
+  // never clobbers PR rows merged in by the effect below. The combined
+  // `annotations` array (memoized) is what the UI consumes.
+  const [localAnnotations, setLocalAnnotations] = useState<DiffAnnotation[]>([])
+  const [prAnnotations, setPrAnnotations] = useState<DiffAnnotation[]>([])
+  const annotations = useMemo(
+    () => [...localAnnotations, ...prAnnotations],
+    [localAnnotations, prAnnotations],
+  )
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [viewedFilePaths, setViewedFilePaths] = useState<Set<string>>(() => new Set())
   const [expectedFileCount, setExpectedFileCount] = useState(0)
@@ -90,32 +131,81 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
     [openFileTab, openMarkdownPreview],
   )
 
-  const loadAnnotations = useCallback(async () => {
+  // Local-first reconciliation (see HunkReview for the canonical pattern). The
+  // standalone diff tab uses the same approach so its comment writes don't
+  // flicker either.
+  const reconcileAnnotations = useCallback(async () => {
     try {
       const rows = await window.api.review.commentList(worktreePath)
-      setAnnotations(
-        rows.map((r) => ({
-          id: r.id,
-          filePath: r.file_path,
-          side: r.side === 'old' ? 'deletions' as const : 'additions' as const,
-          lineNumber: r.line_start,
-          lineEnd: r.line_end !== r.line_start ? r.line_end : undefined,
-          body: r.summary,
-          rationale: r.rationale ?? undefined,
-          createdAt: r.created_at,
-          resolved: r.resolved,
-          author: r.author ?? undefined,
-        })),
-      )
+      const next: DiffAnnotation[] = rows.map((r) => ({
+        id: r.id,
+        filePath: r.file_path,
+        side: r.side === 'old' ? 'deletions' as const : 'additions' as const,
+        lineNumber: r.line_start,
+        lineEnd: r.line_end !== r.line_start ? r.line_end : undefined,
+        body: r.summary,
+        rationale: r.rationale ?? undefined,
+        createdAt: r.created_at,
+        resolved: r.resolved,
+        author: r.author ?? undefined,
+      }))
+      setLocalAnnotations((prev) => mergeDiffEditorAnnotations(prev, next))
     } catch (err) {
       console.error('Failed to load review annotations:', err)
-      setAnnotations([])
     }
   }, [worktreePath])
 
   useEffect(() => {
-    void loadAnnotations()
-  }, [loadAnnotations])
+    void reconcileAnnotations()
+  }, [reconcileAnnotations])
+
+  const applyAnnotationPatch = useCallback((patch: AnnotationPatch) => {
+    setLocalAnnotations((prev) => {
+      switch (patch.type) {
+        case 'insert':
+          if (prev.some((a) => a.id === patch.annotation.id)) return prev
+          return [...prev, patch.annotation]
+        case 'update': {
+          let mutated = false
+          const next = prev.map((a) => {
+            if (a.id !== patch.id) return a
+            mutated = true
+            return { ...a, ...patch.changes }
+          })
+          return mutated ? next : prev
+        }
+        case 'remove': {
+          const next = prev.filter((a) => a.id !== patch.id)
+          return next.length === prev.length ? prev : next
+        }
+        case 'rollback-insert': {
+          const next = prev.filter((a) => a.id !== patch.id)
+          return next.length === prev.length ? prev : next
+        }
+        case 'rollback-restore':
+          if (prev.some((a) => a.id === patch.annotation.id)) return prev
+          return [...prev, patch.annotation]
+        default:
+          return prev
+      }
+    })
+  }, [])
+
+  // Drift reconcile: window focus + git changes (no polling).
+  useEffect(() => {
+    const onFocus = () => { void reconcileAnnotations() }
+    const onGitChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ worktreePath?: string }>).detail
+      if (detail?.worktreePath && detail.worktreePath !== worktreePath) return
+      void reconcileAnnotations()
+    }
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('git:files-changed', onGitChanged)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('git:files-changed', onGitChanged)
+    }
+  }, [reconcileAnnotations, worktreePath])
 
   const annotationsByFile = useMemo(() => {
     const grouped = new Map<string, DiffAnnotation[]>()
@@ -205,9 +295,9 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   // Reload when annotations are cleared (e.g. after PR merge)
   useEffect(() => {
     return window.api.review.onAnnotationsCleared(() => {
-      void loadAnnotations()
+      void reconcileAnnotations()
     })
-  }, [loadAnnotations])
+  }, [reconcileAnnotations])
 
   // ── GitHub PR comment loading ──
   useEffect(() => {
@@ -242,7 +332,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
           resolved: c.resolved,
           author: c.author,
         }))
-        setAnnotations((prev) => [...prev, ...mapped])
+        setPrAnnotations(mapped)
       } catch (err) {
         console.error('Failed to load PR review comments:', err)
       }
@@ -550,7 +640,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
             worktreePath={worktreePath}
             onOpenFile={openFileFromDiff}
             fileAnnotations={annotationsByFile.get(file.filePath) ?? []}
-            onAnnotationsChanged={loadAnnotations}
+            onApplyAnnotation={applyAnnotationPatch}
             showPatchAnchorNote={!!commitHash}
             enableAcceptReject={enableAcceptReject}
             onHunkAccepted={applyHunkAction}

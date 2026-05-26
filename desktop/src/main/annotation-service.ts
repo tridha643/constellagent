@@ -78,6 +78,7 @@ export const AnnotationService = {
     newLine: number,
     summary: string,
     opts?: {
+      id?: string
       rationale?: string
       author?: string
       focus?: boolean
@@ -104,6 +105,7 @@ export const AnnotationService = {
     await addAnnotation(
       db,
       {
+        id: opts?.id,
         workspace_id: opts?.workspaceId ?? null,
         repo_root: repoRoot,
         worktree_path: resolveRepo(worktreePath),
