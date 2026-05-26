@@ -159,7 +159,7 @@ async function parseGraphiteConfigMetadata(repoPath: string): Promise<Map<string
  * Priority: SQLite DB (current CLI) > refs (older CLI) > git config (cloneStack fallback).
  * Later sources only fill in branches not already present.
  */
-async function parseGraphiteMetadata(repoPath: string): Promise<Map<string, string>> {
+async function readGraphiteMetadata(repoPath: string): Promise<Map<string, string>> {
   let gitCommonDir: string
   try {
     gitCommonDir = await resolveGitCommonDir(repoPath)
@@ -176,11 +176,50 @@ async function parseGraphiteMetadata(repoPath: string): Promise<Map<string, stri
   return parseGraphiteConfigMetadata(repoPath)
 }
 
+/**
+ * Cache parsed graphite metadata for a short window. The 10 s graphite stack
+ * poller invokes `parseGraphiteMetadata` once per polled workspace, so without
+ * a cache a project with N worktrees pays N × (sqlite + 2 git spawns) every
+ * cycle — and a repo without graphite still pays 2 git spawns to confirm there
+ * is no metadata. The cache collapses parallel calls and lets consecutive
+ * polls reuse the result; writes invalidate explicitly so user-visible state
+ * never goes stale beyond the TTL.
+ */
+const METADATA_CACHE_TTL_MS = 30_000
+const metadataCache = new Map<string, { map: Map<string, string>; expiresAt: number }>()
+const metadataInFlight = new Map<string, Promise<Map<string, string>>>()
+
+async function parseGraphiteMetadata(repoPath: string): Promise<Map<string, string>> {
+  const now = Date.now()
+  const cached = metadataCache.get(repoPath)
+  if (cached && cached.expiresAt > now) return cached.map
+
+  const inFlight = metadataInFlight.get(repoPath)
+  if (inFlight) return inFlight
+
+  const promise = (async () => {
+    try {
+      const map = await readGraphiteMetadata(repoPath)
+      metadataCache.set(repoPath, { map, expiresAt: Date.now() + METADATA_CACHE_TTL_MS })
+      return map
+    } finally {
+      metadataInFlight.delete(repoPath)
+    }
+  })()
+  metadataInFlight.set(repoPath, promise)
+  return promise
+}
+
+function invalidateGraphiteMetadataCache(repoPath: string): void {
+  metadataCache.delete(repoPath)
+}
+
 async function writeGraphiteMetadata(
   repoPath: string,
   entries: { name: string; parent: string }[],
 ): Promise<void> {
   if (entries.length === 0) return
+  invalidateGraphiteMetadataCache(repoPath)
 
   let wroteToDb = false
   try {
@@ -429,6 +468,7 @@ export class GraphiteService {
 
     try {
       await graphite(['--no-interactive', 'track', '--force'], worktreePath)
+      invalidateGraphiteMetadataCache(repoPath)
       return
     } catch {
       // Fall through to explicit parent selection.
@@ -436,6 +476,7 @@ export class GraphiteService {
 
     try {
       await graphite(['--no-interactive', 'track', '--parent', defaultBranch], worktreePath)
+      invalidateGraphiteMetadataCache(repoPath)
     } catch (err) {
       throw new Error(graphiteErrorMessage(err, `Failed to track branch "${branch}" with Graphite.`))
     }
@@ -536,6 +577,7 @@ export class GraphiteService {
         } else {
           await graphite(['--no-interactive', 'create', '-m', trimmedMessage], worktreePath)
         }
+        invalidateGraphiteMetadataCache(repoPath)
       } catch (err) {
         throw new Error(graphiteErrorMessage(err, 'Failed to create a Graphite stack branch.'))
       }
