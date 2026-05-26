@@ -32,3 +32,16 @@ export function annotationLineEnd(a: Pick<DiffAnnotation, 'lineNumber' | 'lineEn
   const end = a.lineEnd
   return end != null && Number.isFinite(end) ? end : a.lineNumber
 }
+
+/**
+ * Local-first patch applied to the renderer's in-memory annotation list before
+ * (or alongside) any IPC write to the libSQL backing store. Children dispatch
+ * these instead of forcing a full re-fetch — preserves object identity for
+ * unchanged rows so memos and Pierre diff anchors don't bust.
+ */
+export type AnnotationPatch =
+  | { type: 'insert'; annotation: DiffAnnotation }
+  | { type: 'update'; id: string; changes: Partial<Omit<DiffAnnotation, 'id'>> }
+  | { type: 'remove'; id: string }
+  | { type: 'rollback-insert'; id: string }
+  | { type: 'rollback-restore'; annotation: DiffAnnotation; index?: number }

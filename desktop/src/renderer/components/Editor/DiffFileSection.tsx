@@ -6,7 +6,7 @@ import {
   type FileDiffMetadata,
 } from '@pierre/diffs/react'
 import { diffAcceptRejectHunk, getSingularPatch } from '@pierre/diffs'
-import type { DiffAnnotation, DiffAnnotationSide } from '@shared/diff-annotation-types'
+import type { AnnotationPatch, DiffAnnotation, DiffAnnotationSide } from '@shared/diff-annotation-types'
 import type { GitHunkActionRequest } from '@shared/git-hunk-action-types'
 import { STATUS_LABELS } from '../../../shared/status-labels'
 import type { DiffFileData } from '../../types/working-tree-diff'
@@ -118,7 +118,7 @@ export interface DiffFileSectionProps {
   worktreePath: string
   onOpenFile: (filePath: string) => void
   fileAnnotations: DiffAnnotation[]
-  onAnnotationsChanged: () => void
+  onApplyAnnotation: (patch: AnnotationPatch) => void
   showPatchAnchorNote: boolean
   activeTourAnnotationId?: string
   selectedCommentIds?: Set<string>
@@ -142,7 +142,7 @@ export const DiffFileSection = memo(function DiffFileSection({
   worktreePath,
   onOpenFile,
   fileAnnotations,
-  onAnnotationsChanged,
+  onApplyAnnotation,
   showPatchAnchorNote,
   activeTourAnnotationId,
   selectedCommentIds,
@@ -495,7 +495,7 @@ export const DiffFileSection = memo(function DiffFileSection({
               key={a.id}
               annotation={a}
               worktreePath={worktreePath}
-              onChanged={onAnnotationsChanged}
+              onApply={onApplyAnnotation}
               tourState={tourMode ? (a.id === activeTourAnnotationId ? 'active' : 'inactive') : 'off'}
               selected={selectedCommentIds?.has(a.id)}
               onToggle={onToggleComment}
@@ -510,11 +510,9 @@ export const DiffFileSection = memo(function DiffFileSection({
               lineNumber={pendingRange.lineNumber}
               lineEnd={pendingRange.lineEnd}
               onCancel={clearSelectionAndComposer}
+              onApply={onApplyAnnotation}
               onDirtyChange={handleComposerDirtyChange}
-              onSaved={() => {
-                clearSelectionAndComposer()
-                onAnnotationsChanged()
-              }}
+              onSaved={clearSelectionAndComposer}
             />
           )}
         </div>
@@ -524,7 +522,7 @@ export const DiffFileSection = memo(function DiffFileSection({
       pendingRange,
       worktreePath,
       data.filePath,
-      onAnnotationsChanged,
+      onApplyAnnotation,
       clearSelectionAndComposer,
       selectedCommentIds,
       onToggleComment,

@@ -34,6 +34,7 @@ export interface ValidationResult {
     error?: string;
 }
 export interface AddAnnotationInput {
+    id?: string;
     workspace_id?: string | null;
     repo_root: string;
     worktree_path?: string | null;

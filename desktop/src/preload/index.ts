@@ -595,7 +595,7 @@ const api = {
   },
 
   review: {
-    commentAdd: (worktreePath: string, file: string, newLine: number, summary: string, opts?: { rationale?: string; author?: string; focus?: boolean; oldLine?: number; force?: boolean; lineEnd?: number; workspaceId?: string }) =>
+    commentAdd: (worktreePath: string, file: string, newLine: number, summary: string, opts?: { id?: string; rationale?: string; author?: string; focus?: boolean; oldLine?: number; force?: boolean; lineEnd?: number; workspaceId?: string }) =>
       ipcRenderer.invoke(IPC.REVIEW_COMMENT_ADD, worktreePath, file, newLine, summary, opts) as Promise<void>,
     commentList: (worktreePath: string, file?: string) =>
       ipcRenderer.invoke(IPC.REVIEW_COMMENT_LIST, worktreePath, file) as Promise<ReviewComment[]>,

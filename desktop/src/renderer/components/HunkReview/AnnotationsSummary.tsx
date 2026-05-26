@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, type MouseEvent } from 'react'
-import type { DiffAnnotation } from '../../../shared/diff-annotation-types'
+import type { AnnotationPatch, DiffAnnotation } from '../../../shared/diff-annotation-types'
 import { annotationLineEnd } from '../../../shared/diff-annotation-types'
 import { useAppStore } from '../../store/app-store'
 import styles from './AnnotationsSummary.module.css'
@@ -7,7 +7,7 @@ import styles from './AnnotationsSummary.module.css'
 interface Props {
   annotations: DiffAnnotation[]
   worktreePath: string
-  onAnnotationsChanged: () => void
+  onApplyAnnotation: (patch: AnnotationPatch) => void
   selectedIds: Set<string>
   onToggleComment: (id: string) => void
   onJumpToAnnotation: (annotation: DiffAnnotation) => void
@@ -62,14 +62,14 @@ function formatTimeAgo(isoDate: string): string {
 function AnnotationRow({
   annotation,
   worktreePath,
-  onChanged,
+  onApply,
   selected,
   onToggle,
   onJumpToAnnotation,
 }: {
   annotation: DiffAnnotation
   worktreePath: string
-  onChanged: () => void
+  onApply: (patch: AnnotationPatch) => void
   selected?: boolean
   onToggle?: (id: string) => void
   onJumpToAnnotation: (annotation: DiffAnnotation) => void
@@ -88,31 +88,38 @@ function AnnotationRow({
   const avatarStyle = useMemo(() => getAvatarStyle(displayName), [displayName])
   const timeAgo = useMemo(() => formatTimeAgo(annotation.createdAt), [annotation.createdAt])
 
+  // Optimistic resolve: flip the field locally, then sync to libSQL. On failure
+  // emit a toast and revert the field. UI never waits on IPC round-trip.
   const handleResolve = useCallback(async () => {
     if (busy) return
+    const previousResolved = annotation.resolved
     setBusy(true)
+    onApply({ type: 'update', id: annotation.id, changes: { resolved: !previousResolved } })
     try {
-      await window.api.review.commentResolve(worktreePath, annotation.id, !annotation.resolved)
-      onChanged()
+      await window.api.review.commentResolve(worktreePath, annotation.id, !previousResolved)
     } catch (e) {
+      onApply({ type: 'update', id: annotation.id, changes: { resolved: previousResolved } })
       addToast({ id: `ann-resolve-${Date.now()}`, message: 'Failed to resolve', type: 'error' })
     } finally {
       setBusy(false)
     }
-  }, [busy, worktreePath, annotation.id, annotation.resolved, onChanged, addToast])
+  }, [busy, worktreePath, annotation.id, annotation.resolved, onApply, addToast])
 
+  // Optimistic delete: remove locally first, restore on IPC failure.
   const handleDelete = useCallback(async () => {
     if (busy) return
+    const snapshot = annotation
     setBusy(true)
+    onApply({ type: 'remove', id: annotation.id })
     try {
       await window.api.review.commentRemove(worktreePath, annotation.id)
-      onChanged()
     } catch (e) {
+      onApply({ type: 'rollback-restore', annotation: snapshot })
       addToast({ id: `ann-delete-${Date.now()}`, message: 'Failed to delete', type: 'error' })
     } finally {
       setBusy(false)
     }
-  }, [busy, worktreePath, annotation.id, onChanged, addToast])
+  }, [busy, worktreePath, annotation, onApply, addToast])
 
   const jump = useCallback(() => {
     onJumpToAnnotation(annotation)
@@ -196,7 +203,7 @@ function AnnotationRow({
 export function AnnotationsSummary({
   annotations,
   worktreePath,
-  onAnnotationsChanged,
+  onApplyAnnotation,
   selectedIds,
   onToggleComment,
   onJumpToAnnotation,
@@ -240,7 +247,7 @@ export function AnnotationsSummary({
                   key={a.id}
                   annotation={a}
                   worktreePath={worktreePath}
-                  onChanged={onAnnotationsChanged}
+                  onApply={onApplyAnnotation}
                   selected={selectedIds.has(a.id)}
                   onToggle={onToggleComment}
                   onJumpToAnnotation={onJumpToAnnotation}

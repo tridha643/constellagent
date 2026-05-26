@@ -7,7 +7,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import type { DiffAnnotation } from '@shared/diff-annotation-types'
+import type { AnnotationPatch, DiffAnnotation } from '@shared/diff-annotation-types'
 import type { GitHunkActionRequest } from '@shared/git-hunk-action-types'
 import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
@@ -62,6 +62,86 @@ function reviewToDiffAnnotations(
   }))
 }
 
+/**
+ * Merge a refreshed annotation list into the prior in-memory list by id.
+ * Reuses existing object references for rows whose visible fields are
+ * unchanged so that referential-identity memos (lineAnnotations,
+ * AnnotationsSummary rows, Pierre diff anchors) stay stable across drift
+ * reconciliation.
+ */
+function mergeAnnotationsById(
+  prev: DiffAnnotation[],
+  next: DiffAnnotation[],
+): DiffAnnotation[] {
+  const prevById = new Map(prev.map((a) => [a.id, a]))
+  let identical = prev.length === next.length
+  const merged = next.map((row, i) => {
+    const existing = prevById.get(row.id)
+    if (
+      existing &&
+      existing.body === row.body &&
+      existing.resolved === row.resolved &&
+      existing.lineNumber === row.lineNumber &&
+      existing.lineEnd === row.lineEnd &&
+      existing.filePath === row.filePath &&
+      existing.side === row.side &&
+      existing.author === row.author &&
+      existing.createdAt === row.createdAt &&
+      existing.rationale === row.rationale
+    ) {
+      return existing
+    }
+    identical = false
+    if (prev[i] !== row) identical = false
+    return row
+  })
+  return identical ? prev : merged
+}
+
+async function loadPrAnnotations(
+  worktreePath: string,
+  apply: (next: DiffAnnotation[]) => void,
+): Promise<void> {
+  try {
+    const branch = await window.api.git.getCurrentBranch(worktreePath)
+    if (!branch) {
+      apply([])
+      return
+    }
+    const { projects, workspaces, prStatusMap } = useAppStore.getState()
+    const ws = workspaces.find((w) => w.worktreePath === worktreePath)
+    if (!ws) {
+      apply([])
+      return
+    }
+    const project = projects.find((p) => p.id === ws.projectId)
+    if (!project) {
+      apply([])
+      return
+    }
+    const prInfo = prStatusMap.get(`${project.id}:${branch}`)
+    if (!prInfo?.number) {
+      apply([])
+      return
+    }
+    const comments = await window.api.github.getPrReviewComments(worktreePath, prInfo.number)
+    apply(
+      comments.map((c) => ({
+        id: c.id,
+        filePath: c.filePath,
+        side: c.diffSide === 'LEFT' ? ('deletions' as const) : ('additions' as const),
+        lineNumber: c.line ?? c.startLine ?? 1,
+        body: c.body,
+        createdAt: c.createdAt,
+        resolved: c.resolved,
+        author: c.author,
+      })),
+    )
+  } catch (err) {
+    console.error('Failed to load PR review comments:', err)
+  }
+}
+
 function getViewportWidth() {
   return typeof window === 'undefined' ? FALLBACK_VIEWPORT_WIDTH : window.innerWidth
 }
@@ -88,7 +168,15 @@ export function HunkReview({ worktreePath }: Props) {
 
   const [files, setFiles] = useState<DiffFileData[]>([])
   const [loading, setLoading] = useState(true)
-  const [annotations, setAnnotations] = useState<DiffAnnotation[]>([])
+  // Split local-DB annotations from GitHub PR review comments so a libSQL
+  // refresh never clobbers PR rows merged in by the effect below. The combined
+  // `annotations` array (computed via useMemo) is what the UI consumes.
+  const [localAnnotations, setLocalAnnotations] = useState<DiffAnnotation[]>([])
+  const [prAnnotations, setPrAnnotations] = useState<DiffAnnotation[]>([])
+  const annotations = useMemo(
+    () => [...localAnnotations, ...prAnnotations],
+    [localAnnotations, prAnnotations],
+  )
   const [reviewMode, setReviewMode] = useState<ReviewMode>(
     () => persistedReviewState?.reviewMode ?? 'annotations',
   )
@@ -374,64 +462,104 @@ export function HunkReview({ worktreePath }: Props) {
   )
 
   // ── Annotations (libSQL-backed) ──
+  // Local-first: the renderer's `localAnnotations` is the source of truth for
+  // the UI. Writes apply optimistically via `applyAnnotationPatch`; IPC runs in
+  // the background. `reconcile` is a low-frequency merge from libSQL that
+  // preserves object identity for unchanged rows.
 
-  const loadAnnotations = useCallback(async () => {
+  const reconcileLocalAnnotations = useCallback(async () => {
     try {
       const rows = await window.api.review.commentList(worktreePath)
-      setAnnotations(reviewToDiffAnnotations(rows))
+      const next = reviewToDiffAnnotations(rows)
+      setLocalAnnotations((prev) => mergeAnnotationsById(prev, next))
     } catch (err) {
       console.error('Failed to load review annotations:', err)
-      setAnnotations([])
     }
   }, [worktreePath])
 
+  // Initial load: fetch from libSQL on mount/worktree change.
   useEffect(() => {
-    void loadAnnotations()
-  }, [loadAnnotations])
+    void reconcileLocalAnnotations()
+  }, [reconcileLocalAnnotations])
 
-  // Reload when annotations are cleared (e.g. after PR merge)
+  const applyAnnotationPatch = useCallback((patch: AnnotationPatch) => {
+    setLocalAnnotations((prev) => {
+      switch (patch.type) {
+        case 'insert': {
+          // Idempotent: if a row with this id is already present, leave it.
+          if (prev.some((a) => a.id === patch.annotation.id)) return prev
+          return [...prev, patch.annotation]
+        }
+        case 'update': {
+          let mutated = false
+          const next = prev.map((a) => {
+            if (a.id !== patch.id) return a
+            mutated = true
+            return { ...a, ...patch.changes }
+          })
+          return mutated ? next : prev
+        }
+        case 'remove': {
+          const next = prev.filter((a) => a.id !== patch.id)
+          return next.length === prev.length ? prev : next
+        }
+        case 'rollback-insert': {
+          const next = prev.filter((a) => a.id !== patch.id)
+          return next.length === prev.length ? prev : next
+        }
+        case 'rollback-restore': {
+          if (prev.some((a) => a.id === patch.annotation.id)) return prev
+          if (patch.index == null || patch.index >= prev.length) {
+            return [...prev, patch.annotation]
+          }
+          const next = prev.slice()
+          next.splice(patch.index, 0, patch.annotation)
+          return next
+        }
+        default:
+          return prev
+      }
+    })
+  }, [])
+
+  // Reload when annotations are cleared (e.g. after PR merge): refresh the
+  // libSQL list, then re-load PR comments so they survive the wipe.
   useEffect(() => {
     return window.api.review.onAnnotationsCleared(() => {
-      void loadAnnotations()
+      void reconcileLocalAnnotations()
+      void loadPrAnnotations(worktreePath, setPrAnnotations)
     })
-  }, [loadAnnotations])
+  }, [reconcileLocalAnnotations, worktreePath])
 
   // ── GitHub PR comment loading ──
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
-      try {
-        const branch = await window.api.git.getCurrentBranch(worktreePath)
-        if (!branch || cancelled) return
-
-        const { projects, workspaces, prStatusMap } = useAppStore.getState()
-        const ws = workspaces.find((w) => w.worktreePath === worktreePath)
-        if (!ws) return
-        const project = projects.find((p) => p.id === ws.projectId)
-        if (!project) return
-
-        const prInfo = prStatusMap.get(`${project.id}:${branch}`)
-        if (!prInfo?.number) return
-
-        const comments = await window.api.github.getPrReviewComments(worktreePath, prInfo.number)
-        if (cancelled) return
-        const mapped: DiffAnnotation[] = comments.map((c) => ({
-          id: c.id,
-          filePath: c.filePath,
-          side: c.diffSide === 'LEFT' ? ('deletions' as const) : ('additions' as const),
-          lineNumber: c.line ?? c.startLine ?? 1,
-          body: c.body,
-          createdAt: c.createdAt,
-          resolved: c.resolved,
-          author: c.author,
-        }))
-        setAnnotations((prev) => [...prev, ...mapped])
-      } catch (err) {
-        console.error('Failed to load PR review comments:', err)
-      }
-    })()
+    void loadPrAnnotations(worktreePath, (next) => {
+      if (cancelled) return
+      setPrAnnotations(next)
+    })
     return () => { cancelled = true }
   }, [worktreePath])
+
+  // ── Drift reconciliation (window focus + git file changes) ──
+  // External writers (constell-annotate CLI, mobile bridge, agent hooks) can
+  // mutate the libSQL DB out from under us. Merge on focus / git changes
+  // instead of polling. mergeAnnotationsById preserves identity for unchanged
+  // rows so memos don't bust.
+  useEffect(() => {
+    const onFocus = () => { void reconcileLocalAnnotations() }
+    const onGitChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ worktreePath?: string }>).detail
+      if (detail?.worktreePath && detail.worktreePath !== worktreePath) return
+      void reconcileLocalAnnotations()
+    }
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('git:files-changed', onGitChanged)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('git:files-changed', onGitChanged)
+    }
+  }, [reconcileLocalAnnotations, worktreePath])
 
   const notifyGitFilesChanged = useCallback((paths: string[]) => {
     window.dispatchEvent(new CustomEvent('git:files-changed', {
@@ -855,7 +983,7 @@ export function HunkReview({ worktreePath }: Props) {
           <AnnotationsSummary
             annotations={annotations}
             worktreePath={worktreePath}
-            onAnnotationsChanged={loadAnnotations}
+            onApplyAnnotation={applyAnnotationPatch}
             selectedIds={selectedIds}
             onToggleComment={toggleComment}
             onJumpToAnnotation={scrollToAnnotationInDiff}
@@ -896,7 +1024,7 @@ export function HunkReview({ worktreePath }: Props) {
                     worktreePath={worktreePath}
                     onOpenFile={openFileFromDiff}
                     fileAnnotations={annotationsByFile.get(f.filePath) ?? []}
-                    onAnnotationsChanged={loadAnnotations}
+                    onApplyAnnotation={applyAnnotationPatch}
                     showPatchAnchorNote={false}
                     activeTourAnnotationId={reviewMode === 'tour' ? (activeTourStepId ?? undefined) : undefined}
                     tourMode={reviewMode === 'tour'}

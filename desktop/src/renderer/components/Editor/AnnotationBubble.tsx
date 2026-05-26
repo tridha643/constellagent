@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import {
   annotationLineEnd,
+  type AnnotationPatch,
   type DiffAnnotation,
   type DiffAnnotationSide,
 } from '../../../shared/diff-annotation-types'
@@ -48,14 +49,14 @@ function formatTimeAgo(isoDate: string): string {
 export function CommentBubble({
   annotation,
   worktreePath,
-  onChanged,
+  onApply,
   tourState = 'off',
   selected,
   onToggle,
 }: {
   annotation: DiffAnnotation
   worktreePath: string
-  onChanged: () => void
+  onApply: (patch: AnnotationPatch) => void
   tourState?: 'off' | 'active' | 'inactive'
   selected?: boolean
   onToggle?: (id: string) => void
@@ -63,14 +64,17 @@ export function CommentBubble({
   const [busy, setBusy] = useState(false)
   const addToast = useAppStore((s) => s.addToast)
 
+  // Optimistic remove: drop the row locally first; restore on IPC failure.
   const handleDelete = useCallback(async () => {
     if (busy) return
+    const snapshot = annotation
     setBusy(true)
+    onApply({ type: 'remove', id: annotation.id })
     try {
       await window.api.review.commentRemove(worktreePath, annotation.id)
-      onChanged()
     } catch (e) {
       console.error('Review annotation action failed:', e)
+      onApply({ type: 'rollback-restore', annotation: snapshot })
       addToast({
         id: `review-comment-err-${Date.now()}`,
         message: annotationErrorMessage(e),
@@ -79,16 +83,19 @@ export function CommentBubble({
     } finally {
       setBusy(false)
     }
-  }, [busy, worktreePath, annotation.id, onChanged, addToast])
+  }, [busy, worktreePath, annotation, onApply, addToast])
 
+  // Optimistic resolve toggle: flip locally, revert on IPC failure.
   const handleResolve = useCallback(async () => {
     if (busy) return
+    const previousResolved = annotation.resolved
     setBusy(true)
+    onApply({ type: 'update', id: annotation.id, changes: { resolved: !previousResolved } })
     try {
-      await window.api.review.commentResolve(worktreePath, annotation.id, !annotation.resolved)
-      onChanged()
+      await window.api.review.commentResolve(worktreePath, annotation.id, !previousResolved)
     } catch (e) {
       console.error('Review annotation resolve failed:', e)
+      onApply({ type: 'update', id: annotation.id, changes: { resolved: previousResolved } })
       addToast({
         id: `review-resolve-err-${Date.now()}`,
         message: annotationErrorMessage(e),
@@ -97,7 +104,7 @@ export function CommentBubble({
     } finally {
       setBusy(false)
     }
-  }, [busy, worktreePath, annotation.id, annotation.resolved, onChanged, addToast])
+  }, [busy, worktreePath, annotation.id, annotation.resolved, onApply, addToast])
 
   const end = annotationLineEnd(annotation)
   const rangeLabel =
@@ -187,6 +194,7 @@ export function CommentComposer({
   lineEnd,
   onCancel,
   onSaved,
+  onApply,
   onDirtyChange,
 }: {
   worktreePath: string
@@ -196,6 +204,7 @@ export function CommentComposer({
   lineEnd: number
   onCancel: () => void
   onSaved: () => void
+  onApply: (patch: AnnotationPatch) => void
   /** Fires when non-whitespace content differs from empty (draft state). */
   onDirtyChange?: (dirty: boolean) => void
 }) {
@@ -216,18 +225,35 @@ export function CommentComposer({
   const submit = async () => {
     const trimmed = body.trim()
     if (!trimmed || busy) return
+    // Generate the id client-side and pass it through so the DB row shares the
+    // same id as the optimistic in-memory row. Avoids a temp-id swap that
+    // would remount every consumer keyed by id.
+    const id = crypto.randomUUID()
+    const optimistic: DiffAnnotation = {
+      id,
+      filePath,
+      side,
+      lineNumber,
+      lineEnd: lineEnd > lineNumber ? lineEnd : undefined,
+      body: trimmed,
+      createdAt: new Date().toISOString(),
+      resolved: false,
+    }
     setBusy(true)
+    onApply({ type: 'insert', annotation: optimistic })
+    setBody('')
+    onSaved()
     try {
       const opts: Parameters<typeof window.api.review.commentAdd>[4] = {
+        id,
         ...(side === 'deletions' ? { oldLine: lineNumber } : {}),
         ...(lineEnd > lineNumber ? { lineEnd } : {}),
         force: true,
       }
       await window.api.review.commentAdd(worktreePath, filePath, lineNumber, trimmed, opts)
-      setBody('')
-      onSaved()
     } catch (e) {
       console.error('Failed to add review annotation:', e)
+      onApply({ type: 'rollback-insert', id })
       addToast({
         id: `review-comment-err-${Date.now()}`,
         message: annotationErrorMessage(e),

@@ -254,7 +254,7 @@ export async function addAnnotation(db, input, opts) {
             throw new Error(result.error);
         }
     }
-    const id = generateId();
+    const id = input.id ?? generateId();
     const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
     await db.execute({
         sql: `INSERT INTO review_annotations
