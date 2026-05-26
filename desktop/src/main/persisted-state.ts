@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { app } from 'electron'
 
@@ -35,12 +35,52 @@ function normalizePath(path: string): string {
   }
 }
 
+// Reads of `constellagent-state.json` are hot (per github poll, mobile RPC,
+// notification routing) but the file only changes on user-driven writes, so
+// stat the file first and only re-parse when mtime/size changed. The cached
+// state is treated as read-only by all callers in this module.
+let cachedState: PersistedStateRecord | null = null
+let cachedMtimeNs: bigint | null = null
+let cachedSize: number | null = null
+
+export function invalidatePersistedStateCache(): void {
+  cachedState = null
+  cachedMtimeNs = null
+  cachedSize = null
+}
+
 function loadState(): PersistedStateRecord {
   const filePath = stateFilePath()
-  if (!existsSync(filePath)) return {}
+  let stats: ReturnType<typeof statSync> | null = null
   try {
-    return JSON.parse(readFileSync(filePath, 'utf-8')) as PersistedStateRecord
+    stats = statSync(filePath, { bigint: true })
   } catch {
+    invalidatePersistedStateCache()
+    return {}
+  }
+  const mtimeNs = stats.mtimeNs
+  const size = Number(stats.size)
+  if (
+    cachedState !== null &&
+    cachedMtimeNs !== null &&
+    cachedSize !== null &&
+    mtimeNs === cachedMtimeNs &&
+    size === cachedSize
+  ) {
+    return cachedState
+  }
+  if (!existsSync(filePath)) {
+    invalidatePersistedStateCache()
+    return {}
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf-8')) as PersistedStateRecord
+    cachedState = parsed
+    cachedMtimeNs = mtimeNs
+    cachedSize = size
+    return parsed
+  } catch {
+    invalidatePersistedStateCache()
     return {}
   }
 }
@@ -199,6 +239,7 @@ function saveState(state: PersistedStateRecord): void {
   const filePath = stateFilePath()
   mkdirSync(app.getPath('userData'), { recursive: true })
   writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf-8')
+  invalidatePersistedStateCache()
 }
 
 /** Registers a git worktree as a persisted desktop workspace so mobile sessions mirror the sidebar. */
