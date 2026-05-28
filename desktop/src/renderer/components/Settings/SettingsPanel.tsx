@@ -658,7 +658,14 @@ function ThemePresetPicker({ value, onChange }: {
 }
 
 function SkillsSubagentsSection() {
-  const { settings, addSkill, removeSkill, updateSkill, addSubagent, removeSubagent, updateSubagent, addToast } = useAppStore()
+  const settings = useAppStore((s) => s.settings)
+  const addSkill = useAppStore((s) => s.addSkill)
+  const removeSkill = useAppStore((s) => s.removeSkill)
+  const updateSkill = useAppStore((s) => s.updateSkill)
+  const addSubagent = useAppStore((s) => s.addSubagent)
+  const removeSubagent = useAppStore((s) => s.removeSubagent)
+  const updateSubagent = useAppStore((s) => s.updateSubagent)
+  const addToast = useAppStore((s) => s.addToast)
   const activeProject = useAppStore((s) => s.activeProject())
 
   const handleAddSkill = async () => {
