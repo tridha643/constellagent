@@ -155,7 +155,8 @@ function StartupCommandRow({
 }
 
 export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
-  const { settings, addToast } = useAppStore()
+  const settings = useAppStore((s) => s.settings)
+  const addToast = useAppStore((s) => s.addToast)
   const nextIdRef = useRef(0)
   // Play the shared dialog exit before unmounting so close mirrors open as one
   // unit (Emil principle 5) instead of the dialog vanishing instantly.
