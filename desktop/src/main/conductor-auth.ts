@@ -1,10 +1,13 @@
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import type { ConductorAuthStatus } from '../shared/agent-chat-types'
 import { resetCursorModelCatalogCache } from './cursor-model-catalog'
 import { cliEnvWithStandardPath } from './cli-env'
+
+const execFileAsync = promisify(execFile)
 
 let cursorApiKeyFromSettings = ''
 let openaiApiKeyFromSettings = ''
@@ -37,21 +40,46 @@ export function applyConductorAuthFromPersistedState(data: unknown): void {
   )
 }
 
-/** Resolve cursor-agent on PATH (GUI Electron often omits ~/.local/bin without cli-env). */
-export function resolveCursorAgentCli(): string | undefined {
-  const env = cliEnvWithStandardPath()
-  const candidates = [
+function cursorAgentCliCandidates(): string[] {
+  return [
     'cursor-agent',
     'agent',
     join(homedir(), '.local', 'bin', 'cursor-agent'),
     join(homedir(), '.local', 'bin', 'agent'),
   ]
-  for (const bin of candidates) {
+}
+
+function firstLine(out: string): string | undefined {
+  return out.trim().split(/\r?\n/)[0]?.trim() || undefined
+}
+
+/** Resolve cursor-agent on PATH (GUI Electron often omits ~/.local/bin without cli-env). */
+export function resolveCursorAgentCli(): string | undefined {
+  const env = cliEnvWithStandardPath()
+  for (const bin of cursorAgentCliCandidates()) {
     if (bin.includes('/') && existsSync(bin)) return bin
     try {
       const lookup = process.platform === 'win32' ? 'where' : 'which'
       const out = execFileSync(lookup, [bin], { encoding: 'utf8', env, timeout: 5000 })
-      const line = out.trim().split(/\r?\n/)[0]?.trim()
+      const line = firstLine(out)
+      if (line) return line
+    } catch {
+      // try next candidate
+    }
+  }
+  return undefined
+}
+
+/** Async twin of {@link resolveCursorAgentCli} — used by the polled auth-status path so the
+ *  CLI lookup never blocks the main thread's event loop. */
+async function resolveCursorAgentCliAsync(): Promise<string | undefined> {
+  const env = cliEnvWithStandardPath()
+  for (const bin of cursorAgentCliCandidates()) {
+    if (bin.includes('/') && existsSync(bin)) return bin
+    try {
+      const lookup = process.platform === 'win32' ? 'where' : 'which'
+      const { stdout } = await execFileAsync(lookup, [bin], { encoding: 'utf8', env, timeout: 5000 })
+      const line = firstLine(stdout)
       if (line) return line
     } catch {
       // try next candidate
@@ -108,6 +136,39 @@ export function getCursorCliAuthSnapshot(force = false): CursorCliAuthSnapshot {
   }
 }
 
+/** Non-blocking twin of {@link getCursorCliAuthSnapshot}. Shares the same cache, so a refresh
+ *  here also warms the synchronous reads used in-turn by the Cursor driver. The IPC auth-status
+ *  path (Settings polls this every 2s with force=true during sign-in) goes through here so the
+ *  15s `cursor-agent status` timeout never freezes the main process. */
+export async function getCursorCliAuthSnapshotAsync(force = false): Promise<CursorCliAuthSnapshot> {
+  const now = Date.now()
+  if (!force && cliAuthCache && now - cliAuthCache.at < CLI_AUTH_CACHE_MS) {
+    return cliAuthCache.snapshot
+  }
+
+  const cli = await resolveCursorAgentCliAsync()
+  if (!cli) {
+    const snapshot = { authenticated: false }
+    cliAuthCache = { at: now, snapshot }
+    return snapshot
+  }
+
+  try {
+    const { stdout } = await execFileAsync(cli, ['status', '--format', 'json'], {
+      encoding: 'utf8',
+      env: cliEnvWithStandardPath(),
+      timeout: 15_000,
+    })
+    const snapshot = parseCursorCliAuthJson(stdout)
+    cliAuthCache = { at: now, snapshot }
+    return snapshot
+  } catch {
+    const snapshot = { authenticated: false }
+    cliAuthCache = { at: now, snapshot }
+    return snapshot
+  }
+}
+
 export function hasCursorCliLogin(): boolean {
   return getCursorCliAuthSnapshot().authenticated
 }
@@ -149,9 +210,9 @@ export function checkCodexAuth(): string | null {
   return 'Codex is not signed in. Run `codex login` in a terminal or add an OpenAI API key in Settings → Conductor.'
 }
 
-export function getConductorAuthStatus(forceRefresh = false): ConductorAuthStatus {
+export async function getConductorAuthStatus(forceRefresh = false): Promise<ConductorAuthStatus> {
   const cursorKey = getCursorApiKey()
-  const cliAuth = getCursorCliAuthSnapshot(forceRefresh)
+  const cliAuth = await getCursorCliAuthSnapshotAsync(forceRefresh)
   const openaiKey = getOpenaiApiKey()
   const codexLogin = hasCodexCliLogin()
 

@@ -3,6 +3,7 @@ import {
   CURSOR_SDK_API_KEY_MESSAGE,
   checkCursorAuth,
   cursorAuthMessageForState,
+  getConductorAuthStatus,
   parseCursorCliAuthJson,
   setConductorAuthKeys,
 } from './conductor-auth'
@@ -51,5 +52,17 @@ describe('checkCursorAuth', () => {
     const msg = checkCursorAuth()
     if (msg === null) return
     expect(msg).toBe(CURSOR_SDK_API_KEY_MESSAGE)
+  })
+})
+
+describe('getConductorAuthStatus', () => {
+  // Now async so the cursor-agent CLI lookup + `status` call never block the main process.
+  it('resolves with cursor ready when an API key is configured (no CLI blocking required)', async () => {
+    setConductorAuthKeys('cursor_test_key', '')
+    const status = await getConductorAuthStatus()
+    expect(status.cursor.ready).toBe(true)
+    expect(status.cursor.detail).toBe('API key configured')
+    expect(status.pi.ready).toBe(true)
+    setConductorAuthKeys('', '')
   })
 })
