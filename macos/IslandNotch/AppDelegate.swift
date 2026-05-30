@@ -11,7 +11,6 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    // Shared, observable state (also injected into the Settings scene).
     let preferences = AppPreferences()
     let permissions = PermissionsService()
     lazy var store = ScreenshotStore(preferences: preferences)
@@ -23,13 +22,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let menu = MenuBarMenu()
     private var statusItem: NSStatusItem?
 
-    // MARK: Lifecycle
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         wireCaptureSources()
+        wireNotchShelfActions()
         notchController.install()
-        syncNotchWithConstellagent()
+        syncConstellagentPresence()
         observeConstellagentPresence()
 
         Task { await store.bootstrap() }
@@ -44,13 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidBecomeActive(_ notification: Notification) {
         permissions.refresh()
         applyDoubleCommandSetting()
-        // NOTE: deliberately NOT re-requesting Screen Recording here. The grant
-        // only registers after a full relaunch, so CGPreflightScreenCaptureAccess()
-        // keeps returning false for the rest of this session even once the user has
-        // granted it — re-requesting on every activation would nag in a loop.
     }
-
-    // MARK: Status item + menu
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -67,7 +59,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openSettings() {
         NSApp.activate(ignoringOtherApps: true)
-        // The selector differs across macOS versions.
         if #available(macOS 14.0, *) {
             NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         } else {
@@ -75,40 +66,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: Capture wiring
-
     private func wireCaptureSources() {
         hotkeyService.onCapture = { [weak self] source in self?.triggerCapture(source) }
         hotkeyService.start()
         doubleTap.onCapture = { [weak self] source in self?.triggerCapture(source) }
     }
 
-    /// Single funnel for every capture path. The store decides whether to
-    /// auto-copy based on the source and the user's preference.
+    private func wireNotchShelfActions() {
+        notchController.configureShelfActions(
+            NotchController.ShelfActions(
+                onCapture: { [weak self] in self?.triggerCapture(.menu) },
+                onCopyLatest: { [weak self] in
+                    guard let entry = self?.store.entries.first else { return }
+                    self?.store.copyToClipboard(entry)
+                },
+                onQuickLookLatest: { [weak self] in
+                    guard let self, let entry = store.entries.first else { return }
+                    QuickLookService.shared.preview(entry.url(in: store.folderURL))
+                }
+            )
+        )
+    }
+
     func triggerCapture(_ source: CaptureSource) {
         Task {
             await store.capture(source: source)
-            if constellagentPresence.isRunning {
-                notchController.flashNewCapture()
-            }
+            notchController.flashNewCapture()
         }
     }
 
-    /// Screen Recording is required for `screencapture` to read real pixels (not
-    /// just the wallpaper). Request it proactively at launch so IslandNotch shows
-    /// up in System Settings and the user is prompted once — instead of silently
-    /// saving blank captures. The grant only applies after relaunch, so this also
-    /// re-checks on `applicationDidBecomeActive`.
     private func ensureScreenRecordingPermission() {
         permissions.refresh()
         guard !permissions.screenRecordingGranted else { return }
         permissions.requestScreenRecording()
     }
 
-    // MARK: Constellagent presence
-
-    private func syncNotchWithConstellagent() {
-        notchController.setConstellagentActive(constellagentPresence.isRunning)
+    private func syncConstellagentPresence() {
+        notchController.setConstellagentRunning(constellagentPresence.isRunning)
     }
 
     private func observeConstellagentPresence() {
@@ -116,16 +110,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = constellagentPresence.isRunning
         } onChange: { [weak self] in
             Task { @MainActor in
-                self?.syncNotchWithConstellagent()
+                self?.syncConstellagentPresence()
                 self?.observeConstellagentPresence()
             }
         }
     }
 
-    // MARK: Double-⌘ preference plumbing
-
-    /// Starts/stops the event tap to match the current preference, requesting
-    /// Accessibility when the user first turns it on.
     func applyDoubleCommandSetting() {
         if preferences.doubleCommandEnabled {
             if !permissions.accessibilityGranted {
@@ -139,8 +129,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Re-applies the double-⌘ setting whenever the preference changes (e.g. the
-    /// user flips the toggle in Settings). Re-arms itself after each change.
     private func observeDoubleCommandPreference() {
         withObservationTracking {
             _ = preferences.doubleCommandEnabled

@@ -15,32 +15,33 @@
 //  Layer: Window
 
 import AppKit
-import Combine
 import DynamicNotchKit
 import SwiftUI
 
 @MainActor
 final class NotchController {
+    struct ShelfActions {
+        var onCapture: (() -> Void)?
+        var onCopyLatest: (() -> Void)?
+        var onQuickLookLatest: (() -> Void)?
+    }
+
     private let store: ScreenshotStore
     private let preferences: AppPreferences
-    private var notch: DynamicNotch<AnyView, EmptyView, AnyView>?
-    private var isConstellagentActive = false
+    private var notch: DynamicNotch<AnyView, EmptyView, EmptyView>?
+    private var isNotchVisible = false
+    private(set) var isConstellagentRunning = false
+    private var shelfActions = ShelfActions()
     private var collapseTask: Task<Void, Never>?
-    private var hoverCancellable: AnyCancellable?
+    private var hoverExpandTask: Task<Void, Never>?
 
-    /// Global monitors that notice a drag (from any app) passing near the notch,
-    /// so we can expand the shelf to meet it — `.onHover`/`.onDrop` can't see a
-    /// drag until it's already over a tiny target. Pattern from NotchDrop.
-    private var dragMonitor: EventMonitor?
-    private var dragEndMonitor: EventMonitor?
-    private var isDragNearNotch = false
-    /// Armed slightly before the drag reaches the catcher window, so the catcher's
-    /// hitTest is already intercepting when the drag arrives (avoids a race).
-    private var isDragArmed = false
-    /// Shared with the shelf so it can show a "drop here" affordance on approach.
+    /// Whether the notch is currently expanded (open). Tracked locally because
+    /// DynamicNotchKit does not expose its state publicly.
+    private var isExpanded = false
+    private var mouseMonitors: [Any] = []
+
     private let dragState = NotchDragState()
-    /// AppKit-level drop target over the notch (SwiftUI `.onDrop` on the notch
-    /// panel misses drags whose target appears mid-drag).
+    private let shelfEnvironment = NotchShelfEnvironment()
     private let dropCatcher = DropCatcherWindow()
 
     init(store: ScreenshotStore, preferences: AppPreferences) {
@@ -48,15 +49,27 @@ final class NotchController {
         self.preferences = preferences
     }
 
-    /// Builds the notch host. Stays hidden until Constellagent is running.
+    func configureShelfActions(_ actions: ShelfActions) {
+        shelfActions = actions
+    }
+
+    /// Builds the notch host and presents it immediately.
     func install() {
         guard notch == nil else { return }
         let store = store
         let preferences = preferences
         let dragState = dragState
-        let notch = DynamicNotch(hoverBehavior: [.keepVisible]) {
+        // boring.notch model: the notch opens on hover, but the half-screen screenSaver-level
+        // panel must NOT block windows when the cursor is elsewhere. We drive both with a
+        // global mouse-move monitor (`startHoverTracking`) that toggles `ignoresMouseEvents`
+        // and expand/collapse based on whether the cursor is over the notch (or open shelf).
+        // hoverBehavior stays empty so DynamicNotchKit's own hover logic never fights ours.
+        let notch = DynamicNotch(hoverBehavior: []) {
             AnyView(
                 NotchShelfView(
+                    onCapture: { [weak self] in self?.shelfActions.onCapture?() },
+                    onCopyLatest: { [weak self] in self?.shelfActions.onCopyLatest?() },
+                    onQuickLookLatest: { [weak self] in self?.shelfActions.onQuickLookLatest?() },
                     onDropHoverChange: { [weak self] targeted in
                         self?.handleDropHover(targeted)
                     },
@@ -67,32 +80,123 @@ final class NotchController {
                 .environment(store)
                 .environment(preferences)
                 .environment(dragState)
+                .environment(self.shelfEnvironment)
             )
         } compactLeading: {
             EmptyView()
         } compactTrailing: {
-            AnyView(
-                NotchCompactDropSurface(
-                    store: store,
-                    onDropHoverChange: { [weak self] targeted in
-                        self?.handleDropHover(targeted)
-                    },
-                    onDropAccepted: { [weak self] in
-                        self?.handleDropAccepted()
-                    }
-                )
+            EmptyView()
+        }
+        // Drive the panel morph with our own motion vocabulary instead of DynamicNotchKit's
+        // default `.bouncy(0.4)`, and — critically — set `skipIntermediateHides` so a
+        // compact->expanded open no longer flashes through the hidden state with a 250ms
+        // dead gap. The notch is opened dozens of times a day; this makes every open a
+        // single continuous morph.
+        notch.transitionConfiguration = Self.makeTransitionConfiguration()
+        self.notch = notch
+        configureDropCatcher()
+        startHoverTracking()
+        setNotchVisible(true)
+    }
+
+    /// Builds the panel-morph animation config. When the user prefers reduced motion we
+    /// collapse the spring morph to a near-instant fade (movement dropped, the package's
+    /// own window alpha cross-fade still provides a gentle comprehension cue).
+    private static func makeTransitionConfiguration() -> DynamicNotchTransitionConfiguration {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            return DynamicNotchTransitionConfiguration(
+                openingAnimation: Motion.notchReduced,
+                closingAnimation: Motion.notchReduced,
+                conversionAnimation: Motion.notchReduced,
+                skipIntermediateHides: true
             )
         }
-        self.notch = notch
-        bindHoverObservation(to: notch)
-        configureDropCatcher()
-        startDragApproachWatch()
+        return DynamicNotchTransitionConfiguration(
+            openingAnimation: Motion.notchOpen,
+            closingAnimation: Motion.notchClose,
+            conversionAnimation: Motion.notchConvert,
+            skipIntermediateHides: true
+        )
+    }
+
+    /// One subtle alignment tap for a meaningful, one-shot event (capture taken, drop
+    /// accepted). Kept to a single tap per event — never on the hover-open path, which
+    /// fires constantly.
+    private func performFeedbackTap() {
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+    }
+
+    /// Toggles whether the DynamicNotchKit panel swallows mouse events. The panel is a
+    /// half-screen, screenSaver-level window, so when the cursor is NOT over the notch it
+    /// must be fully click-through or it blocks every window beneath it. The hover monitor
+    /// flips this on the instant the cursor reaches the notch and off when it leaves.
+    private func setNotchInteractive(_ interactive: Bool) {
+        notch?.windowController?.window?.ignoresMouseEvents = !interactive
+    }
+
+    // MARK: Hover tracking (boring.notch model)
+
+    /// Watches the global cursor position and (a) keeps the panel click-through unless the
+    /// cursor is over the notch/open shelf, and (b) opens the notch on hover, closes it on
+    /// leave. A passive mouse-move monitor — it never arms an overlay window, so windows
+    /// drag freely everywhere except directly over the small notch hover target.
+    private func startHoverTracking() {
+        let handler: (NSEvent) -> Void = { [weak self] _ in
+            Task { @MainActor in self?.evaluateHover() }
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved], handler: { event in handler(event) }) {
+            mouseMonitors.append(global)
+        }
+        // Local monitor covers the case where the cursor is over our own (interactive) panel.
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved], handler: { event in
+            handler(event)
+            return event
+        }) {
+            mouseMonitors.append(local)
+        }
+    }
+
+    private func evaluateHover() {
+        guard isNotchVisible, !dragState.isInbound, let screen = NotchGeometry.targetScreen else { return }
+        let region = isExpanded
+            ? NotchGeometry.expandedHoverRect(on: screen)
+            : NotchGeometry.notchHoverRect(on: screen)
+        let over = region.contains(NSEvent.mouseLocation)
+        // Interactive only while the cursor is over the notch/shelf — click-through otherwise.
+        setNotchInteractive(over)
+        if over {
+            collapseTask?.cancel()
+            if !isExpanded { scheduleHoverExpand() }
+        } else {
+            hoverExpandTask?.cancel()
+            if isExpanded { scheduleIdleCollapse() }
+        }
+    }
+
+    private func scheduleHoverExpand() {
+        guard !isExpanded, hoverExpandTask == nil else { return }
+        hoverExpandTask = Task { @MainActor in
+            try? await Task.sleep(for: Motion.hoverOpenDelay)
+            defer { hoverExpandTask = nil }
+            guard !Task.isCancelled, isNotchVisible, let screen = NotchGeometry.targetScreen else { return }
+            // Re-confirm the cursor is still on the notch before committing to open.
+            guard NotchGeometry.notchHoverRect(on: screen).contains(NSEvent.mouseLocation) else { return }
+            await expand()
+        }
+    }
+
+    private func expand() async {
+        guard let notch, isNotchVisible else { return }
+        collapseTask?.cancel()
+        setNotchInteractive(true)
+        await notch.expand()
+        setNotchInteractive(true)
+        isExpanded = true
     }
 
     // MARK: AppKit drop catcher
 
     private func configureDropCatcher() {
-        dropCatcher.catcher.isDragActive = { [weak self] in self?.isDragArmed ?? false }
         dropCatcher.catcher.onDragChange = { [weak self] active in
             Task { @MainActor in self?.setDragInbound(active) }
         }
@@ -109,12 +213,20 @@ final class NotchController {
         dropCatcher.setFrame(NotchGeometry.dragApproachRect(on: screen), display: false)
     }
 
+    /// Driven by the AppKit drag session entering/leaving the catcher. A file drag over
+    /// the notch expands the shelf so the user can drop on the notch or continue down onto
+    /// the larger shelf target. (Mouse-move hover doesn't fire during a drag, so the
+    /// catcher is what opens the notch for a photo drag.)
     private func setDragInbound(_ inbound: Bool) {
-        guard isConstellagentActive else { return }
+        guard isNotchVisible else { return }
         dragState.isInbound = inbound
         if inbound {
+            hoverExpandTask?.cancel()
             collapseTask?.cancel()
-            Task { await notch?.expand() }
+            // Become interactive immediately (before the animation) so the drag can be
+            // dropped onto the shelf the instant it expands.
+            setNotchInteractive(true)
+            Task { await self.expand() }
         } else {
             scheduleIdleCollapse()
         }
@@ -130,70 +242,32 @@ final class NotchController {
 
     private func importDropped(image: NSImage) {
         Task {
-            if await store.importImage(image) != nil { handleDropAccepted() }
+            let ok = await store.importImage(image) != nil
+            if ok { handleDropAccepted() }
         }
     }
 
-    // MARK: Drag-approach detection
-
-    /// Watches `.leftMouseDragged` globally (fires even while Finder owns a file
-    /// drag) and expands the notch when the cursor enters the catch zone around it.
-    private func startDragApproachWatch() {
-        guard dragMonitor == nil else { return }
-        dragMonitor = EventMonitor(mask: [.leftMouseDragged]) { [weak self] _ in
-            Task { @MainActor in self?.evaluateDragApproach() }
-        }
-        dragMonitor?.start()
-        // When the drag ends, drop the "near" state and let it collapse if idle.
-        dragEndMonitor = EventMonitor(mask: [.leftMouseUp]) { [weak self] _ in
-            Task { @MainActor in self?.endDragApproach() }
-        }
-        dragEndMonitor?.start()
-    }
-
-    private func evaluateDragApproach() {
-        guard isConstellagentActive, let screen = NotchGeometry.targetScreen else { return }
-        // Arm on a rect larger than the catcher window so the catcher's hitTest is
-        // already intercepting by the time the drag reaches it.
-        let armRect = NotchGeometry.dragApproachRect(on: screen).insetBy(dx: -100, dy: -100)
-        let near = armRect.contains(NSEvent.mouseLocation)
-        guard near != isDragNearNotch else { return }
-        isDragNearNotch = near
-        isDragArmed = near
-        dragState.isInbound = near
-        if near {
-            collapseTask?.cancel()
-            Task { await notch?.expand() }
-        } else {
-            scheduleIdleCollapse()
-        }
-    }
-
-    private func endDragApproach() {
-        guard isDragNearNotch else { return }
-        isDragNearNotch = false
-        isDragArmed = false
-        dragState.isInbound = false
-        scheduleIdleCollapse()
-    }
-
-    /// Collapses back to idle shortly, unless the pointer is hovering the notch.
     private func scheduleIdleCollapse() {
         collapseTask?.cancel()
         collapseTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.2))
-            guard !Task.isCancelled, isConstellagentActive, let notch = self.notch else { return }
-            guard !notch.isHovering, !isDragNearNotch else { return }
+            try? await Task.sleep(for: Motion.collapseDelay)
+            guard !Task.isCancelled, isNotchVisible, self.notch != nil else { return }
+            guard !dragState.isInbound else { return }
+            // Don't collapse if the cursor wandered back over the open shelf in the meantime.
+            if let screen = NotchGeometry.targetScreen,
+               NotchGeometry.expandedHoverRect(on: screen).contains(NSEvent.mouseLocation) {
+                return
+            }
             await collapseToIdle()
         }
     }
 
-    /// Shows the compact notch affordance while Constellagent is running.
-    func setConstellagentActive(_ active: Bool) {
-        isConstellagentActive = active
+    /// Presents the notch. Constellagent presence only affects the in-shelf badge.
+    func setNotchVisible(_ visible: Bool) {
+        isNotchVisible = visible
         guard notch != nil else { return }
         collapseTask?.cancel()
-        if active {
+        if visible {
             positionDropCatcher()
             dropCatcher.orderFrontRegardless()
             Task { await presentIdle() }
@@ -203,9 +277,14 @@ final class NotchController {
         }
     }
 
-    /// Expands briefly after a new capture, then returns to idle when inactive.
+    func setConstellagentRunning(_ running: Bool) {
+        isConstellagentRunning = running
+        shelfEnvironment.isConstellagentRunning = running
+    }
+
     func flashNewCapture() {
-        guard isConstellagentActive else { return }
+        guard isNotchVisible else { return }
+        performFeedbackTap()
         Task { await expandAndScheduleCollapse() }
     }
 
@@ -217,91 +296,74 @@ final class NotchController {
 
     // MARK: Private
 
-    /// DynamicNotchKit hides compact mode on floating (non-notch) displays.
     private var supportsCompactIdle: Bool {
         guard let screen = NotchGeometry.targetScreen else { return false }
         return NotchGeometry.hasNotch(screen)
     }
 
     private func presentIdle() async {
-        guard let notch, isConstellagentActive else { return }
+        guard let notch, isNotchVisible else { return }
         if supportsCompactIdle {
             await notch.compact()
         } else {
             await notch.hide()
         }
+        isExpanded = false
+        setNotchInteractive(false)
     }
 
     private func collapseToIdle() async {
-        guard let notch, isConstellagentActive else { return }
+        guard let notch, isNotchVisible else { return }
         if supportsCompactIdle {
             await notch.compact()
         } else {
             await notch.hide()
         }
+        isExpanded = false
+        setNotchInteractive(false)
     }
 
+    /// A brief, NON-interactive peek (e.g. after a new capture). It stays click-through
+    /// so it never blocks windows underneath — it's a glance, not an interaction.
     private func expandAndScheduleCollapse() async {
-        guard let notch, isConstellagentActive else { return }
+        guard let notch, isNotchVisible else { return }
         collapseTask?.cancel()
+        setNotchInteractive(false)
         await notch.expand()
+        // expand() can briefly recreate the window; re-assert click-through.
+        setNotchInteractive(false)
+        isExpanded = true
         collapseTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, isConstellagentActive, let notch = self.notch else { return }
-            if notch.isHovering {
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled, isNotchVisible, self.notch != nil else { return }
+            guard !dragState.isInbound else { return }
+            if let screen = NotchGeometry.targetScreen,
+               NotchGeometry.expandedHoverRect(on: screen).contains(NSEvent.mouseLocation) {
                 return
             }
             await collapseToIdle()
         }
     }
 
+    /// Called from the shelf's SwiftUI `.onDrop` once a drag is over the expanded shelf,
+    /// so we keep it expanded + interactive while the user lines up the drop.
     private func handleDropHover(_ targeted: Bool) {
-        guard isConstellagentActive else { return }
-        // The SwiftUI `.onDrop` path fires for real Finder drags once they're over
-        // the target — mirror it into the inbound state so the "drop here" prompt
-        // shows even if the global monitor didn't (real drag sessions can swallow
-        // the global mouse events).
+        guard isNotchVisible else { return }
         dragState.isInbound = targeted
         if targeted {
+            hoverExpandTask?.cancel()
             collapseTask?.cancel()
-            Task { await notch?.expand() }
+            setNotchInteractive(true)
+            Task { await self.expand() }
+        } else {
+            scheduleIdleCollapse()
         }
     }
 
-    /// A dropped image was accepted — keep the notch expanded long enough for the
-    /// new thumbnail to spring in and be seen, then return to idle (same affordance
-    /// as a fresh capture).
     private func handleDropAccepted() {
-        guard isConstellagentActive else { return }
+        guard isNotchVisible else { return }
+        performFeedbackTap()
         dragState.isInbound = false
         Task { await expandAndScheduleCollapse() }
-    }
-
-    /// DynamicNotch publishes hover via Combine — Swift Observation does not see @Published changes.
-    private func bindHoverObservation(to notch: DynamicNotch<AnyView, EmptyView, AnyView>) {
-        hoverCancellable = notch.$isHovering
-            .removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] hovering in
-                Task { @MainActor in
-                    await self?.handleHoverChange(isHovering: hovering)
-                }
-            }
-    }
-
-    private func handleHoverChange(isHovering: Bool) async {
-        guard let notch, isConstellagentActive else { return }
-        if isHovering {
-            collapseTask?.cancel()
-            await notch.expand()
-        } else {
-            collapseTask?.cancel()
-            collapseTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(350))
-                guard !Task.isCancelled, isConstellagentActive, let notch = self.notch else { return }
-                guard !notch.isHovering else { return }
-                await collapseToIdle()
-            }
-        }
     }
 }

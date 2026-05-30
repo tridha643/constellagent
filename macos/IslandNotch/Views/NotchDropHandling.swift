@@ -1,7 +1,7 @@
 //  NotchDropHandling.swift
 //  IslandNotch
 //
-//  Purpose: Shared drag-and-drop surface for the notch shelf (expanded + compact).
+//  Purpose: Shared drag-and-drop import for the expanded notch shelf.
 //  Layer: View
 
 import AppKit
@@ -21,78 +21,77 @@ enum NotchDropHandling {
         .data,
     ]
 
+    /// Imports all dropped providers. Returns true only after at least one import succeeds.
     @MainActor
-    static func handle(_ providers: [NSItemProvider], store: ScreenshotStore) -> Bool {
-        var handled = false
+    static func handle(_ providers: [NSItemProvider], store: ScreenshotStore) async -> Bool {
+        guard !providers.isEmpty else { return false }
+        var anySuccess = false
         for provider in providers {
-            if loadFileURL(from: provider, store: store) {
-                handled = true
-            } else if loadImage(from: provider, store: store) {
-                handled = true
+            if await importFromProvider(provider, store: store) {
+                anySuccess = true
             }
         }
-        Log.store.debug("drop handled=\(handled) (\(providers.count) provider(s))")
-        return handled
+        Log.store.debug("drop import success=\(anySuccess) (\(providers.count) provider(s))")
+        return anySuccess
     }
 
     @MainActor
-    private static func loadFileURL(from provider: NSItemProvider, store: ScreenshotStore) -> Bool {
-        let identifiers = [
-            UTType.fileURL.identifier,
-            UTType.data.identifier,
-            "public.file-url",
-        ]
-        guard let type = identifiers.first(where: { provider.hasItemConformingToTypeIdentifier($0) }) else {
+    private static func importFromProvider(_ provider: NSItemProvider, store: ScreenshotStore) async -> Bool {
+        if await importFileURL(from: provider, store: store) { return true }
+        return await importImageData(from: provider, store: store)
+    }
+
+    @MainActor
+    private static func importFileURL(from provider: NSItemProvider, store: ScreenshotStore) async -> Bool {
+        let fileTypes: [UTType] = [.fileURL, .png, .jpeg, .gif, .tiff, .heic, .webP, .data]
+        guard let type = fileTypes.first(where: { provider.hasItemConformingToTypeIdentifier($0.identifier) }) else {
             return false
         }
-        provider.loadItem(forTypeIdentifier: type, options: nil) { item, _ in
-            let url: URL? = switch item {
-            case let url as URL: url
-            case let data as Data: URL(dataRepresentation: data, relativeTo: nil)
-            case let string as String: URL(fileURLWithPath: string)
-            case let nsString as NSString: URL(fileURLWithPath: nsString as String)
-            default: nil
+
+        return await withCheckedContinuation { continuation in
+            provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { url, error in
+                if let error {
+                    Log.store.error("loadFileRepresentation failed (\(type.identifier)): \(error.localizedDescription)")
+                    continuation.resume(returning: false)
+                    return
+                }
+                guard let url else {
+                    Log.store.error("loadFileRepresentation returned nil url (\(type.identifier))")
+                    continuation.resume(returning: false)
+                    return
+                }
+                Task { @MainActor in
+                    let imported = await store.importImage(from: url) != nil
+                    continuation.resume(returning: imported)
+                }
             }
-            guard let url else { return }
-            Task { @MainActor in await store.importImage(from: url) }
         }
-        return true
     }
 
     @MainActor
-    private static func loadImage(from provider: NSItemProvider, store: ScreenshotStore) -> Bool {
+    private static func importImageData(from provider: NSItemProvider, store: ScreenshotStore) async -> Bool {
         let imageTypes: [UTType] = [.image, .png, .jpeg, .gif, .tiff, .heic, .webP]
         guard let type = imageTypes.first(where: { provider.hasItemConformingToTypeIdentifier($0.identifier) }) else {
             return false
         }
-        provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, _ in
-            guard let data, let image = NSImage(data: data) else { return }
-            Task { @MainActor in await store.importImage(image) }
+
+        return await withCheckedContinuation { continuation in
+            provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, error in
+                if let error {
+                    Log.store.error("loadDataRepresentation failed (\(type.identifier)): \(error.localizedDescription)")
+                    continuation.resume(returning: false)
+                    return
+                }
+                guard let data, let image = NSImage(data: data) else {
+                    Log.store.error("loadDataRepresentation: invalid image bytes (\(type.identifier))")
+                    continuation.resume(returning: false)
+                    return
+                }
+                Task { @MainActor in
+                    let imported = await store.importImage(image) != nil
+                    continuation.resume(returning: imported)
+                }
+            }
         }
-        return true
-    }
-}
-
-/// Compact notch region: invisible hit target + optional count badge + drop surface.
-struct NotchCompactDropSurface: View {
-    @Bindable var store: ScreenshotStore
-    var onDropHoverChange: ((Bool) -> Void)?
-    var onDropAccepted: (() -> Void)?
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isDropTargeted = false
-
-    var body: some View {
-        NotchCompactIndicator(isDropTargeted: isDropTargeted)
-            .contentShape(Rectangle())
-            .onDrop(of: NotchDropHandling.types, isTargeted: $isDropTargeted) { providers in
-                let accepted = NotchDropHandling.handle(providers, store: store)
-                if accepted { onDropAccepted?() }
-                return accepted
-            }
-            .onChange(of: isDropTargeted) { _, targeted in
-                onDropHoverChange?(targeted)
-            }
-            .animation(Motion.easeOut, value: isDropTargeted)
     }
 }

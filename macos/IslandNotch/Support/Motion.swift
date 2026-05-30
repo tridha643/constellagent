@@ -17,6 +17,30 @@ enum Motion {
     /// Notch expand/collapse + layout reflow. Lively but barely bouncy.
     static let notch = Animation.spring(response: 0.34, dampingFraction: 0.80)
 
+    // MARK: Window morph (DynamicNotchKit transitionConfiguration)
+    //
+    // These drive the actual NSPanel compact<->expanded morph AND the shelf's own
+    // `isExpanded` reflow, so the window and its contents move as a single unit. The
+    // notch is hovered open dozens of times a day, so the open is a snappy, almost
+    // bounce-free spring under ~300ms; the close is quicker still (exits beat enters);
+    // the conversion matches the open so a compact->expanded morph feels identical to
+    // a fresh open now that the intermediate hide is skipped.
+
+    /// Hidden/compact -> expanded. Snappy, low bounce — tuned for fast actuation so
+    /// the surface reads as opening the instant the cursor commits.
+    static let notchOpen = Animation.spring(response: 0.26, dampingFraction: 0.82)
+
+    /// Expanded/compact -> hidden. Faster than the open.
+    static let notchClose = Animation.spring(response: 0.24, dampingFraction: 0.90)
+
+    /// compact <-> expanded conversion. Matches the open so the morph is cohesive.
+    static let notchConvert = Animation.spring(response: 0.26, dampingFraction: 0.82)
+
+    /// Reduced-motion window morph: near-instant, no spring overshoot. Movement is
+    /// dropped while the cross-fade window alpha (handled by the package) still reads
+    /// as a gentle fade.
+    static let notchReduced = Animation.easeOut(duration: 0.10)
+
     /// A thumbnail settling into / leaving the shelf — a touch more bounce so a
     /// new capture feels like it "drops" in.
     static let shelfItem = Animation.spring(response: 0.30, dampingFraction: 0.72)
@@ -31,6 +55,13 @@ enum Motion {
 
     /// Gentle hover affordances.
     static let hover = Animation.easeOut(duration: 0.16)
+
+    /// Delay before opening when the cursor reaches the notch. Kept tiny so actuation
+    /// feels immediate; just enough to reject a cursor merely passing through the notch.
+    static let hoverOpenDelay: Duration = .milliseconds(55)
+
+    /// Delay before collapsing when idle after a drop or drag leaves the zone.
+    static let collapseDelay: Duration = .milliseconds(250)
 
     // MARK: Transitions
 

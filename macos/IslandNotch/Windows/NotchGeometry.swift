@@ -41,13 +41,44 @@ enum NotchGeometry {
         )
     }
 
-    /// A generous catch zone at the top-center of the screen: wide and tall enough
-    /// to (a) catch a drag approaching the closed notch and (b) fully contain the
-    /// expanded shelf, so the notch stays open while the user drags *onto* it to
-    /// drop instead of collapsing out from under the cursor.
+    /// The drop catch zone for the AppKit `DropCatcher`. Deliberately small and
+    /// hugging the notch — just the notch plus a modest margin, only as tall as the
+    /// menu bar plus a thin strip below so it abuts the expanded shelf window. It is
+    /// NOT the old 660×240 region: because the catcher only claims the cursor during
+    /// a live file drag, keeping it small means even that case never overlaps real
+    /// app content. Dragging *down* onto the expanded shelf is handled by the
+    /// shelf's own SwiftUI `.onDrop`, so the catcher need not cover the shelf.
     static func dragApproachRect(on screen: NSScreen) -> NSRect {
-        let width: CGFloat = 660   // wider than the 600pt expanded shelf
-        let height: CGFloat = 240  // notch (~38) + full expanded shelf drop area
+        let notch = notchRect(on: screen)
+        let horizontalMargin: CGFloat = 48
+        let bottomOverlap: CGFloat = 44 // reach just below the menu bar to abut the shelf
+        return NSRect(
+            x: notch.minX - horizontalMargin,
+            y: notch.minY - bottomOverlap,
+            width: notch.width + horizontalMargin * 2,
+            height: notch.height + bottomOverlap
+        )
+    }
+
+    /// The hover target while the notch is CLOSED — the physical notch plus a small
+    /// margin so it's easy to aim at. Hovering anywhere in here opens the notch
+    /// (boring.notch behaviour). Kept tight so the rest of the menu bar stays usable.
+    static func notchHoverRect(on screen: NSScreen) -> NSRect {
+        let notch = notchRect(on: screen)
+        return NSRect(
+            x: notch.minX - 12,
+            y: notch.minY - 6,
+            width: notch.width + 24,
+            height: notch.height + 6
+        )
+    }
+
+    /// The hover target while the notch is OPEN — covers the expanded shelf so the
+    /// notch stays open while the cursor is over its content, and collapses once the
+    /// cursor leaves this region.
+    static func expandedHoverRect(on screen: NSScreen) -> NSRect {
+        let width: CGFloat = 700
+        let height: CGFloat = 240
         return NSRect(
             x: screen.frame.midX - width / 2,
             y: screen.frame.maxY - height,

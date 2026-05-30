@@ -16,6 +16,10 @@ final class PermissionsService {
     private(set) var accessibilityGranted: Bool = false
     /// Screen Recording — required to capture screen content.
     private(set) var screenRecordingGranted: Bool = false
+    /// Ad-hoc signed builds get a new identity every rebuild; TCC grants stop matching.
+    private(set) var isAdHocSigned: Bool = true
+    /// Stable signing authority when not ad-hoc (e.g. Apple Development or local dev cert).
+    private(set) var signingAuthority: String?
 
     init() {
         refresh()
@@ -26,8 +30,10 @@ final class PermissionsService {
     func refresh() {
         accessibilityGranted = AXIsProcessTrusted()
         screenRecordingGranted = CGPreflightScreenCaptureAccess()
+        isAdHocSigned = CodeSigningStatus.isAdHocSigned
+        signingAuthority = CodeSigningStatus.authoritySummary
         Log.permissions.debug(
-            "refresh ax=\(self.accessibilityGranted) screen=\(self.screenRecordingGranted)"
+            "refresh ax=\(self.accessibilityGranted) screen=\(self.screenRecordingGranted) adhoc=\(self.isAdHocSigned)"
         )
     }
 
