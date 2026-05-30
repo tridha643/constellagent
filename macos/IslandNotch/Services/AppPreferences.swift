@@ -55,7 +55,11 @@ final class AppPreferences {
         self.captureLocation = (defaults.string(forKey: Keys.captureLocation))
             .flatMap(CaptureLocation.init(rawValue:)) ?? .desktopIslandShots
         self.retentionDays = defaults.integer(forKey: Keys.retentionDays) // 0 if unset
-        self.doubleCommandEnabled = defaults.bool(forKey: Keys.doubleCommandEnabled)
+        if defaults.object(forKey: Keys.doubleCommandEnabled) == nil {
+            self.doubleCommandEnabled = true
+        } else {
+            self.doubleCommandEnabled = defaults.bool(forKey: Keys.doubleCommandEnabled)
+        }
 
         if let raw = defaults.array(forKey: Keys.autoCopySources) as? [String] {
             self.autoCopySources = Set(raw.compactMap(CaptureSource.init(rawValue:)))

@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     lazy var store = ScreenshotStore(preferences: preferences)
 
     private lazy var notchController = NotchController(store: store, preferences: preferences)
+    private let constellagentPresence = ConstellagentPresenceService()
     private let hotkeyService = HotkeyService()
     private let doubleTap = DoubleCommandTapService()
     private let menu = MenuBarMenu()
@@ -28,13 +29,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         wireCaptureSources()
         notchController.install()
+        syncNotchWithConstellagent()
+        observeConstellagentPresence()
 
         Task { await store.bootstrap() }
 
         applyDoubleCommandSetting()
         observeDoubleCommandPreference()
+        ensureScreenRecordingPermission()
 
         Log.app.debug("IslandNotch launched")
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        permissions.refresh()
+        applyDoubleCommandSetting()
+        // NOTE: deliberately NOT re-requesting Screen Recording here. The grant
+        // only registers after a full relaunch, so CGPreflightScreenCaptureAccess()
+        // keeps returning false for the rest of this session even once the user has
+        // granted it — re-requesting on every activation would nag in a loop.
     }
 
     // MARK: Status item + menu
@@ -75,7 +88,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func triggerCapture(_ source: CaptureSource) {
         Task {
             await store.capture(source: source)
-            notchController.flashNewCapture()
+            if constellagentPresence.isRunning {
+                notchController.flashNewCapture()
+            }
+        }
+    }
+
+    /// Screen Recording is required for `screencapture` to read real pixels (not
+    /// just the wallpaper). Request it proactively at launch so IslandNotch shows
+    /// up in System Settings and the user is prompted once — instead of silently
+    /// saving blank captures. The grant only applies after relaunch, so this also
+    /// re-checks on `applicationDidBecomeActive`.
+    private func ensureScreenRecordingPermission() {
+        permissions.refresh()
+        guard !permissions.screenRecordingGranted else { return }
+        permissions.requestScreenRecording()
+    }
+
+    // MARK: Constellagent presence
+
+    private func syncNotchWithConstellagent() {
+        notchController.setConstellagentActive(constellagentPresence.isRunning)
+    }
+
+    private func observeConstellagentPresence() {
+        withObservationTracking {
+            _ = constellagentPresence.isRunning
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.syncNotchWithConstellagent()
+                self?.observeConstellagentPresence()
+            }
         }
     }
 
@@ -88,7 +131,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !permissions.accessibilityGranted {
                 permissions.requestAccessibility()
             }
-            _ = doubleTap.start()
+            if !doubleTap.isRunning {
+                _ = doubleTap.start()
+            }
         } else {
             doubleTap.stop()
         }

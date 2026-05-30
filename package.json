@@ -5,9 +5,10 @@
   "scripts": {
     "build:constellagent-mobile-protocol": "bun run --cwd packages/constellagent-mobile-protocol build",
     "build:pi-gui-packages": "bun run --cwd packages/pi-gui-session-driver build && bun run --cwd packages/pi-gui-catalogs build && bun run --cwd packages/pi-gui-pi-sdk-driver build",
+    "build:island-notch": "sh scripts/build-island-notch.sh",
     "postinstall": "bun run build:constellagent-mobile-protocol && bun run build:pi-gui-packages",
     "setup": "bun install && bun run --cwd desktop rebuild && sh scripts/install-bundled-skills.sh && sh scripts/install-hunk-skill.sh",
-    "dev": "bun run build:constellagent-mobile-protocol && bun run build:pi-gui-packages && bun run --cwd desktop dev",
+    "dev": "bun run build:constellagent-mobile-protocol && bun run build:pi-gui-packages && sh scripts/build-island-notch.sh && bun run --cwd desktop dev",
     "build": "bun run build:constellagent-mobile-protocol && bun run build:pi-gui-packages && bun run --cwd desktop build",
     "dev:isolated": "sh scripts/dev-isolated.sh",
     "dev-isolated": "sh scripts/dev-isolated.sh",

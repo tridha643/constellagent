@@ -5,4 +5,5 @@
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export CONSTELLAGENT_ISOLATED_DEV=1
+sh "$ROOT/scripts/build-island-notch.sh"
 exec bun run --cwd "$ROOT/desktop" dev

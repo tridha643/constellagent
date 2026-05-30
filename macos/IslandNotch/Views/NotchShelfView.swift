@@ -11,46 +11,93 @@ import UniformTypeIdentifiers
 
 struct NotchShelfView: View {
     @Environment(ScreenshotStore.self) private var store
+    @Environment(NotchDragState.self) private var dragState
+    var onDropHoverChange: ((Bool) -> Void)?
+    var onDropAccepted: (() -> Void)?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var isExpanded = false
     @State private var isDropTargeted = false
+    /// Brief acknowledgement pop after a drop lands.
+    @State private var acceptedPop = false
 
     private let maxVisible = 8
 
+    /// Show the prominent drop affordance the moment a drag heads for the notch
+    /// (`dragState.isInbound`) — not only once it's precisely over the target.
+    private var showingDropZone: Bool { isDropTargeted || dragState.isInbound }
+
     var body: some View {
-        Group {
-            if store.entries.isEmpty {
-                NotchPillView(count: 0)
-            } else {
-                shelf
+        ZStack {
+            Group {
+                if store.entries.isEmpty {
+                    emptyDropHint
+                } else {
+                    shelf
+                }
+            }
+            .opacity(showingDropZone ? 0.12 : 1) // recede behind the drop prompt
+
+            if showingDropZone {
+                DropZoneView()
+                    .transition(Motion.transition(Motion.overlay, reduceMotion: reduceMotion))
             }
         }
+        // Give the drop zone room to read as a real target, even with no shots yet.
+        .frame(minWidth: showingDropZone ? 260 : 0, minHeight: showingDropZone ? 92 : 0)
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.black.opacity(0.85))
         )
-        .overlay {
-            if isDropTargeted { DropZoneView() }
-        }
+        // A whole-shelf "pop" acknowledges that a dropped file just landed.
+        .scaleEffect(acceptedPop && !reduceMotion ? 1.04 : 1.0)
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .onHover { isExpanded = $0 }
-        // Accept dragged image files (and raw images) to "throw" shots in.
-        .onDrop(of: [UTType.fileURL, UTType.image], isTargeted: $isDropTargeted) { providers in
-            handleDrop(providers)
+        .onDrop(of: NotchDropHandling.types, isTargeted: $isDropTargeted) { providers in
+            Log.store.debug("shelf onDrop FIRED (\(providers.count) providers)")
+            let accepted = NotchDropHandling.handle(providers, store: store)
+            if accepted {
+                onDropAccepted?()
+                playAcceptedPop()
+            }
+            return accepted
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
-        .animation(.easeInOut(duration: 0.15), value: store.entries)
+        .onChange(of: isDropTargeted) { _, targeted in
+            Log.store.debug("shelf isDropTargeted=\(targeted)")
+            onDropHoverChange?(targeted)
+        }
+        // Spring the layout (lively notch); ease-out the drop-zone overlay; spring
+        // thumbnails in/out keyed on identity so a new capture animates, not every
+        // unrelated state change.
+        .animation(Motion.notch, value: isExpanded)
+        .animation(Motion.easeOut, value: showingDropZone)
+        .animation(Motion.shelfItem, value: store.entries.map(\.id))
+        .animation(Motion.shelfItem, value: acceptedPop)
+    }
+
+    /// Springs the shelf up briefly then back, so a drop feels "caught".
+    private func playAcceptedPop() {
+        acceptedPop = true
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            acceptedPop = false
+        }
+    }
+
+    private var emptyDropHint: some View {
+        Label("Drop images here", systemImage: "square.and.arrow.down")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.65))
+            .padding(.horizontal, 4)
     }
 
     private var shelf: some View {
         HStack(spacing: 8) {
             ForEach(visibleEntries) { entry in
                 ThumbnailView(entry: entry)
-            }
-            if !isExpanded && store.entries.count > visibleEntries.count {
-                Text("+\(store.entries.count - visibleEntries.count)")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(width: 28)
+                    .transition(Motion.transition(Motion.thumbnail, reduceMotion: reduceMotion))
             }
         }
     }
@@ -61,25 +108,4 @@ struct NotchShelfView: View {
         return Array(store.entries.prefix(limit))
     }
 
-    // MARK: Drop handling
-
-    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        var handled = false
-        for provider in providers {
-            if provider.canLoadObject(ofClass: URL.self) {
-                handled = true
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    guard let url else { return }
-                    Task { @MainActor in await store.importImage(from: url) }
-                }
-            } else if provider.canLoadObject(ofClass: NSImage.self) {
-                handled = true
-                _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
-                    guard let image = object else { return }
-                    Task { @MainActor in await store.importImage(image) }
-                }
-            }
-        }
-        return handled
-    }
 }
