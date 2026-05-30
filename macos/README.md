@@ -24,6 +24,7 @@ double-⌘ (or your shortcut)
 - **Notch shelf** — a floating, non-activating panel under the notch (via
   [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit)); a top-center
   floating pill is used automatically on Macs without a notch. Expands on hover.
+  Left-click thumbnails to copy; right-click the shelf for capture / Quick Look.
 - **Two capture hotkeys** — a configurable global chord
   ([KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts),
   default ⌘⇧7) and an optional **double-tap ⌘** gesture (global `CGEventTap`).
@@ -113,7 +114,14 @@ brand-new app: the old grant no longer matches, `AXIsProcessTrusted()` /
 `CGPreflightScreenCaptureAccess()` return false, and the ⌘ tap never installs.
 The Settings toggle still *looks* on because it points at the now-stale binary.
 
-**The fix — sign with a stable identity so the grant persists across rebuilds:**
+**Automatic fix (local dev):** `bun run dev` / `scripts/build-island-notch.sh`
+auto-provisions a stable **Constellagent IslandNotch Dev** certificate in
+`macos/.build/signing/` and re-signs the app after every build. Grants only
+need to be granted **once** for that certificate (unless you had stale ad-hoc
+grants — see reset commands below).
+
+**Manual fix (Apple Development team):** sign with your Apple Developer Team ID
+so grants persist the same way:
 
 ```bash
 cp macos/BuildSupport/PrivateOverrides.xcconfig.example \

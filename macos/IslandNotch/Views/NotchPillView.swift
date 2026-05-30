@@ -17,12 +17,14 @@ struct NotchPillView: View {
             if count > 0 {
                 Text("\(count)")
                     .font(.caption2.weight(.bold).monospacedDigit())
+                    .contentTransition(.numericText())
             }
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(Capsule().fill(.black.opacity(0.85)))
+        .animation(Motion.notchOpen, value: count)
         .help("IslandNotch — capture a screenshot for your coding agent")
     }
 }

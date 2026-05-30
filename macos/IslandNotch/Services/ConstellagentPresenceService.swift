@@ -1,8 +1,8 @@
 //  ConstellagentPresenceService.swift
 //  IslandNotch
 //
-//  Purpose: Tracks whether the Constellagent desktop app is running so the notch
-//           shelf only appears while the user is actively in Constellagent.
+//  Purpose: Tracks whether the Constellagent desktop app is running (badge only —
+//           the notch stays visible regardless).
 //  Layer: Service
 
 import AppKit
@@ -12,7 +12,6 @@ import Observation
 @MainActor
 @Observable
 final class ConstellagentPresenceService {
-    /// Production bundle id from desktop/electron-builder.yml.
     static let productionBundleID = "com.constellagent.app"
     static let localizedAppName = "Constellagent"
 
@@ -44,9 +43,11 @@ final class ConstellagentPresenceService {
         Log.app.debug("Constellagent running: \(next)")
     }
 
-    /// Matches shipped Electron builds and local `bun run dev` (Electron + localized name).
     static func constellagentIsRunning() -> Bool {
-        NSWorkspace.shared.runningApplications.contains(where: isConstellagent)
+        if ProcessInfo.processInfo.environment["CONSTELLAGENT_ISLAND_NOTCH_ALWAYS"] == "1" {
+            return true
+        }
+        return NSWorkspace.shared.runningApplications.contains(where: isConstellagent)
     }
 
     static func isConstellagent(_ app: NSRunningApplication) -> Bool {
@@ -54,14 +55,19 @@ final class ConstellagentPresenceService {
             return app.activationPolicy == .regular
         }
 
-        // Ignore Electron helpers (Cursor plugins, GPU/network, etc.).
         guard app.activationPolicy == .regular else { return false }
 
-        if let path = app.executableURL?.path,
-           path.contains("/constellagent/desktop")
-            || path.hasSuffix("/Constellagent.app/Contents/MacOS/Constellagent")
-            || path.hasSuffix("/Electron.app/Contents/MacOS/Electron") {
-            return app.localizedName == localizedAppName
+        if let path = app.executableURL?.path {
+            if path.contains("/constellagent/desktop")
+                || path.contains("/constellagent/desktop/node_modules/electron")
+                || path.hasSuffix("/Constellagent.app/Contents/MacOS/Constellagent")
+                || path.hasSuffix("/Electron.app/Contents/MacOS/Electron") {
+                return app.localizedName == localizedAppName
+            }
+            if ProcessInfo.processInfo.environment["CONSTELLAGENT_ISOLATED_DEV"] == "1",
+               path.contains("/constellagent/") {
+                return app.localizedName == localizedAppName
+            }
         }
 
         guard app.localizedName == localizedAppName else { return false }

@@ -20,17 +20,17 @@ extension ScreenshotStore {
     @discardableResult
     func importImage(from sourceURL: URL) async -> ScreenshotEntry? {
         guard ensureFolder() else { return nil }
-        let ext = sourceURL.pathExtension.lowercased()
+
+        let resolved = sourceURL.resolvingSymlinksInPath()
+        let ext = resolved.pathExtension.lowercased()
         guard Self.importableExtensions.contains(ext) else {
-            Log.store.notice("ignored non-image drop: \(sourceURL.lastPathComponent)")
+            Log.store.notice("ignored non-image drop: \(resolved.lastPathComponent)")
             return nil
         }
 
         let destination = folderURL.appendingPathComponent(makeTimestampFilename(ext: ext))
-        do {
-            try FileManager.default.copyItem(at: sourceURL, to: destination)
-        } catch {
-            Log.store.error("import copy failed: \(error.localizedDescription)")
+        if !copyImportFile(from: resolved, to: destination) {
+            Log.store.error("import copy failed for \(resolved.path)")
             return nil
         }
 
@@ -67,5 +67,21 @@ extension ScreenshotStore {
             copyToClipboard(entry)
         }
         return entry
+    }
+
+    /// Copies a dropped file into the shots folder, falling back to byte read/write.
+    private func copyImportFile(from source: URL, to destination: URL) -> Bool {
+        let fm = FileManager.default
+        if (try? fm.copyItem(at: source, to: destination)) != nil {
+            return true
+        }
+        guard let data = try? Data(contentsOf: source) else { return false }
+        do {
+            try data.write(to: destination, options: .atomic)
+            return true
+        } catch {
+            Log.store.error("import byte fallback failed: \(error.localizedDescription)")
+            return false
+        }
     }
 }

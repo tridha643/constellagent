@@ -39,6 +39,9 @@ targets:
     entitlements:
       path: BuildSupport/IslandNotch.entitlements
     settings:
+      configs:
+        Debug:
+          ENABLE_DEBUG_DYLIB: NO
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID)
         INFOPLIST_FILE: BuildSupport/IslandNotch-Info.plist

@@ -30,8 +30,16 @@ struct PermissionsSettingsView: View {
             } header: {
                 Text("Permissions")
             } footer: {
-                Text("Grants are tied to the app's signed identity. If you re-sign with a different certificate, macOS may ask again.")
-                    .font(.caption)
+                if permissions.isAdHocSigned {
+                    Text("This build is ad-hoc signed — Accessibility and Screen Recording grants reset on every rebuild. Run `bun run dev` (or rebuild IslandNotch) so the stable dev certificate is applied, then re-grant once in System Settings.")
+                        .font(.caption)
+                } else if let authority = permissions.signingAuthority {
+                    Text("Signed as “\(authority)”. Grants persist across rebuilds for this identity. Re-grant only if you change signing certificates.")
+                        .font(.caption)
+                } else {
+                    Text("Grants are tied to the app's signed identity. If you re-sign with a different certificate, macOS may ask again.")
+                        .font(.caption)
+                }
             }
         }
         .formStyle(.grouped)

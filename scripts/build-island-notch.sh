@@ -7,6 +7,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MACOS="$ROOT/macos"
 DERIVED_DATA="${CONSTELLAGENT_ISLAND_NOTCH_DERIVED_DATA:-$MACOS/.build/DerivedData}"
 APP="$DERIVED_DATA/Build/Products/Debug/IslandNotch.app"
+ENTITLEMENTS="$MACOS/BuildSupport/IslandNotch.entitlements"
+BUNDLE_ID="com.constellagent.islandnotch"
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "[island-notch] skip (not macOS)"
@@ -25,7 +27,20 @@ fi
 
 mkdir -p "$MACOS/.build"
 
+SIGNING_HASH=""
+SIGNING_KEYCHAIN=""
+if SIGNING_INFO="$(sh "$ROOT/scripts/ensure-island-notch-signing.sh" 2>/dev/null)"; then
+  SIGNING_HASH="$(printf '%s' "$SIGNING_INFO" | sed -n '1p')"
+  SIGNING_KEYCHAIN="$(printf '%s' "$SIGNING_INFO" | sed -n '2p')"
+fi
+
 echo "[island-notch] building Debug → $APP"
+if [ -n "$SIGNING_HASH" ]; then
+  echo "[island-notch] stable dev signing enabled (Constellagent IslandNotch Dev)"
+fi
+
+# xcodebuild still uses PrivateOverrides DEVELOPMENT_TEAM when set; we re-sign below
+# whenever the output would otherwise be ad-hoc.
 xcodebuild \
   -project "$MACOS/IslandNotch.xcodeproj" \
   -scheme IslandNotch \
@@ -40,15 +55,30 @@ if [ ! -d "$APP" ]; then
   exit 1
 fi
 
-# An ad-hoc signature (no DEVELOPMENT_TEAM) gets a fresh cdhash on every build,
-# so macOS TCC silently drops the app's Accessibility + Screen Recording grants
-# each rebuild — the double-⌘ tap stops firing and captures go blank even though
-# System Settings still looks enabled. Warn loudly and point at the fix.
-if codesign -dvv "$APP" 2>&1 | grep -q "Signature=adhoc"; then
+# Always re-sign when a stable dev cert exists — xcodebuild can leave ad-hoc Mach-O
+# files inside a previously signed .app bundle (Team ID mismatch → instant crash on launch).
+if [ -n "$SIGNING_HASH" ]; then
+  echo "[island-notch] re-signing with stable dev certificate (TCC grants survive rebuilds)"
+  sh "$ROOT/scripts/sign-island-notch-app.sh" "$APP" "$SIGNING_HASH" "$ENTITLEMENTS" "$SIGNING_KEYCHAIN"
+elif codesign -dvv "$APP" 2>&1 | grep -q "Signature=adhoc"; then
   echo "[island-notch] ⚠️  ad-hoc signed — Accessibility & Screen Recording grants" >&2
   echo "[island-notch] ⚠️  will reset on every rebuild (double-⌘ + captures break)." >&2
   echo "[island-notch] ⚠️  Fix: cp macos/BuildSupport/PrivateOverrides.xcconfig.example \\" >&2
-  echo "[island-notch] ⚠️       macos/BuildSupport/PrivateOverrides.xcconfig and set DEVELOPMENT_TEAM." >&2
+  echo "[island-notch] ⚠️       macos/BuildSupport/PrivateOverrides.xcconfig and set DEVELOPMENT_TEAM," >&2
+  echo "[island-notch] ⚠️  or ensure openssl/security can create the local dev cert." >&2
+fi
+
+if codesign -dvv "$APP" 2>&1 | grep -q "Signature=adhoc"; then
+  :
+else
+  AUTHORITY="$(codesign -dvv "$APP" 2>&1 | grep '^Authority=' | head -1 | cut -d= -f2- || true)"
+  if [ -n "$AUTHORITY" ]; then
+    echo "[island-notch] signed: $AUTHORITY"
+  fi
+  echo "[island-notch] TCC grants persist across rebuilds for this signing identity."
+  echo "[island-notch] If permissions still look enabled but do not work, reset stale grants once:"
+  echo "[island-notch]   tccutil reset Accessibility $BUNDLE_ID"
+  echo "[island-notch]   tccutil reset ScreenCapture $BUNDLE_ID"
 fi
 
 if [ "${CONSTELLAGENT_ISLAND_NOTCH_NO_LAUNCH:-}" = "1" ]; then
@@ -62,5 +92,6 @@ if pgrep -x IslandNotch >/dev/null 2>&1; then
   sleep 0.3
 fi
 
-open "$APP"
+# Dev launch: treat Constellagent as present for the shelf badge while desktop dev runs.
+CONSTELLAGENT_ISLAND_NOTCH_ALWAYS=1 open "$APP"
 echo "[island-notch] launched"
