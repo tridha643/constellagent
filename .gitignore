@@ -37,3 +37,12 @@ ios/**/.build/
 *.ipa
 *.dSYM
 *.dSYM.zip
+
+# macOS / Xcode (IslandNotch menu-bar app)
+macos/**/build/
+macos/**/DerivedData/
+macos/**/*.xcuserstate
+macos/**/xcuserdata/
+macos/BuildSupport/PrivateOverrides.xcconfig
+macos/**/.build/
+macos/**/.DS_Store
