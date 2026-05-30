@@ -90,13 +90,65 @@ menu-bar icon.
 Two one-time system prompts, both handled gracefully (and deep-linked from
 **Settings → Permissions**):
 
-- **Screen Recording** — required to capture. Takes effect after relaunch.
-- **Accessibility** — required **only** for the double-⌘ gesture. Without it, the
-  keyboard chord still works.
+- **Screen Recording** — required to capture real pixels. Requested
+  automatically on launch; **takes effect only after a full quit + relaunch**
+  (`CGPreflightScreenCaptureAccess()` stays cached-false until then).
+- **Accessibility** — required **only** for the double-⌘ gesture (the global
+  `CGEventTap`). Without it, the keyboard chord still works.
 
-> TCC permission grants are tied to the app's signed identity. Sign with a stable
-> Developer-ID (or a consistent local cert) so you don't have to re-grant after
-> every rebuild.
+### ⚠️ Permissions silently break on rebuild unless you sign with a stable identity
+
+This is the single most common "it just stopped working" bug, so read this.
+
+**Symptom:** double-tap ⌘ stops triggering screenshots (no crosshair), and/or
+captures come out blank — even though **System Settings still shows IslandNotch
+toggled ON** for Accessibility / Screen Recording. It usually starts right after
+a rebuild (`bun run dev`, an Xcode build, etc.).
+
+**Root cause:** macOS TCC ties each permission grant to the app's **code-signing
+identity**. With **no `DEVELOPMENT_TEAM` set, the build is ad-hoc signed**
+(`Signature=adhoc`), and an ad-hoc signature's identity is its **cdhash** — which
+changes on *every* build. So each rebuild produces a binary TCC treats as a
+brand-new app: the old grant no longer matches, `AXIsProcessTrusted()` /
+`CGPreflightScreenCaptureAccess()` return false, and the ⌘ tap never installs.
+The Settings toggle still *looks* on because it points at the now-stale binary.
+
+**The fix — sign with a stable identity so the grant persists across rebuilds:**
+
+```bash
+cp macos/BuildSupport/PrivateOverrides.xcconfig.example \
+   macos/BuildSupport/PrivateOverrides.xcconfig
+# then set your team in that (gitignored) file:
+#   DEVELOPMENT_TEAM = ABCDE12345      # Xcode → Settings → Accounts, or the
+#                                      # OU= field of `security find-identity -v -p codesigning`
+```
+
+Rebuild, then confirm the signature is no longer ad-hoc:
+
+```bash
+codesign -dvv .../Build/Products/Debug/IslandNotch.app 2>&1 | grep -E 'Signature|TeamIdentifier'
+# want:  Authority=Apple Development: …   /   TeamIdentifier=ABCDE12345
+# (the build script also prints a loud ⚠️ warning whenever it produces an ad-hoc build)
+```
+
+**Clearing a stale grant.** If you'd already granted the ad-hoc build, a dead
+entry lingers in the TCC list and the freshly-signed binary won't match it. Reset
+it once, then re-grant against the stable identity:
+
+```bash
+tccutil reset Accessibility com.constellagent.islandnotch
+tccutil reset ScreenCapture  com.constellagent.islandnotch
+# relaunch; grant each prompt once; Screen Recording needs one more quit+relaunch.
+```
+
+**Verifying live** (watch the app report its own permission state):
+
+```bash
+log stream --predicate 'subsystem == "com.constellagent.islandnotch"' --level debug --style compact
+#  …[permissions] refresh ax=true screen=true   ← both granted
+#  …[hotkey] double-⌘ tap installed             ← the CGEventTap is active
+#  …[hotkey] double-⌘ fireCapture               ← a gesture was recognized
+```
 
 ## Distribution
 

@@ -23,9 +23,9 @@ struct HotkeySettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Double-⌘ gesture") {
-                Toggle("Capture on a double-tap of ⌘", isOn: $preferences.doubleCommandEnabled)
-                Text("Tap ⌘ twice within 300 ms. Holding any other modifier cancels it.")
+            Section("⌘ gesture") {
+                Toggle("Capture with ⌘ gestures", isOn: $preferences.doubleCommandEnabled)
+                Text("Double-tap either ⌘ key, or press the left and right ⌘ keys together. Holding other modifiers cancels the gesture.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -35,7 +35,7 @@ struct HotkeySettingsView: View {
                             .foregroundStyle(.orange)
                             .font(.caption)
                         Spacer()
-                        Button("Open Settings") { SystemSettingsLinks.open(.accessibility) }
+                        Button("Open Settings") { SystemSettingsLinks.open(SystemSettingsLinks.accessibility) }
                             .controlSize(.small)
                     }
                 }

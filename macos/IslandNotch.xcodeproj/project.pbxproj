@@ -287,7 +287,7 @@
 			repositoryURL = "https://github.com/MrKai77/DynamicNotchKit";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 1.0.0;
+				minimumVersion = 1.1.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

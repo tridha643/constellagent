@@ -1,8 +1,11 @@
 //  DoubleCommandTapService.swift
 //  IslandNotch
 //
-//  Purpose: Detects a double-tap of the ⌘ key via a global CGEventTap and fires
-//           a `.doubleCommand`-sourced capture. Requires Accessibility.
+//  Purpose: Detects ⌘ gestures via a global CGEventTap and fires a
+//           `.doubleCommand`-sourced capture. Supports:
+//             • double-tap of either left or right ⌘
+//             • pressing left ⌘ and right ⌘ together
+//           Requires Accessibility.
 //  Layer: Service
 
 import AppKit
@@ -10,21 +13,26 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-/// Listens (read-only) to `.flagsChanged` events and recognizes two clean ⌘
-/// down/up cycles within a short window, with no other modifiers involved.
+/// Listens (read-only) to `.flagsChanged` events for the physical ⌘ keys.
 final class DoubleCommandTapService {
-    /// Invoked on the main actor when a double-⌘ is recognized.
+    /// Invoked on the main actor when a ⌘ gesture is recognized.
     var onCapture: ((CaptureSource) -> Void)?
 
-    /// Max seconds allowed between the two ⌘ taps.
+    /// Max seconds allowed between two ⌘ tap releases.
     private let doubleTapWindow: TimeInterval = 0.30
+    /// Ignore repeat fires while both ⌘ keys stay held.
+    private let bothCommandCooldown: TimeInterval = 0.75
+
+    private static let leftCommandKeyCode: Int64 = 0x37
+    private static let rightCommandKeyCode: Int64 = 0x36
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
-    // Recognizer state.
-    private var commandIsDown = false
+    private var leftCommandDown = false
+    private var rightCommandDown = false
     private var lastCommandUpTime: TimeInterval = 0
+    private var lastBothCommandFireTime: TimeInterval = 0
     private var sawForeignModifierThisCycle = false
 
     private(set) var isRunning = false
@@ -45,9 +53,9 @@ final class DoubleCommandTapService {
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
 
         guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
+            tap: .cgAnnotatedSessionEventTap,
             place: .headInsertEventTap,
-            options: .listenOnly,                 // never swallow the user's ⌘
+            options: .listenOnly,
             eventsOfInterest: mask,
             callback: Self.callback,
             userInfo: userInfo
@@ -63,6 +71,7 @@ final class DoubleCommandTapService {
         eventTap = tap
         runLoopSource = source
         isRunning = true
+        resetCycle()
         Log.hotkey.debug("double-⌘ tap installed")
         return true
     }
@@ -84,44 +93,65 @@ final class DoubleCommandTapService {
     // MARK: Recognition
 
     private func resetCycle() {
-        commandIsDown = false
+        leftCommandDown = false
+        rightCommandDown = false
+        lastCommandUpTime = 0
+        lastBothCommandFireTime = 0
         sawForeignModifierThisCycle = false
     }
 
-    /// Handles one flagsChanged event. `flags` is the post-change modifier set.
-    fileprivate func handleFlags(_ flags: CGEventFlags) {
-        // Any non-⌘ modifier present disqualifies the current gesture.
-        let foreign: CGEventFlags = [.maskShift, .maskAlternate, .maskControl,
-                                     .maskSecondaryFn, .maskCommand]
-        let nonCommand = flags.intersection(foreign.subtracting(.maskCommand))
-        let commandDownNow = flags.contains(.maskCommand)
+    /// Handles one flagsChanged event for a physical ⌘ key transition.
+    fileprivate func handleFlagsChanged(_ event: CGEvent) {
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        guard keyCode == Self.leftCommandKeyCode || keyCode == Self.rightCommandKeyCode else {
+            return
+        }
 
-        if !nonCommand.isEmpty {
-            // Another modifier is held — abandon any in-progress double-⌘.
+        let flags = event.flags
+        let foreign: CGEventFlags = [.maskShift, .maskAlternate, .maskControl, .maskSecondaryFn]
+        if !flags.intersection(foreign).isEmpty {
             sawForeignModifierThisCycle = true
         }
 
-        if commandDownNow && !commandIsDown {
-            // ⌘ pressed.
-            commandIsDown = true
-        } else if !commandDownNow && commandIsDown {
-            // ⌘ released — completes one tap (unless tainted by other modifiers).
-            commandIsDown = false
+        let isLeft = keyCode == Self.leftCommandKeyCode
+        let wasDown = isLeft ? leftCommandDown : rightCommandDown
+
+        if wasDown {
+            if isLeft { leftCommandDown = false } else { rightCommandDown = false }
+
             let now = ProcessInfo.processInfo.systemUptime
             defer { sawForeignModifierThisCycle = false }
 
-            if sawForeignModifierThisCycle {
+            guard !sawForeignModifierThisCycle else {
                 lastCommandUpTime = 0
                 return
             }
+
             if now - lastCommandUpTime <= doubleTapWindow {
                 lastCommandUpTime = 0
-                let handler = onCapture
-                DispatchQueue.main.async { handler?(.doubleCommand) }
+                fireCapture()
             } else {
                 lastCommandUpTime = now
             }
+        } else {
+            if isLeft { leftCommandDown = true } else { rightCommandDown = true }
+            checkBothCommandsPressed()
         }
+    }
+
+    private func checkBothCommandsPressed() {
+        guard leftCommandDown, rightCommandDown, !sawForeignModifierThisCycle else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastBothCommandFireTime >= bothCommandCooldown else { return }
+        lastBothCommandFireTime = now
+        lastCommandUpTime = 0
+        fireCapture()
+    }
+
+    private func fireCapture() {
+        Log.hotkey.debug("double-⌘ fireCapture")
+        let handler = onCapture
+        DispatchQueue.main.async { handler?(.doubleCommand) }
     }
 
     private func reEnableIfNeeded() {
@@ -136,9 +166,8 @@ final class DoubleCommandTapService {
 
         switch type {
         case .flagsChanged:
-            service.handleFlags(event.flags)
+            service.handleFlagsChanged(event)
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            // The system can disable a slow/old tap; re-arm it.
             service.reEnableIfNeeded()
         default:
             break

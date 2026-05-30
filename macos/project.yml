@@ -23,7 +23,7 @@ packages:
     majorVersion: 2.0.0
   DynamicNotchKit:
     url: https://github.com/MrKai77/DynamicNotchKit
-    majorVersion: 1.0.0
+    majorVersion: 1.1.0
 
 targets:
   IslandNotch:

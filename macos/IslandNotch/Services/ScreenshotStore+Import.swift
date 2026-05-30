@@ -36,6 +36,7 @@ extension ScreenshotStore {
 
         let entry = ScreenshotEntry(file: destination.lastPathComponent, ts: Date(), source: .drop)
         await append(entry)
+        Log.store.debug("imported dropped file \(entry.file)")
         if preferences.shouldAutoCopy(.drop) {
             copyToClipboard(entry)
         }

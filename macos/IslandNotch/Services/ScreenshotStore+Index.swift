@@ -59,7 +59,7 @@ extension ScreenshotStore {
         if reconciled.entries != index.entries {
             await indexIO.write(reconciled, to: indexURL)
         }
-        entries = reconciled.entries.sorted { $0.ts > $1.ts }
+        setPublishedEntries(reconciled.entries)
     }
 
     /// Appends an entry, persists, and refreshes the published list.
@@ -68,14 +68,14 @@ extension ScreenshotStore {
         index.entries.removeAll { $0.file == entry.file } // de-dupe by name
         index.entries.append(entry)
         await indexIO.write(index, to: indexURL)
-        entries = index.entries.sorted { $0.ts > $1.ts }
+        setPublishedEntries(index.entries)
     }
 
     /// Persists an explicit entry set (used by the retention sweep).
     func persist(entries newEntries: [ScreenshotEntry]) async {
         let index = ScreenshotIndex(entries: newEntries)
         await indexIO.write(index, to: indexURL)
-        entries = newEntries.sorted { $0.ts > $1.ts }
+        setPublishedEntries(newEntries)
     }
 
     /// Drops index rows whose PNG is gone and adopts orphan PNGs found on disk.

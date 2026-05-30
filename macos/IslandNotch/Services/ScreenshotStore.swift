@@ -17,6 +17,11 @@ final class ScreenshotStore {
     /// Newest-first list of screenshots shown in the notch shelf.
     private(set) var entries: [ScreenshotEntry] = []
 
+    /// Same-file helper so extensions in other files can publish list updates.
+    func setPublishedEntries(_ newEntries: [ScreenshotEntry]) {
+        entries = newEntries.sorted { $0.ts > $1.ts }
+    }
+
     /// Transient UI signal: the entry just copied to the clipboard (for a flash).
     var lastCopiedFileID: String?
 
