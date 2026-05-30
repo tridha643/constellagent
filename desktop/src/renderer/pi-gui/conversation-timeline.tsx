@@ -40,7 +40,7 @@ interface ConversationTimelineProps {
   readonly showJumpToLatest: boolean;
   readonly onJumpToLatest: () => void;
   readonly onContentHeightChange: () => void;
-  /** When true, the last in-flight assistant message uses Streamdown streaming animation. */
+  /** When true, the last in-flight assistant message streams via ProseMark. */
   readonly sessionRunning?: boolean;
   /** Rendered after transcript rows (e.g. current running tool under “Working…”). */
   readonly liveToolActivityFooter?: ReactNode;

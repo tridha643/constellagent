@@ -21,7 +21,7 @@ A macOS desktop app for running multiple AI agents in parallel. Each agent gets 
 - Graphite integration for stack detection, stack cloning, and Graphite PR links
 - Cron-based automations that create timestamped workspaces and launch agent prompts automatically
 - Event-driven hook-driven automations (GitHub activity, notifications) with cooldown, run history, and verification tooling
-- Context history backed by `.constellagent/constellagent.db`, with search, markdown summaries, and checkpoint restore
+- Context history backed by app-managed storage, with search, markdown summaries, and checkpoint restore
 - Hunk-based inline review comments on diffs (session comments via the `hunk` CLI)
 - Plan workflow for agent-written markdown plans, including a searchable plan palette, build status, relocation, and build launch
 - MCP server management plus bundled agent skills via setup script; skills/subagent catalog in Settings

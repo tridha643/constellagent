@@ -73,11 +73,8 @@ export function serializeComposerTextWithFileMentions(
   return `${trimmed} ${mentionText}`
 }
 
-export function hasComposerDraftInput(
-  text: string,
-  mentions: readonly ConductorFileMention[],
-): boolean {
-  return text.trim().length > 0 || mentions.length > 0
+export function hasComposerDraftInput(text: string): boolean {
+  return text.trim().length > 0
 }
 
 /** When the caret is collapsed at the start of the draft textarea, backspace removes the last file chip. */

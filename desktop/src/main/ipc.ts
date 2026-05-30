@@ -620,6 +620,16 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.GITHUB_LIST_OPEN_PRS, async (_e, repoPath: string) => {
+    if (process.env.CI_TEST === '1' || process.env.CI_TEST === 'true') {
+      const handler = (
+        globalThis as {
+          __e2eOpenPrsHandler?: (
+            repoPath: string,
+          ) => import('../shared/github-types').ListOpenPrsResult
+        }
+      ).__e2eOpenPrsHandler
+      if (handler) return handler(repoPath)
+    }
     return GithubService.listOpenPrs(repoPath)
   })
 

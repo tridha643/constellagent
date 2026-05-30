@@ -77,27 +77,27 @@ function segmentToNode(segment: MessageSegment, index: number): ReactNode {
 
 export function MessageMarkdown({
   text,
-  preferStreamdown = false,
+  preferProsemark = false,
   isStreaming = false,
 }: {
   readonly text: string;
-  /** Use Streamdown (Shiki, GFM) when there are no inline file/skill chips. */
-  readonly preferStreamdown?: boolean;
+  /** Use ProseMark (MarkdownRenderer) when there are no inline file/skill chips. */
+  readonly preferProsemark?: boolean;
   readonly isStreaming?: boolean;
 }) {
   const segments = useMemo(() => segmentMessageForInlineChips(text), [text]);
   const hasChips = segments.some((s) => s.kind !== "text");
-  const shouldUseStreamdown = preferStreamdown && !isStreaming;
+  const shouldUseProsemark = preferProsemark;
 
-  const variant = hasChips ? "segmented" : shouldUseStreamdown ? "streamdown" : "plain";
+  const variant = hasChips ? "segmented" : shouldUseProsemark ? "prosemark" : "plain";
 
   return (
     <div className="message__content">
       <div key={variant} className="message__content-variant" data-variant={variant}>
         {hasChips ? (
           <div className="message__content--segmented">{segments.map((seg, i) => segmentToNode(seg, i))}</div>
-        ) : shouldUseStreamdown ? (
-          <MarkdownRenderer isStreaming={isStreaming} className="message__streamdown">
+        ) : shouldUseProsemark ? (
+          <MarkdownRenderer isStreaming={isStreaming} className="message__prosemark">
             {text}
           </MarkdownRenderer>
         ) : (

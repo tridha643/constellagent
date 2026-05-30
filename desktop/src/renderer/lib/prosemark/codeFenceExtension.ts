@@ -11,6 +11,54 @@ const fallbackMonospaceCodeFont =
   "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
 const codeFontFamily = `var(--pm-code-font, ${fallbackMonospaceCodeFont})`;
 
+function copyIconSvg(size = 14): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("aria-hidden", "true");
+
+  const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  rect.setAttribute("width", "14");
+  rect.setAttribute("height", "14");
+  rect.setAttribute("x", "8");
+  rect.setAttribute("y", "8");
+  rect.setAttribute("rx", "2");
+  rect.setAttribute("ry", "2");
+  rect.setAttribute("stroke", "currentColor");
+  rect.setAttribute("stroke-width", "2");
+
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "2");
+
+  svg.append(rect, path);
+  return svg;
+}
+
+function checkIconSvg(size = 14): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("aria-hidden", "true");
+
+  const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  polyline.setAttribute("points", "20 6 9 17 4 12");
+  polyline.setAttribute("stroke", "currentColor");
+  polyline.setAttribute("stroke-width", "2.25");
+  polyline.setAttribute("stroke-linecap", "round");
+  polyline.setAttribute("stroke-linejoin", "round");
+
+  svg.append(polyline);
+  return svg;
+}
+
 const codeBlockDecorations = (view: EditorView) => {
   const builder = new RangeSetBuilder<Decoration>();
 
@@ -119,23 +167,51 @@ class CodeBlockInfoWidget extends WidgetType {
 
     const langContainer = document.createElement("span");
     langContainer.className = "cm-code-block-lang-container";
-    langContainer.innerText = this.lang;
-    container.appendChild(langContainer);
+    if (this.lang) {
+      langContainer.innerText = this.lang;
+      container.appendChild(langContainer);
+    }
 
     const copyButton = document.createElement("button");
+    copyButton.type = "button";
     copyButton.className = "cm-code-block-copy-button";
-    // Copy icon from Lucide
-    copyButton.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg"
-        width="16" height="16" viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-        class="lucide lucide-copy-icon lucide-copy">
-          <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-      </svg>`;
-    copyButton.onclick = () => {
-      void navigator.clipboard.writeText(this.code);
-    };
+    copyButton.setAttribute("aria-label", "Copy code");
+    copyButton.title = "Copy code";
+
+    const iconStack = document.createElement("span");
+    iconStack.className = "cm-code-block-copy-icon-stack";
+
+    const copyIcon = document.createElement("span");
+    copyIcon.className = "cm-code-block-copy-icon cm-code-block-copy-icon--copy";
+    copyIcon.appendChild(copyIconSvg());
+
+    const checkIcon = document.createElement("span");
+    checkIcon.className = "cm-code-block-copy-icon cm-code-block-copy-icon--check";
+    checkIcon.appendChild(checkIconSvg());
+
+    iconStack.append(copyIcon, checkIcon);
+    copyButton.appendChild(iconStack);
+
+    let resetTimer: number | undefined;
+    copyButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (resetTimer !== undefined) {
+        window.clearTimeout(resetTimer);
+        resetTimer = undefined;
+      }
+      void navigator.clipboard.writeText(this.code).then(() => {
+        copyButton.dataset.copied = "true";
+        copyButton.setAttribute("aria-label", "Copied");
+        copyButton.title = "Copied";
+        resetTimer = window.setTimeout(() => {
+          delete copyButton.dataset.copied;
+          copyButton.setAttribute("aria-label", "Copy code");
+          copyButton.title = "Copy code";
+          resetTimer = undefined;
+        }, 1400);
+      });
+    });
     container.appendChild(copyButton);
 
     return container;
@@ -168,7 +244,9 @@ export const codeBlockDecorationsExtension: Extension = ViewPlugin.fromClass(
 export const codeFenceTheme = EditorView.theme({
   ".cm-fenced-code-line": {
     display: "block",
-    marginLeft: "6px",
+    marginLeft: "0",
+    paddingLeft: "1.25rem",
+    paddingRight: "1.25rem",
     backgroundColor: "var(--pm-code-background-color)",
     fontFamily: codeFontFamily,
     fontVariantLigatures: "none",
@@ -216,6 +294,40 @@ export const codeFenceTheme = EditorView.theme({
     cursor: "pointer",
     backgroundColor: "var(--pm-code-btn-background-color)",
     color: "var(--pm-muted-color)",
+    transition:
+      "transform 130ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms ease, color 150ms ease",
+  },
+  ".cm-code-block-copy-button:active": {
+    transform: "scale(0.97)",
+  },
+  ".cm-code-block-copy-button[data-copied='true']": {
+    color: "var(--pm-syntax-literal, oklch(72% 0.08 170))",
+  },
+  ".cm-code-block-copy-icon-stack": {
+    position: "relative",
+    display: "flex",
+    width: "16px",
+    height: "16px",
+  },
+  ".cm-code-block-copy-icon": {
+    position: "absolute",
+    inset: "0",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition: "opacity 150ms cubic-bezier(0.23, 1, 0.32, 1), transform 150ms cubic-bezier(0.23, 1, 0.32, 1)",
+  },
+  ".cm-code-block-copy-icon--check": {
+    opacity: "0",
+    transform: "scale(0.92)",
+  },
+  ".cm-code-block-copy-button[data-copied='true'] .cm-code-block-copy-icon--copy": {
+    opacity: "0",
+    transform: "scale(0.92)",
+  },
+  ".cm-code-block-copy-button[data-copied='true'] .cm-code-block-copy-icon--check": {
+    opacity: "1",
+    transform: "scale(1)",
   },
   ".cm-code-block-copy-button:hover": {
     backgroundColor: "var(--pm-code-btn-hover-background-color)",

@@ -10,9 +10,11 @@ import {
 } from 'react'
 import {
   atMentionSearchQuery,
+  formatAtMentionInsert,
   parseActiveAtToken,
 } from '../../../../shared/composer-at-mention'
 import type { QuickOpenSearchItem } from '../../../../shared/quick-open-types'
+import type { ComposerDraftInputRef } from './composer-draft-input-ref'
 
 const AT_MENTION_LIMIT = 25
 const AT_SEARCH_DEBOUNCE_MS = 80
@@ -20,9 +22,8 @@ const AT_SEARCH_DEBOUNCE_MS = 80
 export interface UseConductorComposerAtArgs {
   readonly text: string
   readonly setText: Dispatch<SetStateAction<string>>
-  readonly composerRef: RefObject<HTMLTextAreaElement | null>
+  readonly composerRef: RefObject<ComposerDraftInputRef | null>
   readonly workspacePath: string
-  readonly onAddFileMention: (item: QuickOpenSearchItem) => void
 }
 
 export function useConductorComposerAt({
@@ -30,7 +31,6 @@ export function useConductorComposerAt({
   setText,
   composerRef,
   workspacePath,
-  onAddFileMention,
 }: UseConductorComposerAtArgs) {
   const [cursor, setCursor] = useState(0)
   const [menuIndex, setMenuIndex] = useState(0)
@@ -106,14 +106,12 @@ export function useConductorComposerAt({
       setText((prev) => {
         const next = prev.slice(0, from) + insert + prev.slice(to)
         const pos = from + insert.length
-        requestAnimationFrame(() => {
-          const el = composerRef.current
-          if (el) {
-            el.focus()
-            el.selectionStart = el.selectionEnd = pos
-            setCursor(pos)
-          }
-        })
+        const el = composerRef.current
+        if (el) {
+          el.setSelectionRange(pos, pos)
+          el.focus()
+          setCursor(pos)
+        }
         return next
       })
     },
@@ -132,11 +130,9 @@ export function useConductorComposerAt({
   const applyAtMention = useCallback(
     (item: QuickOpenSearchItem) => {
       if (!atToken) return
-      replaceRange(atToken.from, atToken.to, '')
-      onAddFileMention(item)
-      requestAnimationFrame(() => composerRef.current?.focus())
+      replaceRange(atToken.from, atToken.to, formatAtMentionInsert(item))
     },
-    [atToken, replaceRange, onAddFileMention, composerRef],
+    [atToken, replaceRange],
   )
 
   const onComposerSelectionChange = useCallback((pos: number) => {
@@ -144,8 +140,8 @@ export function useConductorComposerAt({
   }, [])
 
   const wrapComposerKeyDown = useCallback(
-    (base: (event: KeyboardEvent<HTMLTextAreaElement>) => void) =>
-      (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    (base: (event: KeyboardEvent<HTMLElement>) => void) =>
+      (event: KeyboardEvent<HTMLElement>) => {
         if (showAtMenu) {
           if (items.length > 0) {
             if (event.key === 'ArrowDown') {

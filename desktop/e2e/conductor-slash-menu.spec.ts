@@ -3,6 +3,15 @@ import { resolve, join } from 'path'
 import { mkdirSync, writeFileSync } from 'fs'
 import { execSync } from 'child_process'
 
+const COMPOSER = '[data-testid="composer-draft-editor"]'
+
+async function expectComposerDraft(
+  composer: ReturnType<Page['locator']>,
+  draft: string,
+): Promise<void> {
+  await expect(composer).toHaveAttribute('data-composer-draft', draft)
+}
+
 const appPath = resolve(__dirname, '../out/main/index.js')
 
 async function launchApp(): Promise<{ app: ElectronApplication; window: Page }> {
@@ -57,6 +66,15 @@ async function openConductorTab(window: Page): Promise<void> {
   })
 }
 
+async function closeAllConductorTabs(window: Page): Promise<void> {
+  await window.evaluate(() => {
+    const store = (window as unknown as { __store: { getState: () => any } }).__store.getState()
+    for (const tab of [...store.tabs].filter((t: { type: string }) => t.type === 'conductor')) {
+      store.removeTab(tab.id)
+    }
+  })
+}
+
 async function ensureCodexProvider(window: Page): Promise<void> {
   await window.evaluate(() => {
     const store = (window as unknown as { __store: { getState: () => any } }).__store.getState()
@@ -84,12 +102,76 @@ async function mockSlashApis(window: Page): Promise<void> {
   })
 }
 
+async function installOpenPrListE2eHook(app: ElectronApplication): Promise<void> {
+  await app.evaluate(() => {
+    const global = globalThis as {
+      __e2eOpenPrsRows?: unknown[]
+      __e2eOpenPrsCallCount?: number
+      __e2eOpenPrsHandler?: (repoPath: string) => { available: boolean; data: unknown[] }
+    }
+    global.__e2eOpenPrsRows = []
+    global.__e2eOpenPrsCallCount = 0
+    global.__e2eOpenPrsHandler = () => {
+      global.__e2eOpenPrsCallCount = (global.__e2eOpenPrsCallCount ?? 0) + 1
+      return { available: true, data: global.__e2eOpenPrsRows ?? [] }
+    }
+  })
+}
+
+async function mockOpenPrList(
+  app: ElectronApplication,
+  window: Page,
+  rows: unknown[],
+): Promise<void> {
+  await app.evaluate((data) => {
+    const global = globalThis as {
+      __e2eOpenPrsRows?: unknown[]
+      __e2eOpenPrsCallCount?: number
+    }
+    global.__e2eOpenPrsRows = data
+    global.__e2eOpenPrsCallCount = 0
+  }, rows)
+  await window.evaluate(() => {
+    const cache = (
+      window as unknown as { __composerOpenPrListByRepo?: Map<string, unknown> }
+    ).__composerOpenPrListByRepo
+    cache?.clear()
+  })
+}
+
+async function waitForOpenPrPrefetch(window: Page, _app: ElectronApplication): Promise<void> {
+  await window.locator(COMPOSER).waitFor({ state: 'visible' })
+  await expect
+    .poll(async () => {
+      return await window.evaluate(() => {
+        const cache = (
+          window as unknown as {
+            __composerOpenPrListByRepo?: Map<string, { data: unknown[] }>
+          }
+        ).__composerOpenPrListByRepo
+        if (!cache) return 0
+        for (const entry of cache.values()) {
+          if ((entry?.data?.length ?? 0) > 0) return entry.data.length
+        }
+        return 0
+      })
+    }, { timeout: 15_000 })
+    .toBeGreaterThan(0)
+}
+
+async function resetOpenPrListCallCount(app: ElectronApplication): Promise<void> {
+  await app.evaluate(() => {
+    ;(globalThis as { __e2eOpenPrsCallCount?: number }).__e2eOpenPrsCallCount = 0
+  })
+}
+
 test.describe('Conductor slash menu', () => {
   let app: ElectronApplication
   let window: Page
 
   test.beforeAll(async () => {
     ;({ app, window } = await launchApp())
+    await installOpenPrListE2eHook(app)
   })
 
   test.afterAll(async () => {
@@ -103,7 +185,7 @@ test.describe('Conductor slash menu', () => {
     await openConductorTab(window)
     await mockSlashApis(window)
 
-    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    const composer = window.locator(COMPOSER)
     await composer.click()
     await composer.fill('/pla')
     await composer.press('End')
@@ -111,7 +193,7 @@ test.describe('Conductor slash menu', () => {
 
     await composer.press('Enter')
 
-    await expect(composer).toHaveValue('')
+    await expectComposerDraft(composer, '')
     await expect(window.locator('[data-testid="conductor-slash-menu"]')).toHaveCount(0)
     await expect(window.locator('[data-testid="conductor-chat-view"] button[data-plan-active="true"]')).toBeVisible()
   })
@@ -151,7 +233,7 @@ test.describe('Conductor slash menu', () => {
       return Boolean(tab?.agentSessionId)
     })
 
-    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    const composer = window.locator(COMPOSER)
     await composer.click()
     await composer.fill('/personality')
     await composer.press('End')
@@ -160,59 +242,56 @@ test.describe('Conductor slash menu', () => {
     await window.locator('[data-testid="conductor-personality-menu"] button').nth(1).click()
 
     await expect(window.locator('[data-testid="conductor-personality-menu"]')).toHaveCount(0)
-    await expect(composer).toHaveValue('')
+    await expectComposerDraft(composer, '')
   })
 
   test('hash menu lists PRs and inserts mention', async () => {
     const repoPath = createTestRepo('hash-menu')
+    await mockOpenPrList(app, window, [
+      {
+        number: 170,
+        state: 'open',
+        title: 'docs(agents): add automation section',
+        url: 'https://github.com/o/r/pull/170',
+        checkStatus: 'none',
+        hasPendingComments: false,
+        pendingCommentCount: 0,
+        isBlockedByCi: false,
+        isApproved: false,
+        isChangesRequested: false,
+        updatedAt: '2026-01-01T00:00:00Z',
+        headRefName: 'auto/constellagent-email-to-pr/20240516',
+        baseRefName: 'main',
+        isCrossRepository: false,
+        authorLogin: 'tri',
+      },
+      {
+        number: 42,
+        state: 'open',
+        title: 'Fix login bug',
+        url: 'https://github.com/o/r/pull/42',
+        checkStatus: 'none',
+        hasPendingComments: false,
+        pendingCommentCount: 0,
+        isBlockedByCi: false,
+        isApproved: false,
+        isChangesRequested: false,
+        updatedAt: '2026-01-01T00:00:00Z',
+        headRefName: 'fix/login',
+        baseRefName: 'main',
+        isCrossRepository: false,
+      },
+    ])
     await setupWorkspace(window, repoPath)
     await ensureCodexProvider(window)
-    await openConductorTab(window)
     await mockSlashApis(window)
 
-    await window.evaluate(() => {
-      const api = (window as unknown as { api: any }).api
-      api.github.listOpenPrs = async () => ({
-        available: true,
-        data: [
-          {
-            number: 170,
-            state: 'open',
-            title: 'docs(agents): add automation section',
-            url: 'https://github.com/o/r/pull/170',
-            checkStatus: 'none',
-            hasPendingComments: false,
-            pendingCommentCount: 0,
-            isBlockedByCi: false,
-            isApproved: false,
-            isChangesRequested: false,
-            updatedAt: '2026-01-01T00:00:00Z',
-            headRefName: 'auto/constellagent-email-to-pr/20240516',
-            baseRefName: 'main',
-            isCrossRepository: false,
-            authorLogin: 'tri',
-          },
-          {
-            number: 42,
-            state: 'open',
-            title: 'Fix login bug',
-            url: 'https://github.com/o/r/pull/42',
-            checkStatus: 'none',
-            hasPendingComments: false,
-            pendingCommentCount: 0,
-            isBlockedByCi: false,
-            isApproved: false,
-            isChangesRequested: false,
-            updatedAt: '2026-01-01T00:00:00Z',
-            headRefName: 'fix/login',
-            baseRefName: 'main',
-            isCrossRepository: false,
-          },
-        ],
-      })
-    })
+    await closeAllConductorTabs(window)
+    await resetOpenPrListCallCount(app)
+    await openConductorTab(window)
+    await waitForOpenPrPrefetch(window, app)
 
-    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    const composer = window.locator(COMPOSER)
     await composer.click()
     await composer.fill('#17')
     await composer.press('End')
@@ -220,8 +299,84 @@ test.describe('Conductor slash menu', () => {
     await expect(window.locator('[data-testid="conductor-hash-menu"]')).not.toContainText('#42')
 
     await composer.press('Enter')
-    await expect(composer).toHaveValue('#170 ')
+    await expect(window.locator('[data-testid="composer-pr-chip"]')).toBeVisible()
+    await expectComposerDraft(composer, '#170 ')
     await expect(window.locator('[data-testid="conductor-hash-menu"]')).toHaveCount(0)
+  })
+
+  test('hash menu reuses prefetched PR list without extra IPC on keystrokes', async () => {
+    const repoPath = createTestRepo('hash-menu-cache')
+    await mockOpenPrList(app, window, [
+      {
+        number: 170,
+        state: 'open',
+        title: 'docs(agents): add automation section',
+        url: 'https://github.com/o/r/pull/170',
+        checkStatus: 'none',
+        hasPendingComments: false,
+        pendingCommentCount: 0,
+        isBlockedByCi: false,
+        isApproved: false,
+        isChangesRequested: false,
+        updatedAt: '2026-01-01T00:00:00Z',
+        headRefName: 'auto/constellagent-email-to-pr/20240516',
+        baseRefName: 'main',
+        isCrossRepository: false,
+        authorLogin: 'tri',
+      },
+    ])
+    await setupWorkspace(window, repoPath)
+    await ensureCodexProvider(window)
+    await mockSlashApis(window)
+
+    await closeAllConductorTabs(window)
+    await resetOpenPrListCallCount(app)
+    await openConductorTab(window)
+    await waitForOpenPrPrefetch(window, app)
+
+    const composer = window.locator(COMPOSER)
+    await composer.click()
+    await composer.fill('#')
+    await composer.press('End')
+    await expect(window.locator('[data-testid="conductor-hash-menu"]')).toContainText('#170')
+    await expect(window.locator('[data-testid="conductor-hash-menu"]')).not.toContainText(
+      'Loading open pull requests',
+    )
+
+    await composer.press('Escape')
+    await expect(window.locator('[data-testid="conductor-hash-menu"]')).toHaveCount(0)
+
+    await composer.fill('#17')
+    await composer.press('End')
+    await expect(window.locator('[data-testid="conductor-hash-menu"]')).toContainText('#170')
+    await expect(window.locator('[data-testid="conductor-hash-menu"]')).not.toContainText(
+      'Loading open pull requests',
+    )
+
+    const callCount = await app.evaluate(
+      () => (globalThis as { __e2eOpenPrsCallCount?: number }).__e2eOpenPrsCallCount ?? 0,
+    )
+    expect(callCount).toBe(1)
+  })
+
+  test('skill slash pick renders chip and accepts typing after it', async () => {
+    const repoPath = createTestRepo('slash-skill-chip')
+    await setupWorkspace(window, repoPath)
+    await ensureCodexProvider(window)
+    await openConductorTab(window)
+    await mockSlashApis(window)
+
+    const composer = window.locator(COMPOSER)
+    await composer.click()
+    await composer.fill('/cave')
+    await composer.press('End')
+    await expect(window.locator('[data-testid="conductor-slash-menu"]')).toContainText('/caveman')
+    await composer.press('Enter')
+
+    await expect(window.locator('[data-testid="composer-skill-chip"]')).toBeVisible()
+    await expectComposerDraft(composer, '/caveman ')
+    await composer.pressSequentially('more text')
+    await expectComposerDraft(composer, '/caveman more text')
   })
 
   test('at menu lists files and inserts mention', async () => {
@@ -235,7 +390,7 @@ test.describe('Conductor slash menu', () => {
     await openConductorTab(window)
     await mockSlashApis(window)
 
-    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    const composer = window.locator(COMPOSER)
     await composer.click()
     await composer.fill('@App')
     await composer.press('End')
@@ -243,11 +398,13 @@ test.describe('Conductor slash menu', () => {
 
     await composer.press('Enter')
     await expect(window.locator('[data-testid="composer-file-chip"]')).toContainText('App.tsx')
-    await expect(composer).toHaveValue('')
+    await expectComposerDraft(composer, '@src/App.tsx ')
     await expect(window.locator('[data-testid="conductor-at-menu"]')).toHaveCount(0)
+    await composer.pressSequentially('tail')
+    await expectComposerDraft(composer, '@src/App.tsx tail')
   })
 
-  test('backspace at draft start removes the last file chip', async () => {
+  test('backspace after inline file mention removes the chip token', async () => {
     const repoPath = createTestRepo('at-menu-backspace')
     mkdirSync(join(repoPath, 'src'), { recursive: true })
     writeFileSync(join(repoPath, 'src', 'App.tsx'), 'export {}\n')
@@ -258,57 +415,53 @@ test.describe('Conductor slash menu', () => {
     await openConductorTab(window)
     await mockSlashApis(window)
 
-    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    const composer = window.locator(COMPOSER)
     await composer.click()
     await composer.fill('@App')
     await composer.press('End')
     await expect(window.locator('[data-testid="conductor-at-menu"]')).toContainText('App.tsx')
     await composer.press('Enter')
     await expect(window.locator('[data-testid="composer-file-chip"]')).toHaveCount(1)
+    await expectComposerDraft(composer, '@src/App.tsx ')
 
     await composer.press('Backspace')
     await expect(window.locator('[data-testid="composer-file-chip"]')).toHaveCount(0)
+    await expectComposerDraft(composer, '')
   })
 
   test('Esc dismisses hash token without submitting', async () => {
     const repoPath = createTestRepo('hash-menu-esc')
+    await mockOpenPrList(app, window, [
+      {
+        number: 5,
+        state: 'open',
+        title: 'Sample PR',
+        url: 'https://github.com/o/r/pull/5',
+        checkStatus: 'none',
+        hasPendingComments: false,
+        pendingCommentCount: 0,
+        isBlockedByCi: false,
+        isApproved: false,
+        isChangesRequested: false,
+        updatedAt: '2026-01-01T00:00:00Z',
+        headRefName: 'feature/sample',
+        baseRefName: 'main',
+        isCrossRepository: false,
+      },
+    ])
     await setupWorkspace(window, repoPath)
     await ensureCodexProvider(window)
-    await openConductorTab(window)
     await mockSlashApis(window)
 
-    await window.evaluate(() => {
-      const api = (window as unknown as { api: any }).api
-      api.github.listOpenPrs = async () => ({
-        available: true,
-        data: [
-          {
-            number: 5,
-            state: 'open',
-            title: 'Sample PR',
-            url: 'https://github.com/o/r/pull/5',
-            checkStatus: 'none',
-            hasPendingComments: false,
-            pendingCommentCount: 0,
-            isBlockedByCi: false,
-            isApproved: false,
-            isChangesRequested: false,
-            updatedAt: '2026-01-01T00:00:00Z',
-            headRefName: 'feature/sample',
-            baseRefName: 'main',
-            isCrossRepository: false,
-          },
-        ],
-      })
-    })
+    await openConductorTab(window)
 
-    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    const composer = window.locator(COMPOSER)
     await composer.click()
     await composer.fill('#')
     await composer.press('End')
     await expect(window.locator('[data-testid="conductor-hash-menu"]')).toBeVisible()
     await composer.press('Escape')
-    await expect(composer).toHaveValue('')
+    await expectComposerDraft(composer, '')
     await expect(window.locator('[data-testid="conductor-hash-menu"]')).toHaveCount(0)
   })
 
@@ -319,7 +472,7 @@ test.describe('Conductor slash menu', () => {
     await openConductorTab(window)
     await mockSlashApis(window)
 
-    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    const composer = window.locator(COMPOSER)
     await composer.click()
     await composer.fill('/mcp-status')
     await composer.press('Enter')
@@ -334,7 +487,7 @@ test.describe('Conductor slash menu', () => {
     await openConductorTab(window)
     await mockSlashApis(window)
 
-    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    const composer = window.locator(COMPOSER)
     await composer.click()
     await composer.fill('/mcp')
     await composer.press('Enter')
@@ -352,11 +505,11 @@ async function composerFillAndEsc(window: Page): Promise<void> {
   await openConductorTab(window)
   await mockSlashApis(window)
 
-  const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+  const composer = window.locator(COMPOSER)
   await composer.click()
   await composer.fill('/clear')
   await expect(window.locator('[data-testid="conductor-slash-menu"]')).toBeVisible()
   await composer.press('Escape')
   await expect(window.locator('[data-testid="conductor-slash-menu"]')).toHaveCount(0)
-  await expect(composer).toHaveValue('')
+  await expectComposerDraft(composer, '')
 }

@@ -166,7 +166,7 @@ export function TimelineItem({
   readonly item: TranscriptMessage;
   readonly expandedToolCallIds?: ReadonlySet<string>;
   readonly onToggleToolCall?: (callId: string) => void;
-  /** When set, this assistant message is still receiving tokens (Streamdown streaming mode). */
+  /** When set, this assistant message is still receiving tokens (ProseMark streaming). */
   readonly assistantStreamMessageId?: string | null;
   /** In-flight tool rows are shown only in the live “Tool activity” strip under the thread. */
   readonly sessionRunning?: boolean;
@@ -250,7 +250,7 @@ function TimelineMessage({
           </div>
           {copyControl}
         </div>
-        <MessageMarkdown text={item.text} preferStreamdown />
+        <MessageMarkdown text={item.text} preferProsemark />
       </article>
     );
   }
@@ -258,7 +258,7 @@ function TimelineMessage({
   return (
     <article className="timeline-item timeline-item--assistant">
       {copyControl ? <div className="timeline-item__message-toolbar timeline-item__message-toolbar--assistant">{copyControl}</div> : null}
-      <MessageMarkdown text={item.text} preferStreamdown isStreaming={streamThisAssistant} />
+      <MessageMarkdown text={item.text} preferProsemark isStreaming={streamThisAssistant} />
     </article>
   );
 }
