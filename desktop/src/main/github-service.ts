@@ -10,6 +10,7 @@ import type {
   ResolvedPrInfo,
   PullRequestHeadMetadata,
 } from '../shared/github-types'
+import { OPEN_PR_LIST_CACHE_MS } from '../shared/open-pr-list-cache'
 import { parseGithubUrl } from '../shared/github-url'
 import type { GithubRepoInfo } from '../shared/github-url'
 import type { GithubCloneRepoSuggestion } from '../shared/github-clone-suggestions'
@@ -190,7 +191,8 @@ function parsePrUrl(raw: string): { url: string; number: number | null } | null 
 export class GithubService {
   private static AUTH_TOKEN_REFRESH_MS = 60_000
   private static OPEN_PR_LIST_LIMIT = 50
-  private static OPEN_PR_LIST_CACHE_MS = 25_000
+  /** IPC cache TTL — second layer under the renderer local store (same duration). */
+  private static OPEN_PR_LIST_CACHE_MS = OPEN_PR_LIST_CACHE_MS
   private static UNRESOLVED_THREAD_CACHE_TTL_MS = 30_000
   private static ghAvailable: boolean | null = null
   private static repoInfoCache = new Map<string, GithubRepoInfo | null>()

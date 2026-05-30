@@ -116,6 +116,27 @@ export function SharedFileIconDefs({ appearanceThemeId }: { appearanceThemeId: A
   )
 }
 
+/** Imperative twin of {@link SharedFileIcon} for contenteditable / CodeMirror DOM chips. */
+export function createSharedFileIconElement(
+  path: string,
+  className: string,
+  appearanceThemeId: AppearanceThemeId = 'default',
+): SVGSVGElement {
+  const presentation = getFilePresentation(path, undefined, appearanceThemeId)
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  icon.setAttribute('aria-hidden', 'true')
+  icon.setAttribute('class', className)
+  icon.setAttribute('viewBox', '0 0 16 16')
+  icon.setAttribute('data-file-icon-token', presentation.iconToken)
+  if (presentation.iconColor) {
+    icon.style.color = presentation.iconColor
+  }
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use')
+  use.setAttribute('href', `#${presentation.iconSymbolId}`)
+  icon.appendChild(use)
+  return icon
+}
+
 export function SharedFileIcon({
   path,
   className,

@@ -44,6 +44,7 @@
   --pm-link-color: var(--accent-blue);
   --pm-muted-color: var(--text-tertiary);
   --pm-code-background-color: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  --pm-inline-code-background-color: color-mix(in srgb, var(--text-primary) 7%, transparent);
   --pm-code-font: var(--font-mono);
   --pm-code-btn-background-color: var(--surface-3);
   --pm-code-btn-hover-background-color: var(--surface-4);
@@ -86,7 +87,7 @@
   text-wrap: pretty;
 }
 
-.prosemark-chat .cm-editor .cm-line,
+.prosemark-chat .cm-editor .cm-line:not(.cm-fenced-code-line),
 .prosemark-chat .cm-editor .cm-horizontal-rule-container {
   padding-left: 0;
   padding-right: 0;
@@ -104,18 +105,106 @@
   inset-inline-start: 0;
 }
 
-.prosemark-chat .cm-editor .cm-fenced-code-line {
-  margin-left: 0;
-  padding-left: 12px;
-  padding-right: 12px;
-}
-
 .prosemark-chat .cm-editor .cm-gutters {
   display: none;
 }
 
 .prosemark-chat .cm-editor .cm-code-block-info {
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0 10px;
+  padding: 0;
+  pointer-events: auto;
+  position: relative;
+  z-index: 2;
+}
+
+.prosemark-chat .cm-editor .cm-code-block-lang-container {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.prosemark-chat .cm-editor .cm-code-block-lang-container:empty {
   display: none;
+}
+
+.prosemark-chat .cm-editor .cm-code-block-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    transform 130ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.prosemark-chat .cm-editor .cm-code-block-copy-icon-stack {
+  position: relative;
+  display: flex;
+  width: 14px;
+  height: 14px;
+}
+
+.prosemark-chat .cm-editor .cm-code-block-copy-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    opacity 150ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.prosemark-chat .cm-editor .cm-code-block-copy-icon--check {
+  opacity: 0;
+  transform: scale(0.92);
+}
+
+.prosemark-chat .cm-editor .cm-code-block-copy-button[data-copied="true"] {
+  color: var(--accent-green, #a3be8c);
+  border-color: color-mix(in srgb, var(--accent-green, #a3be8c) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-green, #a3be8c) 10%, var(--surface-1));
+}
+
+.prosemark-chat .cm-editor .cm-code-block-copy-button[data-copied="true"] .cm-code-block-copy-icon--copy {
+  opacity: 0;
+  transform: scale(0.92);
+}
+
+.prosemark-chat .cm-editor .cm-code-block-copy-button[data-copied="true"] .cm-code-block-copy-icon--check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .prosemark-chat .cm-editor .cm-code-block-copy-button:hover:not([data-copied="true"]) {
+    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--accent-blue, #7eb8b8) 35%, var(--border-subtle));
+  }
+}
+
+.prosemark-chat .cm-editor .cm-code-block-copy-button:active {
+  transform: scale(0.97);
+}
+
+.prosemark-chat .cm-editor .cm-code-block-copy-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 .prosemark-chat .cm-editor .cm-cursorLayer .cm-cursor,
@@ -276,19 +365,32 @@
   margin: 0;
 }
 
-/* Inline tool rows: soften leftover inline code; file paths should prefer cm-file-chip. */
+/* Inline code in prose — subtle tint, not chip/pill blocks. Fenced blocks keep --pm-code-background-color. */
+.prosemark-chat .cm-editor .cm-inline-code {
+  padding: 0.08em 0.3em;
+  border-radius: 0.2em;
+  font-size: 0.88em;
+  line-height: inherit;
+  vertical-align: baseline;
+  color: inherit;
+  background: var(--pm-inline-code-background-color);
+  border: none;
+}
+
+/* Inline tool rows: same prose-native code; file paths should prefer cm-file-chip. */
 .prosemark-chat.prosemark-chat-inline .cm-editor .cm-inline-code {
-  padding: 1px 6px;
-  border-radius: 6px;
-  font-size: 0.92em;
-  line-height: 1.35;
-  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-default) 55%, transparent);
-  color: var(--text-primary);
+  padding: 0.06em 0.28em;
+  border-radius: 0.2em;
+  font-size: 0.9em;
+  line-height: inherit;
+  background: var(--pm-inline-code-background-color);
+  border: none;
+  color: inherit;
 }
 
 .prosemark-chat.prosemark-chat-inline .cm-editor .cm-file-chip {
-  max-width: min(240px, 100%);
+  width: max-content;
+  max-width: 100%;
   padding: 2px 7px 2px 6px;
   font-size: 11px;
 }
@@ -316,15 +418,24 @@
   margin-top: 0.1em;
 }
 
-.prosemark-chat .cm-editor .cm-fenced-code-line {
-  margin-left: 0;
-  padding-left: 14px;
-  padding-right: 14px;
-  font-size: 0.92em;
-  line-height: 1.55;
+.prosemark-chat .cm-editor .cm-line.cm-fenced-code-line {
+  margin-inline: 0;
+  padding-inline: 1.25rem;
+  font-family: var(--pm-code-font, var(--font-mono));
+  font-size: 0.875em;
+  line-height: 1.6;
+  letter-spacing: 0;
   background: color-mix(in srgb, var(--surface-2) 72%, transparent);
   border-left: 1px solid var(--panel-border-inner, var(--border-subtle));
   border-right: 1px solid var(--panel-border-inner, var(--border-subtle));
+}
+
+.prosemark-chat .cm-editor .cm-fenced-code-line:not(.cm-fenced-code-line-first):not(.cm-fenced-code-line-last) {
+  padding-block: 0.05em;
+}
+
+.prosemark-chat .cm-editor .cm-fenced-code-line-first + .cm-fenced-code-line {
+  padding-top: 0.15em;
 }
 
 /* Fence delimiter tokens stay in the doc for CM parsing — keep them invisible in preview. */
@@ -339,19 +450,28 @@
 }
 
 .prosemark-chat .cm-editor .cm-fenced-code-line-first {
-  margin-top: 0.7em;
-  padding-top: 12px;
+  margin-top: 0.75em;
+  padding-top: 0.5rem;
+  padding-bottom: 0.15rem;
+  min-height: 2rem;
   border-top: 1px solid var(--panel-border-inner, var(--border-subtle));
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
 }
 
 .prosemark-chat .cm-editor .cm-fenced-code-line-last {
-  margin-bottom: 0.8em;
-  padding-bottom: 12px;
+  margin-bottom: 0.75em;
+  padding-top: 0;
+  padding-bottom: 0.25rem;
+  line-height: 0;
   border-bottom: 1px solid var(--panel-border-inner, var(--border-subtle));
   border-bottom-left-radius: 10px;
   border-bottom-right-radius: 10px;
+}
+
+/* Bottom inset on the last visible code line — not the hidden closing fence. */
+.prosemark-chat .cm-editor .cm-fenced-code-line:has(+ .cm-fenced-code-line-last) {
+  padding-bottom: 0.4em;
 }
 
 .prosemark-chat .cm-editor .cm-blockquote-line {
@@ -362,7 +482,8 @@
 .prosemark-chat .cm-editor .cm-file-chip {
   display: inline-flex;
   align-items: center;
-  max-width: min(320px, 100%);
+  width: max-content;
+  max-width: 100%;
   gap: 5px;
   padding: 2px 8px 2px 6px;
   margin: 0 1px;
@@ -394,9 +515,7 @@
 }
 
 .prosemark-chat .cm-editor .cm-file-chip-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
   white-space: nowrap;
 }
 
@@ -598,9 +717,7 @@
 }
 
 .prosemark-chat .cm-editor .cm-file-path-list-path {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
   white-space: nowrap;
 }
 
@@ -615,7 +732,9 @@
 
   .prosemark-chat .cm-editor .cm-checkbox,
   .prosemark-chat .cm-editor .cm-file-path-list-copy,
-  .prosemark-chat .cm-editor .cm-file-path-list-row {
+  .prosemark-chat .cm-editor .cm-file-path-list-row,
+  .prosemark-chat .cm-editor .cm-code-block-copy-button,
+  .prosemark-chat .cm-editor .cm-code-block-copy-icon {
     transition: none;
   }
 
@@ -624,7 +743,8 @@
   }
 
   .prosemark-chat .cm-editor .cm-file-path-list-copy:active,
-  .prosemark-chat .cm-editor .cm-file-path-list-row:active:not(:disabled) {
+  .prosemark-chat .cm-editor .cm-file-path-list-row:active:not(:disabled),
+  .prosemark-chat .cm-editor .cm-code-block-copy-button:active {
     transform: none;
   }
 }

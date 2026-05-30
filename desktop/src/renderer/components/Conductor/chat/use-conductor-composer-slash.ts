@@ -20,16 +20,16 @@ import {
   type ConductorSlashCommand,
   type ConductorSlashSection,
 } from '../../../../shared/conductor-composer-commands'
+import type { ComposerDraftInputRef } from './composer-draft-input-ref'
 
 export interface UseConductorComposerSlashArgs {
   readonly text: string
   readonly setText: Dispatch<SetStateAction<string>>
-  readonly composerRef: RefObject<HTMLTextAreaElement | null>
+  readonly composerRef: RefObject<ComposerDraftInputRef | null>
   readonly provider: AgentProvider
   readonly model: string
   readonly workspacePath: string
   readonly onSlashAction: (command: ConductorSlashCommand) => void
-  readonly onSkillSelect: (command: ConductorSlashCommand) => void
   readonly onPersonalitySelect: (value: string) => void
   readonly onNamePromptConfirm: (command: ConductorSlashCommand, value: string) => void
 }
@@ -42,7 +42,6 @@ export function useConductorComposerSlash({
   model,
   workspacePath,
   onSlashAction,
-  onSkillSelect,
   onPersonalitySelect,
   onNamePromptConfirm,
 }: UseConductorComposerSlashArgs) {
@@ -128,14 +127,12 @@ export function useConductorComposerSlash({
       setText((prev) => {
         const next = prev.slice(0, from) + insert + prev.slice(to)
         const pos = from + insert.length
-        requestAnimationFrame(() => {
-          const el = composerRef.current
-          if (el) {
-            el.focus()
-            el.selectionStart = el.selectionEnd = pos
-            setCursor(pos)
-          }
-        })
+        const el = composerRef.current
+        if (el) {
+          el.setSelectionRange(pos, pos)
+          el.focus()
+          setCursor(pos)
+        }
         return next
       })
     },
@@ -156,8 +153,7 @@ export function useConductorComposerSlash({
     (command: ConductorSlashCommand) => {
       if (!slashToken) return
       if (command.kind === 'skill') {
-        clearSlashToken()
-        onSkillSelect(command)
+        replaceRange(slashToken.from, slashToken.to, `${command.command} `)
         setPickCommand(null)
         return
       }
@@ -170,7 +166,7 @@ export function useConductorComposerSlash({
       setPickCommand(null)
       onSlashAction(command)
     },
-    [slashToken, clearSlashToken, onSlashAction, onSkillSelect],
+    [slashToken, replaceRange, clearSlashToken, onSlashAction],
   )
 
   const applyNamePromptValue = useCallback(
@@ -198,8 +194,8 @@ export function useConductorComposerSlash({
   }, [])
 
   const wrapComposerKeyDown = useCallback(
-    (base: (event: KeyboardEvent<HTMLTextAreaElement>) => void) =>
-      (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    (base: (event: KeyboardEvent<HTMLElement>) => void) =>
+      (event: KeyboardEvent<HTMLElement>) => {
         if (showPersonalityMenu) {
           const optionCount = CONDUCTOR_PERSONALITY_OPTIONS.length
           if (event.key === 'ArrowDown') {

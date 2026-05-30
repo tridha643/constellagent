@@ -1267,7 +1267,7 @@
   line-height: 1.65;
 }
 
-/* Wrapper that swaps between rendering strategies (streamdown / segmented / plain). */
+/* Wrapper that swaps between rendering strategies (prosemark / segmented / plain). */
 .message__content-variant {
   opacity: 1;
   filter: blur(0);
@@ -1364,7 +1364,7 @@
   text-decoration: underline;
 }
 
-.message__content .message__streamdown {
+.message__content .message__prosemark {
   min-width: 0;
 }
 

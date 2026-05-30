@@ -44,6 +44,9 @@ const REL_FILE = new RegExp(
 /** Slash command: /nia — not /Users (uppercase after / breaks [a-z] first char). */
 const SKILL_SLASH = /(?:^|[\s([{`'"])\/([a-z][a-z0-9_-]{0,63})(?=\s|$|[.,;:!?)}\]`'"])/g;
 
+/** @path mention (composer-style, no spaces in path). */
+const AT_MENTION = /(?:^|[\s([{])@([^\s@]+)/g;
+
 function isSkillMdPath(p: string): boolean {
   return /SKILL\.md$/i.test(p);
 }
@@ -93,6 +96,16 @@ function collectMatchesInSlice(s: string, offset: number): RawMatch[] {
     const start = offset + rm.index + (rm[0].length - path.length);
     const end = start + path.length;
     pushFile(path, start, end);
+  }
+
+  AT_MENTION.lastIndex = 0;
+  let am: RegExpExecArray | null;
+  while ((am = AT_MENTION.exec(s)) !== null) {
+    const relativePath = am[1];
+    if (!relativePath) continue;
+    const atStart = am.index + am[0].indexOf("@");
+    const atEnd = atStart + 1 + relativePath.length;
+    pushFile(relativePath, offset + atStart, offset + atEnd);
   }
 
   SKILL_SLASH.lastIndex = 0;

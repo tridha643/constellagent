@@ -7,7 +7,6 @@ import { applyAppearanceTheme } from './theme/appearance'
 import '@xterm/xterm/css/xterm.css'
 import './styles/global.css'
 import './styles/shared-dialog-motion.css'
-import './styles/streamdown-table.css'
 
 // Expose store for e2e testing
 ;(window as any).__store = useAppStore

@@ -124,9 +124,9 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: min(280px, 55vw);
-  flex-shrink: 1;
-  min-width: 0;
+  width: max-content;
+  max-width: 100%;
+  flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.35;
@@ -209,15 +209,13 @@
 }
 
 .cursorSkillChipLabel {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .cursorToolChipLabel {
+  flex-shrink: 0;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Diff hover popover */

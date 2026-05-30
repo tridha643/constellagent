@@ -62,6 +62,15 @@ describe("segmentMessageForInlineChips", () => {
     expect(s.some((x) => x.kind === "file" && x.path.includes("bar.ts"))).toBe(true);
   });
 
+  it("segments @-mention file paths as file chips", () => {
+    const s = segmentMessageForInlineChips("Please update @desktop/src/App.tsx and @README.md");
+    const files = s.filter((x) => x.kind === "file");
+    expect(files.map((f) => (f.kind === "file" ? f.path : ""))).toEqual([
+      "desktop/src/App.tsx",
+      "README.md",
+    ]);
+  });
+
   it("chips harness skill ids inside inline backticks", () => {
     const s = segmentMessageForInlineChips("I'll use the `composio-cli` skill for this.");
     const skills = s.filter((x) => x.kind === "skillSlash");

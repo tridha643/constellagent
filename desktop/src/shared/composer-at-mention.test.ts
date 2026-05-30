@@ -74,10 +74,9 @@ describe('serializeComposerTextWithFileMentions', () => {
 })
 
 describe('hasComposerDraftInput', () => {
-  test('detects mentions without text', () => {
-    expect(
-      hasComposerDraftInput('', [{ id: '1', relativePath: 'a.ts', absolutePath: '/a.ts' }]),
-    ).toBe(true)
+  test('detects non-empty trimmed text', () => {
+    expect(hasComposerDraftInput('@src/App.tsx')).toBe(true)
+    expect(hasComposerDraftInput('   ')).toBe(false)
   })
 })
 

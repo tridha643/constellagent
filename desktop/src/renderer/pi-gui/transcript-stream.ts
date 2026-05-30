@@ -1,6 +1,6 @@
 import type { TranscriptMessage } from "@shared/pi/timeline-types";
 
-/** Message id to treat as actively streaming in the timeline (Streamdown animation). */
+/** Message id to treat as actively streaming in the timeline (ProseMark delta append). */
 export function getAssistantStreamMessageId(
   transcript: readonly TranscriptMessage[],
   sessionRunning: boolean,

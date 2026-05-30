@@ -8,18 +8,75 @@ import {
   type RefObject,
   type SetStateAction,
 } from 'react'
-import type { OpenPrInfo } from '../../../../shared/github-types'
+import type { GithubLookupError, OpenPrInfo } from '../../../../shared/github-types'
 import {
   filterOpenPrsByHashQuery,
   formatHashMentionInsert,
   parseActiveHashToken,
 } from '../../../../shared/composer-hash-mention'
+import {
+  getRendererOpenPrListCacheStore,
+  getRendererOpenPrListInFlightStore,
+  isOpenPrListCacheFresh,
+  shouldSkipOpenPrListPrefetch,
+  writeRendererOpenPrListCache,
+  type OpenPrListCacheEntry,
+} from '../../../../shared/open-pr-list-cache'
+import type { ComposerDraftInputRef } from './composer-draft-input-ref'
 
 export interface UseConductorComposerHashArgs {
   readonly text: string
   readonly setText: Dispatch<SetStateAction<string>>
-  readonly composerRef: RefObject<HTMLTextAreaElement | null>
+  readonly composerRef: RefObject<ComposerDraftInputRef | null>
   readonly repoPath: string
+}
+
+function openPrListErrorMessage(error: GithubLookupError | undefined): string | null {
+  if (!error) return null
+  if (error === 'gh_not_installed') {
+    return 'Install and authenticate the GitHub CLI (`gh`) to reference pull requests.'
+  }
+  if (error === 'not_authenticated') {
+    return 'Authenticate the GitHub CLI (`gh auth login`) to reference pull requests.'
+  }
+  return 'This project is not linked to a GitHub repository.'
+}
+
+async function syncOpenPrListCache(repoPath: string): Promise<OpenPrListCacheEntry> {
+  const result = await window.api.github.listOpenPrs(repoPath)
+  const entry: OpenPrListCacheEntry = {
+    fetchedAt: Date.now(),
+    available: result.available,
+    error: result.available ? null : openPrListErrorMessage(result.error),
+    data: result.data,
+  }
+  if (result.available) {
+    writeRendererOpenPrListCache(repoPath, entry)
+  }
+  return entry
+}
+
+function getOrSyncOpenPrListCache(repoPath: string): Promise<OpenPrListCacheEntry> {
+  const inFlightSyncByRepo = getRendererOpenPrListInFlightStore()
+  const inFlight = inFlightSyncByRepo.get(repoPath)
+  if (inFlight) return inFlight
+
+  const promise = syncOpenPrListCache(repoPath).finally(() => {
+    inFlightSyncByRepo.delete(repoPath)
+  })
+  inFlightSyncByRepo.set(repoPath, promise)
+  return promise
+}
+
+function applyCacheEntry(
+  entry: OpenPrListCacheEntry,
+  setOpenPrs: Dispatch<SetStateAction<readonly OpenPrInfo[]>>,
+  setAvailable: Dispatch<SetStateAction<boolean>>,
+  setFetchError: Dispatch<SetStateAction<string | null>>,
+): void {
+  setAvailable(entry.available)
+  setOpenPrs(entry.data)
+  setFetchError(entry.error)
 }
 
 export function useConductorComposerHash({
@@ -32,40 +89,89 @@ export function useConductorComposerHash({
   const [menuIndex, setMenuIndex] = useState(0)
   const [openPrs, setOpenPrs] = useState<readonly OpenPrInfo[]>([])
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [available, setAvailable] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
   const hashToken = useMemo(() => parseActiveHashToken(text, cursor), [text, cursor])
+  const hashMenuOpen = Boolean(hashToken)
 
   useEffect(() => {
-    if (!hashToken || !repoPath) {
-      setOpenPrs([])
-      setLoading(false)
-      setFetchError(null)
+    const testWindow = window as Window & {
+      __testOpenPrListCacheGet?: (repoPath: string) => OpenPrListCacheEntry | undefined
+    }
+    testWindow.__testOpenPrListCacheGet = (path: string) =>
+      getRendererOpenPrListCacheStore().get(path)
+    return () => {
+      delete testWindow.__testOpenPrListCacheGet
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!repoPath) return
+
+    const cached = getRendererOpenPrListCacheStore().get(repoPath)
+    if (shouldSkipOpenPrListPrefetch(cached)) {
       return
+    }
+
+    let cancelled = false
+    void getOrSyncOpenPrListCache(repoPath).catch(() => {
+      if (cancelled) return
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [repoPath])
+
+  useEffect(() => {
+    if (!hashMenuOpen || !repoPath) {
+      setLoading(false)
+      setRefreshing(false)
+      return
+    }
+
+    const cached = getRendererOpenPrListCacheStore().get(repoPath)
+    if (cached) {
+      applyCacheEntry(cached, setOpenPrs, setAvailable, setFetchError)
+      setLoading(false)
+
+      if (isOpenPrListCacheFresh(cached.fetchedAt)) {
+        setRefreshing(false)
+        return
+      }
+
+      let cancelled = false
+      setRefreshing(true)
+      void getOrSyncOpenPrListCache(repoPath)
+        .then((entry) => {
+          if (cancelled) return
+          applyCacheEntry(entry, setOpenPrs, setAvailable, setFetchError)
+        })
+        .catch(() => {
+          if (cancelled) return
+          if (!getRendererOpenPrListCacheStore().get(repoPath)?.data.length) {
+            setFetchError('Could not load open pull requests.')
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setRefreshing(false)
+        })
+
+      return () => {
+        cancelled = true
+        setRefreshing(false)
+      }
     }
 
     let cancelled = false
     setLoading(true)
     setFetchError(null)
-
-    void window.api.github
-      .listOpenPrs(repoPath)
-      .then((result) => {
+    void getOrSyncOpenPrListCache(repoPath)
+      .then((entry) => {
         if (cancelled) return
-        setAvailable(result.available)
-        if (!result.available) {
-          setOpenPrs([])
-          setFetchError(
-            result.error === 'gh_not_installed'
-              ? 'Install and authenticate the GitHub CLI (`gh`) to reference pull requests.'
-              : result.error === 'not_authenticated'
-                ? 'Authenticate the GitHub CLI (`gh auth login`) to reference pull requests.'
-                : 'This project is not linked to a GitHub repository.',
-          )
-          return
-        }
-        setOpenPrs(result.data)
+        applyCacheEntry(entry, setOpenPrs, setAvailable, setFetchError)
       })
       .catch(() => {
         if (cancelled) return
@@ -78,15 +184,16 @@ export function useConductorComposerHash({
 
     return () => {
       cancelled = true
+      setLoading(false)
     }
-  }, [hashToken?.from, hashToken?.query, repoPath])
+  }, [hashMenuOpen, repoPath])
 
   const filteredPrs = useMemo(() => {
     if (!hashToken) return []
     return filterOpenPrsByHashQuery(openPrs, hashToken.query)
   }, [hashToken, openPrs])
 
-  const showHashMenu = Boolean(hashToken)
+  const showHashMenu = hashMenuOpen
 
   const selectedPr: OpenPrInfo | undefined = showHashMenu
     ? filteredPrs[Math.min(menuIndex, Math.max(filteredPrs.length - 1, 0))]
@@ -108,14 +215,12 @@ export function useConductorComposerHash({
       setText((prev) => {
         const next = prev.slice(0, from) + insert + prev.slice(to)
         const pos = from + insert.length
-        requestAnimationFrame(() => {
-          const el = composerRef.current
-          if (el) {
-            el.focus()
-            el.selectionStart = el.selectionEnd = pos
-            setCursor(pos)
-          }
-        })
+        const el = composerRef.current
+        if (el) {
+          el.setSelectionRange(pos, pos)
+          el.focus()
+          setCursor(pos)
+        }
         return next
       })
     },
@@ -144,8 +249,8 @@ export function useConductorComposerHash({
   }, [])
 
   const wrapComposerKeyDown = useCallback(
-    (base: (event: KeyboardEvent<HTMLTextAreaElement>) => void) =>
-      (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    (base: (event: KeyboardEvent<HTMLElement>) => void) =>
+      (event: KeyboardEvent<HTMLElement>) => {
         if (showHashMenu) {
           if (filteredPrs.length > 0) {
             if (event.key === 'ArrowDown') {
@@ -192,6 +297,7 @@ export function useConductorComposerHash({
     filteredPrs,
     selectedPr,
     loading,
+    refreshing,
     available,
     fetchError,
     onSelectHashMention: applyHashMention,

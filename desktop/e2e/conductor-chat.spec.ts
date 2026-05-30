@@ -161,17 +161,17 @@ test.describe('Conductor chat view', () => {
 
     const tokens = await window.evaluate(() => {
       const chat = document.querySelector('[data-testid="conductor-chat-view"]') as HTMLElement | null
-      const textarea = document.querySelector(
-        '[data-testid="conductor-chat-view"] textarea',
-      ) as HTMLTextAreaElement | null
-      if (!chat || !textarea) return null
+      const composer = document.querySelector(
+        '[data-testid="composer-draft-editor"]',
+      ) as HTMLElement | null
+      if (!chat || !composer) return null
       const chatStyle = getComputedStyle(chat)
-      const textareaStyle = getComputedStyle(textarea)
+      const composerStyle = getComputedStyle(composer)
       const rootStyle = getComputedStyle(document.documentElement)
       return {
         chatFontUi: chatStyle.getPropertyValue('--font-ui').trim(),
         chatSurface0: chatStyle.getPropertyValue('--surface-0').trim(),
-        textareaFont: textareaStyle.fontFamily,
+        composerFont: composerStyle.fontFamily,
         rootFontUi: rootStyle.getPropertyValue('--font-ui').trim(),
       }
     })
@@ -180,7 +180,7 @@ test.describe('Conductor chat view', () => {
     expect(tokens!.rootFontUi).toContain('ui-monospace')
     expect(tokens!.chatFontUi).toContain('-apple-system')
     expect(tokens!.chatSurface0).toBe('#242422')
-    expect(tokens!.textareaFont).toMatch(/-apple-system|SF Pro/i)
+    expect(tokens!.composerFont).toMatch(/-apple-system|SF Pro/i)
 
     const railTokens = await window.evaluate(() => {
       const rail = document.querySelector('[data-testid="conductor-turn-rail"]') as HTMLElement | null
@@ -230,7 +230,7 @@ test.describe('Conductor chat view', () => {
 
     await openConductorTab(window)
 
-    const composer = window.locator('[data-testid="conductor-chat-view"] textarea')
+    const composer = window.locator('[data-testid="composer-draft-editor"]')
     await expect(composer).toBeVisible({ timeout: 5000 })
     await composer.fill('a'.repeat(4_000))
 
