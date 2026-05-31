@@ -2,7 +2,7 @@
 
 These instructions apply to **any repository** where the constellagent app is in use — not just the constellagent codebase itself. They govern **all** coding agent harnesses (Cursor, Claude Code, Codex, Gemini, OpenCode, etc.).
 
-> **Fast navigation:** This file covers cross-repo policy (annotations, Sendblue, mobile, skills) and the monorepo's top-level map. For a file-by-file **service map** of the desktop app (which `*-service.ts` owns which feature), the **markdown engine (prosemark/CodeMirror)**, the **JSON canvas / tool-UI rendering** subsystem (`@json-render/*`), and the **OpenSpec change workflow** (`/opsx:*`), see **`desktop/CLAUDE.md`** → *Main-process service map* / *Renderer map* / *JSON canvas* / *OpenSpec change workflow*. Cursor users: repo rules live in `.cursor/rules/constellagent.mdc`.
+> **Fast navigation:** This file covers cross-repo policy (mobile, skills, storage) and the monorepo's top-level map. For a file-by-file **service map** of the desktop app (which `*-service.ts` owns which feature), the **markdown engine (prosemark/CodeMirror)**, the **JSON canvas / tool-UI rendering** subsystem (`@json-render/*`), and the **OpenSpec change workflow** (`/opsx:*`), see **`desktop/CLAUDE.md`** → *Main-process service map* / *Renderer map* / *JSON canvas* / *OpenSpec change workflow*. Cursor users: repo rules live in `.cursor/rules/constellagent.mdc`.
 
 ## Constellagent monorepo layout (this repository)
 
@@ -113,15 +113,11 @@ When changing RPC params, events, or pairing payloads, update **all three**: the
 
 ## Workspace storage
 
-Constellagent does **not** create a workspace-level `.constellagent/` directory for context capture or session history. The AgentFS/libSQL data that still exists lives under the repo's **`.git/`** directory.
+Constellagent does **not** create a workspace-level `.constellagent/` directory for context capture or session history. The embedded libSQL/SQLite data that still exists lives under the repo's **`.git/`** directory.
 
 **Exception:** the mobile bridge creates `.constellagent/worktrees/<token>/` at runtime for phone-initiated git operations (`mobile-git-bridge.ts`; detected via `mobile-workspace-registry.ts`). This is a runtime artifact, not committed context.
 
 Databases (see `desktop/CLAUDE.md` for the full table): `review-annotations.db` (git common dir), `<sessionId>.db` (repo `.git/`), and `conductor-chat.db` / `mobile-access.db` (app `userData`).
-
-## Cachebro (MCP — optional, per-machine)
-
-`cachebro` is a `desktop/` dependency (CLI MCP server `cachebro serve`) exposing `read_file`, `read_files`, `cache_status`, `cache_clear` tools that return diffs instead of full re-reads. It is **not** wired up by any committed config file in this repo; configure it once per machine with `npx cachebro init` (writes your global `~/.claude.json` / Cursor MCP config). When the cachebro tools are available, prefer them over raw file reads to save tokens.
 
 ## Bundled agent skills
 
@@ -149,102 +145,4 @@ Conductor markdown and canvas formatting is **app-managed** (inline prompt prefi
 
 ### Settings catalog
 
-Constellagent Settings can catalog additional skill directories and subagent files (stored in AgentFS KV). The app does **not** symlink them into your project — install into agent dirs locally using the same pattern as above.
-
-## Review annotations (human ↔ agent)
-
-The **Review Changes** panel and the **Changes** diff use **review annotations** backed by a local libSQL database (`review-annotations.db` in the git common dir). The `constell-annotate` CLI (from `@tridha643/review-annotations`) is the agent-facing tool. Desktop consumes the library via a workspace dependency (`workspace:*`) — no global install needed for the Electron app.
-
-- **In the desktop UI:** After non-trivial edits, add review notes on the relevant **new-side** lines (or old-side when appropriate). The diff shows **what** changed; comments explain **why** something needs attention.
-- **In a terminal (Claude Code, Codex, Cursor, etc.):** Use `constell-annotate` — no daemon, no session resolution needed.
-
-**Adding a comment (single command):**
-
-```bash
-constell-annotate add --file src/foo.ts --new-line 42 --summary "Why this change" --author "claude-code"
-```
-
-**Line ranges:**
-
-```bash
-constell-annotate add --file src/foo.ts --new-line 42-58 --summary "Refactored block" --author "cursor"
-```
-
-**Old-side (deletion) comments:**
-
-```bash
-constell-annotate add --file src/foo.ts --old-line 10 --summary "Removed deprecated path" --author "codex"
-```
-
-**Other commands:**
-
-```bash
-constell-annotate list [--file <path>] [--json] [--include-stale]
-constell-annotate remove <id>
-constell-annotate clear [--file <path>]
-constell-annotate clean-deleted
-constell-annotate resolve <id>
-constell-annotate unresolve <id>
-```
-
-**Repo-scoped memories** (same global `--db` / `--workspace-id` as above; full flags in `packages/review-annotations/README.md`):
-
-```bash
-constell-annotate add-memory --summary "..." [--details "..." --key ... --author ... --branch ... --worktree ...]
-constell-annotate list-memories [--key ... --author ... --branch ... --worktree ...] [--json]
-constell-annotate search-memories --query "..." [--key ... --author ... --branch ... --worktree ...] [--json]
-constell-annotate remove-memory <id>
-```
-
-`search-memories` uses **FTS5** token search over memory text when the SQLite build supports it, with **`LIKE` fallback** documented in the package README. This is the same **`constell-annotate`** binary used for **review annotations** (`add`, `list`, `remove`, …) on code changes.
-
-### Validation
-
-By default, `add` validates that the target line is inside a `git diff HEAD` hunk. Use `--force` to bypass (e.g. for bulk notes or when the diff base differs).
-
-### Where comments are stored
-
-- In Constellagent-managed repos: `<git-common-dir>/review-annotations.db`
-- In standalone CLI use: `~/.local/share/constellagent/review-annotations.db`, scoped by `repo_root`
-- Comments persist in SQLite — no daemon or watch process needed
-
-### Author tagging (required)
-
-**Always pass `--author "<agent-name>"` when adding comments** (e.g. `--author "claude-code"`, `--author "cursor"`, `--author "codex"`, `--author "gemini"`, `--author "opencode"`). This tags review notes so human reviewers can distinguish AI annotations from human comments in the UI. Omitting `--author` makes comments appear as human-authored.
-
-In the Review Changes panel, **AI-authored comments are display-only** (non-toggleable context) and are never included in the text submitted to the agent; only **selected human** comments are submitted.
-
-### Install (standalone CLI)
-
-```bash
-npm i -g @tridha643/review-annotations
-```
-
-Shared types: `desktop/src/shared/diff-annotation-types.ts`.
-
-## Mandatory AI annotations on code changes
-
-After a successful build and **before** reporting work done, annotate **every source file you modified** with at least one `constell-annotate add … --author "<agent-name>"` comment explaining **why** the change was made (not what). Skip auto-generated files (`bun.lock`). Failure to annotate is equivalent to leaving the task incomplete.
-
-## Mandatory Sendblue CLI notifications
-
-**This requirement applies in every repository where constellagent is in use — not just the constellagent codebase itself.**
-
-**After every plan creation and after every task completion, agents MUST send a Sendblue CLI notification to your configured E.164 recipient (set locally; do not commit personal numbers). This is required work, not optional polish.**
-
-- Plan created notification — **send immediately when the plan is written, before implementation begins:**
-
-```bash
-sendblue send +<YOUR_E164_RECIPIENT> "<agent-name> <plan-topic-name> plan created"
-```
-
-- Task complete notification:
-
-```bash
-sendblue send +<YOUR_E164_RECIPIENT> "<agent-name> <plan-topic-name> is over"
-```
-
-- Use the concrete harness name for `<agent-name>` such as `claude-code`, `codex`, `gemini`, or `cursor`.
-- Use the plan title for `<plan-topic-name>` when one exists; otherwise use a short task topic derived from the user request.
-- Retry the `sendblue send` command up to 3 times if it fails.
-- If all retries fail, the agent must say so explicitly in its final response with the failure string. Silent failure is not allowed.
+Constellagent Settings can catalog additional skill directories and subagent files (stored in the embedded libSQL KV). The app does **not** symlink them into your project — install into agent dirs locally using the same pattern as above.

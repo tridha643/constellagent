@@ -26,6 +26,7 @@ import {
   evToolStarted,
   evToolUpdated,
   buildAgentPrompt,
+  promptEmitsFormatPrefix,
   type AgentDriver,
   type AgentTurnContext,
 } from './agent-driver'
@@ -45,6 +46,8 @@ interface CursorSessionState {
   agent: SDKAgent
   model: string
   plan: boolean
+  /** True once this agent has received the markdown formatting prefix; skip re-sending it on later turns. */
+  formatPrimed: boolean
   /** Assistant text streamed so far this turn, for delta computation. */
   emittedText: string
   run?: Run
@@ -227,20 +230,27 @@ export class CursorDriver implements AgentDriver {
       } catch (err) {
         throw toCursorUserError(err)
       }
-      state = { agent, model: effectiveModel, plan: ctx.plan, emittedText: '' }
+      state = { agent, model: effectiveModel, plan: ctx.plan, formatPrimed: false, emittedText: '' }
       this.sessions.set(key, state)
     }
     if (!state) {
       throw new Error('Failed to create Cursor agent')
     }
 
+    // Send the markdown formatting prefix only once per agent; it stays in the
+    // agent's history afterwards, so continuation turns skip the ~75 tokens.
+    const includeFormatPrefix = !state.formatPrimed
     const prompt = buildAgentPrompt(
       ctx.text,
       ctx.plan,
       needsNewAgent ? ctx.previousTranscript : undefined,
       'cursor',
       ctx.canvas,
+      includeFormatPrefix,
     )
+    if (promptEmitsFormatPrefix(ctx.text, 'cursor', ctx.canvas, includeFormatPrefix)) {
+      state.formatPrimed = true
+    }
     const message = buildCursorUserMessage(prompt, ctx.attachments)
     setCursorAskQuestionHandler(ctx.plan ? createCursorAskQuestionHandler(ctx) : null)
     let run: Run

@@ -34,26 +34,54 @@ export const PLAN_PROMPT_CURSOR_ASK =
   'When important scope or behavior is still unclear, use the native AskQuestion tool to ask 3-4 strong multiple-choice questions first (2-4 options each, include tradeoffs, mark a recommended default when confident).'
 
 /**
- * Prepended to every Conductor turn so assistant replies use markdown the chat
- * renderer can display (GFM headings, task lists, tables, bullets).
+ * Formatting contract for assistant replies the Conductor markdown preview can
+ * render (GFM headings, task lists, tables, bullets; Mermaid for diagrams).
+ *
+ * Sent **once per thread** (on the first turn) rather than re-prepended to every
+ * turn: the provider threads are persistent, so the model retains it in history
+ * like a system instruction. Drivers gate this via `includeFormatPrefix` so we
+ * don't re-bill ~75 tokens of identical context on every subsequent turn.
  */
 export const CONDUCTOR_MARKDOWN_FORMAT_PREFIX =
-  [
-    'Format your reply as clean GitHub-Flavored Markdown: use ATX headings (`## Section`) without wrapping the markers in bold; use `- [ ]` / `- [x]` task lists (no emoji list markers); use pipe tables with a header row and `|---|---|` separator; use `-` bullets for unordered lists.',
-    'Conductor renders assistant replies in a live markdown preview. Render diagrams and charts in chat with fenced Mermaid blocks, using `xychart-beta` for numeric/bar/line charts when appropriate.',
-    'Do not invoke image generation tools or create PNG/JPG/WebP/SVG image files for diagrams, charts, architecture, plans, or other content Mermaid can express. Only generate raster images when the user explicitly asks for a photo, icon, mockup, or other non-Mermaid visual.',
-  ].join(' ')
+  'Reply in GitHub-Flavored Markdown for a live preview: ATX headings (`## Section`, never bold-wrapped), `-` bullets, `- [ ]` / `- [x]` task lists, and pipe tables with a `|---|---|` header separator. Render diagrams and charts as fenced Mermaid blocks (`xychart-beta` for numeric/bar/line charts) — do not generate PNG/JPG/WebP/SVG image files for anything Mermaid can express; only create raster images when the user explicitly asks for a photo, icon, or mockup.'
 
 const CONDUCTOR_CONTEXT_PROMPT_PREFIX =
   'Previous conversation context from this Conductor chat is below. Use it as the authoritative thread history, including any plan the assistant already produced.'
 
-/** Builds the user prompt sent to agent drivers (format hint + optional plan/canvas mode/context). */
+/**
+ * Whether `buildAgentPrompt` will actually emit `CONDUCTOR_MARKDOWN_FORMAT_PREFIX`
+ * for these inputs. Drivers use this to mark a thread "primed" only when the
+ * prefix was really sent (i.e. not a slash command, not canvas mode, and the
+ * caller opted in) — single source of truth so priming can't drift from the
+ * builder's own branching.
+ */
+export function promptEmitsFormatPrefix(
+  text: string,
+  provider: AgentProvider | undefined,
+  canvas: boolean,
+  includeFormatPrefix: boolean,
+): boolean {
+  if (!includeFormatPrefix) return false
+  if (provider === 'pi' && isSingleLineSlashCommand(text)) return false
+  if (isHarnessSlashCommand(text)) return false
+  if (canvas && provider && provider !== 'pi') return false
+  return true
+}
+
+/**
+ * Builds the user prompt sent to agent drivers (format hint + optional plan/canvas mode/context).
+ *
+ * `includeFormatPrefix` lets persistent-thread drivers send the markdown
+ * formatting contract only on a thread's first turn (it stays in history
+ * thereafter); pass `false` on continuation turns to avoid re-billing it.
+ */
 export function buildAgentPrompt(
   text: string,
   plan: boolean,
   previousTranscript?: readonly TranscriptMessage[],
   provider?: AgentProvider,
   canvas = false,
+  includeFormatPrefix = true,
 ): string {
   if (provider === 'pi' && isSingleLineSlashCommand(text)) {
     return text.trim()
@@ -64,7 +92,7 @@ export function buildAgentPrompt(
   const parts: string[] = []
   if (canvas && provider && provider !== 'pi') {
     parts.push(buildJsonCanvasPromptSuffix(provider))
-  } else {
+  } else if (promptEmitsFormatPrefix(text, provider, canvas, includeFormatPrefix)) {
     parts.push(CONDUCTOR_MARKDOWN_FORMAT_PREFIX)
   }
   if (plan) {
