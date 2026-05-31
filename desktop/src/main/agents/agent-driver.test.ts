@@ -5,6 +5,7 @@ import {
   computeTextDelta,
   needsAssistantWordBoundarySpace,
   normalizeAssistantStreamDelta,
+  promptEmitsFormatPrefix,
   PLAN_PROMPT_PREFIX,
 } from './agent-driver'
 
@@ -32,8 +33,33 @@ describe('agent-driver prompt construction', () => {
     expect(prompt).toContain('GitHub-Flavored Markdown')
     expect(prompt).toContain('fenced Mermaid blocks')
     expect(prompt).toContain('xychart-beta')
-    expect(prompt).toContain('Do not invoke image generation tools')
-    expect(prompt).toContain('Only generate raster images when the user explicitly asks')
+    expect(prompt).toContain('do not generate PNG/JPG/WebP/SVG image files')
+    expect(prompt).toContain('only create raster images when the user explicitly asks')
+  })
+
+  test('omits the format prefix on continuation turns but keeps the user text', () => {
+    const prompt = buildAgentPrompt('next step', false, undefined, 'codex', false, false)
+
+    expect(prompt).not.toContain('GitHub-Flavored Markdown')
+    expect(prompt).toBe('next step')
+  })
+
+  test('still sends plan-mode instructions on continuation turns (only the format prefix is gated)', () => {
+    const prompt = buildAgentPrompt('revise the plan', true, undefined, 'codex', false, false)
+
+    expect(prompt).not.toContain('GitHub-Flavored Markdown')
+    expect(prompt).toContain(PLAN_PROMPT_PREFIX)
+  })
+
+  test('promptEmitsFormatPrefix reflects when the prefix is actually included', () => {
+    // First turn, plain prose → prefix sent.
+    expect(promptEmitsFormatPrefix('hello', 'codex', false, true)).toBe(true)
+    // Continuation turn → caller opted out.
+    expect(promptEmitsFormatPrefix('hello', 'codex', false, false)).toBe(false)
+    // Canvas mode uses the canvas suffix instead, so the markdown prefix is never the one sent.
+    expect(promptEmitsFormatPrefix('hello', 'codex', true, true)).toBe(false)
+    // Harness slash commands bypass Conductor wrapping entirely.
+    expect(promptEmitsFormatPrefix('/compact', 'codex', false, true)).toBe(false)
   })
 
   test('adds prior chat context before the current user request', () => {

@@ -9,10 +9,5 @@ Read these files to see what other agents (and you) have been doing recently:
 - `.constellagent/context/agent-context.md` — Rich context summary (files touched, tool details, activity timeline)
 - `.constellagent/sessions/` — Session-end summaries with timestamps
 
-## Cachebro (MCP — auto-configured)
-Cachebro is pre-configured via `npx cachebro init`. Use the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) instead of raw file reads to save tokens.
-
-## Review annotations
-After non-trivial edits, leave review notes in the **diff / Review Changes** UI, or from a terminal using **`constell-annotate add --file <path> --new-line <N> --summary "..." --author "cursor"`**. Install: `npm i -g @tridha643/review-annotations`. Root **`AGENTS.md`** has the full reference.
-
-**AI annotations are non-toggleable:** Comments with an `author` field are display-only context in the Review Changes panel — they are never included in submission text sent to the agent. Only human comments (no `author`) have checkboxes and can be selected for submission.
+## Token hygiene
+~89% of tokens in this repo's agent traces are tool input/output, not reasoning (shell I/O ~66%, file reads ~14%). Cap noisy command output (`… 2>&1 | tail -40`), never re-dump a long-running process's scrollback, read targeted line ranges instead of whole files repeatedly, and batch edits before re-running build/test. See **`desktop/CLAUDE.md` → Token hygiene** for detail.

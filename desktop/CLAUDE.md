@@ -2,20 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in the **`desktop/`** Electron app.
 
-Repo-wide agent instructions (storage model, Cachebro, **review annotations**, **author tagging**, **Sendblue CLI notifications**, mobile bridge, packages) live in **`../AGENTS.md`**. Use **`constell-annotate add --file <path> --new-line <N> --summary "..." --author "claude-code"`** to add review annotations. Install: `npm i -g @tridha643/review-annotations`. **Always pass `--author "claude-code"`** when adding comments.
+Repo-wide agent instructions (storage model, mobile bridge, packages) live in **`../AGENTS.md`**.
 
-## Mandatory Sendblue notifications
+## Token hygiene (make agents faster + cheaper)
 
-Claude Code work in this repo is not complete until these Sendblue CLI notifications have been attempted:
+Analysis of this repo's agent traces (codex/cursor/claude/pi) shows **~89% of tokens are tool input/output, not model reasoning**: tool *results* alone are ~78% of all tokens, dominated by shell/terminal I/O (~66% combined — `exec_command` is half of everything) and file reads (~14%). The fastest, cheapest win is to stop feeding the model output it doesn't need. Apply these here:
 
-```bash
-sendblue send +<YOUR_E164_RECIPIENT> "claude-code <plan-topic-name> plan created"
-sendblue send +<YOUR_E164_RECIPIENT> "claude-code <plan-topic-name> is over"
-```
-
-- Retry each command up to 3 times if it fails.
-- If all retries fail, the final response must say that explicitly with the failure text.
-- The `task over` notification happens after required tests/builds and review annotations, before reporting completion.
+- **Cap noisy command output.** Pipe builds/tests/logs through `tail`/`grep` rather than dumping full logs — `bun run build 2>&1 | tail -40`, `bun test <file> 2>&1 | tail -30`. Prefer quiet reporters. In the traces, build results averaged ~440 tok × 162 runs and test results ~280 tok × 189 runs, most of it passing-line noise.
+- **Never re-dump a long-running / interactive process's scrollback.** Polling a dev server or watcher (`bun run dev`, `write_stdin` against an interactive shell) re-sent the same ~10k-token buffer over and over — the single biggest concentrated waste seen. Use one-shot non-watch builds, or read only new lines.
+- **Read once, target line ranges.** Hot files (`CLAUDE.md`, the agent drivers, CSS modules) were re-read 4–7× per session; ~20k tokens were byte-identical duplicate tool results. Read specific ranges and rely on context already in the thread.
+- **Batch edits, then verify once.** 162 builds + 189 test runs across the sample — group related changes before rebuilding instead of after every micro-edit.
+- **Images are expensive** (one screenshot ≈ 35k+ tokens). Only attach when text/logs can't answer it; render diagrams as Mermaid (already required for Conductor replies — see `agent-driver.ts`).
+- **Push broad file-sweeps into subagents** (Explore / general-purpose) so large raw reads stay out of the main context and only the conclusion returns.
+- **Conductor turn overhead:** the `CONDUCTOR_MARKDOWN_FORMAT_PREFIX` (~186 tokens) is prepended to **every** Conductor turn on a persistent thread (`agent-driver.ts` → `buildAgentPrompt`, consumed by `codex-driver.ts`/`cursor-driver.ts`). On a persistent thread the model only needs it once; sending it first-turn-only (or moving it to the thread's system instructions where it caches) and trimming the verbose Mermaid/image paragraph removes redundant re-sent context that accumulates over a session.
 
 ## Commands
 
@@ -80,7 +79,7 @@ Use this to jump straight to the owning file for a feature. Subdirs: `agents/` (
 | **Git / worktrees** | `git-service.ts`, `git-snapshot.ts`, `worktree-sync-service.ts`, `worktree-credential-copy.ts`, `commit-message-service.ts` | Worktree CRUD, staging/commit/diff/log, sync across worktrees, AI commit-message generation |
 | **Terminal** | `pty-manager.ts` | node-pty processes, OSC titles, scrollback ring buffers, exit callbacks |
 | **Files / search** | `file-service.ts`, `spotlight-service.ts`, `package-scripts-service.ts` | File tree, read/write, quick-open, code search, plan-markdown discovery |
-| **Storage** | `agentfs-service.ts`, `plan-meta.ts`, `annotation-service.ts`, `agent-chat-store.ts` | AgentFS/libSQL access, plan frontmatter, review annotations, chat transcripts |
+| **Storage** | `agentfs-service.ts`, `plan-meta.ts`, `annotation-service.ts`, `agent-chat-store.ts` | Embedded libSQL access, plan frontmatter, review annotations, chat transcripts |
 | **Agent chat / Conductor** | `agent-chat-host.ts`, `agent-chat-queue.ts`, `agent-chat-store.ts`, `conductor-auth.ts`, `conductor-settings.ts`, `conductor-image-picker.ts`, `conductor-generated-image-files.ts` | Orchestrates agent sessions, queues, API-key/auth caching, generated-image persistence |
 | **Agent drivers** | `agents/agent-driver.ts`, `agents/codex-driver*.ts` (+ `codex-driver-collab.ts`), `agents/cursor-driver*.ts` + `cursor-sdk-interaction-patch.ts` / `cursor-subagent-config.ts` / `cursor-interaction-bridge.ts`, `agents/conductor-sdk-cli-permissions.ts`, `agents/pi-conductor-driver.ts`, `agents/conductor-question-bridge.ts`, `agents/json-canvas-bridge.ts`; root `cursor-sdk-*.ts` (`-interaction-config`, `-ripgrep*`) | Per-provider CLI/SDK integration (Codex, Cursor, Pi); ask-question + JSON-canvas bridges |
 | **GitHub / Graphite** | `github-service.ts`, `github-poll-service.ts`, `graphite-service.ts` | PR status via `gh` GraphQL (90s poll), Graphite stacks |
@@ -146,7 +145,7 @@ The Conductor chat can render **structured, JSON-described UI** ("JSON canvases"
 
 **Prop validation.** `catalog.validate()` only checks element *type* and shape — it does **not** validate `props`. `json-canvas-validate.ts` fills that gap for the constellagent-owned components (`constellComponentPropSchemas`): a missing required prop is an `error`, an out-of-range value (e.g. a bad `variant`) is a `warning`, and state-binding expressions (`$state.x`) plus shadcn props are skipped to avoid false positives.
 
-## Storage (AgentFS + Turso libSQL)
+## Storage (embedded libSQL / SQLite)
 
 Constellagent no longer writes workspace context-capture files or creates a `.constellagent/` directory **for context/session history**. Embedded Turso/libSQL files live under the repo's `.git/` directory (so they don't pollute the working tree and travel with the repo's git dir). **Exception:** the mobile bridge creates `.constellagent/worktrees/<token>/` at runtime when a paired phone runs git operations (`mobile-git-bridge.ts`; detected by `mobile-workspace-registry.ts`).
 
@@ -154,29 +153,21 @@ Constellagent no longer writes workspace context-capture files or creates a `.co
 
 | DB file | Location | Created by | Purpose |
 |---------|----------|------------|---------|
-| `<sessionId>.db` (default `constellagent.db`) | repo `.git/` | `agentfs-service.ts` | AgentFS-backed app/session data + KV |
+| `<sessionId>.db` (default `constellagent.db`) | repo `.git/` | `agentfs-service.ts` | Embedded libSQL-backed app/session data + KV |
 | `review-annotations.db` | git **common dir** | `annotation-service.ts` | Inline review annotations on diffs |
 | `conductor-chat.db` | app `userData` | `agent-chat-store.ts` | Agent chat session metadata + transcripts |
 | `mobile-access.db` | app `userData` | `mobile-store.ts` | Trusted devices + bridge identity |
 | `.graphite_metadata.db` | repo `.git/` | Graphite CLI (not us) | Graphite stack metadata (read via `graphite-service.ts`) |
 
-There is **no `better-sqlite3`** — all SQLite access goes through `agentfs-sdk` / `@libsql/client`.
+There is **no `better-sqlite3`** — all SQLite access goes through `@libsql/client`.
 
-### AgentFS access pattern (main process)
+### Storage access pattern (main process)
 
-1. **`getAgentFS(projectDir, sessionId?)`** (`agentfs-service.ts`) — lazily `AgentFS.open({ id, path })`, dedupes concurrent inits, caches instances in a `Map`, stores DB files in `.git/`, and runs a periodic **`PRAGMA wal_checkpoint(TRUNCATE)`** timer so the WAL doesn't grow unbounded.
-2. **`agent.getDatabase()`** — async libSQL API (`prepare` / `run` / `all` / `exec`).
-3. **`agent.kv`** — key-value namespace inside the same DB file for mirrored skill/subagent metadata.
+All embedded-DB access lives behind **`agentfs-service.ts`**: it lazily opens the session DB (`id` + `path` in `.git/`), dedupes concurrent inits, caches instances in a `Map`, and runs a periodic **`PRAGMA wal_checkpoint(TRUNCATE)`** timer so the WAL doesn't grow unbounded. Callers get an async libSQL handle (`prepare` / `run` / `all` / `exec`) plus a key-value namespace inside the same DB file for mirrored skill/subagent metadata.
 
 **`SkillsService`** — KV catalogs enabled skills/subagents (`skill:{name}`, `subagent:{name}`). Bundled Conductor canvas skills live in `desktop/skills/` and install via root `scripts/install-bundled-skills.sh` (run by `bun run setup`) into gitignored agent dirs — see root `AGENTS.md`.
 
-**Review annotations** — stored in the git common dir's `review-annotations.db` via `annotation-service.ts` and `constell-annotate`.
-
-### AgentFS virtual-filesystem note (Turso model vs this repo)
-
-When AgentFS is installed in an **isolated agent environment**, the DB can be surfaced as a **POSIX-style tree of virtual files**, where `grep`/`rg`/globbing over the mounted tree are valid. **Constellagent does not do this** — it uses `agentfs-sdk` in the **main process only** and exposes no FUSE/virtual mount. Treat the `.git/` DBs as internal app storage; use explicit libSQL access (or `constell-annotate` for annotations) to inspect them.
-
-**Cachebro** — `cachebro` is a `desktop/` dependency (CLI MCP server: `cachebro serve`) providing `read_file`, `read_files`, `cache_status`, `cache_clear` tools that return diffs instead of full re-reads. It is **not** configured by a committed file in this repo; configure it once per machine with `npx cachebro init` (writes your global `~/.claude.json` / Cursor MCP config). Prefer the cachebro MCP tools over raw reads when available.
+Treat the `.git/` DBs as internal app storage; use explicit libSQL access to inspect them.
 
 **GitHub PR integration**: `github-service.ts` uses the `gh` CLI (same `execFileAsync` pattern as `GitService`) to fetch PR status per branch. Polls every 90s via `usePrStatusPoller`. Ephemeral state in Zustand (`prStatusMap`, `ghAvailability`) — not persisted. Degrades silently when `gh` is missing, unauthenticated, or the repo isn't on GitHub.
 
@@ -235,7 +226,3 @@ Use these when adding or modifying a desktop feature spec-first: create a change
 - `.tool-ui/agent.json` — tool-UI plugin binding for the active agent
 - `claude-hooks/` (`session-save.sh`, `activity.sh`, `notify.sh`) and `codex-hooks/` (`notify.sh`) — notification/context hooks
 - `workflows/release.yml` — release workflow; `docs/automations-verification.md` — automations manual checklist; `PUBLISHING.md` — publish steps
-
-## Mandatory AI annotations on code changes
-
-After a successful build and before reporting work done, annotate **every source file you modified** with at least one `constell-annotate add … --author "claude-code"` comment explaining **why** (not what). Skip auto-generated files (`bun.lock`). See `../AGENTS.md` for the full workflow and validation rules.

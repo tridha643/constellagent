@@ -31,6 +31,7 @@ import {
   evToolStarted,
   evToolUpdated,
   buildAgentPrompt,
+  promptEmitsFormatPrefix,
   type AgentDriver,
   type AgentTurnContext,
 } from './agent-driver'
@@ -53,6 +54,8 @@ interface CodexSessionState {
   effort: ModelReasoningEffort
   plan: boolean
   webSocketsEnabled: boolean
+  /** True once this thread has received the markdown formatting prefix; skip re-sending it on later turns. */
+  formatPrimed: boolean
   readonly emittedByItem: Map<string, string>
   readonly lastToolUpdateByItem: Map<string, { text: string; emittedAt: number }>
   readonly collab: CodexCollabSessionState
@@ -424,6 +427,8 @@ export class CodexDriver implements AgentDriver {
         effort,
         plan,
         webSocketsEnabled,
+        // Resumed rollout already carries the first-turn formatting prefix in its history.
+        formatPrimed: true,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
         collab: createCodexCollabSessionState(),
@@ -441,6 +446,8 @@ export class CodexDriver implements AgentDriver {
         effort,
         plan,
         webSocketsEnabled,
+        // Fresh thread (seeded transcript is prior context, not the format prefix) — needs priming.
+        formatPrimed: false,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
         collab: createCodexCollabSessionState(),
@@ -457,6 +464,8 @@ export class CodexDriver implements AgentDriver {
         effort,
         plan,
         webSocketsEnabled,
+        // Brand-new thread — send the formatting prefix on this first turn.
+        formatPrimed: false,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
         collab: createCodexCollabSessionState(),
@@ -467,13 +476,20 @@ export class CodexDriver implements AgentDriver {
     const thread = state.thread
     state.lastToolUpdateByItem.clear()
 
+    // Send the markdown formatting prefix only on a thread's first turn; it
+    // persists in thread history thereafter (saves ~75 tokens every later turn).
+    const includeFormatPrefix = !state.formatPrimed
     const prompt = buildAgentPrompt(
       ctx.text,
       plan,
       seedTranscript && ctx.previousTranscript?.length ? ctx.previousTranscript : undefined,
       'codex',
       ctx.canvas,
+      includeFormatPrefix,
     )
+    if (promptEmitsFormatPrefix(ctx.text, 'codex', ctx.canvas, includeFormatPrefix)) {
+      state.formatPrimed = true
+    }
     const imageInput = await writeCodexImageAttachments(ctx.attachments)
     const input = buildCodexUserInput(prompt, imageInput.inputPaths)
     const turnOptions = { signal: ctx.signal }

@@ -2,7 +2,7 @@
 
 These instructions apply to **any repository** where the constellagent app is in use. They govern all coding agents regardless of which codebase is being worked on.
 
-Shared instructions for all coding agents — session context, Cachebro, AgentFS, **review annotations**, and **this repo's mobile layout** — are in **`AGENTS.md`** at the repository root (when available).
+Shared instructions for all coding agents — session context and **this repo's mobile layout** — are in **`AGENTS.md`** at the repository root (when available).
 
 ## Constellagent monorepo (this repository)
 
@@ -37,63 +37,18 @@ Human comments in the Review Changes panel (Cmd+Shift+R) are individually select
 
 ## Plan policies
 
-1. **AI annotations in plans**: All plans must include AI annotation instructions — agents leave review comments on their own changes explaining rationale (`--author "<agent-name>"`).
-2. **Verification loops**: Every plan must include a verification section with both automated tests (`bun run test`, specific test files) and manual test steps.
-3. **Sendblue notifications**: Every plan must include the required Sendblue CLI notification step for both `plan created` and `task over`.
+1. **Verification loops**: Every plan must include a verification section with both automated tests (`bun run test`, specific test files) and manual test steps.
 
-## `constell-annotate` (review annotations + memories)
+## Token hygiene (make agents faster + cheaper)
 
-The **`constell-annotate`** CLI (from `@tridha643/review-annotations`) covers **inline review annotations** on diffs and **repo-scoped memory** rows. Global flags: **`--db`**, **`--workspace-id`** (see **`AGENTS.md`** and **`packages/review-annotations/README.md`**).
+In this repo's agent traces, **~89% of tokens are tool input/output, not model reasoning** (shell/terminal I/O ~66%, file reads ~14%). The cheapest speedup is to stop feeding agents output they don't need. Universal rules — see **`desktop/CLAUDE.md` → Token hygiene** for the detailed repo-specific version:
 
-**Review annotations:** `add`, `list`, `remove`, `clear`, `resolve`, `unresolve`, `clean-deleted`, etc.
-
-**Memories:** `add-memory`, `list-memories`, **`search-memories`** (FTS5 token search with `LIKE` fallback per README), `remove-memory`.
-
-## Mandatory Sendblue CLI notifications
-
-**This requirement applies in every repository where constellagent is in use — not just the constellagent codebase itself.**
-
-**Claude Code MUST send a Sendblue CLI notification to your configured E.164 recipient (set locally; do not commit personal numbers) immediately when a plan is created, and again when the task is over.**
-
-```bash
-sendblue send +<YOUR_E164_RECIPIENT> "claude-code <plan-topic-name> plan created"
-sendblue send +<YOUR_E164_RECIPIENT> "claude-code <plan-topic-name> is over"
-```
-
-- The **plan-created notification must be sent as soon as the plan is written** — before implementation begins.
-- Use the plan title for `<plan-topic-name>` when one exists; otherwise use a short task topic from the request.
-- Retry each `sendblue send` command up to 3 times if it fails.
-- If all retries fail, Claude Code must still say that explicitly in the final response and include the error text.
-- The completion notification happens after build/test/annotation steps and before reporting the task as done to the user.
-
-## Mandatory AI annotations on code changes
-
-**After implementing any code changes, agents MUST leave review annotations explaining their rationale on key changed lines.** This is not optional — it is a required step before considering work complete.
-
-- Annotate **every source file you modified** with at least one comment on the most significant change (skip auto-generated files like `bun.lock`).
-- Comments should explain **why** the change was made, not just restate what the code does.
-- This step comes **after** a successful build but **before** reporting the task as done to the user.
-- Failure to annotate is equivalent to leaving the task incomplete.
-
-### Annotation workflow (exact steps)
-
-```bash
-# Single command — no session resolution, no daemon needed:
-constell-annotate add --file src/foo.ts --new-line 42 --summary "Why this change" --author "claude-code"
-
-# Line range:
-constell-annotate add --file src/foo.ts --new-line 42-58 --summary "Refactored block" --author "claude-code"
-
-# Force (skip diff validation):
-constell-annotate add --file src/foo.ts --new-line 42 --summary "Why" --author "claude-code" --force
-```
-
-**Key point:** By default, `--new-line` must be inside a `git diff HEAD` hunk's new-side range. Use `--force` to skip validation when needed.
+- **Cap noisy output**: pipe builds/tests/logs through `tail`/`grep`; prefer quiet reporters (`--reporter=dot`, `--silent`).
+- **Never re-dump a long-running/interactive process's scrollback** — read only new lines.
+- **Read once, target line ranges** instead of re-reading whole files.
+- **Batch edits, then verify once** instead of rebuilding after every micro-edit.
+- **Avoid images unless necessary** (a screenshot ≈ 35k+ tokens); prefer Mermaid for diagrams.
 
 ## Session & activity context
 
-This repo does **not** create a `.constellagent/` directory for context capture or session history. AgentFS/libSQL data that still exists lives under the repo's **`.git/`** (DB table in `desktop/CLAUDE.md`). Only legacy repos that still ship `.constellagent/context/*.md` or `.constellagent/sessions/` files should have them read when present.
-
-## Cachebro (MCP — optional, per-machine)
-
-`cachebro` is a `desktop/` dependency (CLI MCP server) but is **not** configured by any committed file in this repo. Configure it once per machine with `npx cachebro init` (writes your global `~/.claude.json` / Cursor MCP config). When its tools are available, prefer the cachebro MCP tools (`read_file`, `read_files`, `cache_status`, `cache_clear`) over raw file reads to save tokens.
+This repo does **not** create a `.constellagent/` directory for context capture or session history. Embedded libSQL/SQLite data that still exists lives under the repo's **`.git/`** (DB table in `desktop/CLAUDE.md`). Only legacy repos that still ship `.constellagent/context/*.md` or `.constellagent/sessions/` files should have them read when present.
