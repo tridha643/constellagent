@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useAppStore } from '../../../store/app-store'
 import { SharedFileIcon } from '../../../utils/file-presentation'
 import { isMarkdownDocumentPath } from '../../../utils/markdown-path'
+import { atMentionFileName } from '../../../../shared/composer-at-mention'
 import { resolveToolFileAbsolutePath, toolFileBasename } from './tools/tool-file-path'
 import styles from '../Conductor.module.css'
 
@@ -22,7 +23,7 @@ export function FilePathChip({ path }: { path: string }) {
     else openFileTab(absolute)
   }, [worktreePath, path, openFileTab, openMarkdownPreview])
 
-  const label = toolFileBasename(path)
+  const label = atMentionFileName(path.replace(/^@/, '')) || toolFileBasename(path)
 
   return (
     <button

@@ -1393,7 +1393,9 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  max-width: 100%;
+  width: max-content;
+  max-width: none;
+  flex-shrink: 0;
   margin: 1px 5px 3px 0;
   padding: 4px 11px;
   border-radius: 999px;
@@ -1422,9 +1424,11 @@
 }
 
 .pi-inline-chip__label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
+  flex-shrink: 0;
+  overflow: visible;
+  text-overflow: clip;
+  max-width: none;
+  min-width: auto;
 }
 
 .pi-inline-chip--skill {

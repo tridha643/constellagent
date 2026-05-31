@@ -204,6 +204,50 @@
   background: var(--conductor-chat-selection) !important;
 }
 
+/* File/skill/path pills must grow to their label — flex parents + max-width: 100% was clipping to ~3 chars. */
+.chatView :is(
+  .toolInlineChip,
+  .conductorSkillChip,
+  .pi-inline-chip,
+  .cursorToolChip,
+  .cursorSkillChip
+) {
+  width: max-content;
+  max-width: none;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.chatView :is(
+  .toolInlineChipLabel,
+  .conductorSkillChipLabel,
+  .pi-inline-chip__label,
+  .cursorToolChipLabel,
+  .cursorSkillChipLabel
+) {
+  max-width: none;
+  min-width: auto;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.chatView .tickerRow,
+.chatView .turnFileChipRow,
+.chatView .cursorToolRowHit {
+  overflow: visible;
+}
+
+.chatView .turnFileChips,
+.chatView .turnFileChipRow {
+  max-width: none;
+}
+
+.chatView :is(.toolInlineMarkdown, .activityRowMarkdown):global(.prosemark-chat-inline)
+  :global(.cm-scroller) {
+  overflow-x: visible !important;
+  overflow-y: hidden !important;
+}
+
 .copyToast {
   position: absolute;
   bottom: var(--space-4);
@@ -310,6 +354,17 @@
   max-width: 100%;
 }
 
+.messageAssistant .messageBody .prosemark-chat :is(.cm-file-chip-wrap, .cm-file-chip) {
+  width: max-content;
+  max-width: none;
+}
+
+.messageAssistant .messageBody .prosemark-chat .cm-file-chip-label {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .messageBodyHideFileEcho .cm-table-widget,
 .messageBodyHideFileEcho .cm-fenced-code-line {
   display: none !important;
@@ -354,7 +409,8 @@
   align-items: flex-start;
   gap: 8px;
   min-width: 0;
-  max-width: 100%;
+  max-width: none;
+  width: 100%;
 }
 
 .turnFileChipsCompact {
@@ -365,9 +421,10 @@
 .turnFileChipRow {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
-  max-width: 100%;
+  max-width: none;
 }
 
 .turnSummaryEdge {
@@ -431,35 +488,58 @@
   overflow-wrap: anywhere;
 }
 
+/* Block + inline flow (matches pi-gui .message__content--segmented — not flex + CodeMirror blocks). */
 .userMessageSegmented {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  display: block;
+  min-width: 0;
   line-height: 1.5;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.userMessageInlineText {
-  flex: 1 1 16rem;
-  min-width: min(12rem, 100%);
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-.userMessageInlineText:global(.prosemark-chat-inline) :global(.cm-editor),
-.userMessageInlineText:global(.prosemark-chat-inline) :global(.cm-scroller),
-.userMessageInlineText:global(.prosemark-chat-inline) :global(.cm-content) {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.userMessageInlineText:global(.prosemark-chat-inline) :global(.cm-content),
-.userMessageInlineText:global(.prosemark-chat-inline) :global(.cm-line) {
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.userMessageSegmented .userMessageMdInline {
+  display: inline;
+}
+
+.userMessageSegmented ul,
+.userMessageSegmented ol {
+  display: block;
+  margin: 0.35em 0;
+  padding-left: 1.25rem;
+}
+
+.userMessageSegmented li {
+  display: list-item;
+}
+
+/* Inline file/skill pills sit in the text line like pi-inline-chip. */
+.userMessageSegmented :is(.toolInlineChip, .conductorSkillChip) {
+  display: inline-flex;
+  vertical-align: middle;
+  margin: 0 0.35em;
+  width: max-content;
+  max-width: none;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.userMessageSegmented .conductorSkillChip {
+  padding: 3px 9px;
+  font-size: 0.86em;
+  line-height: 1.35;
+}
+
+.userMessageSegmented :is(.toolInlineChipLabel, .conductorSkillChipLabel) {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.userMessageHostSlash {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  white-space: nowrap;
+  margin: 0 0.25em;
 }
 
 .conductorSkillChip {
@@ -475,6 +555,9 @@
   font-weight: 500;
   line-height: 1.2;
   white-space: nowrap;
+  width: max-content;
+  max-width: none;
+  flex-shrink: 0;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
@@ -2656,7 +2739,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   width: max-content;
-  max-width: 100%;
+  max-width: none;
   flex-shrink: 0;
   cursor: pointer;
   transition:
@@ -3006,8 +3089,10 @@
   min-height: 28px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .tickerRowChip {

@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer/MarkdownRenderer";
 import { isLikelySkillIdentifier } from "../../shared/skill-tool-utils";
+import { markdownBasename } from "../utils/markdown-file-links";
 import { segmentMessageForInlineChips, type MessageSegment } from "./message-inline-segments";
 
 const REMARK_PLUGINS = [remarkGfm];
@@ -55,13 +56,13 @@ function segmentToNode(segment: MessageSegment, index: number): ReactNode {
           <span className="pi-inline-chip__glyph" aria-hidden>
             #
           </span>
-          <span className="pi-inline-chip__label">{segment.display}</span>
+          <span className="pi-inline-chip__label">{markdownBasename(segment.path)}</span>
         </span>
       );
     case "skillFile":
       return (
         <span key={`sf-${index}`} className="pi-inline-chip pi-inline-chip--skill" title={segment.path}>
-          <span className="pi-inline-chip__label">{segment.display}</span>
+          <span className="pi-inline-chip__label">{markdownBasename(segment.path)}</span>
         </span>
       );
     case "skillSlash":

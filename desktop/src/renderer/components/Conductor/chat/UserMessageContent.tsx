@@ -1,4 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { isConductorHostSlashName } from '../../../../shared/conductor-composer-commands'
 import {
   segmentMessageForInlineChips,
@@ -10,17 +12,28 @@ import { ConductorSkillChip } from './ConductorSkillChip'
 import { FilePathChip } from './FilePathChip'
 import styles from '../Conductor.module.css'
 
+const REMARK_PLUGINS = [remarkGfm]
+
+/** Paragraphs as spans so chips + markdown share one inline text flow (see pi-gui/message-markdown). */
+const INLINE_MARKDOWN_COMPONENTS = {
+  p: ({ children }: { children?: ReactNode }) => (
+    <span className={styles.userMessageMdInline}>{children}</span>
+  ),
+} as const
+
 function segmentToNode(segment: MessageSegment, index: number): ReactNode {
   switch (segment.kind) {
     case 'text':
-      return segment.text.trim() ? (
-        <MarkdownBody
+      if (!segment.text) return null
+      return (
+        <ReactMarkdown
           key={`t-${index}`}
-          content={segment.text}
-          className={styles.userMessageInlineText}
-          inline
-        />
-      ) : null
+          remarkPlugins={REMARK_PLUGINS}
+          components={INLINE_MARKDOWN_COMPONENTS}
+        >
+          {segment.text}
+        </ReactMarkdown>
+      )
     case 'file':
       return <FilePathChip key={`f-${index}`} path={segment.path} />
     case 'skillFile':
@@ -34,9 +47,20 @@ function segmentToNode(segment: MessageSegment, index: number): ReactNode {
       )
     case 'skillSlash':
       if (isConductorHostSlashName(segment.name)) {
-        return <MarkdownBody key={`h-${index}`} content={segment.slash} inline />
+        return (
+          <span key={`h-${index}`} className={styles.userMessageHostSlash}>
+            {segment.slash}
+          </span>
+        )
       }
-      return <ConductorSkillChip key={`s-${index}`} name={segment.name} />
+      return (
+        <ConductorSkillChip
+          key={`s-${index}`}
+          name={segment.name}
+          label={segment.slash}
+          title={segment.slash}
+        />
+      )
     default:
       return null
   }
