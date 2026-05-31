@@ -46,6 +46,12 @@ describe('buildConductorSlashSections', () => {
     expect(flat.some((item) => item.command === '/clear')).toBe(false)
   })
 
+  test('includes side as a host command', () => {
+    const sections = buildConductorSlashSections('/side', hostCommands, skills)
+    const flat = sections.flatMap((section) => section.items)
+    expect(flat.some((item) => item.id === 'host:side' && item.command === '/side')).toBe(true)
+  })
+
   test('hides personality for cursor provider', () => {
     const cursorCommands = getConductorHostCommands({ provider: 'cursor', includeFast: false })
     expect(cursorCommands.some((command) => command.command === '/personality')).toBe(false)
@@ -86,6 +92,7 @@ describe('isConductorHostSlashName', () => {
   test('recognizes built-in host commands', () => {
     expect(isConductorHostSlashName('plan')).toBe(true)
     expect(isConductorHostSlashName('mcp-status')).toBe(true)
+    expect(isConductorHostSlashName('side')).toBe(true)
   })
 
   test('rejects harness skill names', () => {

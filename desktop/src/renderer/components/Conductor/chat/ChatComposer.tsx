@@ -47,6 +47,10 @@ export interface ChatComposerHandle {
   focus: () => void
 }
 
+export interface ConductorSlashActionContext {
+  composerText: string
+}
+
 export function ChatComposer({
   provider,
   model,
@@ -96,7 +100,7 @@ export function ChatComposer({
   sessionId: string | null
   workspacePath: string
   repoPath: string
-  onSlashAction: (command: ConductorSlashCommand) => void
+  onSlashAction: (command: ConductorSlashCommand, context: ConductorSlashActionContext) => void
   onPersonalitySelect: (value: string) => void
   onNamePromptConfirm: (command: ConductorSlashCommand, value: string) => void
 }) {

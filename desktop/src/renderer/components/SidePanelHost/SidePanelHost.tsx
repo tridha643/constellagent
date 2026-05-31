@@ -6,6 +6,7 @@ import {
   GitBranch,
   Globe,
   LayoutList,
+  MessageSquareMore,
   Search,
 } from 'lucide-react'
 import { BrowserPanel } from '../BrowserPanel/BrowserPanel'
@@ -17,6 +18,7 @@ import { Sidebar } from '../Sidebar/Sidebar'
 import { FileTree } from '../RightPanel/FileTree'
 import { ChangedFiles } from '../RightPanel/ChangedFiles'
 import { GitGraph } from '../RightPanel/GitGraph'
+import { SideChatPanel } from '../SideChatPanel/SideChatPanel'
 import { fileTreeActions } from '../RightPanel/file-tree-actions'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
@@ -35,6 +37,7 @@ const PANEL_ICONS: Record<PanelType, ComponentType<{ size?: number; strokeWidth?
   graph: GitBranch,
   project: LayoutList,
   browser: Globe,
+  sideChat: MessageSquareMore,
 }
 
 function SidePanelEmptyState({
@@ -76,6 +79,9 @@ function renderPanel(panel: PanelType, workspace: { id: string; worktreePath: st
   }
   if (panel === 'browser') {
     return <BrowserPanel workspaceId={workspace.id} />
+  }
+  if (panel === 'sideChat') {
+    return <SideChatPanel workspaceId={workspace.id} worktreePath={workspace.worktreePath} />
   }
   return <GitGraph worktreePath={workspace.worktreePath} workspaceId={workspace.id} isActive />
 }
