@@ -10,6 +10,7 @@ import {
 import type { ConductorComposerAttachment } from '../../../shared/conductor-attachments'
 import type { ConductorSlashCommand } from '../../../shared/conductor-composer-commands'
 import type { ThinkingLevel } from '../../../shared/conductor-thinking'
+import type { TranscriptMessage } from '../../../shared/pi/pi-desktop-state'
 import { normalizeThinkingLevel } from '../../../shared/conductor-thinking'
 import {
   normalizeConductorDefaultProvider,
@@ -37,11 +38,24 @@ import {
 } from '../../lib/conductor-sign-in'
 import { SharedFileIconDefs } from '../../utils/file-presentation'
 import { useConductorChatTypographyScope } from './useConductorChatTypographyScope'
+import { seedSideChatPanel } from '../SideChatPanel/side-chat-events'
 import styles from './Conductor.module.css'
 import '../../pi-gui/pi-gui-thread.css'
 import '../../pi-gui/pi-gui-constellagent-bridge.css'
 
 export type ConductorTab = Extract<Tab, { type: 'conductor' }>
+
+function latestForkableTranscriptMessageId(
+  transcript: readonly TranscriptMessage[],
+): string | null {
+  for (let index = transcript.length - 1; index >= 0; index -= 1) {
+    const item = transcript[index]
+    if (item.kind === 'activity' && item.label === 'Working…') continue
+    if (item.kind === 'tool' && item.status === 'running') continue
+    return item.id
+  }
+  return null
+}
 
 export function ConductorChatView({
   tab,
@@ -59,6 +73,7 @@ export function ConductorChatView({
   const openSettingsSection = useAppStore((s) => s.openSettingsSection)
   const removeTab = useAppStore((s) => s.removeTab)
   const createConductorTabForActiveWorkspace = useAppStore((s) => s.createConductorTabForActiveWorkspace)
+  const activatePanel = useAppStore((s) => s.activatePanel)
   const conductorCursorApiKey = useAppStore((s) => s.settings.conductorCursorApiKey)
   const conductorOpenaiApiKey = useAppStore((s) => s.settings.conductorOpenaiApiKey)
   const conductorDefaultProviderSetting = useAppStore((s) => s.settings.conductorDefaultProvider)
@@ -386,7 +401,7 @@ export function ConductorChatView({
   }
 
   const handleSlashAction = useCallback(
-    (command: ConductorSlashCommand) => {
+    (command: ConductorSlashCommand, context: { composerText: string }) => {
       switch (command.id) {
         case 'host:clear':
           removeTab(tab.id)
@@ -414,6 +429,26 @@ export function ConductorChatView({
         case 'host:compact':
           void dispatchHarnessCommand('/compact')
           return
+        case 'host:side':
+          seedSideChatPanel({
+            workspaceId,
+            workspacePath: worktreePath,
+            repoPath,
+            sourceSessionId: agentSessionId,
+            forkMessageId: agentSessionId
+              ? latestForkableTranscriptMessageId(controller.transcript)
+              : null,
+            sourceTitle: controller.state?.title ?? tab.title,
+            draftText: context.composerText,
+            provider,
+            model,
+            thinkingLevel,
+            plan,
+            createdAt: Date.now(),
+          })
+          activatePanel('sideChat')
+          composerRef.current?.focus()
+          return
         default:
           if (command.kind === 'skill') {
             void dispatchHarnessCommand(command.command)
@@ -424,12 +459,22 @@ export function ConductorChatView({
       tab.id,
       removeTab,
       createConductorTabForActiveWorkspace,
+      activatePanel,
       handleRestartSession,
       handleSetPlan,
       handleToggleFast,
       model,
       provider,
       dispatchHarnessCommand,
+      agentSessionId,
+      controller.state?.title,
+      controller.transcript,
+      plan,
+      repoPath,
+      tab.title,
+      thinkingLevel,
+      worktreePath,
+      workspaceId,
     ],
   )
 

@@ -21,6 +21,7 @@ import {
   type ConductorSlashSection,
 } from '../../../../shared/conductor-composer-commands'
 import type { ComposerDraftInputRef } from './composer-draft-input-ref'
+import type { ConductorSlashActionContext } from './ChatComposer'
 
 export interface UseConductorComposerSlashArgs {
   readonly text: string
@@ -29,7 +30,7 @@ export interface UseConductorComposerSlashArgs {
   readonly provider: AgentProvider
   readonly model: string
   readonly workspacePath: string
-  readonly onSlashAction: (command: ConductorSlashCommand) => void
+  readonly onSlashAction: (command: ConductorSlashCommand, context: ConductorSlashActionContext) => void
   readonly onPersonalitySelect: (value: string) => void
   readonly onNamePromptConfirm: (command: ConductorSlashCommand, value: string) => void
 }
@@ -162,11 +163,12 @@ export function useConductorComposerSlash({
         setOptionIndex(0)
         return
       }
+      const composerText = `${text.slice(0, slashToken.from)}${text.slice(slashToken.to)}`.trim()
       clearSlashToken()
       setPickCommand(null)
-      onSlashAction(command)
+      onSlashAction(command, { composerText })
     },
-    [slashToken, replaceRange, clearSlashToken, onSlashAction],
+    [slashToken, replaceRange, clearSlashToken, onSlashAction, text],
   )
 
   const applyNamePromptValue = useCallback(

@@ -136,6 +136,12 @@ const CONDUCTOR_HOST_COMMANDS: readonly ConductorSlashCommand[] = [
     kind: 'host',
   },
   {
+    id: 'host:side',
+    command: '/side',
+    description: 'Open a side chat with the current thread as context',
+    kind: 'host',
+  },
+  {
     id: 'host:plan',
     command: '/plan',
     description: 'Enter plan mode',

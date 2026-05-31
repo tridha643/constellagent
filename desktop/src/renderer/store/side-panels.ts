@@ -9,6 +9,7 @@ const DEFAULT_PANEL_SIDE: Record<PanelType, Side> = {
   changes: 'right',
   graph: 'right',
   browser: 'right',
+  sideChat: 'right',
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -134,6 +135,7 @@ export function panelLabel(panel: PanelType): string {
   if (panel === 'files') return 'Files'
   if (panel === 'changes') return 'Changes'
   if (panel === 'browser') return 'Browser'
+  if (panel === 'sideChat') return 'Side Chat'
   return 'Git'
 }
 

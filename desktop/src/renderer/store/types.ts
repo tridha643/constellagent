@@ -145,7 +145,7 @@ export type Tab = {
 
 export type Side = 'left' | 'right'
 
-export type PanelType = 'project' | 'files' | 'changes' | 'graph' | 'browser'
+export type PanelType = 'project' | 'files' | 'changes' | 'graph' | 'browser' | 'sideChat'
 
 export interface SidePanelState {
   open: boolean
@@ -163,7 +163,7 @@ export interface PanelDockDrag {
   side: Side
 }
 
-export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'graph', 'browser']
+export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'graph', 'browser', 'sideChat']
 
 export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes', 'graph', 'browser']
 
@@ -176,7 +176,7 @@ export const DEFAULT_SIDE_PANEL_LAYOUT: SidePanelLayout = {
   right: {
     open: true,
     activePanel: 'files',
-    panelOrder: ['files', 'changes', 'graph', 'browser'],
+    panelOrder: ['files', 'changes', 'graph', 'browser', 'sideChat'],
   },
 }
 
