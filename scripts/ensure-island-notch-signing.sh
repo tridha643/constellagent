@@ -4,7 +4,7 @@
 # cdhash every compile and permissions silently stop working.
 #
 # Writes two lines to stdout:
-#   line 1: certificate SHA-1 hash (for codesign --sign)
+#   line 1: codesign identity (certificate common name)
 #   line 2: keychain path
 #
 # Falls back silently (exit 1) when openssl/security are unavailable.
@@ -66,27 +66,40 @@ ensure_keychain() {
   security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN" >/dev/null 2>&1 || true
   security set-keychain-settings -lut 21600 "$KEYCHAIN" >/dev/null 2>&1 || true
 
-  # Import (or refresh) cert + key into the dedicated keychain.
-  security import "$SIGNING_DIR/islandnotch-dev.crt" -k "$KEYCHAIN" \
+  # Import cert + private key as PKCS#12 — `security import … -f openssl` fails on
+  # modern macOS with PKCS#8 keys ("Unknown format in import").
+  P12="$SIGNING_DIR/islandnotch-dev.p12"
+  if [ ! -f "$P12" ] \
+    || [ "$SIGNING_DIR/islandnotch-dev.crt" -nt "$P12" ] \
+    || [ "$SIGNING_DIR/islandnotch-dev.key" -nt "$P12" ]; then
+    # -legacy: OpenSSL 3.x otherwise emits PKCS12 MACs `security import` rejects.
+    openssl pkcs12 -export -legacy \
+      -out "$P12" \
+      -inkey "$SIGNING_DIR/islandnotch-dev.key" \
+      -in "$SIGNING_DIR/islandnotch-dev.crt" \
+      -passout pass:"$KEYCHAIN_PASS" 2>/dev/null
+  fi
+  security import "$P12" -k "$KEYCHAIN" -P "$KEYCHAIN_PASS" \
     -A -T /usr/bin/codesign -T /usr/bin/security >/dev/null 2>&1 || true
-  security import "$SIGNING_DIR/islandnotch-dev.key" -k "$KEYCHAIN" \
-    -A -T /usr/bin/codesign -T /usr/bin/security -f openssl >/dev/null 2>&1 || true
 
   # Prepend our keychain so codesign finds the identity first.
   # shellcheck disable=SC2046
   security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"') >/dev/null 2>&1 || true
 }
 
-cert_hash() {
-  security find-certificate -c "$CERT_CN" -Z "$KEYCHAIN" 2>/dev/null \
-    | awk '/SHA-1/ { print $3; exit }'
+verify_identity() {
+  TMP="$(mktemp)"
+  cp /bin/ls "$TMP"
+  codesign --force --sign "$CERT_CN" --keychain "$KEYCHAIN" --timestamp=none "$TMP" >/dev/null 2>&1
+  rc=$?
+  rm -f "$TMP"
+  return "$rc"
 }
 
 ensure_keychain
-HASH="$(cert_hash)"
-if [ -z "$HASH" ]; then
+if ! verify_identity; then
   exit 1
 fi
 
-printf '%s\n' "$HASH"
+printf '%s\n' "$CERT_CN"
 printf '%s\n' "$KEYCHAIN"

@@ -27,16 +27,16 @@ fi
 
 mkdir -p "$MACOS/.build"
 
-SIGNING_HASH=""
+SIGNING_IDENTITY=""
 SIGNING_KEYCHAIN=""
 if SIGNING_INFO="$(sh "$ROOT/scripts/ensure-island-notch-signing.sh" 2>/dev/null)"; then
-  SIGNING_HASH="$(printf '%s' "$SIGNING_INFO" | sed -n '1p')"
+  SIGNING_IDENTITY="$(printf '%s' "$SIGNING_INFO" | sed -n '1p')"
   SIGNING_KEYCHAIN="$(printf '%s' "$SIGNING_INFO" | sed -n '2p')"
 fi
 
 echo "[island-notch] building Debug → $APP"
-if [ -n "$SIGNING_HASH" ]; then
-  echo "[island-notch] stable dev signing enabled (Constellagent IslandNotch Dev)"
+if [ -n "$SIGNING_IDENTITY" ]; then
+  echo "[island-notch] stable dev signing enabled ($SIGNING_IDENTITY)"
 fi
 
 # xcodebuild still uses PrivateOverrides DEVELOPMENT_TEAM when set; we re-sign below
@@ -57,9 +57,9 @@ fi
 
 # Always re-sign when a stable dev cert exists — xcodebuild can leave ad-hoc Mach-O
 # files inside a previously signed .app bundle (Team ID mismatch → instant crash on launch).
-if [ -n "$SIGNING_HASH" ]; then
+if [ -n "$SIGNING_IDENTITY" ]; then
   echo "[island-notch] re-signing with stable dev certificate (TCC grants survive rebuilds)"
-  sh "$ROOT/scripts/sign-island-notch-app.sh" "$APP" "$SIGNING_HASH" "$ENTITLEMENTS" "$SIGNING_KEYCHAIN"
+  sh "$ROOT/scripts/sign-island-notch-app.sh" "$APP" "$SIGNING_IDENTITY" "$ENTITLEMENTS" "$SIGNING_KEYCHAIN"
 elif codesign -dvv "$APP" 2>&1 | grep -q "Signature=adhoc"; then
   echo "[island-notch] ⚠️  ad-hoc signed — Accessibility & Screen Recording grants" >&2
   echo "[island-notch] ⚠️  will reset on every rebuild (double-⌘ + captures break)." >&2

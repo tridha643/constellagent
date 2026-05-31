@@ -17,6 +17,24 @@ import {
   isLikelySkillIdentifier,
 } from "../../../shared/skill-tool-utils";
 
+/** Visible chip text — never show dash-only parse artifacts like "--". */
+export function resolveFileChipLabel(
+  raw: string,
+  label: string | undefined,
+  displayPath: string,
+): string {
+  const basename = markdownBasename(displayPath);
+  const trimmed = label?.trim();
+  if (!trimmed || trimmed === raw) return basename;
+  if (/^[-–—.\s]+$/u.test(trimmed)) return basename;
+  const normalize = (value: string) => value.replace(/\\/g, "/");
+  const normalizedLabel = normalize(trimmed);
+  const normalizedDisplay = normalize(displayPath);
+  if (normalizedLabel === normalizedDisplay || normalizedLabel === basename) return basename;
+  if (isLikelyMarkdownFilePath(trimmed)) return markdownBasename(trimmed);
+  return trimmed;
+}
+
 export interface MarkdownFileChipOptions {
   baseDir?: string;
   worktreePath?: string;
@@ -62,6 +80,12 @@ function linkHref(view: EditorView, node: SyntaxNodeRef): string | undefined {
   return linkHrefFromState(view.state, node);
 }
 
+export function markdownLinkLabelFromText(raw: string): string | undefined {
+  const match = raw.match(/^\[([^\]]+)\]\(/s);
+  const cleaned = match?.[1]?.trim();
+  return cleaned && cleaned.length > 0 ? cleaned : undefined;
+}
+
 function linkLabel(view: EditorView, node: SyntaxNodeRef): string | undefined {
   let label = "";
   const cursor = node.node.cursor();
@@ -71,7 +95,8 @@ function linkLabel(view: EditorView, node: SyntaxNodeRef): string | undefined {
     label += view.state.doc.sliceString(cursor.from, cursor.to);
   } while (cursor.nextSibling());
   const cleaned = label.trim();
-  return cleaned.length > 0 ? cleaned : undefined;
+  if (cleaned.length > 0) return cleaned;
+  return markdownLinkLabelFromText(nodeText(view, node) ?? "");
 }
 
 export function linkHrefFromNode(state: EditorState, node: SyntaxNodeRef): string | undefined {
@@ -109,8 +134,7 @@ function addFileChipDecoration(
   const target = resolveMarkdownFileTarget(href, options);
   if (!target) return;
   const raw = nodeText(view, node) ?? "";
-  const chipLabel = label ?? markdownBasename(target.displayPath);
-  const resolvedLabel = chipLabel === raw ? markdownBasename(target.displayPath) : chipLabel;
+  const resolvedLabel = resolveFileChipLabel(raw, label, target.displayPath);
   decorations.push({
     from: node.from,
     to: node.to,
@@ -246,6 +270,15 @@ class FileChipWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
+    const displayLabel = this.label || markdownBasename(this.target.displayPath);
+
+    const wrapper = document.createElement("span");
+    wrapper.className = "cm-file-chip-wrap";
+    wrapper.style.display = "inline-flex";
+    wrapper.style.width = "max-content";
+    wrapper.style.maxWidth = "none";
+    wrapper.style.verticalAlign = "baseline";
+
     const button = document.createElement("button");
     button.type = "button";
     button.className = "cm-file-chip";
@@ -254,6 +287,9 @@ class FileChipWidget extends WidgetType {
     button.setAttribute("data-full-path", this.target.displayPath);
     button.setAttribute("data-testid", "markdown-file-chip");
     button.style.pointerEvents = "auto";
+    button.style.display = "inline-flex";
+    button.style.width = "max-content";
+    button.style.maxWidth = "none";
     button.setAttribute("contenteditable", "false");
 
     const presentation = getFilePresentation(this.target.displayPath, undefined, this.options.appearanceThemeId ?? "default");
@@ -270,7 +306,9 @@ class FileChipWidget extends WidgetType {
 
     const text = document.createElement("span");
     text.className = "cm-file-chip-label";
-    text.textContent = this.label || markdownBasename(this.target.displayPath);
+    text.textContent = displayLabel;
+    text.style.maxWidth = "none";
+    text.style.overflow = "visible";
     button.appendChild(text);
 
     button.addEventListener("click", (event) => {
@@ -279,7 +317,8 @@ class FileChipWidget extends WidgetType {
       this.options.onOpenFile?.(this.target);
     });
 
-    return button;
+    wrapper.appendChild(button);
+    return wrapper;
   }
 
   ignoreEvent(event: Event): boolean {

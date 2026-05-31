@@ -3,12 +3,12 @@
 set -e
 
 APP="$1"
-CERT_HASH="$2"
+IDENTITY="$2"
 ENTITLEMENTS="$3"
 KEYCHAIN="${4:-}"
 
-if [ -z "$APP" ] || [ -z "$CERT_HASH" ] || [ -z "$ENTITLEMENTS" ]; then
-  echo "usage: sign-island-notch-app.sh <IslandNotch.app> <cert-sha1> <entitlements.plist> [keychain]" >&2
+if [ -z "$APP" ] || [ -z "$IDENTITY" ] || [ -z "$ENTITLEMENTS" ]; then
+  echo "usage: sign-island-notch-app.sh <IslandNotch.app> <codesign-identity> <entitlements.plist> [keychain]" >&2
   exit 1
 fi
 
@@ -26,7 +26,7 @@ fi
 
 sign() {
   # shellcheck disable=SC2086
-  codesign --force --options runtime --timestamp=none --sign "$CERT_HASH" $KEYCHAIN_ARGS "$@"
+  codesign --force --options runtime --timestamp=none --sign "$IDENTITY" $KEYCHAIN_ARGS "$@"
 }
 
 if [ -d "$APP/Contents/Frameworks" ]; then

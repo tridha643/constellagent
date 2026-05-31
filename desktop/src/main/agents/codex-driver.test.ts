@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { buildAgentPrompt } from './agent-driver'
+import { buildAgentPrompt, CONDUCTOR_RTK_PROMPT_PREFIX } from './agent-driver'
 import {
   applyCodexToolHook,
   buildCodexUserInput,
@@ -49,6 +49,7 @@ describe('CodexDriver prompt seeding', () => {
     expect(prompt).toContain('Canvas mode is active')
     expect(prompt).toContain('inline generation')
     expect(prompt).not.toContain('GitHub-Flavored Markdown')
+    expect(prompt).not.toContain(CONDUCTOR_RTK_PROMPT_PREFIX)
   })
 
   test('seeds prior Conductor transcript when Codex starts a fresh handoff thread', () => {
