@@ -345,9 +345,10 @@
   font-size: 0.88em;
 }
 
-/* Single-line tool rows + activity ticker */
+/* Single-line tool rows + activity ticker — allow file chips to extend past the line box */
 .prosemark-chat.prosemark-chat-inline .cm-editor .cm-scroller {
-  overflow: hidden !important;
+  overflow-x: visible !important;
+  overflow-y: hidden !important;
 }
 
 .prosemark-chat.prosemark-chat-inline .cm-editor .cm-content {

@@ -5,6 +5,7 @@
  */
 
 import { isLikelySkillIdentifier } from "../../shared/skill-tool-utils";
+import { markdownBasename } from "../utils/markdown-file-links";
 
 export type MessageSegment =
   | { kind: "text"; text: string }
@@ -51,18 +52,15 @@ function isSkillMdPath(p: string): boolean {
   return /SKILL\.md$/i.test(p);
 }
 
-function shortenDisplay(path: string, maxLen = 42): string {
-  if (path.length <= maxLen) return path;
-  const parts = path.split("/").filter(Boolean);
-  if (parts.length <= 2) return path.slice(-maxLen);
-  return parts.slice(-3).join("/");
+function chipDisplayLabel(path: string): string {
+  return markdownBasename(path);
 }
 
 function collectMatchesInSlice(s: string, offset: number): RawMatch[] {
   const out: RawMatch[] = [];
 
   const pushFile = (path: string, start: number, end: number) => {
-    const display = shortenDisplay(path);
+    const display = chipDisplayLabel(path);
     if (isSkillMdPath(path)) {
       out.push({
         start,

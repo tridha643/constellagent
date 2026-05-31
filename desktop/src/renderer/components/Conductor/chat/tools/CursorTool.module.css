@@ -125,7 +125,7 @@
   align-items: center;
   gap: 4px;
   width: max-content;
-  max-width: 100%;
+  max-width: none;
   flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: 11px;
@@ -187,9 +187,10 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: min(240px, 55vw);
-  flex-shrink: 1;
-  min-width: 0;
+  width: max-content;
+  max-width: none;
+  flex-shrink: 0;
+  min-width: auto;
   padding: 2px 8px 2px 6px;
   border-radius: 7px;
   border: 1px solid color-mix(in srgb, var(--accent-blue) 32%, var(--border-default));

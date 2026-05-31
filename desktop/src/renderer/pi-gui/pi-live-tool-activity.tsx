@@ -9,6 +9,7 @@ import { InlineDiffSections } from "./diff-inline";
 import { parseDiffIntoSections, type FileDiffSection } from "./diff-core";
 import { diffStatusSnapshots, type GitFileStatusRow, type TurnPathChange } from "./git-turn-delta";
 import { aggregateWriteToolFileSections } from "./write-tools-aggregate";
+import { markdownBasename } from "../utils/markdown-file-links";
 
 interface CachedFooterState {
   readonly sections: readonly FileDiffSection[] | null;
@@ -393,7 +394,7 @@ export function PiLiveToolActivity({
             {idleFooterPills?.map((p) => (
               <span key={p.path} className="pi-inline-chip" title={`${p.kind}: ${p.path}`}>
                 <span className="pi-inline-chip__glyph">{pillKindGlyph(p.kind)}</span>
-                <span className="pi-inline-chip__label">{p.path}</span>
+                <span className="pi-inline-chip__label">{markdownBasename(p.path)}</span>
               </span>
             ))}
           </div>
