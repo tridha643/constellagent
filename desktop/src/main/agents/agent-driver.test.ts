@@ -7,6 +7,7 @@ import {
   normalizeAssistantStreamDelta,
   promptEmitsFormatPrefix,
   PLAN_PROMPT_PREFIX,
+  CONDUCTOR_RTK_PROMPT_PREFIX,
 } from './agent-driver'
 
 function msg(
@@ -37,10 +38,19 @@ describe('agent-driver prompt construction', () => {
     expect(prompt).toContain('only create raster images when the user explicitly asks')
   })
 
+  test('asks agents to use RTK on first-turn shell-style work', () => {
+    const prompt = buildAgentPrompt('inspect the failing tests', false)
+
+    expect(prompt).toContain(CONDUCTOR_RTK_PROMPT_PREFIX)
+    expect(prompt).toContain('rtk test <cmd>')
+    expect(prompt).toContain('rtk git ...')
+  })
+
   test('omits the format prefix on continuation turns but keeps the user text', () => {
     const prompt = buildAgentPrompt('next step', false, undefined, 'codex', false, false)
 
     expect(prompt).not.toContain('GitHub-Flavored Markdown')
+    expect(prompt).not.toContain(CONDUCTOR_RTK_PROMPT_PREFIX)
     expect(prompt).toBe('next step')
   })
 

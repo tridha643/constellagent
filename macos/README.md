@@ -120,6 +120,33 @@ auto-provisions a stable **Constellagent IslandNotch Dev** certificate in
 need to be granted **once** for that certificate (unless you had stale ad-hoc
 grants — see reset commands below).
 
+The build script imports the cert + private key as a PKCS#12 bundle into a
+dedicated keychain (`macos/.build/signing/islandnotch-dev.keychain-db`) and
+signs by **certificate name** (`Constellagent IslandNotch Dev`), not by SHA-1
+hash. Self-signed dev certs often show `0 valid identities found` in
+`security find-identity` but still codesign correctly by name.
+
+**Build fails with `no identity found` during re-signing.** If
+`scripts/build-island-notch.sh` prints:
+
+```text
+[island-notch] re-signing with stable dev certificate (TCC grants survive rebuilds)
+958BDF46119732148D99167F37CB4BCDEE76D60F: no identity found
+```
+
+the keychain has the certificate but not a usable private-key identity (usually
+from a stale `macos/.build/signing/` tree created before PKCS#12 import was
+fixed). Reset local signing artifacts and rebuild:
+
+```bash
+rm -rf macos/.build/signing
+CONSTELLAGENT_ISLAND_NOTCH_NO_LAUNCH=1 sh scripts/build-island-notch.sh
+# expect: [island-notch] signed: Constellagent IslandNotch Dev
+```
+
+If permissions still misbehave after that, reset stale TCC grants once (commands
+below) and re-grant in System Settings.
+
 **Manual fix (Apple Development team):** sign with your Apple Developer Team ID
 so grants persist the same way:
 

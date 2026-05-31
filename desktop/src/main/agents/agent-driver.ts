@@ -45,6 +45,9 @@ export const PLAN_PROMPT_CURSOR_ASK =
 export const CONDUCTOR_MARKDOWN_FORMAT_PREFIX =
   'Reply in GitHub-Flavored Markdown for a live preview: ATX headings (`## Section`, never bold-wrapped), `-` bullets, `- [ ]` / `- [x]` task lists, and pipe tables with a `|---|---|` header separator. Render diagrams and charts as fenced Mermaid blocks (`xychart-beta` for numeric/bar/line charts) — do not generate PNG/JPG/WebP/SVG image files for anything Mermaid can express; only create raster images when the user explicitly asks for a photo, icon, or mockup.'
 
+export const CONDUCTOR_RTK_PROMPT_PREFIX =
+  'Use RTK for shell-style work so command output is compact before it reaches context: prefer `rtk git ...`, `rtk grep ...`, `rtk find ...`, `rtk read ...`, `rtk test <cmd>`, `rtk err <cmd>`, or the closest `rtk` wrapper for searches, file reads, git, build, lint, and test commands. If `rtk` is not installed, say so briefly and keep fallback command output tightly scoped.'
+
 const CONDUCTOR_CONTEXT_PROMPT_PREFIX =
   'Previous conversation context from this Conductor chat is below. Use it as the authoritative thread history, including any plan the assistant already produced.'
 
@@ -94,6 +97,7 @@ export function buildAgentPrompt(
     parts.push(buildJsonCanvasPromptSuffix(provider))
   } else if (promptEmitsFormatPrefix(text, provider, canvas, includeFormatPrefix)) {
     parts.push(CONDUCTOR_MARKDOWN_FORMAT_PREFIX)
+    parts.push(CONDUCTOR_RTK_PROMPT_PREFIX)
   }
   if (plan) {
     parts.push(PLAN_PROMPT_PREFIX)
