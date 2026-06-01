@@ -51,6 +51,34 @@ async function git(args: string[], cwd: string): Promise<string> {
   return spawnAndCapture('git', args, cwd, 10 * 1024 * 1024)
 }
 
+/** Parse `git worktree list --porcelain` output into worktree entries. */
+export function parseWorktreeListPorcelain(output: string): WorktreeInfo[] {
+  const worktrees: WorktreeInfo[] = []
+  const blocks = output.split('\n\n')
+  for (const block of blocks) {
+    const lines = block.split('\n')
+    const info: Partial<WorktreeInfo> = { isBare: false, isDetached: false }
+    for (const rawLine of lines) {
+      const line = rawLine.trimEnd()
+      if (line.startsWith('worktree ')) info.path = line.slice(9)
+      else if (line.startsWith('HEAD ')) info.head = line.slice(5)
+      else if (line.startsWith('branch ')) info.branch = line.slice(7).replace('refs/heads/', '')
+      else if (line === 'bare') info.isBare = true
+      else if (line === 'detached') info.isDetached = true
+    }
+    if (info.path) {
+      worktrees.push({
+        path: info.path,
+        branch: info.branch ?? '',
+        head: info.head ?? '',
+        isBare: info.isBare ?? false,
+        isDetached: info.isDetached || undefined,
+      })
+    }
+  }
+  return worktrees
+}
+
 /**
  * Run git with custom env vars layered on top of `process.env`. Used by
  * SpotlightService where we set `GIT_INDEX_FILE` to keep the worktree's
@@ -724,28 +752,7 @@ export class GitService {
     try {
       const output = await git(['worktree', 'list', '--porcelain'], cwd)
       if (output) {
-        const blocks = output.split('\n\n')
-        for (const block of blocks) {
-          const lines = block.split('\n')
-          const info: Partial<WorktreeInfo> = { isBare: false, isDetached: false }
-          for (const rawLine of lines) {
-            const line = rawLine.trimEnd()
-            if (line.startsWith('worktree ')) info.path = line.slice(9)
-            else if (line.startsWith('HEAD ')) info.head = line.slice(5)
-            else if (line.startsWith('branch ')) info.branch = line.slice(7).replace('refs/heads/', '')
-            else if (line === 'bare') info.isBare = true
-            else if (line === 'detached') info.isDetached = true
-          }
-          if (info.path) {
-            worktrees.push({
-              path: info.path,
-              branch: info.branch ?? '',
-              head: info.head ?? '',
-              isBare: info.isBare ?? false,
-              isDetached: info.isDetached || undefined,
-            })
-          }
-        }
+        worktrees.push(...parseWorktreeListPorcelain(output))
       }
     } catch (err) {
       // Keep renderer IPC best-effort, but log enough context to diagnose empty sidebars.
@@ -1329,6 +1336,61 @@ export class GitService {
     } catch {
       return ''
     }
+  }
+
+  /**
+   * Batched {@link getCurrentBranch}: resolve the current branch for many worktrees of one
+   * repo with a single `git worktree list --porcelain` spawn instead of one `rev-parse`
+   * process per path. Result values match `getCurrentBranch` semantics ('HEAD' when
+   * detached, '' when unresolvable), keyed by the requested path. Paths missing from the
+   * listing (removed worktrees, checkouts of another repo) fall back to per-path lookups.
+   */
+  static async getCurrentBranches(
+    repoPath: string,
+    worktreePaths: string[],
+  ): Promise<Record<string, string>> {
+    const result: Record<string, string> = {}
+    const requested = [...new Set(
+      worktreePaths.filter((p) => typeof p === 'string' && p.trim().length > 0),
+    )]
+    if (requested.length === 0) return result
+
+    const branchByPath = new Map<string, string>()
+    const cwd = (repoPath ?? '').trim()
+    if (cwd.length > 0 && existsSync(cwd)) {
+      try {
+        const output = await git(['worktree', 'list', '--porcelain'], cwd)
+        for (const info of parseWorktreeListPorcelain(output)) {
+          if (info.isBare) continue
+          const label = info.isDetached || !info.branch ? 'HEAD' : info.branch
+          branchByPath.set(info.path, label)
+          // Index the canonical path too so symlinked requests (e.g. /tmp vs /private/tmp) match.
+          const canonical = await realpath(info.path).catch(() => null)
+          if (canonical && canonical !== info.path) branchByPath.set(canonical, label)
+        }
+      } catch {
+        // Listing failed — every path falls back to a per-path lookup below.
+      }
+    }
+
+    const unmatched: string[] = []
+    for (const requestedPath of requested) {
+      let branch = branchByPath.get(requestedPath)
+      if (branch === undefined) {
+        const canonical = await realpath(requestedPath).catch(() => null)
+        if (canonical) branch = branchByPath.get(canonical)
+      }
+      if (branch !== undefined) result[requestedPath] = branch
+      else unmatched.push(requestedPath)
+    }
+
+    await Promise.all(
+      unmatched.map(async (p) => {
+        result[p] = await GitService.getCurrentBranch(p)
+      }),
+    )
+
+    return result
   }
 
   static async getHeadHash(worktreePath: string): Promise<string> {

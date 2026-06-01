@@ -530,6 +530,14 @@ export function registerIpcHandlers(): void {
     })
   })
 
+  ipcMain.handle(IPC.GIT_GET_CURRENT_BRANCHES, async (_e, repoPath: string, worktreePaths: string[]) => {
+    return measureMainAsync(
+      'git:get-current-branches',
+      () => GitService.getCurrentBranches(repoPath, Array.isArray(worktreePaths) ? worktreePaths : []),
+      { repoPath, count: Array.isArray(worktreePaths) ? worktreePaths.length : 0 },
+    )
+  })
+
   ipcMain.handle(IPC.GIT_GET_HEAD_HASH, async (_e, worktreePath: string) => {
     return GitService.getHeadHash(worktreePath)
   })
