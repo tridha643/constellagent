@@ -77,17 +77,37 @@ export function usePrStatusPoller(): void {
       )
       backgroundCursorRef.current += BACKGROUND_WORKSPACE_BATCH
 
-      // Refresh actual branch names from git before querying PRs
+      // Refresh actual branch names from git before querying PRs. Batched per project:
+      // one `git worktree list` spawn per repo instead of one `rev-parse` process and
+      // IPC round trip per workspace.
+      const branchRefreshGroups = new Map<string, { repoPath: string; workspaces: typeof polledWorkspaces }>()
+      for (const ws of polledWorkspaces) {
+        if (!ws.worktreePath) continue
+        const repoPath = projects.find((p) => p.id === ws.projectId)?.repoPath
+        if (!repoPath) continue
+        let group = branchRefreshGroups.get(ws.projectId)
+        if (!group) {
+          group = { repoPath, workspaces: [] }
+          branchRefreshGroups.set(ws.projectId, group)
+        }
+        group.workspaces.push(ws)
+      }
+
       await Promise.allSettled(
-        polledWorkspaces.map(async (ws) => {
-          if (!ws.worktreePath) return
+        Array.from(branchRefreshGroups.values()).map(async ({ repoPath, workspaces: groupWorkspaces }) => {
           try {
-            const actual = normalizeWorkspaceBranch(await window.api.git.getCurrentBranch(ws.worktreePath))
-            if (isStableWorkspaceBranch(actual) && actual !== ws.branch) {
-              updateWorkspaceBranch(ws.id, actual)
+            const branches = await window.api.git.getCurrentBranches(
+              repoPath,
+              groupWorkspaces.map((ws) => ws.worktreePath),
+            )
+            for (const ws of groupWorkspaces) {
+              const actual = normalizeWorkspaceBranch(branches[ws.worktreePath] ?? '')
+              if (isStableWorkspaceBranch(actual) && actual !== ws.branch) {
+                updateWorkspaceBranch(ws.id, actual)
+              }
             }
           } catch {
-            // Worktree may have been removed — ignore
+            // Worktrees may have been removed — ignore
           }
         })
       )

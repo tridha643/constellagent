@@ -137,6 +137,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_CHECKOUT_BRANCH, worktreePath, branch, createNew === true) as Promise<void>,
     getCurrentBranch: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_CURRENT_BRANCH, worktreePath) as Promise<string>,
+    getCurrentBranches: (repoPath: string, worktreePaths: string[]) =>
+      ipcRenderer.invoke(IPC.GIT_GET_CURRENT_BRANCHES, repoPath, worktreePaths) as Promise<Record<string, string>>,
     getHeadHash: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_HEAD_HASH, worktreePath) as Promise<string>,
     getDefaultBranch: (repoPath: string) =>
