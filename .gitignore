@@ -37,3 +37,10 @@ ios/**/.build/
 *.ipa
 *.dSYM
 *.dSYM.zip
+
+# macOS / Xcode (IslandNotch leftover build artifacts)
+macos/.build/
+macos/**/build/
+macos/**/DerivedData/
+macos/**/*.xcuserstate
+macos/**/xcuserdata/
