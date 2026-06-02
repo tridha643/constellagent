@@ -149,7 +149,7 @@ test.describe('IPC handlers & state persistence', () => {
       expect(sidePanels.right).toEqual({
         open: false,
         activePanel: 'changes',
-        panelOrder: ['files', 'changes', 'graph'],
+        panelOrder: ['files', 'changes', 'graph', 'browser', 'sideChat'],
       })
 
       const loaded = await window.evaluate(async () => {
@@ -200,14 +200,14 @@ test.describe('IPC handlers & state persistence', () => {
       expect(sidePanels.right).toEqual({
         open: false,
         activePanel: 'graph',
-        panelOrder: ['changes', 'graph'],
+        panelOrder: ['changes', 'graph', 'browser', 'sideChat'],
       })
 
       const loaded = await window.evaluate(async () => {
         return await (window as any).api.state.load()
       })
       expect(loaded.sidePanels.left.panelOrder).toEqual(['project', 'files'])
-      expect(loaded.sidePanels.right.panelOrder).toEqual(['changes', 'graph'])
+      expect(loaded.sidePanels.right.panelOrder).toEqual(['changes', 'graph', 'browser', 'sideChat'])
       expect(loaded.sidePanels.right.activePanel).toBe('graph')
       expect(loaded.rightPanelOpen).toBeUndefined()
       expect(loaded.rightPanelMode).toBeUndefined()
