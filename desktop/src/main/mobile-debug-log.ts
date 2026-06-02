@@ -1,5 +1,7 @@
 /** Opt-in structured logs for the mobile bridge (`CONSTELLAGENT_MOBILE_DEBUG=1`). */
 
+import { safeConsoleInfo, safeConsoleWarn } from './main-console'
+
 export function isMobileDebugEnabled(): boolean {
   const value = process.env.CONSTELLAGENT_MOBILE_DEBUG?.trim().toLowerCase()
   return value === '1' || value === 'true' || value === 'yes'
@@ -23,10 +25,10 @@ export function mobileDebugLog(
   if (!isMobileDebugEnabled()) return
   const payload = compactFields(fields)
   if (payload) {
-    console.info(`[mobile-debug][${scope}] ${message}`, payload)
+    safeConsoleInfo(`[mobile-debug][${scope}] ${message}`, payload)
     return
   }
-  console.info(`[mobile-debug][${scope}] ${message}`)
+  safeConsoleInfo(`[mobile-debug][${scope}] ${message}`)
 }
 
 export function mobileDebugWarn(
@@ -37,10 +39,10 @@ export function mobileDebugWarn(
   if (!isMobileDebugEnabled()) return
   const payload = compactFields(fields)
   if (payload) {
-    console.warn(`[mobile-debug][${scope}] ${message}`, payload)
+    safeConsoleWarn(`[mobile-debug][${scope}] ${message}`, payload)
     return
   }
-  console.warn(`[mobile-debug][${scope}] ${message}`)
+  safeConsoleWarn(`[mobile-debug][${scope}] ${message}`)
 }
 
 export class MobileDebugTimer {
