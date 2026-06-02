@@ -737,11 +737,6 @@ export function registerIpcHandlers(): void {
 
   ipcMain.on(IPC.PTY_SUGGEST_TAB_TITLE, (_e, ptyId: string, line: string) => {
     if (typeof ptyId === 'string' && typeof line === 'string') {
-      console.log('[constellagent:tab-title] IPC PTY_SUGGEST_TAB_TITLE', {
-        ptyId,
-        lineByteLength: Buffer.byteLength(line, 'utf8'),
-        linePreview: line.replace(/\r/g, '\\r').replace(/\n/g, '\\n').slice(0, 72),
-      })
       ptyManager.suggestTabTitle(ptyId, line)
     }
   })
