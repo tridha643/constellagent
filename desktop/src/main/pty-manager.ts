@@ -15,6 +15,7 @@ import {
   PI_CONSTELL_MARKER_SEGMENT,
 } from '../shared/agent-markers'
 import { PtyOutputRing } from './pty-output-ring'
+import { tabTitleDebugLog } from './tab-title-debug-log'
 
 const TAB_TITLE_LOG = '[constellagent:tab-title]'
 
@@ -329,18 +330,18 @@ export class PtyManager {
   suggestTabTitle(ptyId: string, line: string): void {
     const instance = this.ptys.get(ptyId)
     if (!instance) {
-      console.log(TAB_TITLE_LOG, 'suggestTabTitle: no PTY instance', { ptyId })
+      tabTitleDebugLog(TAB_TITLE_LOG, 'suggestTabTitle: no PTY instance', { ptyId })
       return
     }
     if (!instance.workspaceId) {
-      console.log(TAB_TITLE_LOG, 'suggestTabTitle: skipped (no workspaceId on PTY)', { ptyId })
+      tabTitleDebugLog(TAB_TITLE_LOG, 'suggestTabTitle: skipped (no workspaceId on PTY)', { ptyId })
       return
     }
     if (!this.isCodexRunningUnder(instance.process.pid)) {
-      console.log(TAB_TITLE_LOG, 'suggestTabTitle: skipped (Codex not running under this PTY)', { ptyId })
+      tabTitleDebugLog(TAB_TITLE_LOG, 'suggestTabTitle: skipped (Codex not running under this PTY)', { ptyId })
       return
     }
-    console.log(TAB_TITLE_LOG, 'suggestTabTitle: legacy IPC path (xterm-line-buffer)', {
+    tabTitleDebugLog(TAB_TITLE_LOG, 'suggestTabTitle: legacy IPC path (xterm-line-buffer)', {
       ptyId,
       lineByteLength: Buffer.byteLength(line, 'utf8'),
       linePreview: line.replace(/\r/g, '\\r').replace(/\n/g, '\\n').slice(0, 72),
@@ -374,7 +375,7 @@ export class PtyManager {
           filterReason = 'osc-color-response-artifact-only'
         else if (looksLikeOscColorResponseArtifact(firstLine)) filterReason = 'osc-color-response-artifact'
         else if (/^(y|n|p|yes|no)$/i.test(firstLine.trim())) filterReason = 'short-affirmative-reply'
-        console.log(TAB_TITLE_LOG, 'codex tab title: extractCodexTabTitleFromText skipped line', {
+        tabTitleDebugLog(TAB_TITLE_LOG, 'codex tab title: extractCodexTabTitleFromText skipped line', {
           ptyId,
           source,
           workspaceId: instance.workspaceId,
@@ -410,7 +411,7 @@ export class PtyManager {
         } else {
           const byteLength = Buffer.byteLength(data, 'utf8')
           const chunkLooksLikeNewlineOnly = /^[\r\n]+$/.test(data)
-          console.log(TAB_TITLE_LOG, 'codex derive from PTY write: no inline title (newline-only chunk or empty prompt in write payload)', {
+          tabTitleDebugLog(TAB_TITLE_LOG, 'codex derive from PTY write: no inline title (newline-only chunk or empty prompt in write payload)', {
             ptyId,
             workspaceId: instance.workspaceId,
             byteLength,
@@ -419,7 +420,7 @@ export class PtyManager {
           })
         }
       } else if (codexRunning && !instance.workspaceId) {
-        console.log(TAB_TITLE_LOG, 'codex PTY write title skipped (no workspaceId on PTY)', { ptyId })
+        tabTitleDebugLog(TAB_TITLE_LOG, 'codex PTY write title skipped (no workspaceId on PTY)', { ptyId })
       }
     }
 
@@ -573,7 +574,7 @@ export class PtyManager {
     const display = oscTitleForTab(title, instance.agentType)
     if (!display || display === instance.lastOscTitle) return
     instance.lastOscTitle = display
-    console.log(TAB_TITLE_LOG, '→ PTY_TITLE_CHANGED', {
+    tabTitleDebugLog(TAB_TITLE_LOG, '→ PTY_TITLE_CHANGED', {
       ptyId,
       source,
       workspaceId: instance.workspaceId,
@@ -608,7 +609,7 @@ export class PtyManager {
     const display = oscTitleForTab(lastTitle, instance.agentType)
     if (!display || display === instance.lastOscTitle) return
 
-    console.log(TAB_TITLE_LOG, 'OSC title extracted (debouncing 500ms)', { ptyId, title: display.slice(0, 80) })
+    tabTitleDebugLog(TAB_TITLE_LOG, 'OSC title extracted (debouncing 500ms)', { ptyId, title: display.slice(0, 80) })
     if (instance.oscTitleTimer) clearTimeout(instance.oscTitleTimer)
     instance.pendingOscTitle = lastTitle
     instance.oscTitleTimer = setTimeout(() => {

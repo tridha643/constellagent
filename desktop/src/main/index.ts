@@ -1,5 +1,8 @@
 import './load-env-local'
 import './cursor-sdk-ripgrep-config'
+import { installMainProcessBrokenPipeGuard } from './main-console'
+
+installMainProcessBrokenPipeGuard()
 import { createHash } from 'crypto'
 import { app, BrowserWindow, Menu, shell } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
