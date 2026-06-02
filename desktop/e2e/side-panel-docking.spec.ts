@@ -136,14 +136,14 @@ test.describe('side panel docking', () => {
       let sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
       expect(sidePanels.left.panelOrder).toEqual(['project', 'files'])
       expect(sidePanels.left.activePanel).toBe('files')
-      expect(sidePanels.right.panelOrder).toEqual(['changes', 'graph'])
+      expect(sidePanels.right.panelOrder).toEqual(['changes', 'graph', 'browser', 'sideChat'])
 
       await dispatchDrag(window, '[data-panel-side="left"] [data-panel-type="project"]', '[data-panel-drop-target-side="right"]')
       await window.waitForTimeout(300)
 
       sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
       expect(sidePanels.left.panelOrder).toEqual(['files'])
-      expect(sidePanels.right.panelOrder).toEqual(['changes', 'graph', 'project'])
+      expect(sidePanels.right.panelOrder).toEqual(['changes', 'graph', 'browser', 'sideChat', 'project'])
       expect(sidePanels.right.activePanel).toBe('project')
     } finally {
       await app.close()
@@ -202,7 +202,7 @@ test.describe('side panel docking', () => {
       })
       expect(persisted.sidePanels.left.panelOrder).toEqual(['project', 'changes'])
       expect(persisted.sidePanels.left.activePanel).toBe('changes')
-      expect(persisted.sidePanels.right.panelOrder).toEqual(['files', 'graph'])
+      expect(persisted.sidePanels.right.panelOrder).toEqual(['files', 'graph', 'browser', 'sideChat'])
     } finally {
       if (app) await app.close()
       cleanupTestRepo(repoPath)
