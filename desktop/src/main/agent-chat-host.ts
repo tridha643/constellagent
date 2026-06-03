@@ -1014,6 +1014,9 @@ export class AgentChatHost {
     this.timelineState.runningSinceBySession.delete(key)
     this.timelineState.activeAssistantMessageBySession.delete(key)
     this.timelineState.activeWorkingActivityBySession.delete(key)
+    this.timelineState.userRequestedGeneratedImagesBySession.delete(key)
+    this.emittedAssistantTextBySession.delete(key)
+    this.assistantDeltaDebugSequenceBySession.delete(key)
     const pending = this.pendingTranscriptFlush.get(sessionId)
     if (pending) {
       clearTimeout(pending)
