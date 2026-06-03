@@ -1,9 +1,8 @@
-import { realpathSync } from 'fs'
 import { BrowserWindow } from 'electron'
-import { resolve } from 'path'
 import { IPC } from '../shared/ipc-channels'
 import type { WorktreeSyncEvent, WorkspaceSyncInfo } from '../shared/worktree-sync-types'
 import { GitService } from './git-service'
+import { canonicalizePath } from './canonical-path'
 
 type ProjectSyncState = {
   repoPath: string
@@ -11,22 +10,14 @@ type ProjectSyncState = {
   pendingQueue: Set<string>
 }
 
-function normalizePath(p: string): string {
-  try {
-    return realpathSync(p)
-  } catch {
-    return resolve(p)
-  }
-}
-
 export class WorktreeSyncService {
   private projects = new Map<string, ProjectSyncState>()
   private busyPaths = new Set<string>()
 
   private isBusy(worktreePath: string): boolean {
-    const n = normalizePath(worktreePath)
+    const n = canonicalizePath(worktreePath)
     for (const b of this.busyPaths) {
-      if (normalizePath(b) === n) return true
+      if (canonicalizePath(b) === n) return true
     }
     return false
   }
@@ -62,7 +53,7 @@ export class WorktreeSyncService {
     worktreePath: string,
     defaultBranch: string
   ): Promise<void> {
-    const key = normalizePath(worktreePath)
+    const key = canonicalizePath(worktreePath)
     this.mergeBroadcast(projectId, { [key]: this.workspaceInfo(worktreePath, 'syncing') })
 
     const result = await GitService.syncWorktree(worktreePath, defaultBranch)
@@ -128,7 +119,7 @@ export class WorktreeSyncService {
       for (const wt of list) {
         if (wt.isBare || !wt.path) continue
         const p = wt.path
-        const key = normalizePath(p)
+        const key = canonicalizePath(p)
         if (this.isBusy(p)) {
           state.pendingQueue.add(key)
           batch[key] = this.workspaceInfo(
@@ -145,7 +136,7 @@ export class WorktreeSyncService {
       for (const wt of list) {
         if (wt.isBare || !wt.path) continue
         const p = wt.path
-        const key = normalizePath(p)
+        const key = canonicalizePath(p)
         if (this.isBusy(p)) continue
 
         state.pendingQueue.delete(key)
@@ -157,6 +148,6 @@ export class WorktreeSyncService {
   }
 
   setBusyWorktrees(paths: string[]): void {
-    this.busyPaths = new Set(paths.map((p) => normalizePath(p)))
+    this.busyPaths = new Set(paths.map((p) => canonicalizePath(p)))
   }
 }
