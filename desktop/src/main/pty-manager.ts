@@ -223,9 +223,19 @@ function getActivityDir(): string {
   return process.env.CONSTELLAGENT_ACTIVITY_DIR || DEFAULT_ACTIVITY_DIR
 }
 
+/**
+ * `ps` is scanned at most once per PID per this window. `detectAgentUnder` runs on every
+ * newline PTY write (Enter), so without this the main thread blocks on a full process-table
+ * dump per keystroke; staleness self-corrects within the window (and the lazy-detect retry
+ * bypasses the cache so a late-spawning agent is still caught).
+ */
+const AGENT_DETECT_CACHE_TTL_MS = 2000
+
 export class PtyManager {
   private ptys = new Map<string, PtyInstance>()
   private nextId = 0
+  /** PID → last `ps`-derived agent type, with expiry. Avoids a sync `ps` on every PTY write. */
+  private agentDetectCache = new Map<number, { type: string | null; expiresAt: number }>()
   onTitleChanged?: (ptyId: string, title: string, workspaceId: string | undefined, workingDir: string) => void
   onAgentDetected?: (ptyId: string, agentType: string) => void
   onPtyData?: (ptyId: string, data: string) => void
@@ -301,6 +311,7 @@ export class PtyManager {
     proc.onExit(({ exitCode }) => {
       this.clearCodexWorkspaceActivity(instance.workspaceId, instance.process.pid)
       this.clearAgentActivityMarker(instance)
+      this.agentDetectCache.delete(instance.process.pid)
       for (const cb of instance.onExitCallbacks) cb(exitCode)
       this.onPtyExit?.(id, exitCode, instance.workspaceId)
       this.ptys.delete(id)
@@ -388,6 +399,8 @@ export class PtyManager {
           const pid = instance.process.pid
           setTimeout(() => {
             if (instance.agentType && instance.agentType !== 'unknown') return
+            // Force a fresh `ps` — the agent may have spawned after the first probe cached "none".
+            this.agentDetectCache.delete(pid)
             const retryDetected = this.detectAgentUnder(pid)
             if (retryDetected) {
               instance.agentType = retryDetected
@@ -416,6 +429,7 @@ export class PtyManager {
     if (instance) {
       this.clearCodexWorkspaceActivity(instance.workspaceId, instance.process.pid)
       this.clearAgentActivityMarker(instance)
+      this.agentDetectCache.delete(instance.process.pid)
       instance.process.kill()
       this.ptys.delete(ptyId)
     }
@@ -441,6 +455,17 @@ export class PtyManager {
   }
 
   private detectAgentUnder(rootPid: number): string | null {
+    const now = Date.now()
+    const cached = this.agentDetectCache.get(rootPid)
+    if (cached && cached.expiresAt > now) return cached.type
+
+    const detected = this.probeAgentUnder(rootPid)
+    this.agentDetectCache.set(rootPid, { type: detected, expiresAt: now + AGENT_DETECT_CACHE_TTL_MS })
+    return detected
+  }
+
+  /** Synchronous `ps` scan for an agent CLI parented by `rootPid`. Always call via {@link detectAgentUnder}. */
+  private probeAgentUnder(rootPid: number): string | null {
     let processTable = ''
     try {
       processTable = execFileSync('ps', ['-axo', 'pid=,ppid=,args='], { encoding: 'utf-8' })
