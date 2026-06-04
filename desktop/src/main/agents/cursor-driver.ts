@@ -1,5 +1,5 @@
-import '../cursor-sdk-ripgrep-config'
 import '../cursor-sdk-interaction-config'
+import { configureCursorSdkRipgrep } from '../cursor-sdk-ripgrep'
 import {
   Agent,
   convertError,
@@ -132,6 +132,10 @@ async function createCursorSdkAgent(
   ctx: AgentTurnContext,
   agents: NonNullable<Parameters<typeof Agent.create>[0]['agents']>,
 ): Promise<SDKAgent> {
+  // Resolve ripgrep lazily, on first agent creation, so the filesystem walk and
+  // possible `which` subprocess spawn stay off the app cold-start path for users
+  // who never use the Cursor provider. Idempotent: early-returns once resolved.
+  configureCursorSdkRipgrep()
   const apiKey = getCursorApiKey()
   const catalog = await getCursorModelCatalog()
   const bypassValidation = shouldBypassCursorSdkModelValidation(effectiveModel, {
