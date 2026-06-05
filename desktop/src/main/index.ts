@@ -1,6 +1,5 @@
 import './main-bootstrap'
 import './load-env-local'
-import './cursor-sdk-ripgrep-config'
 import { createHash } from 'crypto'
 import { app, BrowserWindow, Menu, shell } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
