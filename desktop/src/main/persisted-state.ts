@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import { app } from 'electron'
+import { canonicalizePath } from './canonical-path'
 
 interface PersistedProjectRecord {
   id: string
@@ -25,14 +26,6 @@ interface PersistedStateRecord {
 
 function stateFilePath(): string {
   return join(app.getPath('userData'), 'constellagent-state.json')
-}
-
-function normalizePath(path: string): string {
-  try {
-    return realpathSync(path)
-  } catch {
-    return resolve(path)
-  }
 }
 
 // Reads of `constellagent-state.json` are hot (per github poll, mobile RPC,
@@ -105,10 +98,10 @@ export function lookupPersistedWorkspace(workspaceId: string): {
 export function lookupPersistedProjectByRepoPath(repoPath: string): PersistedProjectRecord | null {
   if (!repoPath) return null
   const state = loadState()
-  const normalizedTarget = normalizePath(repoPath)
+  const normalizedTarget = canonicalizePath(repoPath)
   for (const project of state.projects ?? []) {
     if (!project.repoPath) continue
-    if (normalizePath(project.repoPath) === normalizedTarget) {
+    if (canonicalizePath(project.repoPath) === normalizedTarget) {
       return project
     }
   }
@@ -182,11 +175,11 @@ export function resolveMobileWorkspaceForPath(rawPath: string): {
   workspaceId: string
   workspacePath: string
 } {
-  const workspacePath = normalizePath(rawPath)
+  const workspacePath = canonicalizePath(rawPath)
   const records = listPersistedWorkspaceRecords()
   for (const workspace of records) {
     if (!workspace.worktreePath) continue
-    if (normalizePath(workspace.worktreePath) === workspacePath) {
+    if (canonicalizePath(workspace.worktreePath) === workspacePath) {
       return { workspaceId: workspace.id, workspacePath }
     }
   }
@@ -244,8 +237,8 @@ function saveState(state: PersistedStateRecord): void {
 
 /** Registers a git worktree as a persisted desktop workspace so mobile sessions mirror the sidebar. */
 export function upsertPersistedMobileWorkspace(input: UpsertMobileWorkspaceInput): UpsertMobileWorkspaceResult {
-  const worktreePath = normalizePath(input.worktreePath.trim())
-  const repoPath = normalizePath(input.repoPath.trim())
+  const worktreePath = canonicalizePath(input.worktreePath.trim())
+  const repoPath = canonicalizePath(input.repoPath.trim())
   const branch = input.branch.trim() || 'main'
   const state = loadState()
   const projects = [...(state.projects ?? [])]
@@ -253,7 +246,7 @@ export function upsertPersistedMobileWorkspace(input: UpsertMobileWorkspaceInput
 
   for (const workspace of workspaces) {
     if (!workspace.worktreePath) continue
-    if (normalizePath(workspace.worktreePath) !== worktreePath) continue
+    if (canonicalizePath(workspace.worktreePath) !== worktreePath) continue
     const project = projects.find((entry) => entry.id === workspace.projectId)
     return {
       workspaceId: workspace.id,
@@ -265,7 +258,7 @@ export function upsertPersistedMobileWorkspace(input: UpsertMobileWorkspaceInput
     }
   }
 
-  let project = projects.find((entry) => normalizePath(entry.repoPath) === repoPath) ?? null
+  let project = projects.find((entry) => canonicalizePath(entry.repoPath) === repoPath) ?? null
   if (!project) {
     project = {
       id: randomUUID(),

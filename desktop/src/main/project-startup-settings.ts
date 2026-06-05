@@ -1,8 +1,9 @@
 import { app } from 'electron'
 import { mkdir, rename, writeFile } from 'fs/promises'
-import { existsSync, realpathSync } from 'fs'
+import { existsSync } from 'fs'
 import { dirname, join, resolve } from 'path'
 import { loadJsonFile } from './claude-config'
+import { canonicalizePath } from './canonical-path'
 
 export interface StartupCommandRecord {
   name: string
@@ -22,14 +23,6 @@ interface ProjectStartupSettingsFile {
 const DEFAULT_SETTINGS_FILE: ProjectStartupSettingsFile = {
   version: 1,
   projects: {},
-}
-
-function normalizeRepoKey(repoPath: string): string {
-  try {
-    return realpathSync(repoPath)
-  } catch {
-    return resolve(repoPath)
-  }
 }
 
 function normalizeStartupCommands(raw: unknown): StartupCommandRecord[] {
@@ -68,7 +61,7 @@ async function loadProjectStartupSettingsFile(): Promise<ProjectStartupSettingsF
       const entry = value as Record<string, unknown>
       const startupCommands = normalizeStartupCommands(entry.startupCommands)
       if (startupCommands.length === 0) continue
-      const key = normalizeRepoKey(repoPath)
+      const key = canonicalizePath(repoPath)
       normalizedProjects[key] = {
         startupCommands,
         updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : Date.now(),
@@ -100,12 +93,12 @@ export async function listProjectStartupSettings(): Promise<Record<string, Start
 export async function getProjectStartupCommands(repoPath: string): Promise<StartupCommandRecord[] | null> {
   if (!repoPath.trim()) return null
   const data = await loadProjectStartupSettingsFile()
-  const key = normalizeRepoKey(repoPath)
+  const key = canonicalizePath(repoPath)
   return data.projects[key]?.startupCommands ?? null
 }
 
 export async function setProjectStartupCommands(repoPath: string, startupCommands: unknown): Promise<StartupCommandRecord[]> {
-  const key = normalizeRepoKey(repoPath)
+  const key = canonicalizePath(repoPath)
   const normalizedCommands = normalizeStartupCommands(startupCommands)
   const data = await loadProjectStartupSettingsFile()
 
@@ -123,7 +116,7 @@ export async function setProjectStartupCommands(repoPath: string, startupCommand
 }
 
 export async function deleteProjectStartupCommands(repoPath: string): Promise<void> {
-  const key = normalizeRepoKey(repoPath)
+  const key = canonicalizePath(repoPath)
   const data = await loadProjectStartupSettingsFile()
   if (!data.projects[key]) return
   delete data.projects[key]
