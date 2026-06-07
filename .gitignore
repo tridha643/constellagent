@@ -16,10 +16,22 @@ desktop/.claude/skills/hunk-review/
 .cursor/skills/hunk-review
 .gemini/skills/hunk-review
 # Bundled Conductor skills (installed by scripts/install-bundled-skills.sh; legacy injection leftovers)
+.skills/
 .claude/skills/conductor-*
+.claude/skills/ce-*
+.claude/skills/lfg
+.claude/skills/linear-local-first
 .cursor/skills/conductor-*
+.cursor/skills/ce-*
+.cursor/skills/lfg
 .gemini/skills/conductor-*
+.gemini/skills/ce-*
+.gemini/skills/lfg
 .opencode/skills/conductor-*
+.opencode/skills/ce-*
+.opencode/skills/lfg
+.codex/skills/ce-*
+.codex/skills/lfg
 .codex/
 .cursor/hooks.json
 .cursor/rules/constellagent.mdc

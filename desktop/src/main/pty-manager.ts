@@ -1,7 +1,8 @@
 import * as pty from 'node-pty'
 import { execFileSync } from 'child_process'
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { createRequire } from 'module'
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
 import { WebContents } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import { GEMINI_TAB_LABEL, isGeminiIdleOscTitle } from '../shared/gemini-tab-title'
@@ -41,6 +42,50 @@ interface ProcessEntry {
   pid: number
   ppid: number
   command: string
+}
+
+const requireForNodePty = createRequire(import.meta.url)
+let nodePtySpawnHelperChecked = false
+
+function ensureNodePtySpawnHelperExecutable(): void {
+  if (process.platform === 'win32' || nodePtySpawnHelperChecked) return
+  nodePtySpawnHelperChecked = true
+
+  let packageRoot: string
+  try {
+    const unixTerminalPath = requireForNodePty.resolve('node-pty/lib/unixTerminal.js')
+    packageRoot = dirname(dirname(unixTerminalPath))
+  } catch (error) {
+    console.warn('[pty] failed to locate node-pty spawn-helper', error)
+    return
+  }
+
+  const helperCandidates = [
+    join(packageRoot, 'build', 'Release', 'spawn-helper'),
+    join(packageRoot, 'build', 'Debug', 'spawn-helper'),
+    join(packageRoot, 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper'),
+  ]
+
+  for (const helperPath of helperCandidates) {
+    if (!existsSync(helperPath)) continue
+
+    try {
+      accessSync(helperPath, constants.X_OK)
+      return
+    } catch {
+      // Bun installs can drop the executable bit from node-pty's prebuilt helper.
+    }
+
+    try {
+      chmodSync(helperPath, statSync(helperPath).mode | 0o111)
+      accessSync(helperPath, constants.X_OK)
+      console.info('[pty] fixed executable bit on node-pty spawn-helper', { helperPath })
+      return
+    } catch (error) {
+      console.warn('[pty] node-pty spawn-helper is not executable and chmod failed', { helperPath, error })
+      return
+    }
+  }
 }
 
 function parseProcessTable(output: string): ProcessEntry[] {
@@ -249,6 +294,8 @@ export class PtyManager {
       args = []
     }
 
+    ensureNodePtySpawnHelperExecutable()
+
     const proc = pty.spawn(file, args, {
       name: 'xterm-256color',
       cols: 80,
@@ -258,6 +305,11 @@ export class PtyManager {
         ...process.env,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
+        // Hide Claude Code's agents view for sessions launched from inside
+        // Constellagent (it has its own agent UI). Scoped to PTYs we spawn, so
+        // `claude` in a plain terminal elsewhere is unaffected. Equivalent to
+        // the `disableAgentView` setting. Caller-provided extraEnv can override.
+        CLAUDE_CODE_DISABLE_AGENT_VIEW: '1',
         ...extraEnv,
       } as Record<string, string>,
     })
