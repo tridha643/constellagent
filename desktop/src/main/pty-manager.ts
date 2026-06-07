@@ -553,8 +553,12 @@ export class PtyManager {
   }
 
   private writeAgentActivityMarker(workspaceId: string, agentType: string, ptyPid: number): void {
-    // Claude and Codex already write their own markers via hooks/submit handlers
-    if (agentType === 'claude-code' || agentType === 'codex') return
+    // Codex marks activity itself on prompt-submit (markCodexWorkspaceActive),
+    // so skip it here. Every other agent — including Claude — gets its marker
+    // written on detection so the workspace agent indicator lights up even when
+    // the optional claude-hooks aren't installed (the hooks remain a finer
+    // per-prompt/idle signal layered on top of this baseline).
+    if (agentType === 'codex') return
     try {
       const activityDir = getActivityDir()
       mkdirSync(activityDir, { recursive: true })
@@ -566,7 +570,21 @@ export class PtyManager {
 
   private clearAgentActivityMarker(instance: PtyInstance): void {
     if (!instance.workspaceId || !instance.agentType) return
-    if (instance.agentType === 'claude-code' || instance.agentType === 'codex') return
+    // Codex markers are cleared via clearCodexWorkspaceActivity (per-pid).
+    if (instance.agentType === 'codex') return
+    // Claude's marker is workspace-scoped (`{wsId}.claude`, no pid) and shared
+    // across every Claude tab in the workspace. Only remove it once no other
+    // live Claude PTY remains, so closing one tab doesn't clear a sibling's
+    // active indicator.
+    if (instance.agentType === 'claude-code') {
+      const anotherClaudeAlive = Array.from(this.ptys.values()).some(
+        (other) =>
+          other !== instance &&
+          other.workspaceId === instance.workspaceId &&
+          other.agentType === 'claude-code',
+      )
+      if (anotherClaudeAlive) return
+    }
     try {
       unlinkSync(this.agentMarkerPath(instance.workspaceId, instance.agentType, instance.process.pid))
     } catch {

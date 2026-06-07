@@ -86,10 +86,15 @@ if (process.platform === 'win32' && !hasWindowsCppToolchain()) {
   process.exit(0)
 }
 
+// Use the maintained @electron/rebuild package. The deprecated `electron-rebuild`
+// pins an old node-gyp whose bundled gyp imports `distutils`, which was removed
+// from Python 3.12+ (Homebrew ships 3.14), breaking native rebuilds with
+// "ModuleNotFoundError: No module named 'distutils'". @electron/rebuild ships a
+// newer node-gyp that no longer needs distutils.
 const rebuildStatus =
   process.platform === 'win32'
-    ? run('cmd.exe', ['/d', '/s', '/c', 'bunx electron-rebuild'])
-    : run('bunx', ['electron-rebuild'])
+    ? run('cmd.exe', ['/d', '/s', '/c', 'bunx @electron/rebuild'])
+    : run('bunx', ['@electron/rebuild'])
 
 if (process.platform === 'win32' && rebuildStatus !== 0) {
   console.warn(

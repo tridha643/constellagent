@@ -20,6 +20,23 @@ function shellCommand(input: unknown): string {
   return ''
 }
 
+function unquoteShellArgument(value: string): string {
+  const trimmed = value.trim()
+  if (trimmed.length < 2) return trimmed
+  const quote = trimmed[0]
+  if ((quote !== "'" && quote !== '"') || trimmed[trimmed.length - 1] !== quote) return trimmed
+  const inner = trimmed.slice(1, -1)
+  if (quote === "'") return inner.replace(/'\\''/g, "'")
+  return inner.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+}
+
+function commandDisplayLabel(command: string): string {
+  const shellWrapped = command.match(/^(?:\/(?:usr\/)?bin\/)?(?:zsh|bash|sh)\s+-lc\s+([\s\S]+)$/)
+  const usefulCommand = shellWrapped ? unquoteShellArgument(shellWrapped[1]) : command.trim()
+  if (usefulCommand.length <= 168) return usefulCommand
+  return `${usefulCommand.slice(0, 112).trimEnd()} ... ${usefulCommand.slice(-44).trimStart()}`
+}
+
 function shellOutput(output: unknown): string {
   if (typeof output === 'string') return stripAnsi(output).trim()
   return ''
@@ -27,6 +44,7 @@ function shellOutput(output: unknown): string {
 
 export function CursorBashRow({ tool }: { tool: TimelineToolCall }) {
   const command = shellCommand(tool.input) || tool.label.trim()
+  const commandLabel = commandDisplayLabel(command)
   const output = shellOutput(tool.output)
   const streamed = tool.status === 'running' ? stripAnsi(tool.detail ?? '').trim() : ''
   const displayOutput = streamed || output
@@ -39,7 +57,7 @@ export function CursorBashRow({ tool }: { tool: TimelineToolCall }) {
 
   return (
     <div className={styles.cursorToolRow} data-testid="cursor-tool-row">
-      <div className={styles.cursorToolRowMain}>
+      <div className={`${styles.cursorToolRowMain} ${styles.cursorBashRowMain}`}>
         <button
           type="button"
           className={styles.cursorToolRowHit}
@@ -56,6 +74,7 @@ export function CursorBashRow({ tool }: { tool: TimelineToolCall }) {
           <CursorToolChip
             variant="command"
             command={command}
+            displayLabel={commandLabel}
             testId="cursor-bash-chip"
             onClick={(e) => e.stopPropagation()}
           />

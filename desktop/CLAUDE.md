@@ -26,7 +26,7 @@ bun run dev          # Build packages + start electron-vite dev server + Electro
 bun run build        # Production build to desktop/out/
 bun run dist         # Build + package signed macOS DMG (electron-builder --mac --arm64)
 bun run test         # Playwright e2e (delegates to desktop `bunx playwright test --project=electron`)
-bun run rebuild      # Rebuild native modules (node-pty) for Electron (bunx electron-rebuild)
+bun run rebuild      # Rebuild native modules (node-pty) for Electron (bunx @electron/rebuild)
 bun run dev-isolated # Isolated dev profile per git checkout (sh scripts/dev-isolated.sh)
 ```
 

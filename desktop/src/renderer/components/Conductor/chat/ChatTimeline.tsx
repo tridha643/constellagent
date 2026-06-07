@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { ArrowDown } from 'lucide-react'
 import type { TranscriptMessage } from '../../../../shared/pi/pi-desktop-state'
 import type { TimelineToolCall } from '../../../../shared/pi/timeline-types'
 import type { AgentProvider } from '../../../../shared/agent-chat-types'
@@ -745,7 +746,11 @@ export const ChatTimeline = forwardRef<
             )
           }
           if (item.label === STOPPED_LABEL) {
-            return <div className={styles.interruptPill}>INTERRUPTED BY USER</div>
+            return (
+              <span className={styles.interruptPill} role="status">
+                INTERRUPTED BY USER
+              </span>
+            )
           }
           return (
             <div className={`${styles.activityRow} ${item.tone === 'error' ? styles.activityError : ''}`}>
@@ -844,7 +849,7 @@ export const ChatTimeline = forwardRef<
   return (
     <div className={styles.timelineWrap}>
       <div className={styles.timeline} ref={scrollRef} onScroll={onScroll} onCopy={handleCopy}>
-        <div className={styles.timelineStack}>
+        <div className={`${styles.timelineStack} ${showJump ? styles.timelineStackWithJump : ''}`}>
           {units.map((unit) => {
             if (unit.type === 'item') {
               const row = renderRow(unit.item)
@@ -922,12 +927,15 @@ export const ChatTimeline = forwardRef<
             )
           })}
         </div>
-        {showJump && (
-          <button type="button" className={styles.jumpToLatest} onClick={scrollToBottom}>
-            Jump to latest ↓
-          </button>
-        )}
       </div>
+      {showJump && (
+        <div className={styles.jumpToLatestDock}>
+          <button type="button" className={styles.jumpToLatest} onClick={scrollToBottom}>
+            <span>Latest</span>
+            <ArrowDown size={13} strokeWidth={2} aria-hidden="true" />
+          </button>
+        </div>
+      )}
       {copyToast ? (
         <div className={styles.copyToast} role="status" aria-live="polite">
           Copied
