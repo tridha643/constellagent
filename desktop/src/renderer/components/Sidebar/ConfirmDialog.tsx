@@ -12,6 +12,7 @@ interface Props {
   destructive?: boolean
   tip?: string
   loading?: boolean
+  confirmInPlace?: boolean
   secondaryConfirmLabel?: string
   onSecondaryConfirm?: () => void
 }
@@ -19,15 +20,20 @@ interface Props {
 /** Match `constellagent-dialog-*--exiting` duration (`--duration-exit` in design-tokens). */
 const EXIT_MS = 140
 
-export function ConfirmDialog({ title, message, confirmLabel = 'Delete', onConfirm, onCancel, destructive = false, tip, loading = false, secondaryConfirmLabel, onSecondaryConfirm }: Props) {
+export function ConfirmDialog({ title, message, confirmLabel = 'Delete', onConfirm, onCancel, destructive = false, tip, loading = false, confirmInPlace = false, secondaryConfirmLabel, onSecondaryConfirm }: Props) {
   const [open, setOpen] = useState(true)
   const { shouldRender, animating } = useExitAnimation(open, EXIT_MS)
   const pendingRef = useRef<(() => void) | null>(null)
+  const inPlacePendingRef = useRef(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   const exiting = animating === 'exit'
 
   // Trap Tab focus inside the dialog so keyboard nav can't reach the obscured app.
   useFocusTrap(dialogRef, shouldRender)
+
+  useEffect(() => {
+    if (!loading) inPlacePendingRef.current = false
+  }, [loading])
 
   const beginExit = useCallback((cb: () => void) => {
     if (loading || exiting) return
@@ -50,8 +56,14 @@ export function ConfirmDialog({ title, message, confirmLabel = 'Delete', onConfi
 
   const handleConfirm = useCallback(() => {
     if (loading) return
+    if (confirmInPlace) {
+      if (inPlacePendingRef.current) return
+      inPlacePendingRef.current = true
+      onConfirm()
+      return
+    }
     beginExit(onConfirm)
-  }, [loading, beginExit, onConfirm])
+  }, [loading, confirmInPlace, beginExit, onConfirm])
 
   const handleSecondary = useCallback(() => {
     if (loading || !onSecondaryConfirm) return

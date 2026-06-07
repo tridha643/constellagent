@@ -609,6 +609,7 @@ export function App() {
           destructive={confirmDialog.destructive}
           tip={confirmDialog.tip}
           loading={confirmDialog.loading}
+          confirmInPlace={confirmDialog.confirmInPlace}
           onConfirm={confirmDialog.onConfirm}
           onCancel={dismissConfirmDialog}
           secondaryConfirmLabel={confirmDialog.secondaryConfirmLabel}

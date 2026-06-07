@@ -2442,6 +2442,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().setSpotlightWorkspace(project.id, null)
     }
 
+    // Remove the git worktree before mutating renderer state. If this fails,
+    // keep the workspace visible so sidebar state still matches disk.
+    if (project && normalizeRepoPathCompareKey(ws.worktreePath) !== normalizeRepoPathCompareKey(project.repoPath)) {
+      try {
+        await window.api.git.removeWorktree(project.repoPath, ws.worktreePath)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to remove worktree'
+        get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
+        return
+      }
+    }
+
     // Destroy PTYs for this workspace (including backing PTYs and split panes)
     s.tabs.filter((t) => t.workspaceId === workspaceId && t.type === 'terminal').forEach((t) => {
       if (t.type === 'terminal') {
@@ -2451,18 +2463,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     })
 
-    // Remove from state immediately so sidebar updates
     get().removeWorkspace(workspaceId)
-
-    // Remove git worktree in background (skip if workspace uses the main repo directly)
-    if (project && ws.worktreePath !== project.repoPath) {
-      try {
-        await window.api.git.removeWorktree(project.repoPath, ws.worktreePath)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to remove worktree'
-        get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
-      }
-    }
   },
 
   updateProject: (id, partial) => {
