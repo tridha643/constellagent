@@ -677,6 +677,7 @@ export interface ConfirmDialogState {
   destructive?: boolean
   tip?: string
   loading?: boolean
+  confirmInPlace?: boolean
   onConfirm: () => void
   secondaryConfirmLabel?: string
   onSecondaryConfirm?: () => void

@@ -27,6 +27,11 @@ import {
   tryOpenChangesFindFromSource,
 } from '../utils/changes-file-find-bridge'
 import { ADD_PROJECT_DIALOG_SEGMENT, type AddProjectDialogSegmentDetail } from '../utils/add-project-dialog-segment'
+import {
+  getShortcutWorkspace,
+  isWorkspaceDeleteShortcut,
+  showDeleteWorkspaceConfirmation,
+} from './workspace-delete-shortcut'
 
 function isTypingContext(target: EventTarget | null): boolean {
   const element = target instanceof HTMLElement
@@ -547,14 +552,23 @@ export function useShortcuts() {
         return
       }
 
-      // ── Delete file: Cmd+Backspace ──
-      // Only when a file tab is active (not terminal/diff) and target is not a text input
-      if (!shift && !alt && e.key === 'Backspace') {
-        const target = e.target as HTMLElement
-        // Don't intercept when focused inside Monaco editor or terminal
-        if (target?.closest?.('[class*="monaco-editor"]') || target?.closest?.('[class*="terminalInner"]')) {
+      // ── Delete workspace: Cmd+Backspace / Cmd+Delete ──
+      if (isWorkspaceDeleteShortcut(e)) {
+        if (isTypingContext(e.target)) {
           return
         }
+        const workspace = getShortcutWorkspace(store)
+        if (workspace) {
+          consume()
+          showDeleteWorkspaceConfirmation(store, workspace)
+          return
+        }
+      }
+
+      // ── Delete file: Cmd+Backspace ──
+      // Only when no workspace delete target was resolved and focus is not in text entry.
+      if (!shift && !alt && e.key === 'Backspace') {
+        if (isTypingContext(e.target)) return
         const tab = store.tabs.find((t) => t.id === store.activeTabId)
         if (tab?.type === 'file') {
           consume()
