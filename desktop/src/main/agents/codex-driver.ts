@@ -33,6 +33,7 @@ import {
   buildAgentPrompt,
   promptEmitsFormatPrefix,
   type AgentDriver,
+  type AgentCompactContext,
   type AgentTurnContext,
 } from './agent-driver'
 import type { ConductorImageAttachment } from '../../shared/conductor-attachments'
@@ -391,6 +392,18 @@ export class CodexDriver implements AgentDriver {
     return this.contextUsage.get(sessionId)?.usedTokens ?? null
   }
 
+  async compactSession(ctx: AgentCompactContext): Promise<void> {
+    const key = ctx.sessionRef.sessionId
+    const state = this.sessions.get(key)
+    if (state && await tryNativeCompact(state.thread, ctx.customInstructions)) {
+      this.contextUsage.delete(key)
+      return
+    }
+    this.sessions.delete(key)
+    this.recovery.delete(key)
+    this.contextUsage.delete(key)
+  }
+
   private async runTurnOnce(ctx: AgentTurnContext, forceTranscriptFallback: boolean): Promise<void> {
     const key = ctx.sessionRef.sessionId
     const options = threadOptionsForTurn(ctx)
@@ -679,6 +692,16 @@ export class CodexDriver implements AgentDriver {
         break
     }
   }
+}
+
+async function tryNativeCompact(target: unknown, customInstructions?: string): Promise<boolean> {
+  if (!target || typeof target !== 'object') return false
+  const compact =
+    (target as { compactSession?: unknown }).compactSession ??
+    (target as { compact?: unknown }).compact
+  if (typeof compact !== 'function') return false
+  await compact.call(target, customInstructions?.trim() || undefined)
+  return true
 }
 
 const MAX_SHELL_STREAM_CHARS = 8_000

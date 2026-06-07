@@ -268,6 +268,7 @@ export const IPC = {
   AGENT_CHAT_GET_SESSION: 'agent-chat:get-session',
   AGENT_CHAT_GET_CONTEXT_USAGE: 'agent-chat:get-context-usage',
   AGENT_CHAT_SUBMIT: 'agent-chat:submit',
+  AGENT_CHAT_COMPACT_SESSION: 'agent-chat:compact-session',
   AGENT_CHAT_PICK_IMAGES: 'agent-chat:pick-images',
   AGENT_CHAT_LIST_PI_MODELS: 'agent-chat:list-pi-models',
   AGENT_CHAT_REPLACE_QUEUE: 'agent-chat:replace-queue',

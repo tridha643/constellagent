@@ -721,6 +721,8 @@ const api = {
       deliverAs?: QueuedAgentMessageMode,
       attachments?: readonly ConductorComposerAttachment[],
     ) => ipcRenderer.invoke(IPC.AGENT_CHAT_SUBMIT, sessionId, text, deliverAs, attachments),
+    compactSession: (sessionId: string, customInstructions?: string) =>
+      ipcRenderer.invoke(IPC.AGENT_CHAT_COMPACT_SESSION, sessionId, customInstructions),
     pickImages: () =>
       ipcRenderer.invoke(IPC.AGENT_CHAT_PICK_IMAGES) as Promise<{
         attachments: readonly ConductorComposerAttachment[]

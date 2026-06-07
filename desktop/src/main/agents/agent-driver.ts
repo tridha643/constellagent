@@ -142,6 +142,18 @@ export interface AgentTurnContext {
   emit(event: SessionDriverEvent): void
 }
 
+/** Context handed to a driver for a user-initiated context compaction. */
+export interface AgentCompactContext {
+  readonly sessionRef: SessionRef
+  readonly workspacePath: string
+  readonly model: string
+  readonly thinkingLevel: ThinkingLevel
+  readonly plan: boolean
+  readonly canvas: boolean
+  readonly customInstructions?: string
+  readonly previousTranscript?: readonly TranscriptMessage[]
+}
+
 /**
  * Minimal pluggable backend used by `AgentChatHost`. Drivers only stream
  * assistant text + tool activity; the host owns run lifecycle (running /
@@ -153,6 +165,8 @@ export interface AgentDriver {
   checkAuth(): string | null
   /** Runs one turn, streaming events via `ctx.emit`. Throws to signal failure. */
   runTurn(ctx: AgentTurnContext): Promise<void>
+  /** Compacts or resets the provider-native backing session. */
+  compactSession?(ctx: AgentCompactContext): Promise<void>
   /** Optional provider-specific recovery hook used after user interrupts or stale resumes. */
   markSessionInterrupted?(sessionId: string): void
   /** Releases per-session resources (child processes, agents). */

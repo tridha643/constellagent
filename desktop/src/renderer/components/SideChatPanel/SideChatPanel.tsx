@@ -54,6 +54,13 @@ function formatChatError(message: string): string {
   return message
 }
 
+function compactInstructionsFromComposer(text: string): string | undefined {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('/compact')) return undefined
+  const rest = trimmed.slice('/compact'.length).trim()
+  return rest || undefined
+}
+
 function sideChatTitle(seed: SideChatSeed | null, fallback: string): string {
   const source = seed?.sourceTitle?.trim()
   return source ? `Side · ${source.slice(0, 42)}` : fallback
@@ -238,6 +245,23 @@ export function SideChatPanel({ workspaceId, worktreePath }: { workspaceId: stri
     [ensureSession],
   )
 
+  const handleCompactSession = useCallback(
+    async (customInstructions?: string) => {
+      setSubmitError(null)
+      const id = await ensureSession('Compacted side chat')
+      if (!id) return
+      try {
+        await window.api.agentChat.compactSession(id, customInstructions)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        setSubmitError(formatChatError(message))
+      } finally {
+        composerRef.current?.focus()
+      }
+    },
+    [ensureSession],
+  )
+
   const handleReplaceQueue = useCallback(
     (messages: readonly QueuedAgentMessage[]) => {
       if (!sessionId) return
@@ -317,7 +341,7 @@ export function SideChatPanel({ workspaceId, worktreePath }: { workspaceId: stri
   }, [clearSession, setSidePanelOpen, sidePanels])
 
   const handleSlashAction = useCallback(
-    (command: ConductorSlashCommand) => {
+    (command: ConductorSlashCommand, context: { composerText: string }) => {
       switch (command.id) {
         case 'host:clear':
         case 'host:restart':
@@ -337,7 +361,7 @@ export function SideChatPanel({ workspaceId, worktreePath }: { workspaceId: stri
           composerRef.current?.focus()
           return
         case 'host:compact':
-          void handleSubmit('/compact')
+          void handleCompactSession(compactInstructionsFromComposer(context.composerText))
           return
         case 'host:side':
           composerRef.current?.focus()
@@ -346,7 +370,7 @@ export function SideChatPanel({ workspaceId, worktreePath }: { workspaceId: stri
           if (command.kind === 'skill') void handleSubmit(command.command)
       }
     },
-    [clearSession, handleSetPlan, handleSubmit, handleToggleFast, model, provider],
+    [clearSession, handleCompactSession, handleSetPlan, handleSubmit, handleToggleFast, model, provider],
   )
 
   const handleNamePromptConfirm = useCallback(

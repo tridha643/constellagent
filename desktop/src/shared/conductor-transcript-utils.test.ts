@@ -4,6 +4,7 @@ import {
   applyAssistantDeltaToTranscript,
   buildTurnDurationMap,
   cloneTranscriptWithNewIds,
+  compactTranscriptForAgentContext,
   formatTranscriptForAgentContext,
   groupTranscriptIntoTurns,
   parseWorkedForLabel,
@@ -118,5 +119,19 @@ describe('conductor-transcript-utils', () => {
     expect(context).toStartWith('[Earlier conversation truncated]')
     expect(context).toContain('newest plan content')
     expect(context).not.toContain('older context')
+  })
+
+  test('compactTranscriptForAgentContext summarizes older messages and keeps recent messages', () => {
+    const t: TranscriptMessage[] = Array.from({ length: 12 }, (_, index) =>
+      msg(`m${index}`, index % 2 === 0 ? 'user' : 'assistant', `message ${index}`),
+    )
+
+    const compacted = compactTranscriptForAgentContext(t, 'preserve decisions')
+
+    expect(compacted).toHaveLength(9)
+    expect(compacted[0].kind === 'message' && compacted[0].text).toContain('Compacted Conversation Summary')
+    expect(compacted[0].kind === 'message' && compacted[0].text).toContain('preserve decisions')
+    expect(compacted.slice(1).some((item) => item.kind === 'message' && item.text === 'message 0')).toBe(false)
+    expect(compacted.some((item) => item.kind === 'message' && item.text === 'message 11')).toBe(true)
   })
 })

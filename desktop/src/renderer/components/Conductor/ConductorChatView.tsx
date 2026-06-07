@@ -57,6 +57,13 @@ function latestForkableTranscriptMessageId(
   return null
 }
 
+function compactInstructionsFromComposer(text: string): string | undefined {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('/compact')) return undefined
+  const rest = trimmed.slice('/compact'.length).trim()
+  return rest || undefined
+}
+
 export function ConductorChatView({
   tab,
   workspaceId,
@@ -297,6 +304,35 @@ export function ConductorChatView({
     ],
   )
 
+  const compactSession = useCallback(
+    async (customInstructions?: string) => {
+      setSubmitError(null)
+      try {
+        let id = agentSessionId
+        if (!id) {
+          id = await createSession(draftProvider, draftModel, 'Compacted chat')
+        }
+        if (id) await window.api.agentChat.compactSession(id, customInstructions)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        setSubmitError(formatChatError(message))
+      } finally {
+        composerRef.current?.focus()
+      }
+    },
+    [
+      agentSessionId,
+      draftProvider,
+      draftModel,
+      plan,
+      thinkingLevel,
+      workspaceId,
+      worktreePath,
+      tab.id,
+      setConductorTabSessionBinding,
+    ],
+  )
+
   const closeMcpTerminal = useCallback(() => {
     if (mcpTerminalPtyId) {
       window.api.pty.destroy(mcpTerminalPtyId)
@@ -427,7 +463,7 @@ export function ConductorChatView({
           composerRef.current?.focus()
           return
         case 'host:compact':
-          void dispatchHarnessCommand('/compact')
+          void compactSession(compactInstructionsFromComposer(context.composerText))
           return
         case 'host:side':
           seedSideChatPanel({
@@ -465,6 +501,7 @@ export function ConductorChatView({
       handleToggleFast,
       model,
       provider,
+      compactSession,
       dispatchHarnessCommand,
       agentSessionId,
       controller.state?.title,
