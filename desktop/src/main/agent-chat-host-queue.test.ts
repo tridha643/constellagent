@@ -155,4 +155,44 @@ describe('AgentChatHost queue drain', () => {
     expect(usage).not.toBeNull()
     expect(usage?.usedTokens).toBeGreaterThanOrEqual(0)
   })
+
+  test('compactSession resets driver state without submitting literal compact text', async () => {
+    const host = new AgentChatHost()
+    const runTexts: string[] = []
+    let compacted = false
+
+    ;(host as unknown as { drivers: Record<AgentProvider, AgentDriver> }).drivers = {
+      codex: {
+        ...createMockDriver('codex', async (ctx: AgentTurnContext) => {
+          runTexts.push(ctx.text)
+        }),
+        compactSession: async () => {
+          compacted = true
+        },
+      },
+      cursor: createMockDriver('cursor', async () => {}),
+      pi: createMockDriver('pi', async () => {}),
+    }
+
+    const created = await host.createSession({
+      workspaceId: 'ws-1',
+      workspacePath: '/tmp/ws',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    })
+
+    for (let index = 0; index < 10; index += 1) {
+      await host.submit(created.sessionId, `turn ${index}`)
+    }
+    await host.compactSession(created.sessionId, 'keep the plan')
+    const session = await host.getSession(created.sessionId)
+
+    expect(compacted).toBe(true)
+    expect(runTexts).not.toContain('/compact')
+    expect(session?.state.status).toBe('idle')
+    expect(session?.transcript[0]?.kind === 'message' && session.transcript[0].text).toContain(
+      'Compacted Conversation Summary',
+    )
+    expect(session?.transcript.some((item) => item.kind === 'message' && item.text === '/compact')).toBe(false)
+  })
 })

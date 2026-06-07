@@ -1,6 +1,9 @@
 import type { TranscriptMessage } from './pi/pi-desktop-state'
 
 const MAX_AGENT_CONTEXT_CHARS = 24_000
+const COMPACT_RECENT_MESSAGE_COUNT = 8
+const MAX_COMPACT_SUMMARY_CHARS = 12_000
+const MAX_COMPACT_MESSAGE_CHARS = 1_000
 
 function newId(): string {
   return globalThis.crypto.randomUUID()
@@ -194,6 +197,92 @@ export function formatTranscriptForAgentContext(
   if (joined.length <= maxChars) return joined
 
   return `[Earlier conversation truncated]\n\n${joined.slice(-maxChars)}`
+}
+
+/**
+ * App-managed compaction for SDK backends that do not expose a stable compact
+ * API. It keeps recent messages verbatim and replaces older user/assistant
+ * messages with a bounded assistant summary that can seed a fresh provider
+ * thread on the next turn.
+ */
+export function compactTranscriptForAgentContext(
+  transcript: readonly TranscriptMessage[],
+  customInstructions?: string,
+): TranscriptMessage[] {
+  const messages = transcript.filter((item): item is Extract<TranscriptMessage, { kind: 'message' }> => {
+    return item.kind === 'message' && item.text.trim().length > 0
+  })
+  if (messages.length <= COMPACT_RECENT_MESSAGE_COUNT) {
+    return messages.map(cloneMessageForCompaction)
+  }
+
+  const older = messages.slice(0, -COMPACT_RECENT_MESSAGE_COUNT)
+  const recent = messages.slice(-COMPACT_RECENT_MESSAGE_COUNT).map(cloneMessageForCompaction)
+  return [
+    {
+      kind: 'message',
+      id: newId(),
+      role: 'assistant',
+      text: buildCompactionSummary(older, customInstructions),
+      createdAt: new Date().toISOString(),
+    },
+    ...recent,
+  ]
+}
+
+function cloneMessageForCompaction(
+  message: Extract<TranscriptMessage, { kind: 'message' }>,
+): Extract<TranscriptMessage, { kind: 'message' }> {
+  return {
+    ...message,
+    ...(message.attachments
+      ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
+      : {}),
+  }
+}
+
+function buildCompactionSummary(
+  messages: readonly Extract<TranscriptMessage, { kind: 'message' }>[],
+  customInstructions?: string,
+): string {
+  const lines = [
+    '## Compacted Conversation Summary',
+    '',
+    'Constellagent compacted the earlier transcript locally so the next SDK turn can start with a smaller context seed.',
+  ]
+  const instructions = customInstructions?.trim()
+  if (instructions) {
+    lines.push('', `Compaction instructions: ${truncateCompactionText(instructions, 800)}`)
+  }
+  lines.push('', '### Earlier Messages')
+
+  let used = lines.join('\n').length
+  let omitted = 0
+  for (const message of messages) {
+    const label = message.role === 'user'
+      ? message.conductorPlan === true
+        ? 'User (plan mode)'
+        : 'User'
+      : 'Assistant'
+    const line = `- ${label}: ${truncateCompactionText(message.text, MAX_COMPACT_MESSAGE_CHARS)}`
+    if (used + line.length + 1 > MAX_COMPACT_SUMMARY_CHARS) {
+      omitted += 1
+      continue
+    }
+    lines.push(line)
+    used += line.length + 1
+  }
+
+  if (omitted > 0) {
+    lines.push(`- ${omitted} older message${omitted === 1 ? '' : 's'} omitted to keep the compacted context bounded.`)
+  }
+  return lines.join('\n')
+}
+
+function truncateCompactionText(text: string, maxChars: number): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim()
+  if (oneLine.length <= maxChars) return oneLine
+  return `${oneLine.slice(0, maxChars - 14).trimEnd()} [truncated]`
 }
 
 function truncatePreview(text: string, max = 72): string {

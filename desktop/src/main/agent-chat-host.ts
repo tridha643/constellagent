@@ -24,6 +24,7 @@ import { CursorDriver } from './agents/cursor-driver'
 import { PiConductorDriver } from './agents/pi-conductor-driver'
 import {
   cloneTranscriptWithNewIds,
+  compactTranscriptForAgentContext,
   sliceTranscriptForFork,
 } from '../shared/conductor-transcript-utils'
 import {
@@ -276,6 +277,66 @@ export class AgentChatHost {
     }
 
     await this.startTurn(sessionId, trimmed, normalizedAttachments)
+  }
+
+  async compactSession(sessionId: string, customInstructions?: string): Promise<void> {
+    const live = this.sessions.get(sessionId)
+    let state = live?.state ?? (await this.rehydrate(sessionId))
+    if (!state) return
+    if (state.status === 'running' || state.runPhase === 'awaitingUser') {
+      throw new Error('Cannot compact while a run is in progress.')
+    }
+
+    const driver = this.drivers[state.provider]
+    if (!driver) {
+      throw new Error(`Unsupported agent provider: ${String(state.provider)}`)
+    }
+
+    const ref = this.refOf(state)
+    const key = sessionKey(ref)
+    const previousTranscript = this.transcriptCache.get(key) ?? (await this.store.loadTranscript(sessionId))
+    const compactedTranscript = compactTranscriptForAgentContext(previousTranscript, customInstructions)
+
+    this.transcriptCache.set(key, compactedTranscript)
+    this.emittedAssistantTextBySession.delete(key)
+    this.assistantDeltaDebugSequenceBySession.delete(key)
+    this.timelineState.activeAssistantMessageBySession.delete(key)
+    this.timelineState.activeWorkingActivityBySession.delete(key)
+    this.timelineState.runningSinceBySession.delete(key)
+    this.timelineState.runMetricsBySession.delete(key)
+    this.update(sessionId, { status: 'running', runPhase: 'running', blockingQuestion: null, error: undefined })
+    state = this.currentState(sessionId) ?? state
+
+    try {
+      await (driver.compactSession?.({
+        sessionRef: ref,
+        workspacePath: state.workspacePath,
+        model: state.model,
+        thinkingLevel: state.thinkingLevel,
+        plan: state.plan,
+        canvas: state.canvas,
+        customInstructions: customInstructions?.trim() || undefined,
+        previousTranscript,
+      }) ?? Promise.resolve(driver.closeSession(sessionId)))
+      this.update(sessionId, {
+        status: 'idle',
+        runPhase: 'idle',
+        blockingQuestion: null,
+        providerSession: undefined,
+        piExtensionUi: null,
+        error: undefined,
+      })
+      const next = this.currentState(sessionId)
+      if (next) {
+        await this.persist(next)
+        this.flushTranscript(next)
+        this.broadcastContextUsage(next)
+      }
+    } catch (err) {
+      this.transcriptCache.set(key, previousTranscript)
+      const message = err instanceof Error ? err.message : String(err)
+      this.failRun(this.currentState(sessionId) ?? state, ref, message)
+    }
   }
 
   async replaceQueue(

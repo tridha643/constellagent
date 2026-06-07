@@ -15,7 +15,7 @@ import {
   buildPiConductorModelPresets,
   resolveStoredPiModelId,
 } from '../../shared/pi-conductor-model-presets'
-import type { AgentDriver, AgentTurnContext } from './agent-driver'
+import type { AgentCompactContext, AgentDriver, AgentTurnContext } from './agent-driver'
 import { getConstellPiHost } from '../pi-host-service'
 import { listPiModels } from '../pi-models'
 
@@ -69,6 +69,19 @@ export class PiConductorDriver implements AgentDriver {
     if (ref) {
       void this.piHost.driver.closeSession(ref).catch(() => undefined)
     }
+  }
+
+  async compactSession(ctx: AgentCompactContext): Promise<void> {
+    const ref = this.refsBySession.get(ctx.sessionRef.sessionId)
+    if (!ref) return
+    const driver = this.piHost.driver as unknown as {
+      compactSession?: (sessionRef: SessionRef, customInstructions?: string) => Promise<void>
+    }
+    if (typeof driver.compactSession === 'function') {
+      await driver.compactSession(ref, ctx.customInstructions)
+      return
+    }
+    this.closeSession(ctx.sessionRef.sessionId)
   }
 
   getContextUsage(sessionId: string): number | null {

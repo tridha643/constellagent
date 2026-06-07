@@ -28,6 +28,7 @@ import {
   buildAgentPrompt,
   promptEmitsFormatPrefix,
   type AgentDriver,
+  type AgentCompactContext,
   type AgentTurnContext,
 } from './agent-driver'
 import { applyThinkingLevel } from '../../shared/conductor-model-utils'
@@ -388,4 +389,29 @@ export class CursorDriver implements AgentDriver {
       void disposeCursorAgent(state.agent, state.run).catch(() => {})
     }
   }
+
+  async compactSession(ctx: AgentCompactContext): Promise<void> {
+    const key = ctx.sessionRef.sessionId
+    const state = this.sessions.get(key)
+    if (state && await tryNativeCompact(state.agent, ctx.customInstructions)) {
+      state.formatPrimed = false
+      state.emittedText = ''
+      return
+    }
+    this.sessions.delete(key)
+    if (state) {
+      if (state.run) detachCursorRun(state.run)
+      await disposeCursorAgent(state.agent, state.run).catch(() => {})
+    }
+  }
+}
+
+async function tryNativeCompact(target: unknown, customInstructions?: string): Promise<boolean> {
+  if (!target || typeof target !== 'object') return false
+  const compact =
+    (target as { compactSession?: unknown }).compactSession ??
+    (target as { compact?: unknown }).compact
+  if (typeof compact !== 'function') return false
+  await compact.call(target, customInstructions?.trim() || undefined)
+  return true
 }

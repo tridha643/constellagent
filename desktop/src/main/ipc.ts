@@ -2004,6 +2004,11 @@ export function registerIpcHandlers(): void {
       attachments?: readonly import('../shared/conductor-attachments').ConductorComposerAttachment[],
     ) => agentChatHost.submit(sessionId, text, deliverAs, attachments),
   )
+  ipcMain.handle(
+    IPC.AGENT_CHAT_COMPACT_SESSION,
+    async (_e, sessionId: string, customInstructions?: string) =>
+      agentChatHost.compactSession(sessionId, customInstructions),
+  )
   ipcMain.handle(IPC.AGENT_CHAT_PICK_IMAGES, async () => {
     const { pickConductorImageAttachments } = await import('./conductor-image-picker')
     return pickConductorImageAttachments()
