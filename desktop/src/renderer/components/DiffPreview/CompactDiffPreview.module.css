@@ -1,0 +1,65 @@
+.compactDiffBody {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.diffRow {
+  display: grid;
+  grid-template-columns: 2.25em 0.85em 1fr;
+  align-items: baseline;
+  column-gap: 4px;
+  padding: 0 6px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diffRowContext {
+  color: var(--text-tertiary);
+}
+
+.diffRowAdded {
+  background: color-mix(in srgb, var(--accent-green, #4ade80) 14%, transparent);
+  color: color-mix(in srgb, var(--accent-green, #4ade80) 85%, var(--text-primary));
+  box-shadow: inset 3px 0 0 var(--accent-green, #4ade80);
+}
+
+.diffRowRemoved {
+  background: color-mix(in srgb, var(--accent-red, #f87171) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.diffLineNo {
+  text-align: right;
+  color: var(--text-tertiary);
+  user-select: none;
+  opacity: 0.7;
+  font-size: 10px;
+}
+
+.diffSign {
+  user-select: none;
+  opacity: 0.85;
+}
+
+.diffContent {
+  min-width: 0;
+}
+
+.diffIntraline {
+  background: color-mix(in srgb, var(--accent-green, #4ade80) 38%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.diffRowRemoved .diffIntraline {
+  background: color-mix(in srgb, var(--accent-red, #f87171) 38%, transparent);
+}
+
+.diffNoNewline,
+.diffFallback {
+  padding: 4px 10px 6px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-size: 10px;
+}

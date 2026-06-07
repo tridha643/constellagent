@@ -57,6 +57,14 @@ export interface RuntimeSupervisorOptions {
 
 type ResourceScope = "user" | "project";
 type ToggleableResourceKind = "extension" | "skill";
+type DeviceCodeInfo = {
+  readonly verificationUri: string;
+  readonly userCode: string;
+  readonly expiresInSeconds?: number;
+};
+type RuntimeOAuthLoginCallbacks = Parameters<AuthStorage["login"]>[1] & {
+  onDeviceCode?: (info: DeviceCodeInfo) => void;
+};
 
 export class RuntimeSupervisor implements RuntimeResourceDriver {
   private readonly agentDir: string;
@@ -89,7 +97,7 @@ export class RuntimeSupervisor implements RuntimeResourceDriver {
 
   async login(workspace: WorkspaceRef, providerId: string, callbacks: RuntimeLoginCallbacks): Promise<RuntimeSnapshot> {
     const context = await this.ensureContext(workspace);
-    await this.authStorage.login(providerId, {
+    const loginCallbacks: RuntimeOAuthLoginCallbacks = {
       onAuth: (info) => {
         void callbacks.onAuth(info);
       },
@@ -109,7 +117,8 @@ export class RuntimeSupervisor implements RuntimeResourceDriver {
       ...(callbacks.onProgress ? { onProgress: (message: string) => void callbacks.onProgress?.(message) } : {}),
       ...(callbacks.onManualCodeInput ? { onManualCodeInput: callbacks.onManualCodeInput } : {}),
       ...(callbacks.signal ? { signal: callbacks.signal } : {}),
-    });
+    };
+    await this.authStorage.login(providerId, loginCallbacks);
     this.modelRegistry.refresh();
     await context.resourceLoader.reload();
     await this.autoEnableModelsForAuthenticatedProviders(context, [providerId]);

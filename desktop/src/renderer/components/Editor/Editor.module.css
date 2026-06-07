@@ -264,7 +264,7 @@
   font-family: var(--font-mono);
 }
 
-.diffToolbarRight {
+.diffControlsRight {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -272,6 +272,77 @@
   flex: 1;
   min-width: 0;
   justify-content: flex-end;
+}
+
+.diffReviewSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+  flex: 1;
+  font-size: var(--text-xs);
+  font-family: var(--font-ui);
+}
+
+.diffSummaryPrimary {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.diffSummaryPill {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.diffSummaryAdd,
+.diffSummaryDel {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.diffSummaryAdd {
+  color: var(--accent-green);
+}
+
+.diffSummaryDel {
+  color: var(--accent-red);
+}
+
+.diffSummaryMuted {
+  color: var(--text-tertiary);
+}
+
+.diffReviewButton {
+  height: 24px;
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 45%, var(--panel-border));
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.diffReviewButton:active {
+  transform: scale(0.97);
+}
+
+.diffReviewButton:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 45%, transparent);
 }
 
 .diffToggle {
@@ -314,6 +385,11 @@
   .diffToggleOption:hover {
     color: var(--text-secondary);
   }
+
+  .diffReviewButton:hover {
+    background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+    border-color: color-mix(in srgb, var(--accent-blue) 62%, var(--panel-border));
+  }
 }
 
 .diffToggleOption.active {
@@ -327,6 +403,14 @@
     transition: color var(--duration-fast) linear, background-color var(--duration-fast) linear, box-shadow var(--duration-fast) linear;
   }
   .diffToggleOption:active {
+    transform: none;
+  }
+
+  .diffReviewButton {
+    transition: background-color var(--duration-fast) linear, border-color var(--duration-fast) linear;
+  }
+
+  .diffReviewButton:active {
     transform: none;
   }
 }
@@ -360,6 +444,53 @@
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+}
+
+.diffLoadMore {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-4) var(--space-5) var(--space-6);
+}
+
+.diffLoadMoreButton {
+  min-height: 30px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.diffLoadMoreButton:active {
+  transform: scale(0.97);
+}
+
+.diffLoadMoreButton:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 45%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .diffLoadMoreButton:hover {
+    background: var(--surface-3);
+    color: var(--text-primary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diffLoadMoreButton {
+    transition: background-color var(--duration-fast) linear, color var(--duration-fast) linear;
+  }
+  .diffLoadMoreButton:active {
+    transform: none;
+  }
 }
 
 .fullFileSplit {

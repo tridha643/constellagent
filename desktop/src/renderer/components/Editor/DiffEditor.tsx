@@ -13,6 +13,7 @@ import { loadWorkingTreeExpandableDiffMetadata } from './buildWorkingTreeDiffFil
 import { loadWorkingTreeDiffFiles } from './loadWorkingTreeDiffFiles'
 import { registerChangesFindSource } from '../../utils/changes-file-find-bridge'
 import { markPaint, measureAsync } from '../../utils/perf'
+import { diffStatsFromPatch } from '../DiffPreview/diff-model'
 import styles from './Editor.module.css'
 
 interface Props {
@@ -29,6 +30,8 @@ const AUTO_COLLAPSE_PATCH_LINE_THRESHOLD = 2000
 const AUTO_EXPAND_MIN_FILES = 10
 const AUTO_EXPAND_MAX_FILES = 15
 const AUTO_EXPAND_PATCH_LINE_BUDGET = 1500
+const INITIAL_VISIBLE_FILES = 15
+const VISIBLE_FILE_INCREMENT = 12
 
 /**
  * Merge a refreshed list of libSQL annotations into the prior in-memory list,
@@ -80,6 +83,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [viewedFilePaths, setViewedFilePaths] = useState<Set<string>>(() => new Set())
   const [expectedFileCount, setExpectedFileCount] = useState(0)
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_FILES)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const loadGenerationRef = useRef(0)
   const filesRef = useRef<DiffFileData[]>([])
@@ -93,6 +97,11 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   const inline = useAppStore((s) => s.settings.diffInline)
   const defaultShowFullContext = useAppStore((s) => s.settings.diffShowFullContextByDefault)
   const updateSettings = useAppStore((s) => s.updateSettings)
+  const toggleHunkReview = useAppStore((s) => s.toggleHunkReview)
+  const closeHunkReview = useAppStore((s) => s.closeHunkReview)
+  const hunkReviewOpen = useAppStore((s) => s.hunkReviewOpen)
+  const hunkReviewWorkspaceId = useAppStore((s) => s.hunkReviewWorkspaceId)
+  const workspaces = useAppStore((s) => s.workspaces)
   const openFileTab = useAppStore((s) => s.openFileTab)
   const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
   const addToast = useAppStore((s) => s.addToast)
@@ -100,6 +109,20 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   const setWorkingTreeDiffSnapshot = useAppStore((s) => s.setWorkingTreeDiffSnapshot)
 
   const enableAcceptReject = !commitHash
+  const reviewWorkspace = useMemo(
+    () => workspaces.find((workspace) => workspace.worktreePath === worktreePath),
+    [workspaces, worktreePath],
+  )
+
+  const openReviewDrawer = useCallback(() => {
+    if (hunkReviewOpen && hunkReviewWorkspaceId === reviewWorkspace?.id) return
+    if (hunkReviewOpen) {
+      closeHunkReview()
+      requestAnimationFrame(() => { void toggleHunkReview() })
+      return
+    }
+    void toggleHunkReview()
+  }, [closeHunkReview, hunkReviewOpen, hunkReviewWorkspaceId, reviewWorkspace?.id, toggleHunkReview])
 
   const setFileViewed = useCallback((filePath: string, viewed: boolean) => {
     setViewedFilePaths((prev) => {
@@ -112,6 +135,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
 
   useEffect(() => {
     setViewedFilePaths(new Set())
+    setVisibleCount(INITIAL_VISIBLE_FILES)
   }, [worktreePath, commitHash])
 
   const showViewedToggle = !commitHash
@@ -230,6 +254,28 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
     [files],
   )
 
+  const reviewSummary = useMemo(() => {
+    let additions = 0
+    let deletions = 0
+    let staged = 0
+    let unstaged = 0
+    for (const file of files) {
+      const stats = diffStatsFromPatch(file.patch)
+      additions += stats.additions
+      deletions += stats.deletions
+      if (file.staged) staged += 1
+      else unstaged += 1
+    }
+    return { additions, deletions, staged, unstaged }
+  }, [files])
+
+  const visibleFiles = useMemo(
+    () => files.slice(0, commitHash ? files.length : visibleCount),
+    [commitHash, files, visibleCount],
+  )
+
+  const hasMoreFiles = visibleFiles.length < files.length
+
   const autoCollapseFiles = !commitHash && (
     expectedFileCount >= AUTO_COLLAPSE_FILE_THRESHOLD
     || totalPatchLineCount >= AUTO_COLLAPSE_PATCH_LINE_THRESHOLD
@@ -270,13 +316,16 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
     const index = fileIndexByPath.get(filePath)
     const root = scrollAreaRef.current
     if (index == null || !root) return
+    if (!commitHash && index >= visibleCount) {
+      setVisibleCount(Math.min(filesRef.current.length, index + 1))
+    }
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const el = document.getElementById(`diff-${filePath}`)
         el?.scrollIntoView({ behavior: getPreferredScrollBehavior(), block: 'start' })
       })
     })
-  }, [fileIndexByPath])
+  }, [commitHash, fileIndexByPath, visibleCount])
 
   useEffect(() => {
     if (!active) return
@@ -588,31 +637,53 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
     <div className={styles.diffViewerContainer}>
       {/* Toolbar */}
       <div className={styles.diffToolbar}>
-        <span className={styles.diffFileCount}>
-          {commitHash
-            ? `${commitHash.slice(0, 7)} ${commitMessage || ''}`
-            : `${files.length} changed file${files.length !== 1 ? 's' : ''}`
-          }
-        </span>
-        {loading && files.length > 0 && (
-          <span className={styles.diffFileCount}>Loading remaining changes...</span>
-        )}
-        {autoCollapseFiles && (
-          <span className={styles.diffFileCount}>First files expanded, remaining files collapsed for performance</span>
-        )}
-        <div className={styles.diffToggle}>
-          <button
-            className={`${styles.diffToggleOption} ${!inline ? styles.active : ''}`}
-            onClick={() => updateSettings({ diffInline: false })}
-          >
-            Side by side
-          </button>
-          <button
-            className={`${styles.diffToggleOption} ${inline ? styles.active : ''}`}
-            onClick={() => updateSettings({ diffInline: true })}
-          >
-            Inline
-          </button>
+        <div className={styles.diffReviewSummary}>
+          <span className={`${styles.diffSummaryPrimary} ${styles.diffFileCount}`}>
+            {commitHash
+              ? `${commitHash.slice(0, 7)} ${commitMessage || ''}`
+              : `${files.length} file${files.length !== 1 ? 's' : ''}`
+            }
+          </span>
+          {!commitHash && (
+            <>
+              <span className={styles.diffSummaryPill}>{viewedFilePaths.size}/{files.length} viewed</span>
+              <span className={styles.diffSummaryAdd}>+{reviewSummary.additions}</span>
+              <span className={styles.diffSummaryDel}>-{reviewSummary.deletions}</span>
+              <span className={styles.diffSummaryPill}>{reviewSummary.staged} staged</span>
+              <span className={styles.diffSummaryPill}>{reviewSummary.unstaged} unstaged</span>
+            </>
+          )}
+          {loading && files.length > 0 && (
+            <span className={styles.diffSummaryMuted}>Loading remaining changes...</span>
+          )}
+          {autoCollapseFiles && (
+            <span className={styles.diffSummaryMuted}>First files expanded, remaining files collapsed for performance</span>
+          )}
+        </div>
+        <div className={styles.diffControlsRight}>
+          {!commitHash && (
+            <button
+              type="button"
+              className={styles.diffReviewButton}
+              onClick={openReviewDrawer}
+            >
+              Review
+            </button>
+          )}
+          <div className={styles.diffToggle}>
+            <button
+              className={`${styles.diffToggleOption} ${!inline ? styles.active : ''}`}
+              onClick={() => updateSettings({ diffInline: false })}
+            >
+              Side by side
+            </button>
+            <button
+              className={`${styles.diffToggleOption} ${inline ? styles.active : ''}`}
+              onClick={() => updateSettings({ diffInline: true })}
+            >
+              Inline
+            </button>
+          </div>
         </div>
       </div>
 
@@ -630,11 +701,11 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
 
       {/* Stacked diffs */}
       <div ref={scrollAreaRef} className={styles.diffScrollArea}>
-        {files.map((file) => (
+        {files.map((file, index) => (
           <DiffFileSection
             key={file.filePath}
             data={file}
-            defaultCollapsed={defaultCollapsedPaths.has(file.filePath)}
+            defaultCollapsed={(!commitHash && index >= visibleCount) || defaultCollapsedPaths.has(file.filePath)}
             inline={inline}
             defaultShowFullContext={defaultShowFullContext}
             worktreePath={worktreePath}
@@ -651,6 +722,17 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
             onViewedChange={(v) => setFileViewed(file.filePath, v)}
           />
         ))}
+        {hasMoreFiles && (
+          <div className={styles.diffLoadMore}>
+            <button
+              type="button"
+              className={styles.diffLoadMoreButton}
+              onClick={() => setVisibleCount((current) => Math.min(files.length, current + VISIBLE_FILE_INCREMENT))}
+            >
+              Show {Math.min(VISIBLE_FILE_INCREMENT, files.length - visibleFiles.length)} more files
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

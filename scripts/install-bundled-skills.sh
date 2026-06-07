@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
-# Install bundled Constellagent Conductor canvas skills into gitignored agent dirs.
-# Source of truth: desktop/skills/conductor-canvas-* (tracked in git).
+# Install bundled Constellagent skills into gitignored agent dirs.
+# Source of truth: desktop/skills/* (tracked in git).
 
 set -eu
 
@@ -11,7 +11,13 @@ mkdir -p "$ROOT/.codex/skills" "$ROOT/.cursor/skills"
 ln -sfn "../../desktop/skills/conductor-canvas-codex" \
   "$ROOT/.codex/skills/conductor-canvas-codex"
 
+ln -sfn "../../desktop/skills/linear-local-first-architecture" \
+  "$ROOT/.codex/skills/linear-local-first-architecture"
+
+ln -sfn "../../desktop/skills/conductor-rewrite-performance" \
+  "$ROOT/.codex/skills/conductor-rewrite-performance"
+
 ln -sfn "../../desktop/skills/conductor-canvas-cursor" \
   "$ROOT/.cursor/skills/conductor-canvas-cursor"
 
-echo "Installed bundled Conductor canvas skills (codex + cursor)"
+echo "Installed bundled Constellagent skills"

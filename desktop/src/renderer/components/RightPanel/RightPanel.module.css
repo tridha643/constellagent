@@ -466,15 +466,18 @@
  * Uses @starting-style so it's pure CSS — no effect + data-mounted tax. */
 
 .changedFile {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-3);
   margin: 0 var(--space-3);
+  min-height: 34px;
   padding: var(--space-2) var(--space-3);
   font-size: var(--text-sm);
   font-family: var(--font-mono);
   color: var(--text-secondary);
   border-radius: var(--radius-md);
+  cursor: pointer;
   opacity: 1;
   transform: translateY(0);
   transition:
@@ -493,6 +496,11 @@
 
 .changedFile:active {
   transform: scale(0.997);
+}
+
+.changedFile:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 45%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -539,16 +547,67 @@
 
 .changePath {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
   transition: color var(--motion-fast);
 }
 
+.changeFileName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
 .changeDir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1.15;
   transition: color var(--motion-fast);
+}
+
+.changeFullPathForFind {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.changeStats {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  min-width: 52px;
+  justify-content: flex-end;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.changeStatsAdd {
+  color: var(--accent-green);
+}
+
+.changeStatsDel {
+  color: var(--accent-red);
+}
+
+.changeStatsSep {
+  color: var(--text-tertiary);
 }
 
 /* ── File Action Buttons (hover-reveal) ──
@@ -610,6 +669,75 @@
 .fileActionBtn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 45%, transparent);
+}
+
+.changePreviewPopover {
+  position: absolute;
+  right: var(--space-3);
+  top: calc(100% + 4px);
+  z-index: 20;
+  width: min(420px, calc(100vw - 56px));
+  max-height: 260px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--panel-border) 88%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-2) 96%, transparent);
+  box-shadow: var(--shadow-lg);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transform-origin: top right;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+@starting-style {
+  .changePreviewPopover {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.985);
+  }
+}
+
+.changePreviewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--panel-border-inner);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+}
+
+.changePreviewPath {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changePreviewStats {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.changePreviewBody {
+  overflow: auto;
+  min-height: 0;
+  max-height: 220px;
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+}
+
+.changePreviewLoading {
+  padding: var(--space-3);
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -832,6 +960,10 @@
 
   .changedFile:hover {
     background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+    color: var(--text-primary);
+  }
+
+  .changedFile:hover .changeFileName {
     color: var(--text-primary);
   }
 

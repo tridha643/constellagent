@@ -1,0 +1,168 @@
+import { useMemo, type ReactNode } from 'react'
+import type { DiffRow, DiffToken } from './diff-model'
+import { parseDiffRows } from './diff-model'
+import styles from './CompactDiffPreview.module.css'
+
+const MAX_CONTEXT_ROWS = 2
+
+function renderTokens(tokens: readonly DiffToken[] | undefined, fallback: string): ReactNode {
+  if (!tokens?.length) return fallback
+  return tokens.map((token, i) =>
+    token.highlight ? (
+      <mark key={i} className={styles.diffIntraline}>
+        {token.value}
+      </mark>
+    ) : (
+      <span key={i}>{token.value}</span>
+    ),
+  )
+}
+
+function DiffRowLine({
+  rowClass,
+  sign,
+  lineNo,
+  content,
+  tokens,
+}: {
+  rowClass: string
+  sign: string
+  lineNo?: number
+  content: string
+  tokens?: readonly DiffToken[]
+}) {
+  return (
+    <div className={`${styles.diffRow} ${rowClass}`}>
+      <span className={styles.diffLineNo}>{lineNo ?? ''}</span>
+      <span className={styles.diffSign} aria-hidden>
+        {sign}
+      </span>
+      <span className={styles.diffContent}>{renderTokens(tokens, content)}</span>
+    </div>
+  )
+}
+
+function DiffRowView({ row }: { row: DiffRow }) {
+  switch (row.type) {
+    case 'unchanged':
+      return (
+        <DiffRowLine
+          rowClass={styles.diffRowContext}
+          sign=" "
+          lineNo={row.leftNo}
+          content={row.left ?? row.right ?? ''}
+        />
+      )
+    case 'added':
+      return (
+        <DiffRowLine
+          rowClass={styles.diffRowAdded}
+          sign="+"
+          lineNo={row.rightNo}
+          content={row.right ?? ''}
+        />
+      )
+    case 'removed':
+      return (
+        <DiffRowLine
+          rowClass={styles.diffRowRemoved}
+          sign="-"
+          lineNo={row.leftNo}
+          content={row.left ?? ''}
+        />
+      )
+    case 'modified':
+      return (
+        <>
+          <DiffRowLine
+            rowClass={styles.diffRowRemoved}
+            sign="-"
+            lineNo={row.leftNo}
+            content={row.left ?? ''}
+            tokens={row.leftTokens}
+          />
+          <DiffRowLine
+            rowClass={styles.diffRowAdded}
+            sign="+"
+            lineNo={row.rightNo}
+            content={row.right ?? ''}
+            tokens={row.rightTokens}
+          />
+        </>
+      )
+    default:
+      return null
+  }
+}
+
+export function getCompactVisibleRows(rows: readonly DiffRow[]): readonly DiffRow[] {
+  if (rows.length === 0) return rows
+  const changed = rows.filter((r) => r.type !== 'unchanged')
+  if (changed.length === 0) return rows
+  if (changed.length === rows.length) return rows
+
+  const out: DiffRow[] = []
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i]!
+    if (row.type !== 'unchanged') {
+      out.push(row)
+      continue
+    }
+    let ctxBefore = 0
+    let j = i - 1
+    while (j >= 0 && rows[j]?.type === 'unchanged' && ctxBefore < MAX_CONTEXT_ROWS) {
+      ctxBefore += 1
+      j -= 1
+    }
+    let ctxAfter = 0
+    let k = i + 1
+    while (k < rows.length && rows[k]?.type === 'unchanged' && ctxAfter < MAX_CONTEXT_ROWS) {
+      ctxAfter += 1
+      k += 1
+    }
+    const nearChange =
+      (i > 0 && rows[i - 1]?.type !== 'unchanged') ||
+      (i < rows.length - 1 && rows[i + 1]?.type !== 'unchanged')
+    if (nearChange && (ctxBefore < MAX_CONTEXT_ROWS || ctxAfter < MAX_CONTEXT_ROWS)) {
+      out.push(row)
+    }
+  }
+  return out.length > 0 ? out : changed
+}
+
+export function CompactDiffPreview({
+  patch,
+  rows,
+  hasNoNewline,
+  parseError,
+  className,
+  testId = 'compact-diff-preview',
+}: {
+  patch?: string
+  rows?: readonly DiffRow[]
+  hasNoNewline?: boolean
+  parseError?: boolean
+  className?: string
+  testId?: string
+}) {
+  const parsed = useMemo(() => (rows ? null : parseDiffRows(patch ?? '')), [patch, rows])
+  const sourceRows = rows ?? parsed?.rows ?? []
+  const visibleRows = useMemo(() => getCompactVisibleRows(sourceRows), [sourceRows])
+  const noNewline = hasNoNewline ?? parsed?.hasNoNewline ?? false
+  const failed = parseError ?? parsed?.parseError ?? false
+
+  if (failed) {
+    return <div className={styles.diffFallback}>Preview unavailable for this patch.</div>
+  }
+
+  if (visibleRows.length === 0) return null
+
+  return (
+    <div className={`${styles.compactDiffBody} ${className ?? ''}`} data-testid={testId}>
+      {visibleRows.map((row, index) => (
+        <DiffRowView key={`${row.type}-${row.leftNo ?? ''}-${row.rightNo ?? ''}-${index}`} row={row} />
+      ))}
+      {noNewline ? <div className={styles.diffNoNewline}>No newline at end of file</div> : null}
+    </div>
+  )
+}
