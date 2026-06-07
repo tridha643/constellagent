@@ -10,6 +10,9 @@ function chipClass(variant: ChipVariant): string {
   if (variant === 'directory') {
     return `${styles.cursorToolChip} ${styles['cursorToolChip--directory']}`
   }
+  if (variant === 'command') {
+    return `${styles.cursorToolChip} ${styles['cursorToolChip--bordered']} ${styles['cursorToolChip--command']}`
+  }
   return `${styles.cursorToolChip} ${styles['cursorToolChip--bordered']}`
 }
 
@@ -17,6 +20,7 @@ export function CursorToolChip({
   variant,
   path,
   command,
+  displayLabel,
   onClick,
   onMouseEnter,
   onMouseLeave,
@@ -28,6 +32,7 @@ export function CursorToolChip({
   variant: ChipVariant
   path?: string
   command?: string
+  displayLabel?: string
   onClick?: (event: MouseEvent<HTMLButtonElement>) => void
   onMouseEnter?: () => void
   onMouseLeave?: () => void
@@ -40,7 +45,7 @@ export function CursorToolChip({
 
   const label =
     variant === 'command'
-      ? (command ?? '').trim()
+      ? (displayLabel ?? command ?? '').trim()
       : variant === 'directory'
         ? (path ?? '').replace(/\\/g, '/').replace(/\/$/, '').split('/').pop() || path || ''
         : path

@@ -5,6 +5,7 @@ import { execSync } from 'child_process'
 
 const appPath = resolve(__dirname, '../out/main/index.js')
 const FAKE_CODEX_BIN = '/tmp/codex'
+const FAKE_CLAUDE_BIN = '/tmp/claude'
 const TMP_DIR = '/tmp'
 
 function writeFakeCodexQuestionScript() {
@@ -364,6 +365,69 @@ test.describe('Codex activity indicator', () => {
       )
     } finally {
       rmSync(FAKE_CODEX_BIN, { force: true })
+      await app.close()
+      rmSync(notifyDir, { recursive: true, force: true })
+      rmSync(activityDir, { recursive: true, force: true })
+    }
+  })
+
+  // Regression: Claude must light up the workspace agent indicator purely from
+  // PTY-side detection — the same as codex/cursor/gemini — WITHOUT requiring the
+  // optional claude-hooks (activity.sh) to be installed. Previously pty-manager
+  // skipped writing Claude's marker and relied solely on the hook, so opening
+  // `claude` showed no agent view while every other agent did.
+  test('marks workspace active when claude is detected with no hooks installed', async () => {
+    const repoPath = createTestRepo('claude-activity-nohooks')
+    const { app, window, notifyDir, activityDir } = await launchApp('claude-activity-nohooks')
+
+    try {
+      const { workspaceId, ptyId } = await setupWorkspace(window, repoPath)
+      await window.waitForTimeout(800)
+
+      // Run a fake `claude` (symlinked to sleep) so process-table detection sees
+      // a binary named `claude` under the PTY, then send Enter to trigger the
+      // lazy agent-detection path. No hook is installed and the test never
+      // touches the marker file — pty-manager must write `{wsId}.claude` itself.
+      await window.evaluate(({ ptyId: id, fakeClaudePath }) => {
+        ;(window as any).api.pty.write(
+          id,
+          `SLEEP_BIN="$(command -v sleep)" && ln -sf "$SLEEP_BIN" "${fakeClaudePath}" && "${fakeClaudePath}" 20\n`
+        )
+      }, { ptyId, fakeClaudePath: FAKE_CLAUDE_BIN })
+
+      await window.waitForTimeout(300)
+      await window.evaluate((id: string) => {
+        ;(window as any).api.pty.write(id, '\n')
+      }, ptyId)
+
+      // The workspace should become active from the PTY-written marker alone.
+      await window.waitForFunction(
+        (wsId: string) => (window as any).__store.getState().activeClaudeWorkspaceIds.has(wsId),
+        workspaceId,
+        { timeout: 6000 }
+      )
+      const becameActive = await window.evaluate(
+        (wsId: string) => (window as any).__store.getState().activeClaudeWorkspaceIds.has(wsId),
+        workspaceId
+      )
+      expect(becameActive).toBe(true)
+
+      // Closing the only Claude PTY in the workspace clears the marker.
+      await window.evaluate((id: string) => {
+        ;(window as any).api.pty.destroy(id)
+      }, ptyId)
+      await window.waitForFunction(
+        (wsId: string) => !(window as any).__store.getState().activeClaudeWorkspaceIds.has(wsId),
+        workspaceId,
+        { timeout: 6000 }
+      )
+      const stillActive = await window.evaluate(
+        (wsId: string) => (window as any).__store.getState().activeClaudeWorkspaceIds.has(wsId),
+        workspaceId
+      )
+      expect(stillActive).toBe(false)
+    } finally {
+      rmSync(FAKE_CLAUDE_BIN, { force: true })
       await app.close()
       rmSync(notifyDir, { recursive: true, force: true })
       rmSync(activityDir, { recursive: true, force: true })

@@ -46,8 +46,19 @@
 .cursorToolRowMain {
   cursor: pointer;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   text-align: left;
   font-family: inherit;
+}
+
+.cursorBashRowMain {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.cursorBashRowMain .cursorToolRowHit {
+  flex: 0 0 auto;
 }
 
 .cursorToolRowHit {
@@ -148,6 +159,15 @@
   color: var(--text-secondary);
 }
 
+.cursorToolChip--command {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: min(100%, 76ch);
+  width: auto;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .cursorToolChip--bordered:hover {
     color: var(--text-primary);
@@ -215,7 +235,9 @@
 }
 
 .cursorToolChipLabel {
-  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
