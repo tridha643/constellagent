@@ -23,6 +23,13 @@ const execFileAsync = promisify(execFile)
 
 type CreateWorktreeProgressReporter = (progress: CreateWorktreeProgress) => void
 
+const AGENT_SYMLINK_STATUS_DIRS = [
+  '.cursor/skills',
+  '.gemini/skills',
+  '.claude/skills',
+  '.codex/skills',
+] as const
+
 export interface FileStatus {
   path: string
   status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
@@ -1407,8 +1414,6 @@ export class GitService {
       ['status', '--porcelain=v1', '-uall'],
       worktreePath
     )
-    if (!output) return []
-
     const results: FileStatus[] = []
 
     /** Porcelain rename/copy lines use `ORIG -> DEST`; use worktree destination path. */
@@ -1418,7 +1423,7 @@ export class GitService {
       return i >= 0 ? raw.slice(i + arrow.length).trim() : raw
     }
 
-    for (const line of output.split('\n')) {
+    for (const line of output.split('\n').filter(Boolean)) {
       const indexStatus = line[0]
       const workStatus = line[1]
       const path = porcelainPath(line.slice(3))
@@ -1445,7 +1450,39 @@ export class GitService {
       }
     }
 
+    const knownPaths = new Set(results.map((entry) => entry.path))
+    for (const status of await this.getUntrackedAgentSymlinkStatuses(worktreePath, knownPaths)) {
+      results.push(status)
+    }
+
     return results
+  }
+
+  private static async getUntrackedAgentSymlinkStatuses(
+    worktreePath: string,
+    knownPaths: ReadonlySet<string>,
+  ): Promise<FileStatus[]> {
+    const out: FileStatus[] = []
+    for (const dir of AGENT_SYMLINK_STATUS_DIRS) {
+      const absoluteDir = join(worktreePath, dir)
+      let entries: Awaited<ReturnType<typeof readdir>>
+      try {
+        entries = await readdir(absoluteDir, { withFileTypes: true })
+      } catch {
+        continue
+      }
+
+      for (const entry of entries) {
+        if (!entry.isSymbolicLink()) continue
+        const path = `${dir}/${entry.name}`
+        if (knownPaths.has(path)) continue
+        const tracked = await git(['ls-files', '--error-unmatch', '--', path], worktreePath)
+          .then(() => true)
+          .catch(() => false)
+        if (!tracked) out.push({ path, status: 'untracked', staged: false })
+      }
+    }
+    return out
   }
 
   static async getDiff(worktreePath: string, staged: boolean): Promise<FileDiff[]> {

@@ -1,13 +1,16 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { Columns2 } from 'lucide-react'
+import { memo, useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { Columns2, Eye } from 'lucide-react'
 import { useAppStore } from '../../store/app-store'
 import { STATUS_LABELS } from '../../../shared/status-labels'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { PiIcon } from '../Icons/PiIcon'
+import { CompactDiffPreview } from '../DiffPreview/CompactDiffPreview'
+import { buildDiffPreviewModel, type DiffPreviewModel } from '../DiffPreview/diff-model'
 import styles from './RightPanel.module.css'
 import { registerChangesFindSource } from '../../utils/changes-file-find-bridge'
 import { buildWorkingTreeStatusSignature } from '../../types/working-tree-diff'
+import { markPaint } from '../../utils/perf'
 import {
   normalizeWorkspaceBranch,
   preserveWorkspaceBranch,
@@ -21,6 +24,7 @@ import { buildAdHocAgentCommand } from '../../../shared/plan-build-command'
 import { formatRebaseConflictAgentPrompt } from '../../agents/conflict-prompt'
 
 const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
+const PREVIEW_CACHE_LIMIT = 80
 
 interface FileStatus {
   path: string
@@ -57,8 +61,14 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const [defaultBranch, setDefaultBranch] = useState('')
   const [defaultBranchLoading, setDefaultBranchLoading] = useState(true)
   const [commitInputFlash, setCommitInputFlash] = useState(false)
+  const [hoverPreviewPath, setHoverPreviewPath] = useState<string | null>(null)
+  const [previewCache, setPreviewCache] = useState<Map<string, DiffPreviewModel>>(() => new Map())
   const commitInputRef = useRef<HTMLTextAreaElement | null>(null)
   const commitFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previewPromiseRef = useRef(new Map<string, Promise<void>>())
+  const previewStartedAtRef = useRef(0)
+  const firstPreviewMarkedRef = useRef(false)
+  const firstSummaryMarkedRef = useRef(false)
   const openDiffTab = useAppStore((s) => s.openDiffTab)
   const openFullFileDiffTab = useAppStore((s) => s.openFullFileDiffTab)
   const setGitFileStatuses = useAppStore((s) => s.setGitFileStatuses)
@@ -73,6 +83,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const setProjectDefaultBranch = useAppStore((s) => s.setProjectDefaultBranch)
   const settings = useAppStore((s) => s.settings)
   const launchAgentTerminalWithCommand = useAppStore((s) => s.launchAgentTerminalWithCommand)
+  const warmDiffSnapshot = useAppStore((s) => s.workingTreeDiffSnapshots.get(worktreePath))
   const [isAheadOfRemote, setIsAheadOfRemote] = useState(false)
 
   const workspace = workspaces.find((ws) => ws.id === workspaceId)
@@ -233,6 +244,83 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     : needsCommitForPr
       ? 'Commit staged changes, push the branch, and create a pull request'
       : 'Push the branch and create a pull request'
+  const statusSignature = warmDiffSnapshot?.signature ?? buildWorkingTreeStatusSignature(files, '')
+  const statusSignatureRef = useRef(statusSignature)
+
+  useEffect(() => {
+    statusSignatureRef.current = statusSignature
+    setPreviewCache(new Map())
+    previewPromiseRef.current.clear()
+    firstPreviewMarkedRef.current = false
+    firstSummaryMarkedRef.current = false
+  }, [statusSignature])
+
+  const warmPreviewModels = useMemo(() => {
+    const models = new Map<string, DiffPreviewModel>()
+    const patchFiles = warmDiffSnapshot?.files ?? []
+    const statusByPath = new Map(files.map((file) => [file.path, file]))
+    for (const file of patchFiles) {
+      const status = statusByPath.get(file.filePath)
+      if (!status || !file.patch) continue
+      models.set(file.filePath, buildDiffPreviewModel(file.patch, status))
+    }
+    return models
+  }, [files, warmDiffSnapshot])
+
+  const previewCacheKey = useCallback((file: FileStatus) => (
+    `${worktreePath}\u0000${statusSignature}\u0000${file.path}`
+  ), [statusSignature, worktreePath])
+
+  const getPreviewModel = useCallback((file: FileStatus) => (
+    warmPreviewModels.get(file.path) ?? previewCache.get(previewCacheKey(file)) ?? null
+  ), [previewCache, previewCacheKey, warmPreviewModels])
+
+  const ensurePreview = useCallback((file: FileStatus) => {
+    if (warmPreviewModels.has(file.path)) return
+    const key = previewCacheKey(file)
+    if (previewCache.has(key) || previewPromiseRef.current.has(key)) return
+    if (!previewStartedAtRef.current) previewStartedAtRef.current = performance.now()
+    const signatureAtStart = statusSignature
+    const promise = window.api.git.getFileDiff(worktreePath, file.path)
+      .then((patch) => {
+        if (statusSignatureRef.current !== signatureAtStart || !patch) return
+        const model = buildDiffPreviewModel(patch, file)
+        setPreviewCache((prev) => {
+          const next = new Map(prev)
+          next.set(key, model)
+          while (next.size > PREVIEW_CACHE_LIMIT) {
+            const oldest = next.keys().next().value
+            if (!oldest) break
+            next.delete(oldest)
+          }
+          return next
+        })
+        if (!firstPreviewMarkedRef.current) {
+          firstPreviewMarkedRef.current = true
+          markPaint('changes-panel-first-preview', previewStartedAtRef.current, {
+            worktreePath,
+            filePath: file.path,
+          })
+        }
+      })
+      .catch(() => {
+        // Hover previews are opportunistic; the row still opens the full review surface.
+      })
+      .finally(() => {
+        previewPromiseRef.current.delete(key)
+      })
+    previewPromiseRef.current.set(key, promise)
+  }, [previewCache, previewCacheKey, statusSignature, warmPreviewModels, worktreePath])
+
+  useEffect(() => {
+    if (firstSummaryMarkedRef.current) return
+    if (warmPreviewModels.size === 0) return
+    firstSummaryMarkedRef.current = true
+    markPaint('changes-panel-first-summary', performance.now(), {
+      worktreePath,
+      fileCount: warmPreviewModels.size,
+    })
+  }, [warmPreviewModels.size, worktreePath])
 
   const isGraphiteDefaultBranch =
     !!project
@@ -802,6 +890,13 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
               actionTitle="Unstage"
               onOpenDiff={openDiff}
               onOpenFullDiff={openFullDiff}
+              previewModel={getPreviewModel(file)}
+              previewOpen={hoverPreviewPath === file.path}
+              onPreviewIntent={() => {
+                setHoverPreviewPath(file.path)
+                ensurePreview(file)
+              }}
+              onPreviewExit={() => setHoverPreviewPath((current) => current === file.path ? null : current)}
             />
           ))}
         </div>
@@ -854,6 +949,13 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
               onDiscard={() => discardFiles(file)}
               onOpenDiff={openDiff}
               onOpenFullDiff={openFullDiff}
+              previewModel={getPreviewModel(file)}
+              previewOpen={hoverPreviewPath === file.path}
+              onPreviewIntent={() => {
+                setHoverPreviewPath(file.path)
+                ensurePreview(file)
+              }}
+              onPreviewExit={() => setHoverPreviewPath((current) => current === file.path ? null : current)}
             />
           ))}
         </div>
@@ -869,7 +971,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   )
 }
 
-function FileRow({
+const FileRow = memo(function FileRow({
   file,
   busy,
   onAction,
@@ -878,6 +980,10 @@ function FileRow({
   onDiscard,
   onOpenDiff,
   onOpenFullDiff,
+  previewModel,
+  previewOpen,
+  onPreviewIntent,
+  onPreviewExit,
 }: {
   file: FileStatus
   busy: boolean
@@ -887,24 +993,70 @@ function FileRow({
   onDiscard?: () => void
   onOpenDiff: (path: string) => void
   onOpenFullDiff: (file: FileStatus) => void
+  previewModel: DiffPreviewModel | null
+  previewOpen: boolean
+  onPreviewIntent: () => void
+  onPreviewExit: () => void
 }) {
   const parts = file.path.split('/')
   const fileName = parts.pop()
   const dir = parts.length > 0 ? parts.join('/') + '/' : ''
+  const stats = previewModel
+    ? `${previewModel.additions > 0 ? `+${previewModel.additions}` : '+0'} / ${previewModel.deletions > 0 ? `-${previewModel.deletions}` : '-0'}`
+    : ''
 
   return (
-    <div className={styles.changedFile}>
+    <div
+      className={styles.changedFile}
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpenDiff(file.path)}
+      onMouseEnter={onPreviewIntent}
+      onMouseLeave={onPreviewExit}
+      onFocus={onPreviewIntent}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) onPreviewExit()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          onOpenDiff(file.path)
+        } else if (e.key === ' ') {
+          e.preventDefault()
+          onPreviewIntent()
+        }
+      }}
+    >
       <span className={`${styles.statusBadge} ${styles[file.status]}`}>
         {STATUS_LABELS[file.status]}
       </span>
-      <span
-        className={styles.changePath}
-        onClick={() => onOpenDiff(file.path)}
-      >
+      <span className={styles.changePath}>
+        <span className={styles.changeFileName}>{fileName}</span>
         {dir && <span className={styles.changeDir}>{dir}</span>}
-        {fileName}
+        <span className={styles.changeFullPathForFind}>{file.path}</span>
       </span>
+      {stats && (
+        <span className={styles.changeStats} aria-label={`${previewModel?.additions ?? 0} additions and ${previewModel?.deletions ?? 0} deletions`}>
+          <span className={styles.changeStatsAdd}>{previewModel?.additions ? `+${previewModel.additions}` : '+0'}</span>
+          <span className={styles.changeStatsSep}>/</span>
+          <span className={styles.changeStatsDel}>{previewModel?.deletions ? `-${previewModel.deletions}` : '-0'}</span>
+        </span>
+      )}
       <span className={styles.fileActions}>
+        <Tooltip label="Preview diff">
+          <button
+            className={styles.fileActionBtn}
+            disabled={busy}
+            onClick={(e) => {
+              e.stopPropagation()
+              onPreviewIntent()
+            }}
+            aria-label="Preview diff"
+            aria-expanded={previewOpen}
+          >
+            <Eye size={12} />
+          </button>
+        </Tooltip>
         <Tooltip label="Open side-by-side diff">
           <button
             className={styles.fileActionBtn}
@@ -918,24 +1070,50 @@ function FileRow({
         {onDiscard && (
           <Tooltip label="Discard Changes">
             <button
-              className={styles.fileActionBtn}
-              disabled={busy}
-              onClick={onDiscard}
-            >
-              ↩
-            </button>
+            className={styles.fileActionBtn}
+            disabled={busy}
+            onClick={(e) => {
+              e.stopPropagation()
+              onDiscard()
+            }}
+          >
+            ↩
+          </button>
           </Tooltip>
         )}
         <Tooltip label={actionTitle}>
           <button
             className={styles.fileActionBtn}
             disabled={busy}
-            onClick={onAction}
+            onClick={(e) => {
+              e.stopPropagation()
+              onAction()
+            }}
           >
             {actionLabel}
           </button>
         </Tooltip>
       </span>
+      {previewOpen && (
+        <div className={styles.changePreviewPopover} role="dialog" aria-label={`Diff preview for ${file.path}`}>
+          <div className={styles.changePreviewHeader}>
+            <span className={styles.changePreviewPath}>{fileName}</span>
+            {stats && <span className={styles.changePreviewStats}>{stats}</span>}
+          </div>
+          <div className={styles.changePreviewBody}>
+            {previewModel ? (
+              <CompactDiffPreview
+                rows={previewModel.rows}
+                hasNoNewline={previewModel.hasNoNewline}
+                parseError={previewModel.parseError}
+                testId="changes-panel-diff-preview"
+              />
+            ) : (
+              <div className={styles.changePreviewLoading}>Loading preview...</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
-}
+})
