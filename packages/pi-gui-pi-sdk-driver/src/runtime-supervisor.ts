@@ -89,7 +89,27 @@ export class RuntimeSupervisor implements RuntimeResourceDriver {
 
   async login(workspace: WorkspaceRef, providerId: string, callbacks: RuntimeLoginCallbacks): Promise<RuntimeSnapshot> {
     const context = await this.ensureContext(workspace);
-    await this.authStorage.login(providerId, callbacks);
+    await this.authStorage.login(providerId, {
+      onAuth: (info) => {
+        void callbacks.onAuth(info);
+      },
+      onDeviceCode: (info) => {
+        void callbacks.onAuth({
+          url: info.verificationUri,
+          instructions: [
+            `Enter device code: ${info.userCode}`,
+            info.expiresInSeconds ? `Expires in ${info.expiresInSeconds} seconds.` : undefined,
+          ]
+            .filter((line): line is string => Boolean(line))
+            .join("\n"),
+        });
+      },
+      onPrompt: callbacks.onPrompt,
+      onSelect: async (prompt) => prompt.options[0]?.id,
+      ...(callbacks.onProgress ? { onProgress: (message: string) => void callbacks.onProgress?.(message) } : {}),
+      ...(callbacks.onManualCodeInput ? { onManualCodeInput: callbacks.onManualCodeInput } : {}),
+      ...(callbacks.signal ? { signal: callbacks.signal } : {}),
+    });
     this.modelRegistry.refresh();
     await context.resourceLoader.reload();
     await this.autoEnableModelsForAuthenticatedProviders(context, [providerId]);

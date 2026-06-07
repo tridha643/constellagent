@@ -19,8 +19,8 @@
     "typecheck": "bunx tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "^0.73.1",
-    "@mariozechner/pi-tui": "^0.73.1",
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.78.0",
+    "@mariozechner/pi-tui": "npm:@earendil-works/pi-tui@^0.78.0",
     "@pi-gui/catalogs": "workspace:*",
     "@pi-gui/session-driver": "workspace:*"
   },
