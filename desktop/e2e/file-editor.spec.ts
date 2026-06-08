@@ -117,6 +117,8 @@ function createRepoWithHiddenConfigChanges(name: string): string {
   const repoPath = createTestRepo(name)
   mkdirSync(join(repoPath, '.codex', 'skills', 'hunk-review-comments'), { recursive: true })
   mkdirSync(join(repoPath, '.cursor', 'rules'), { recursive: true })
+  mkdirSync(join(repoPath, '.cursor', 'skills'), { recursive: true })
+  mkdirSync(join(repoPath, '.codex', 'skills'), { recursive: true })
   mkdirSync(join(repoPath, '.gemini', 'skills'), { recursive: true })
   mkdirSync(join(repoPath, 'desktop', '.claude', 'skills'), { recursive: true })
 
@@ -125,6 +127,7 @@ function createRepoWithHiddenConfigChanges(name: string): string {
   writeFileSync(join(repoPath, '.cursor', 'rules', 'constellagent.mdc'), 'rule: keep it fast\n')
   writeFileSync(join(repoPath, '.gemini', 'AGENTS.md'), '# Gemini agent\n')
   // Use .codex/skills for the symlink case — .cursor/skills is gitignored globally on dev machines.
+  symlinkSync('../../desktop/.claude/skills', join(repoPath, '.cursor', 'skills', 'hunk-review'))
   symlinkSync('../../desktop/.claude/skills', join(repoPath, '.codex', 'skills', 'hunk-review'))
   symlinkSync('../../desktop/.claude/skills', join(repoPath, '.gemini', 'skills', 'hunk-review'))
 

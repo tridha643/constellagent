@@ -1555,11 +1555,37 @@ export class GitService {
     return statsByPath
   }
 
+  /** Paths git would not list in porcelain because of .gitignore / global excludes. */
+  private static async pathsIgnoredByGit(
+    worktreePath: string,
+    paths: readonly string[],
+  ): Promise<Set<string>> {
+    if (paths.length === 0) return new Set()
+
+    return new Promise((resolvePromise, rejectPromise) => {
+      const child = spawn('git', ['check-ignore', '-z', '--stdin'], {
+        cwd: worktreePath,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
+
+      let stdout = ''
+      child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8') })
+      child.on('error', rejectPromise)
+      child.on('close', () => {
+        resolvePromise(new Set(stdout.split('\0').filter(Boolean)))
+      })
+
+      child.stdin?.write(`${paths.join('\0')}\0`)
+      child.stdin?.end()
+    })
+  }
+
   private static async getUntrackedAgentSymlinkStatuses(
     worktreePath: string,
     knownPaths: ReadonlySet<string>,
   ): Promise<FileStatus[]> {
-    const out: FileStatus[] = []
+    const candidates: FileStatus[] = []
     for (const dir of AGENT_SYMLINK_STATUS_DIRS) {
       const absoluteDir = join(worktreePath, dir)
       let entries: Array<{ isSymbolicLink(): boolean; name: string }>
@@ -1584,9 +1610,14 @@ export class GitService {
           .catch(() => false)
         if (ignored) continue
         out.push({ path, status: 'untracked', staged: false })
+        if (!tracked) candidates.push({ path, status: 'untracked', staged: false })
       }
     }
-    return out
+
+    if (candidates.length === 0) return []
+
+    const ignored = await this.pathsIgnoredByGit(worktreePath, candidates.map((entry) => entry.path))
+    return candidates.filter((entry) => !ignored.has(entry.path))
   }
 
   static async getDiff(worktreePath: string, staged: boolean): Promise<FileDiff[]> {
