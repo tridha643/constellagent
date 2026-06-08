@@ -7,7 +7,7 @@ import { SidePanelHost } from './components/SidePanelHost/SidePanelHost'
 import { TabBar } from './components/TabBar/TabBar'
 import { FileTabSplitContainer, TerminalSplitContainer } from './components/Terminal/TerminalSplitContainer'
 import { FileEditor } from './components/Editor/FileEditor'
-import { DiffViewer } from './components/Editor/DiffEditor'
+import { PatchViewerMain } from './components/patch-viewer/PatchViewerMain'
 import { FullFileDiffEditor } from './components/Editor/FullFileDiffEditor'
 import { MarkdownPreview } from './components/MarkdownPreview/MarkdownPreview'
 import { ServicePanel } from './components/Service/ServicePanel'
@@ -30,9 +30,6 @@ const LinearWorkspacePanel = lazy(() =>
 )
 const PlanPalette = lazy(() =>
   import('./components/PlanPalette/PlanPalette').then((m) => ({ default: m.PlanPalette })),
-)
-const HunkReview = lazy(() =>
-  import('./components/HunkReview/HunkReview').then((m) => ({ default: m.HunkReview })),
 )
 import { FloatingPanel } from './components/FloatingPanel/FloatingPanel'
 import { ConfirmDialog } from './components/Sidebar/ConfirmDialog'
@@ -503,7 +500,8 @@ export function App() {
                           </div>
                         }
                       >
-                        <DiffViewer
+                        <PatchViewerMain
+                          variant="tab"
                           worktreePath={ws.worktreePath}
                           active={t.id === activeTabId}
                           commitHash={t.commitHash}
@@ -609,9 +607,7 @@ export function App() {
       {hunkReviewOpen && hunkReviewWorkspaceId && (() => {
         const reviewWs = workspaces.find((w) => w.id === hunkReviewWorkspaceId)
         return reviewWs ? (
-          <Suspense fallback={null}>
-            <HunkReview worktreePath={reviewWs.worktreePath} />
-          </Suspense>
+          <PatchViewerMain variant="drawer" worktreePath={reviewWs.worktreePath} />
         ) : null
       })()}
       {confirmDialog && (

@@ -365,7 +365,7 @@ test.describe('Review annotations IPC integration', () => {
         const root = document.querySelector('[data-testid="hunk-review-scroll-area"]')
         if (!(root instanceof HTMLElement)) return null
 
-        const countSections = () => root.querySelectorAll('[id^="diff-"]').length
+        const countSections = () => root.querySelectorAll('diffs-container').length
         const started = performance.now()
         const steps = 48
         let maxMounted = countSections()
@@ -382,7 +382,7 @@ test.describe('Review annotations IPC integration', () => {
           elapsedMs: performance.now() - started,
           maxMounted,
           scrollHeight: root.scrollHeight,
-          fileSections: root.querySelectorAll('[id^="diff-"]').length,
+          fileSections: root.querySelectorAll('diffs-container').length,
         }
       })
 
@@ -410,17 +410,16 @@ test.describe('Review annotations IPC integration', () => {
       await window.keyboard.press('Meta+Shift+R')
       await expect(window.getByTestId('hunk-review-panel')).toBeVisible()
 
-      const diffSection = window.locator('[data-testid="hunk-review-panel"] [id^="diff-"]').first()
+      const diffSection = window.locator('[data-testid="hunk-review-panel"] diffs-container').first()
       await expect(diffSection).toBeVisible()
-      const sectionId = await diffSection.getAttribute('id')
-      expect(sectionId).toMatch(/^diff-/)
-      const filePath = sectionId!.slice('diff-'.length)
+      const filePath = await diffSection.locator('[data-file-path]').first().getAttribute('data-file-path')
+      expect(filePath).toBeTruthy()
 
       await window.evaluate((path) => {
         window.dispatchEvent(new CustomEvent('diff:e2e-open-comment-composer', {
           detail: { filePath: path, lineNumber: 2, side: 'additions' },
         }))
-      }, filePath)
+      }, filePath!)
 
       const textarea = window.getByTestId('diff-comment-composer-textarea')
       await expect(textarea).toBeVisible()
@@ -467,14 +466,15 @@ test.describe('Review annotations IPC integration', () => {
       await window.keyboard.press('Meta+Shift+R')
 
       await expect(window.getByTestId('hunk-review-panel')).toBeVisible()
-      const reviewSection = window.locator('[id="diff-README.md"]')
+      // Single-file diff — scope the collapsed-context separator count to the panel.
+      const reviewSection = window.getByTestId('hunk-review-panel')
       const showFullFileToggle = window.locator('[data-testid="show-full-file-toggle"]').first()
       await expect(showFullFileToggle).toBeVisible()
       await expect(showFullFileToggle).toHaveText('Changed only')
       await expect.poll(async () => reviewSection.locator('[data-unmodified-lines]').count()).toBe(0)
       await showFullFileToggle.click({ force: true })
       await expect(showFullFileToggle).toHaveText('Show full file')
-      expect(await reviewSection.locator('[data-unmodified-lines]').count()).toBeGreaterThan(0)
+      await expect.poll(async () => reviewSection.locator('[data-unmodified-lines]').count()).toBeGreaterThan(0)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
