@@ -8,7 +8,6 @@ import {
   type QueuedAgentMessageMode,
 } from '../../../shared/agent-chat-types'
 import type { ConductorComposerAttachment } from '../../../shared/conductor-attachments'
-import type { ContextWindowData } from '../../../shared/context-window-types'
 import type { ConductorSlashCommand } from '../../../shared/conductor-composer-commands'
 import type { ThinkingLevel } from '../../../shared/conductor-thinking'
 import type { TranscriptMessage } from '../../../shared/pi/pi-desktop-state'
@@ -37,7 +36,6 @@ import {
   signInCursor,
   syncConductorAuthKeys,
 } from '../../lib/conductor-sign-in'
-import { useConductorContextUsage } from '../../hooks/useConductorContextUsage'
 import { SharedFileIconDefs } from '../../utils/file-presentation'
 import { useConductorChatTypographyScope } from './useConductorChatTypographyScope'
 import { seedSideChatPanel } from '../SideChatPanel/side-chat-events'
@@ -46,67 +44,6 @@ import '../../pi-gui/pi-gui-thread.css'
 import '../../pi-gui/pi-gui-constellagent-bridge.css'
 
 export type ConductorTab = Extract<Tab, { type: 'conductor' }>
-
-const GSD_CONTEXT_SOFT_LIMIT_PERCENT = 80
-const GLOBAL_CONTEXT_SEGMENTS = 10
-
-function formatContextTokens(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`
-  return String(tokens)
-}
-
-function scaledGsdContextPercent(rawPercentage: number): number {
-  const rawUsed = Math.max(0, Math.min(100, rawPercentage))
-  return Math.min(100, Math.round((rawUsed / GSD_CONTEXT_SOFT_LIMIT_PERCENT) * 100))
-}
-
-function gsdContextTier(scaledPercent: number): 'low' | 'medium' | 'high' | 'critical' {
-  if (scaledPercent < 63) return 'low'
-  if (scaledPercent < 81) return 'medium'
-  if (scaledPercent < 95) return 'high'
-  return 'critical'
-}
-
-function GlobalContextWindowPill({
-  data,
-  idle,
-}: {
-  data: ContextWindowData
-  idle: boolean
-}) {
-  const scaledPercent = scaledGsdContextPercent(data.percentage)
-  const tier = gsdContextTier(scaledPercent)
-  const filledSegments = Math.floor(scaledPercent / GLOBAL_CONTEXT_SEGMENTS)
-  const usedLabel = formatContextTokens(data.usedTokens)
-  const totalLabel = formatContextTokens(data.contextWindowSize)
-  const title = idle
-    ? 'Context window: idle'
-    : `Context window: ${usedLabel} / ${totalLabel} (${data.percentage.toFixed(1)}% raw, ${scaledPercent}% of Claude Code 80% limit)`
-
-  return (
-    <div
-      className={styles.globalContextPill}
-      data-tier={tier}
-      data-idle={idle}
-      data-testid="conductor-global-context-pill"
-      title={title}
-      aria-label={title}
-    >
-      <span className={styles.globalContextLabel}>CTX</span>
-      <span className={styles.globalContextBar} aria-hidden>
-        {Array.from({ length: GLOBAL_CONTEXT_SEGMENTS }, (_, index) => (
-          <span
-            key={index}
-            className={styles.globalContextSegment}
-            data-filled={index < filledSegments}
-          />
-        ))}
-      </span>
-      <span className={styles.globalContextPercent}>{scaledPercent}%</span>
-    </div>
-  )
-}
 
 function latestForkableTranscriptMessageId(
   transcript: readonly TranscriptMessage[],
@@ -225,14 +162,6 @@ export function ConductorChatView({
   const blockingQuestion = controller.state?.blockingQuestion ?? null
   const piExtensionUi = provider === 'pi' ? controller.state?.piExtensionUi : null
   const topPiExtensionDialog = piExtensionUi?.pendingDialogs?.[0]
-  const { data: globalContextData, idle: globalContextIdle } = useConductorContextUsage(
-    agentSessionId,
-    {
-      model,
-      transcript: controller.transcript,
-      queuedMessages: controller.state?.queuedMessages ?? [],
-    },
-  )
   const latestPlanApprovalMessageId = useMemo(
     () => (plan && !running ? getLatestPlanApprovalMessageId(controller.transcript) : null),
     [plan, running, controller.transcript],
@@ -681,7 +610,6 @@ export function ConductorChatView({
       data-testid="conductor-chat-view"
     >
       <SharedFileIconDefs appearanceThemeId={appearanceThemeId} />
-      <GlobalContextWindowPill data={globalContextData} idle={globalContextIdle} />
       <ChatTimeline
         ref={timelineRef}
         transcript={controller.transcript}

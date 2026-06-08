@@ -13,8 +13,9 @@ import type { TranscriptMessage } from './pi/pi-desktop-state'
 describe('context-window-utils', () => {
   test('inferContextWindowSize is model-based and stable near the 200k boundary', () => {
     expect(inferContextWindowSize('claude-sonnet-4-6-1m', 0)).toBe(1_000_000)
-    expect(inferContextWindowSize('gpt-5.4', 0)).toBe(1_000_000)
-    expect(inferContextWindowSize('gpt-5.5', 0)).toBe(1_000_000)
+    expect(inferContextWindowSize('gpt-5.4', 0)).toBe(272_000)
+    expect(inferContextWindowSize('gpt-5.4-medium', 0)).toBe(272_000)
+    expect(inferContextWindowSize('gpt-5.5', 0)).toBe(272_000)
     expect(inferContextWindowSize('claude-4.6-sonnet', 0)).toBe(1_000_000)
     expect(inferContextWindowSize('composer-2', 190_000)).toBe(200_000)
   })
@@ -111,7 +112,7 @@ describe('context-window-utils', () => {
     })
 
     expect(data.usedTokens).toBe(13)
-    expect(data.contextWindowSize).toBe(1_000_000)
+    expect(data.contextWindowSize).toBe(272_000)
     expect(data.sessionId).toBe('s1')
   })
 
@@ -121,7 +122,7 @@ describe('context-window-utils', () => {
       draftText: 'a'.repeat(4_000),
     })
     expect(data.usedTokens).toBe(1_000)
-    expect(data.contextWindowSize).toBe(1_000_000)
+    expect(data.contextWindowSize).toBe(272_000)
     expect(data.sessionId).toBe('')
   })
 })

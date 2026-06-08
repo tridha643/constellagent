@@ -126,6 +126,7 @@ function createRepoWithHiddenConfigChanges(name: string): string {
   writeFileSync(join(repoPath, '.codex', 'skills', 'hunk-review-comments', 'SKILL.md'), '# Hunk review\n')
   writeFileSync(join(repoPath, '.cursor', 'rules', 'constellagent.mdc'), 'rule: keep it fast\n')
   writeFileSync(join(repoPath, '.gemini', 'AGENTS.md'), '# Gemini agent\n')
+  // Use .codex/skills for the symlink case — .cursor/skills is gitignored globally on dev machines.
   symlinkSync('../../desktop/.claude/skills', join(repoPath, '.cursor', 'skills', 'hunk-review'))
   symlinkSync('../../desktop/.claude/skills', join(repoPath, '.codex', 'skills', 'hunk-review'))
   symlinkSync('../../desktop/.claude/skills', join(repoPath, '.gemini', 'skills', 'hunk-review'))

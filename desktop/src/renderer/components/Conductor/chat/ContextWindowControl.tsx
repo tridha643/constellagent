@@ -24,6 +24,7 @@ export { CONDUCTOR_CONTEXT_IDLE }
 
 export function formatContextTokens(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
+  if (tokens >= 100_000) return `${Math.round(tokens / 1_000)}k`
   if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`
   return String(tokens)
 }
