@@ -34,11 +34,18 @@ export interface FileStatus {
   path: string
   status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
   staged: boolean
+  additions?: number
+  deletions?: number
 }
 
 export interface FileDiff {
   path: string
   hunks: string // raw unified diff text
+}
+
+interface DiffLineStats {
+  additions: number
+  deletions: number
 }
 
 export interface PrWorktreeResult {
@@ -56,6 +63,53 @@ export interface CreatePrWorktreeOptions {
 
 async function git(args: string[], cwd: string): Promise<string> {
   return spawnAndCapture('git', args, cwd, 10 * 1024 * 1024)
+}
+
+export function parseGitNumstat(output: string): Map<string, DiffLineStats> {
+  const statsByPath = new Map<string, DiffLineStats>()
+  if (!output) return statsByPath
+
+  const fields = output.split('\0')
+  for (let i = 0; i < fields.length; i += 1) {
+    const header = fields[i]
+    if (!header) continue
+
+    const firstTab = header.indexOf('\t')
+    const secondTab = firstTab >= 0 ? header.indexOf('\t', firstTab + 1) : -1
+    if (firstTab < 0 || secondTab < 0) continue
+
+    const additionsRaw = header.slice(0, firstTab)
+    const deletionsRaw = header.slice(firstTab + 1, secondTab)
+    let path = header.slice(secondTab + 1)
+
+    // With `--numstat -z`, rename rows are `adds<TAB>dels<TAB><NUL>old<NUL>new<NUL>`.
+    if (!path) {
+      i += 2
+      path = fields[i] ?? ''
+    }
+
+    if (!path || additionsRaw === '-' || deletionsRaw === '-') continue
+
+    const additions = Number.parseInt(additionsRaw, 10)
+    const deletions = Number.parseInt(deletionsRaw, 10)
+    if (!Number.isFinite(additions) || !Number.isFinite(deletions)) continue
+
+    const existing = statsByPath.get(path)
+    if (existing) {
+      existing.additions += additions
+      existing.deletions += deletions
+    } else {
+      statsByPath.set(path, { additions, deletions })
+    }
+  }
+
+  return statsByPath
+}
+
+function countTextLines(content: string): number {
+  if (content.length === 0) return 0
+  const newlineCount = content.split('\n').length - 1
+  return content.endsWith('\n') ? newlineCount : newlineCount + 1
 }
 
 /** Parse `git worktree list --porcelain` output into worktree entries. */
@@ -1410,10 +1464,13 @@ export class GitService {
   }
 
   static async getStatus(worktreePath: string): Promise<FileStatus[]> {
-    const output = await git(
-      ['status', '--porcelain=v1', '-uall'],
-      worktreePath
-    )
+    const [output, lineStats] = await Promise.all([
+      git(
+        ['status', '--porcelain=v1', '-uall'],
+        worktreePath
+      ),
+      this.getDiffLineStats(worktreePath),
+    ])
     const results: FileStatus[] = []
 
     /** Porcelain rename/copy lines use `ORIG -> DEST`; use worktree destination path. */
@@ -1455,7 +1512,47 @@ export class GitService {
       results.push(status)
     }
 
-    return results
+    const untrackedLineStats = await this.getUntrackedLineStats(worktreePath, results, lineStats)
+
+    return results.map((entry) => {
+      const stats = lineStats.get(entry.path) ?? untrackedLineStats.get(entry.path)
+      return stats ? { ...entry, ...stats } : entry
+    })
+  }
+
+  private static async getDiffLineStats(worktreePath: string): Promise<Map<string, DiffLineStats>> {
+    try {
+      const output = await git(
+        ['diff', '--numstat', '--find-renames', '-z', 'HEAD', '--'],
+        worktreePath,
+      )
+      return parseGitNumstat(output)
+    } catch {
+      return new Map()
+    }
+  }
+
+  private static async getUntrackedLineStats(
+    worktreePath: string,
+    statuses: readonly FileStatus[],
+    existingStats: ReadonlyMap<string, DiffLineStats>,
+  ): Promise<Map<string, DiffLineStats>> {
+    const statsByPath = new Map<string, DiffLineStats>()
+    await Promise.all(statuses.map(async (status) => {
+      if (status.status !== 'untracked' || existingStats.has(status.path)) return
+      try {
+        const filePath = isAbsolute(status.path) ? status.path : join(worktreePath, status.path)
+        const content = await readFile(filePath, 'utf8')
+        statsByPath.set(status.path, {
+          additions: countTextLines(content),
+          deletions: 0,
+        })
+      } catch {
+        // Binary, deleted-raced, or unreadable untracked files still show as changed;
+        // they just cannot report a useful text line count.
+      }
+    }))
+    return statsByPath
   }
 
   private static async getUntrackedAgentSymlinkStatuses(
@@ -1465,7 +1562,7 @@ export class GitService {
     const out: FileStatus[] = []
     for (const dir of AGENT_SYMLINK_STATUS_DIRS) {
       const absoluteDir = join(worktreePath, dir)
-      let entries: Awaited<ReturnType<typeof readdir>>
+      let entries: Array<{ isSymbolicLink(): boolean; name: string }>
       try {
         entries = await readdir(absoluteDir, { withFileTypes: true })
       } catch {

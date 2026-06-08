@@ -1337,6 +1337,16 @@
   opacity: 0.65;
 }
 
+.composerQueueListItemSelected {
+  background: color-mix(in srgb, var(--surface-0, #121212) 42%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary, #8ab4ff) 36%, transparent);
+}
+
+.composerQueueListItemSelected .composerQueueListActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .composerQueueListItemExit {
   opacity: 0;
 }

@@ -25,6 +25,9 @@ export default defineConfig({
     }
   },
   renderer: {
+    worker: {
+      format: 'es',
+    },
     plugins: [tailwindcss()],
     resolve: {
       alias: {

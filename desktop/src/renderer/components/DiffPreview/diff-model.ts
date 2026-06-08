@@ -40,7 +40,14 @@ export interface DiffPreviewModel {
 
 // eslint-disable-next-line no-control-regex
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g
-const MAX_COMPACT_ROWS = 160
+export const MAX_COMPACT_ROWS = 160
+const DEFAULT_MAX_TOKENIZED_LINE_LENGTH = 2000
+
+export interface ParseDiffRowsOptions {
+  readonly maxRows?: number
+  readonly tokenizeModifiedRows?: boolean
+  readonly maxTokenizedLineLength?: number
+}
 
 export function stripAnsi(value: string): string {
   return value.replace(ANSI_PATTERN, '')
@@ -74,6 +81,16 @@ function tokenizeModified(left: string, right: string): {
   return { leftTokens, rightTokens }
 }
 
+function shouldTokenizeModifiedRows(
+  left: string,
+  right: string,
+  options: Required<Pick<ParseDiffRowsOptions, 'tokenizeModifiedRows' | 'maxTokenizedLineLength'>>,
+): boolean {
+  return options.tokenizeModifiedRows
+    && left.length <= options.maxTokenizedLineLength
+    && right.length <= options.maxTokenizedLineLength
+}
+
 /** Fallback +/- counts when `parsePatch` cannot structure the hunk. */
 export function countPatchLineStats(patch: string): { additions: number; deletions: number } {
   let additions = 0
@@ -87,10 +104,6 @@ export function countPatchLineStats(patch: string): { additions: number; deletio
 }
 
 export function diffStatsFromPatch(patch: string): { additions: number; deletions: number } {
-  const parsed = parseDiffRows(patch)
-  if (parsed.additions > 0 || parsed.deletions > 0) {
-    return { additions: parsed.additions, deletions: parsed.deletions }
-  }
   return countPatchLineStats(patch)
 }
 
@@ -98,11 +111,131 @@ export function diffStatsFromPatch(patch: string): { additions: number; deletion
  * Parse a unified git patch into a paired row model. Consecutive `-` lines are
  * paired with following `+` lines into modified rows, with intra-line tokens.
  */
-export function parseDiffRows(patch: string): ParsedDiff {
+function parseDiffRowsCapped(patch: string, options: Required<Pick<ParseDiffRowsOptions, 'maxRows' | 'tokenizeModifiedRows' | 'maxTokenizedLineLength'>>): ParsedDiff {
   const rows: DiffRow[] = []
   let additions = 0
   let deletions = 0
   let hasNoNewline = false
+  let oldLine = 1
+  let newLine = 1
+  let removed: string[] = []
+  let added: string[] = []
+  let inHunk = false
+
+  const canPushRow = (): boolean => rows.length < options.maxRows
+
+  const pushRow = (row: DiffRow): void => {
+    if (canPushRow()) rows.push(row)
+  }
+
+  const flush = (): void => {
+    const pairs = Math.min(removed.length, added.length)
+    for (let i = 0; i < pairs; i += 1) {
+      const left = removed[i]!
+      const right = added[i]!
+      const leftNo = oldLine++
+      const rightNo = newLine++
+      if (canPushRow()) {
+        const tokens = shouldTokenizeModifiedRows(left, right, options)
+          ? tokenizeModified(left, right)
+          : null
+        rows.push({
+          type: 'modified',
+          left,
+          right,
+          leftNo,
+          rightNo,
+          leftTokens: tokens?.leftTokens,
+          rightTokens: tokens?.rightTokens,
+        })
+      }
+      additions += 1
+      deletions += 1
+    }
+    for (let i = pairs; i < removed.length; i += 1) {
+      pushRow({ type: 'removed', left: removed[i]!, leftNo: oldLine++ })
+      deletions += 1
+    }
+    for (let i = pairs; i < added.length; i += 1) {
+      pushRow({ type: 'added', right: added[i]!, rightNo: newLine++ })
+      additions += 1
+    }
+    removed = []
+    added = []
+  }
+
+  for (const raw of patch.split('\n')) {
+    if (raw.startsWith('@@')) {
+      flush()
+      inHunk = true
+      const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw)
+      oldLine = header ? Number(header[1]) : 1
+      newLine = header ? Number(header[2]) : 1
+      continue
+    }
+    if (!inHunk) continue
+    if (raw.startsWith('\\')) {
+      hasNoNewline = true
+      continue
+    }
+    if (!raw) continue
+    const content = raw.slice(1)
+    if (raw.startsWith('-')) {
+      removed.push(content)
+      continue
+    }
+    if (raw.startsWith('+')) {
+      added.push(content)
+      continue
+    }
+    if (raw.startsWith(' ') || raw === '') {
+      flush()
+      pushRow({
+        type: 'unchanged',
+        left: content,
+        right: content,
+        leftNo: oldLine++,
+        rightNo: newLine++,
+      })
+    }
+    if (!canPushRow()) break
+  }
+  flush()
+
+  const stats = countPatchLineStats(patch)
+  return {
+    rows,
+    additions: stats.additions,
+    deletions: stats.deletions,
+    hasNoNewline,
+    parseError: false,
+  }
+}
+
+export function parseDiffRows(patch: string, options: ParseDiffRowsOptions = {}): ParsedDiff {
+  const rows: DiffRow[] = []
+  let additions = 0
+  let deletions = 0
+  let hasNoNewline = false
+  const maxRows = options.maxRows ?? Number.POSITIVE_INFINITY
+  const tokenizeOptions = {
+    tokenizeModifiedRows: options.tokenizeModifiedRows ?? true,
+    maxTokenizedLineLength: options.maxTokenizedLineLength ?? DEFAULT_MAX_TOKENIZED_LINE_LENGTH,
+  }
+
+  if (Number.isFinite(maxRows)) {
+    return parseDiffRowsCapped(patch, {
+      maxRows,
+      tokenizeModifiedRows: tokenizeOptions.tokenizeModifiedRows,
+      maxTokenizedLineLength: tokenizeOptions.maxTokenizedLineLength,
+    })
+  }
+
+  const canPushRow = (): boolean => rows.length < maxRows
+
+  const pushRow = (row: DiffRow): void => {
+    if (canPushRow()) rows.push(row)
+  }
 
   let structured: ReturnType<typeof parsePatch>
   try {
@@ -127,25 +260,33 @@ export function parseDiffRows(patch: string): ParsedDiff {
         for (let i = 0; i < pairs; i += 1) {
           const left = removed[i]
           const right = added[i]
-          const { leftTokens, rightTokens } = tokenizeModified(left, right)
-          rows.push({
-            type: 'modified',
-            left,
-            right,
-            leftNo: oldLine++,
-            rightNo: newLine++,
-            leftTokens,
-            rightTokens,
-          })
+          const leftNo = oldLine++
+          const rightNo = newLine++
+          if (canPushRow()) {
+            const tokens = shouldTokenizeModifiedRows(left, right, tokenizeOptions)
+              ? tokenizeModified(left, right)
+              : null
+            rows.push({
+              type: 'modified',
+              left,
+              right,
+              leftNo,
+              rightNo,
+              leftTokens: tokens?.leftTokens,
+              rightTokens: tokens?.rightTokens,
+            })
+          }
           deletions += 1
           additions += 1
         }
         for (let i = pairs; i < removed.length; i += 1) {
-          rows.push({ type: 'removed', left: removed[i], leftNo: oldLine++ })
+          const leftNo = oldLine++
+          pushRow({ type: 'removed', left: removed[i], leftNo })
           deletions += 1
         }
         for (let i = pairs; i < added.length; i += 1) {
-          rows.push({ type: 'added', right: added[i], rightNo: newLine++ })
+          const rightNo = newLine++
+          pushRow({ type: 'added', right: added[i], rightNo })
           additions += 1
         }
         removed = []
@@ -164,7 +305,7 @@ export function parseDiffRows(patch: string): ParsedDiff {
           added.push(content)
         } else {
           flush()
-          rows.push({
+          pushRow({
             type: 'unchanged',
             left: content,
             right: content,
@@ -184,7 +325,7 @@ export function buildDiffPreviewModel(
   patch: string,
   file: Pick<WorkingTreeFileStatus, 'path' | 'status' | 'staged'>,
 ): DiffPreviewModel {
-  const parsed = parseDiffRows(patch)
+  const parsed = parseDiffRows(patch, { maxRows: MAX_COMPACT_ROWS })
   const parseError = (parsed.parseError ?? false) || (patch.trim().length > 0 && parsed.rows.length === 0)
   const fallbackStats = parseError ? countPatchLineStats(patch) : null
   return {
@@ -194,7 +335,7 @@ export function buildDiffPreviewModel(
     additions: fallbackStats?.additions ?? parsed.additions,
     deletions: fallbackStats?.deletions ?? parsed.deletions,
     patchLineCount: patch ? patch.split('\n').length : 0,
-    rows: parsed.rows.slice(0, MAX_COMPACT_ROWS),
+    rows: parsed.rows,
     hasNoNewline: parsed.hasNoNewline,
     parseError,
   }

@@ -21,6 +21,11 @@ import { ConductorSlashNamePrompt } from './ConductorSlashNamePrompt'
 import { useConductorComposerAt } from './use-conductor-composer-at'
 import { useConductorComposerHash } from './use-conductor-composer-hash'
 import { useConductorComposerSlash } from './use-conductor-composer-slash'
+import {
+  reconcileSelectedQueueMessageId,
+  selectQueueMessageAbove,
+  selectQueueMessageBelow,
+} from './queue-keyboard-selection'
 import { useAppStore } from '../../../store/app-store'
 import {
   composerDraftRemovalRange,
@@ -108,6 +113,7 @@ export function ChatComposer({
   const [attachments, setAttachments] = useState<ConductorComposerAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
+  const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null)
   const [focused, setFocused] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [pickingImages, setPickingImages] = useState(false)
@@ -197,6 +203,8 @@ export function ChatComposer({
   const showFocusHint = !focused && !disabled && !running
   const showRunningHint = running && !focused && !disabled
   const hasInput = hasComposerDraftInput(text) || attachments.length > 0
+  const queueMenusOpen =
+    showAtMenu || showHashMenu || showSlashMenu || showPersonalityMenu || showNamePromptMenu
   const textareaPlaceholder =
     attachments.length > 0
       ? 'Describe what you want about the attached image…'
@@ -231,6 +239,7 @@ export function ChatComposer({
     if (composerRef) {
       composerRef.current = {
         setText: (value: string) => {
+          setSelectedQueueId(null)
           setText(value)
           requestAnimationFrame(() => composerInputRef.current.focus())
         },
@@ -238,6 +247,28 @@ export function ChatComposer({
       }
     }
   }, [composerRef])
+
+  useEffect(() => {
+    setSelectedQueueId((current) =>
+      reconcileSelectedQueueMessageId(
+        queuedMessages.map((message) => message.id),
+        current,
+      ),
+    )
+  }, [queuedMessages])
+
+  useEffect(() => {
+    if (hasInput) {
+      setSelectedQueueId(null)
+    }
+  }, [hasInput])
+
+  const handleTextChange = (value: string) => {
+    if (hasComposerDraftInput(value)) {
+      setSelectedQueueId(null)
+    }
+    setText(value)
+  }
 
   const submit = (deliverAs?: QueuedAgentMessageMode) => {
     if (!hasInput || disabled) return
@@ -251,6 +282,7 @@ export function ChatComposer({
         ),
       )
       setEditingQueueId(null)
+      setSelectedQueueId(null)
       setText('')
       setAttachments([])
       setAttachError(null)
@@ -261,12 +293,14 @@ export function ChatComposer({
     setText('')
     setAttachments([])
     setAttachError(null)
+    setSelectedQueueId(null)
   }
 
   const handleEditQueuedMessage = (messageId: string) => {
     const message = queuedMessages.find((item) => item.id === messageId)
     if (!message) return
     setEditingQueueId(messageId)
+    setSelectedQueueId(null)
     setText(message.text)
     setAttachments([...(message.attachments ?? [])])
     setAttachError(null)
@@ -275,6 +309,9 @@ export function ChatComposer({
 
   const handleRemoveQueuedMessage = (messageId: string) => {
     onReplaceQueue(queuedMessages.filter((message) => message.id !== messageId))
+    if (selectedQueueId === messageId) {
+      setSelectedQueueId(null)
+    }
     if (editingQueueId === messageId) {
       setEditingQueueId(null)
       setText('')
@@ -291,6 +328,13 @@ export function ChatComposer({
     next.splice(index - 1, 0, item)
     onReplaceQueue(next)
   }
+
+  const selectQueuedMessage = (messageId: string | null) => {
+    setSelectedQueueId(messageId)
+    requestAnimationFrame(() => composerInputRef.current.focus())
+  }
+
+  const queueMessageIds = queuedMessages.map((message) => message.id)
 
   const applyAttachmentResult = (
     nextAttachments: readonly ConductorComposerAttachment[],
@@ -444,6 +488,7 @@ export function ChatComposer({
           <ConductorMessageQueue
             messages={queuedMessages}
             editingMessageId={editingQueueId}
+            selectedMessageId={selectedQueueId}
             onEdit={handleEditQueuedMessage}
             onRemove={handleRemoveQueuedMessage}
             onMoveUp={handleMoveQueuedMessageUp}
@@ -465,7 +510,7 @@ export function ChatComposer({
             disabled={disabled}
             workspacePath={workspacePath}
             inputRef={composerInputRef}
-            onTextChange={setText}
+            onTextChange={handleTextChange}
             onRemoveToken={removeComposerToken}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
@@ -518,6 +563,9 @@ export function ChatComposer({
               } else if (attachError) {
                 e.preventDefault()
                 setAttachError(null)
+              } else if (selectedQueueId) {
+                e.preventDefault()
+                setSelectedQueueId(null)
               } else if (editingQueueId) {
                 e.preventDefault()
                 setEditingQueueId(null)
@@ -545,9 +593,40 @@ export function ChatComposer({
               } else {
                 submit()
               }
-            } else if (e.key === 'ArrowUp' && text.length === 0) {
+            } else if (
+              !queueMenusOpen &&
+              !editingQueueId &&
+              e.key === 'ArrowUp' &&
+              !hasInput
+            ) {
               e.preventDefault()
-              onHistoryUp()
+              const nextSelectedQueueId = selectQueueMessageAbove(queueMessageIds, selectedQueueId)
+              if (nextSelectedQueueId) {
+                selectQueuedMessage(nextSelectedQueueId)
+              } else {
+                onHistoryUp()
+              }
+            } else if (
+              !queueMenusOpen &&
+              !editingQueueId &&
+              selectedQueueId &&
+              e.key === 'ArrowDown' &&
+              !hasInput
+            ) {
+              e.preventDefault()
+              selectQueuedMessage(selectQueueMessageBelow(queueMessageIds, selectedQueueId))
+            } else if (
+              !queueMenusOpen &&
+              !editingQueueId &&
+              selectedQueueId &&
+              !hasInput &&
+              e.key.toLowerCase() === 'e' &&
+              !e.metaKey &&
+              !e.ctrlKey &&
+              !e.altKey
+            ) {
+              e.preventDefault()
+              handleEditQueuedMessage(selectedQueueId)
             }
           })))}
           />

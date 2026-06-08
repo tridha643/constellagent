@@ -50,7 +50,7 @@ describe('workspace delete shortcut helpers', () => {
     })).toBeNull()
   })
 
-  it('shows an in-place destructive confirmation and deletes once confirmed', async () => {
+  it('shows an exit-first destructive confirmation and deletes once confirmed', async () => {
     let dialog: ConfirmDialogState | null = null
     const calls: string[] = []
 
@@ -60,24 +60,18 @@ describe('workspace delete shortcut helpers', () => {
       showConfirmDialog: (next) => {
         dialog = next
       },
-      updateConfirmDialog: (partial) => {
-        calls.push(partial.loading ? 'loading' : 'not-loading')
-      },
-      dismissConfirmDialog: () => {
-        calls.push('dismiss')
-      },
       deleteWorkspace: async (workspaceId) => {
         calls.push(`delete:${workspaceId}`)
       },
     }, workspace)
 
     expect(dialog?.title).toBe('Delete Workspace')
-    expect(dialog?.confirmInPlace).toBe(true)
+    expect(dialog?.confirmInPlace).toBeUndefined()
     expect(dialog?.destructive).toBe(true)
 
     dialog?.onConfirm()
     await Promise.resolve()
 
-    expect(calls).toEqual(['loading', 'delete:ws-1', 'dismiss'])
+    expect(calls).toEqual(['delete:ws-1'])
   })
 })

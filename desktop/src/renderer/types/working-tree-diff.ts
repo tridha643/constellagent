@@ -4,6 +4,8 @@ export interface WorkingTreeFileStatus {
   path: string
   status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
   staged: boolean
+  additions?: number
+  deletions?: number
 }
 
 export interface DiffFileData {
@@ -11,8 +13,11 @@ export interface DiffFileData {
   patch: string
   status: WorkingTreeFileStatus['status']
   staged?: boolean
+  additions?: number
+  deletions?: number
   hasMixedStageState?: boolean
   fileDiff?: FileDiffMetadata
+  patchLoaded?: boolean
   currentContent?: string | null
 }
 
@@ -34,6 +39,12 @@ export function buildWorkingTreeStatusSignature(
 ): string {
   return [
     headHash,
-    ...statuses.map((status) => `${status.path}\u0000${status.status}\u0000${status.staged ? '1' : '0'}`),
+    ...statuses.map((status) => [
+      status.path,
+      status.status,
+      status.staged ? '1' : '0',
+      status.additions ?? '',
+      status.deletions ?? '',
+    ].join('\u0000')),
   ].join('\n')
 }

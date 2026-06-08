@@ -15,7 +15,7 @@ import { isMarkdownDocumentPath } from '../../../../utils/markdown-path'
 import { resolveToolFileAbsolutePath, toolFileBasename } from './tool-file-path'
 import { CursorDiffCode } from './CursorDiffCode'
 import { CursorToolChip } from './CursorToolChip'
-import { parseDiffRows } from './diff-utils'
+import { MAX_COMPACT_ROWS, parseDiffRows } from './diff-utils'
 import { useMountTransition } from '../use-active-turn'
 import styles from './CursorTool.module.css'
 
@@ -101,7 +101,10 @@ export function CursorDiffChip({ path, patch }: { path: string; patch: string })
   const { shouldRender: showPopover, phase } = useMountTransition(hoverOpen, POPOVER_TRANSITION_MS)
   const popoverStyle = useDiffPopoverStyle(hoverOpen, chipRef)
 
-  const { rows } = parseDiffRows(patch)
+  const { rows } = useMemo(
+    () => parseDiffRows(patch, { maxRows: MAX_COMPACT_ROWS, tokenizeModifiedRows: false }),
+    [patch],
+  )
   const hasPreview = patch.trim().length > 0
 
   const clearTimers = useCallback(() => {

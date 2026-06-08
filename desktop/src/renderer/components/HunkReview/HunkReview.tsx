@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useState,
   useCallback,
   useRef,
@@ -14,6 +15,17 @@ import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import type { DiffFileData } from '../../types/working-tree-diff'
 import { DiffFileSection, FileStrip } from '../Editor/DiffFileSection'
+import { isDiffCommentDraftDirty, type DiffCommentDraft } from '../Editor/diff-comment-draft'
+import {
+  buildDiffFileVirtualLayout,
+  buildDiffLayoutAnchorKey,
+  captureDiffScrollAnchor,
+  findHeaderOwningFileSection,
+  getVirtualDiffFileWindow,
+  getVisibleDiffFiles,
+  restoreDiffScrollTop,
+  type DiffScrollAnchor,
+} from '../Editor/diff-viewer-model'
 import { loadWorkingTreeExpandableDiffMetadata } from '../Editor/buildWorkingTreeDiffFileData'
 import { loadWorkingTreeDiffFiles } from '../Editor/loadWorkingTreeDiffFiles'
 import { FloatingPanel } from '../FloatingPanel/FloatingPanel'
@@ -29,6 +41,8 @@ const FALLBACK_VIEWPORT_WIDTH = 1440
 const INITIAL_VISIBLE_FILES = 20
 const VISIBLE_FILE_CHUNK = 20
 const FILE_DIFF_LOAD_CONCURRENCY = 2
+const DIFF_FILE_OVERSCAN_PX = 1600
+const DEFAULT_DIFF_VIEWPORT_HEIGHT = 900
 
 interface Props {
   worktreePath: string
@@ -201,6 +215,17 @@ export function HunkReview({ worktreePath }: Props) {
     persistedReviewState?.selectedIds ?? null,
   )
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(DEFAULT_DIFF_VIEWPORT_HEIGHT)
+  const [measuredFileHeights, setMeasuredFileHeights] = useState<Map<string, number>>(() => new Map())
+  const [commentDraftsByFile, setCommentDraftsByFile] = useState<Map<string, DiffCommentDraft>>(() => new Map())
+  const measuredFileHeightsRef = useRef(measuredFileHeights)
+  const virtualLayoutRef = useRef<ReturnType<typeof buildDiffFileVirtualLayout>>([])
+  const scrollAnchorRef = useRef<DiffScrollAnchor | null>(null)
+  const pendingHeightUpdatesRef = useRef(new Map<string, number>())
+  const heightFlushRafRef = useRef<number | null>(null)
+  const virtualWindowRef = useRef({ startIndex: 0, endIndex: 0 })
+  const scrollRafRef = useRef<number | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
   const dragStateRef = useRef<{
@@ -289,9 +314,151 @@ export function HunkReview({ worktreePath }: Props) {
   }, [files])
 
   const renderedFiles = useMemo(
-    () => files.slice(0, visibleCount),
+    () => getVisibleDiffFiles(files, visibleCount),
     [files, visibleCount],
   )
+
+  const layoutCollapsedPaths = useMemo(
+    () => new Set(viewedFilePaths),
+    [viewedFilePaths],
+  )
+
+  const virtualLayout = useMemo(
+    () => buildDiffFileVirtualLayout(renderedFiles, layoutCollapsedPaths, measuredFileHeights),
+    [layoutCollapsedPaths, measuredFileHeights, renderedFiles],
+  )
+
+  useEffect(() => {
+    virtualLayoutRef.current = virtualLayout
+  }, [virtualLayout])
+
+  const virtualWindow = useMemo(
+    () => getVirtualDiffFileWindow(virtualLayout, scrollTop, viewportHeight, DIFF_FILE_OVERSCAN_PX),
+    [scrollTop, viewportHeight, virtualLayout],
+  )
+
+  useEffect(() => {
+    virtualWindowRef.current = {
+      startIndex: virtualWindow.startIndex,
+      endIndex: virtualWindow.endIndex,
+    }
+  }, [virtualWindow.endIndex, virtualWindow.startIndex])
+
+  const visibleWindowFiles = useMemo(
+    () => virtualWindow.items.map((item) => item.file),
+    [virtualWindow],
+  )
+
+  const layoutAnchorKey = useMemo(
+    () => buildDiffLayoutAnchorKey({
+      inline,
+      defaultShowFullContext,
+      collapsedFilePaths: layoutCollapsedPaths,
+      annotationIds: annotations.map((a) => a.id),
+      fileDiffTokens: renderedFiles.map((f) => `${f.filePath}:${f.fileDiff ? 'd' : 'p'}`),
+      measuredHeightTokens: [...measuredFileHeights.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([path, height]) => `${path}:${height}`),
+    }),
+    [annotations, defaultShowFullContext, inline, layoutCollapsedPaths, measuredFileHeights, renderedFiles],
+  )
+
+  const flushMeasuredHeights = useCallback(() => {
+    heightFlushRafRef.current = null
+    const pending = pendingHeightUpdatesRef.current
+    if (pending.size === 0) return
+    const snapshot = new Map(pending)
+    pending.clear()
+    setMeasuredFileHeights((prev) => {
+      let changed = false
+      const next = new Map(prev)
+      for (const [filePath, height] of snapshot) {
+        if (next.get(filePath) === height) continue
+        next.set(filePath, height)
+        changed = true
+      }
+      if (!changed) return prev
+      measuredFileHeightsRef.current = next
+      return next
+    })
+  }, [])
+
+  const handleMeasuredHeightChange = useCallback((filePath: string, height: number) => {
+    pendingHeightUpdatesRef.current.set(filePath, height)
+    if (heightFlushRafRef.current != null) return
+    heightFlushRafRef.current = requestAnimationFrame(flushMeasuredHeights)
+  }, [flushMeasuredHeights])
+
+  const pendingRangeHandlers = useMemo(() => {
+    const handlers = new Map<string, {
+      pendingRange: DiffPendingCommentRange | null
+      composerBody: string
+      composerDirty: boolean
+      onPendingRangeChange: (range: DiffPendingCommentRange | null) => void
+      onComposerBodyChange: (body: string) => void
+      onComposerDirtyChange: (dirty: boolean) => void
+    }>()
+    for (const file of renderedFiles) {
+      const filePath = file.filePath
+      const draft = commentDraftsByFile.get(filePath)
+      handlers.set(filePath, {
+        pendingRange: draft?.range ?? null,
+        composerBody: draft?.body ?? '',
+        composerDirty: isDiffCommentDraftDirty(draft),
+        onPendingRangeChange: (range) => {
+          setCommentDraftsByFile((prev) => {
+            const next = new Map(prev)
+            if (range == null) {
+              next.delete(filePath)
+              return next.size === prev.size ? prev : next
+            }
+            const existing = next.get(filePath)
+            if (existing?.range.side === range.side
+              && existing.range.lineNumber === range.lineNumber
+              && existing.range.lineEnd === range.lineEnd
+              && !isDiffCommentDraftDirty(existing)) {
+              return prev
+            }
+            next.set(filePath, { range, body: existing?.body ?? '' })
+            return next
+          })
+        },
+        onComposerBodyChange: (body) => {
+          setCommentDraftsByFile((prev) => {
+            const existing = prev.get(filePath)
+            if (!existing || existing.body === body) return prev
+            const next = new Map(prev)
+            next.set(filePath, { ...existing, body })
+            return next
+          })
+        },
+        onComposerDirtyChange: (dirty) => {
+          setCommentDraftsByFile((prev) => {
+            const existing = prev.get(filePath)
+            if (!existing) {
+              if (!dirty) return prev
+              return prev
+            }
+            if (isDiffCommentDraftDirty(existing) === dirty) return prev
+            return prev
+          })
+        },
+      })
+    }
+    return handlers
+  }, [commentDraftsByFile, renderedFiles])
+
+  const restoreScrollAnchor = useCallback((layout: ReturnType<typeof buildDiffFileVirtualLayout>) => {
+    const anchor = scrollAnchorRef.current
+    if (!anchor) return
+    const nextTop = restoreDiffScrollTop(layout, anchor)
+    if (nextTop == null) return
+    const root = scrollAreaRef.current
+    if (!root) return
+    root.scrollTop = nextTop
+    setScrollTop(nextTop)
+    scrollAnchorRef.current = null
+  }, [])
 
   /**
    * Track the set of file paths already mounted so the stagger animation only applies
@@ -324,7 +491,17 @@ export function HunkReview({ worktreePath }: Props) {
 
   const scrollToFile = useCallback((filePath: string) => {
     ensureFileVisible(filePath)
+    const root = scrollAreaRef.current
+    if (!root) return
+    const scrollToLayoutTop = () => {
+      const layoutItem = virtualLayoutRef.current.find((item) => item.filePath === filePath)
+      if (!layoutItem) return false
+      root.scrollTo({ top: layoutItem.top, behavior: getPreferredScrollBehavior() })
+      setActiveFile(filePath)
+      return true
+    }
     requestAnimationFrame(() => {
+      if (scrollToLayoutTop()) return
       requestAnimationFrame(() => {
         const el = document.getElementById(`diff-${filePath}`)
         el?.scrollIntoView({ behavior: getPreferredScrollBehavior(), block: 'start' })
@@ -628,6 +805,11 @@ export function HunkReview({ worktreePath }: Props) {
     fileDiffLoadedRef.current.clear()
     fileDiffInFlightRef.current = 0
     setVisibleCount(INITIAL_VISIBLE_FILES)
+    setScrollTop(0)
+    setMeasuredFileHeights(new Map())
+    measuredFileHeightsRef.current = new Map()
+    setCommentDraftsByFile(new Map())
+    scrollAreaRef.current?.scrollTo({ top: 0 })
     setLoading(true)
     void loadFiles()
   }, [loadFiles])
@@ -734,45 +916,75 @@ export function HunkReview({ worktreePath }: Props) {
     scrollToAnnotationInDiff(activeTourStep.annotation)
   }, [reviewMode, activeTourStep, scrollToAnnotationInDiff])
 
-  // IntersectionObserver to highlight active file in strip
-  useEffect(() => {
-    if (!scrollAreaRef.current || renderedFiles.length === 0) return
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            const id = entry.target.id
-            if (id.startsWith('diff-')) {
-              setActiveFile(id.slice(5))
-            }
-          }
-        }
-      },
-      { root: scrollAreaRef.current, threshold: 0.3 },
-    )
-
-    for (const f of renderedFiles) {
-      const el = document.getElementById(`diff-${f.filePath}`)
-      if (el) observer.observe(el)
-    }
-
-    return () => observer.disconnect()
-  }, [renderedFiles])
-
+  // Scroll: track active file, virtual window, and grow visibleCount near bottom.
   useEffect(() => {
     const root = scrollAreaRef.current
     if (!root) return
     const onScroll = () => {
-      const remaining = root.scrollHeight - root.scrollTop - root.clientHeight
-      if (remaining < 800) {
-        setVisibleCount((prev) => Math.min(files.length, prev + VISIBLE_FILE_CHUNK))
+      if (scrollRafRef.current != null) return
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = null
+        const nextTop = root.scrollTop
+        const owner = findHeaderOwningFileSection(virtualLayoutRef.current, nextTop)
+        if (owner) setActiveFile(owner.filePath)
+
+        const remaining = root.scrollHeight - nextTop - root.clientHeight
+        if (remaining < 800) {
+          setVisibleCount((prev) => Math.min(files.length, prev + VISIBLE_FILE_CHUNK))
+        }
+
+        const nextWindow = getVirtualDiffFileWindow(
+          virtualLayoutRef.current,
+          nextTop,
+          root.clientHeight || DEFAULT_DIFF_VIEWPORT_HEIGHT,
+          DIFF_FILE_OVERSCAN_PX,
+        )
+        const prev = virtualWindowRef.current
+        if (prev.startIndex === nextWindow.startIndex && prev.endIndex === nextWindow.endIndex) {
+          return
+        }
+        virtualWindowRef.current = {
+          startIndex: nextWindow.startIndex,
+          endIndex: nextWindow.endIndex,
+        }
+        setScrollTop(nextTop)
+      })
+    }
+    onScroll()
+    root.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      root.removeEventListener('scroll', onScroll)
+      if (scrollRafRef.current != null) {
+        cancelAnimationFrame(scrollRafRef.current)
+        scrollRafRef.current = null
       }
     }
-    root.addEventListener('scroll', onScroll, { passive: true })
-    onScroll()
-    return () => root.removeEventListener('scroll', onScroll)
   }, [files.length, renderedFiles.length])
+
+  useEffect(() => {
+    const root = scrollAreaRef.current
+    if (!root) return
+    const syncViewportHeight = () => {
+      setViewportHeight(root.clientHeight || DEFAULT_DIFF_VIEWPORT_HEIGHT)
+    }
+    syncViewportHeight()
+    const observer = new ResizeObserver(syncViewportHeight)
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [files.length])
+
+  useEffect(() => {
+    const root = scrollAreaRef.current
+    if (!root) return undefined
+    return () => {
+      scrollAnchorRef.current = captureDiffScrollAnchor(virtualLayoutRef.current, root.scrollTop)
+    }
+  }, [layoutAnchorKey])
+
+  useLayoutEffect(() => {
+    if (!scrollAnchorRef.current) return
+    restoreScrollAnchor(virtualLayout)
+  }, [layoutAnchorKey, virtualLayout, restoreScrollAnchor])
 
   const handleResizeStart = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
@@ -1002,45 +1214,61 @@ export function HunkReview({ worktreePath }: Props) {
             <span className={styles.emptyText}>No changes</span>
           </div>
         ) : (
-          <div ref={scrollAreaRef} className={styles.scrollArea}>
+          <div ref={scrollAreaRef} className={styles.scrollArea} data-testid="hunk-review-scroll-area">
             {loading && (
               <div className={styles.emptyState} role="status" aria-busy="true" aria-label="Loading more changes">
                 <span className={styles.emptyText}>Loading remaining changes...</span>
               </div>
             )}
-            {renderedFiles.map((f) => {
-              const newIndex = newlyVisibleFiles.get(f.filePath)
-              const isNew = newIndex != null
-              return (
-                <div
-                  key={f.filePath}
-                  className={isNew ? styles.diffFileStaggerEntry : undefined}
-                  style={isNew ? ({ '--stagger-index': String(Math.min(newIndex, 8)) } as CSSProperties) : undefined}
-                >
-                  <DiffFileSection
-                    data={f}
-                    inline={inline}
-                    defaultShowFullContext={defaultShowFullContext}
-                    worktreePath={worktreePath}
-                    onOpenFile={openFileFromDiff}
-                    fileAnnotations={annotationsByFile.get(f.filePath) ?? []}
-                    onApplyAnnotation={applyAnnotationPatch}
-                    showPatchAnchorNote={false}
-                    activeTourAnnotationId={reviewMode === 'tour' ? (activeTourStepId ?? undefined) : undefined}
-                    tourMode={reviewMode === 'tour'}
-                    selectedCommentIds={selectedIds}
-                    onToggleComment={toggleComment}
-                    enableAcceptReject
-                    onHunkAccepted={applyHunkAction}
-                    onHunkRejected={applyHunkAction}
-                    onEnsureFileDiff={ensureFileDiffLoaded}
-                    enableViewedToggle
-                    viewed={viewedFilePaths.has(f.filePath)}
-                    onViewedChange={(v) => setFileViewed(f.filePath, v)}
-                  />
-                </div>
-              )
-            })}
+            <div style={{ minHeight: '100%' }}>
+              {virtualWindow.beforeHeight > 0 && (
+                <div style={{ height: virtualWindow.beforeHeight }} aria-hidden />
+              )}
+              {visibleWindowFiles.map((f) => {
+                const newIndex = newlyVisibleFiles.get(f.filePath)
+                const isNew = newIndex != null
+                const draftHandlers = pendingRangeHandlers.get(f.filePath)
+                return (
+                  <div
+                    key={f.filePath}
+                    className={isNew ? styles.diffFileStaggerEntry : undefined}
+                    style={isNew ? ({ '--stagger-index': String(Math.min(newIndex, 8)) } as CSSProperties) : undefined}
+                  >
+                    <DiffFileSection
+                      data={f}
+                      inline={inline}
+                      defaultShowFullContext={defaultShowFullContext}
+                      worktreePath={worktreePath}
+                      onOpenFile={openFileFromDiff}
+                      fileAnnotations={annotationsByFile.get(f.filePath) ?? []}
+                      onApplyAnnotation={applyAnnotationPatch}
+                      showPatchAnchorNote={false}
+                      activeTourAnnotationId={reviewMode === 'tour' ? (activeTourStepId ?? undefined) : undefined}
+                      tourMode={reviewMode === 'tour'}
+                      selectedCommentIds={selectedIds}
+                      onToggleComment={toggleComment}
+                      enableAcceptReject
+                      onHunkAccepted={applyHunkAction}
+                      onHunkRejected={applyHunkAction}
+                      onEnsureFileDiff={ensureFileDiffLoaded}
+                      enableViewedToggle
+                      viewed={viewedFilePaths.has(f.filePath)}
+                      onViewedChange={(v) => setFileViewed(f.filePath, v)}
+                      onMeasuredHeightChange={handleMeasuredHeightChange}
+                      pendingRange={draftHandlers?.pendingRange ?? null}
+                      onPendingRangeChange={draftHandlers?.onPendingRangeChange}
+                      composerBody={draftHandlers?.composerBody ?? ''}
+                      onComposerBodyChange={draftHandlers?.onComposerBodyChange}
+                      composerDirty={draftHandlers?.composerDirty ?? false}
+                      onComposerDirtyChange={draftHandlers?.onComposerDirtyChange}
+                    />
+                  </div>
+                )
+              })}
+              {virtualWindow.afterHeight > 0 && (
+                <div style={{ height: virtualWindow.afterHeight }} aria-hidden />
+              )}
+            </div>
           </div>
         )}
       </FloatingPanel>

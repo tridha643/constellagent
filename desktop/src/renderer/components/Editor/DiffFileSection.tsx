@@ -7,6 +7,11 @@ import {
 } from '@pierre/diffs/react'
 import { diffAcceptRejectHunk, getSingularPatch } from '@pierre/diffs'
 import type { AnnotationPatch, DiffAnnotation, DiffAnnotationSide } from '@shared/diff-annotation-types'
+import {
+  DIFF_E2E_OPEN_COMMENT_COMPOSER,
+  type DiffE2eOpenCommentComposerDetail,
+  type DiffPendingCommentRange,
+} from './diff-comment-draft'
 import type { GitHunkActionRequest } from '@shared/git-hunk-action-types'
 import { STATUS_LABELS } from '../../../shared/status-labels'
 import type { DiffFileData } from '../../types/working-tree-diff'
@@ -16,6 +21,7 @@ import annotationUi from './AnnotationBubble.module.css'
 import styles from './Editor.module.css'
 import { CODEX_ABSOLUTELY_DIFF_THEME_ID } from '../../themes/diff/codex-absolutely-dark'
 import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavior'
+import { getDiffFileChangeStats } from './diff-viewer-model'
 
 const DIFFS_THEME = CODEX_ABSOLUTELY_DIFF_THEME_ID
 
@@ -42,6 +48,9 @@ const HOVER_UTILITY_UNSAFE_CSS = `
 }
 `.trim()
 
+const PIERRE_MAX_HIGHLIGHT_LINE_LENGTH = 2000
+const PIERRE_MAX_LINE_DIFF_LENGTH = 2000
+
 /** Pierre LineSelectionManager payload (not re-exported from `@pierre/diffs/react`). */
 export interface PierreSelectedRange {
   start: number
@@ -49,6 +58,9 @@ export interface PierreSelectedRange {
   side?: DiffAnnotationSide
   endSide?: DiffAnnotationSide
 }
+
+export type { DiffCommentDraft, DiffPendingCommentRange } from './diff-comment-draft'
+export { isDiffCommentDraftDirty } from './diff-comment-draft'
 
 export function normalizeDiffSelection(range: PierreSelectedRange): {
   side: DiffAnnotationSide
@@ -97,17 +109,6 @@ function getHunkActionLineKey(hunk: FileDiffMetadata['hunks'][number]): string {
   return `${hunk.deletionStart}:${hunk.additionStart}`
 }
 
-function summarizePatchChanges(patch: string): { additions: number; deletions: number } {
-  let additions = 0
-  let deletions = 0
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('+++') || line.startsWith('---')) continue
-    if (line.startsWith('+')) additions += 1
-    else if (line.startsWith('-')) deletions += 1
-  }
-  return { additions, deletions }
-}
-
 // ── Per-file diff section ──
 
 export interface DiffFileSectionProps {
@@ -132,6 +133,16 @@ export interface DiffFileSectionProps {
   enableViewedToggle?: boolean
   viewed?: boolean
   onViewedChange?: (viewed: boolean) => void
+  collapsed?: boolean
+  onCollapsedChange?: (collapsed: boolean) => void
+  onMeasuredHeightChange?: (filePath: string, height: number) => void
+  /** Lifted draft state — survives diff virtualization unmount. */
+  pendingRange?: DiffPendingCommentRange | null
+  onPendingRangeChange?: (range: DiffPendingCommentRange | null) => void
+  composerBody?: string
+  onComposerBodyChange?: (body: string) => void
+  composerDirty?: boolean
+  onComposerDirtyChange?: (dirty: boolean) => void
 }
 
 export const DiffFileSection = memo(function DiffFileSection({
@@ -155,15 +166,29 @@ export const DiffFileSection = memo(function DiffFileSection({
   enableViewedToggle = false,
   viewed: viewedProp = false,
   onViewedChange,
+  collapsed: collapsedProp,
+  onCollapsedChange,
+  onMeasuredHeightChange,
+  pendingRange: pendingRangeProp,
+  onPendingRangeChange,
+  composerBody: composerBodyProp,
+  onComposerBodyChange,
+  composerDirty: composerDirtyProp,
+  onComposerDirtyChange,
 }: DiffFileSectionProps) {
+  const sectionRef = useRef<HTMLDivElement>(null)
   const [selectedLines, setSelectedLines] = useState<PierreSelectedRange | null>(null)
   const [showFullContextOverride, setShowFullContextOverride] = useState<boolean | null>(null)
-  const [collapsed, setCollapsed] = useState(defaultCollapsed)
-  const [pendingRange, setPendingRange] = useState<{
-    side: DiffAnnotationSide
-    lineNumber: number
-    lineEnd: number
-  } | null>(null)
+  const canShowFullContext = data.fileDiff != null
+  const showFullContext = canShowFullContext && (showFullContextOverride ?? defaultShowFullContext)
+  const [internalCollapsed, setInternalCollapsed] = useState(defaultCollapsed)
+  const [internalPendingRange, setInternalPendingRange] = useState<DiffPendingCommentRange | null>(null)
+
+  const pendingRange = pendingRangeProp !== undefined ? pendingRangeProp : internalPendingRange
+  const setPendingRange = useCallback((range: DiffPendingCommentRange | null) => {
+    if (onPendingRangeChange) onPendingRangeChange(range)
+    else setInternalPendingRange(range)
+  }, [onPendingRangeChange])
 
   const [fileDiffState, setFileDiffState] = useState<FileDiffMetadata | null>(null)
   const [hiddenHunkState, setHiddenHunkState] = useState<{ sourceKey: string; keys: string[] }>({
@@ -171,10 +196,19 @@ export const DiffFileSection = memo(function DiffFileSection({
     keys: [],
   })
   const [pendingHunkAction, setPendingHunkAction] = useState<string | null>(null)
-  const composerDirtyRef = useRef(false)
+  const [internalComposerBody, setInternalComposerBody] = useState('')
+  const internalComposerDirtyRef = useRef(false)
+  const composerBody = composerBodyProp ?? internalComposerBody
+  const setComposerBody = useCallback((body: string) => {
+    if (onComposerBodyChange) onComposerBodyChange(body)
+    else setInternalComposerBody(body)
+  }, [onComposerBodyChange])
+  const composerDirty = composerDirtyProp ?? internalComposerDirtyRef.current
   const collapseTouchedRef = useRef(false)
   const fileDiffSourceKeyRef = useRef<string | null>(null)
+  const fileDiffLoadedKeyRef = useRef<string | null>(null)
   const fileDiffSourceKey = `${data.filePath}\u0000${data.patch}`
+  const collapsed = collapsedProp ?? internalCollapsed
   const hiddenHunkKeys =
     hiddenHunkState.sourceKey === fileDiffSourceKey ? hiddenHunkState.keys : []
   const canApplyAcceptReject =
@@ -190,38 +224,91 @@ export const DiffFileSection = memo(function DiffFileSection({
 
   useEffect(() => {
     if (!pendingRange) {
-      composerDirtyRef.current = false
+      internalComposerDirtyRef.current = false
+      onComposerDirtyChange?.(false)
+      if (composerBodyProp === undefined) setInternalComposerBody('')
     }
-  }, [pendingRange])
+  }, [composerBodyProp, pendingRange, onComposerDirtyChange])
+
+  useEffect(() => {
+    if (!pendingRange) {
+      setSelectedLines(null)
+      return
+    }
+    setSelectedLines(pendingRangeToPierreSelection(pendingRange))
+  }, [pendingRange?.side, pendingRange?.lineNumber, pendingRange?.lineEnd])
 
   const handleComposerDirtyChange = useCallback((dirty: boolean) => {
-    composerDirtyRef.current = dirty
-  }, [])
+    internalComposerDirtyRef.current = dirty
+    onComposerDirtyChange?.(dirty)
+  }, [onComposerDirtyChange])
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<DiffE2eOpenCommentComposerDetail>).detail
+      if (detail?.filePath !== data.filePath) return
+      const line = detail.lineNumber ?? 1
+      setPendingRange({
+        side: detail.side ?? 'additions',
+        lineNumber: line,
+        lineEnd: line,
+      })
+    }
+    window.addEventListener(DIFF_E2E_OPEN_COMMENT_COMPOSER, handler)
+    return () => window.removeEventListener(DIFF_E2E_OPEN_COMMENT_COMPOSER, handler)
+  }, [data.filePath, setPendingRange])
 
   useEffect(() => {
     collapseTouchedRef.current = false
-    setCollapsed(defaultCollapsed)
+    setInternalCollapsed(defaultCollapsed)
   }, [data.filePath, defaultCollapsed])
 
   useEffect(() => {
     if (collapseTouchedRef.current) return
-    setCollapsed(defaultCollapsed)
+    setInternalCollapsed(defaultCollapsed)
   }, [defaultCollapsed])
+
+  useEffect(() => {
+    const node = sectionRef.current
+    if (!node || !onMeasuredHeightChange) return
+    const report = () => {
+      const height = Math.ceil(node.getBoundingClientRect().height)
+      if (height > 0) onMeasuredHeightChange(data.filePath, height)
+    }
+    report()
+    const observer = new ResizeObserver(report)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [data.filePath, collapsed, onMeasuredHeightChange])
 
   useEffect(() => {
     if (!enableViewedToggle) return
     if (viewedProp) {
       collapseTouchedRef.current = false
-      setCollapsed(true)
+      setInternalCollapsed(true)
+      onCollapsedChange?.(true)
     }
-  }, [viewedProp, enableViewedToggle, data.filePath])
+  }, [viewedProp, enableViewedToggle, data.filePath, onCollapsedChange])
+
+  const applyCollapsed = useCallback(
+    (next: boolean) => {
+      collapseTouchedRef.current = true
+      setInternalCollapsed(next)
+      onCollapsedChange?.(next)
+    },
+    [onCollapsedChange],
+  )
 
   useEffect(() => {
     if (collapsed) return
     if (pendingHunkAction) return
-    if (fileDiffState && fileDiffSourceKeyRef.current === fileDiffSourceKey) return
-    fileDiffSourceKeyRef.current = fileDiffSourceKey
-    if (data.fileDiff) {
+    const fileDiffDisplayKey = `${fileDiffSourceKey}\u0000${showFullContext ? 'full' : 'patch'}`
+    if (fileDiffState && fileDiffLoadedKeyRef.current === fileDiffDisplayKey) return
+    fileDiffLoadedKeyRef.current = fileDiffDisplayKey
+    // Full-file metadata (parseDiffFromFile) is non-partial; Pierre's worker pool builds a
+    // collapsed highlight AST indexed differently than processDiffResult expects. Use it only
+    // for "Show full file" (expandUnchanged) and keep patch-based partial metadata otherwise.
+    if (showFullContext && data.fileDiff) {
       setFileDiffState(data.fileDiff)
       return
     }
@@ -234,7 +321,15 @@ export const DiffFileSection = memo(function DiffFileSection({
     } catch {
       setFileDiffState(null)
     }
-  }, [collapsed, data.fileDiff, data.patch, fileDiffSourceKey, fileDiffState, pendingHunkAction])
+  }, [
+    collapsed,
+    data.fileDiff,
+    data.patch,
+    fileDiffSourceKey,
+    fileDiffState,
+    pendingHunkAction,
+    showFullContext,
+  ])
 
   useEffect(() => {
     if (collapsed) return
@@ -250,9 +345,14 @@ export const DiffFileSection = memo(function DiffFileSection({
   const fullPath = data.filePath.startsWith('/')
     ? data.filePath
     : `${worktreePath}/${data.filePath}`
-  const canShowFullContext = data.fileDiff != null
-  const showFullContext = canShowFullContext && (showFullContextOverride ?? defaultShowFullContext)
-  const patchSummary = useMemo(() => summarizePatchChanges(data.patch), [data.patch])
+  const pierreCacheKey = useMemo(
+    () => `${data.filePath}:${data.patch.length}:${data.patch.slice(0, 96)}`,
+    [data.filePath, data.patch],
+  )
+  const patchSummary = useMemo(
+    () => getDiffFileChangeStats(data),
+    [data.additions, data.deletions, data.patch],
+  )
 
   const lineAnnotations = useMemo((): DiffLineAnnotation<DiffAnnotation[]>[] => {
     const map = new Map<string, DiffAnnotation[]>()
@@ -339,7 +439,7 @@ export const DiffFileSection = memo(function DiffFileSection({
   const handleLineSelectionEnd = useCallback(
     (range: PierreSelectedRange | null) => {
       if (!range) {
-        if (composerDirtyRef.current && pendingRange) {
+        if (composerDirty && pendingRange) {
           if (!window.confirm('Discard your comment draft?')) {
             setSelectedLines(pendingRangeToPierreSelection(pendingRange))
             return
@@ -350,7 +450,7 @@ export const DiffFileSection = memo(function DiffFileSection({
         return
       }
       const normalized = normalizeDiffSelection(range)
-      if (pendingRange && composerDirtyRef.current) {
+      if (pendingRange && composerDirty) {
         if (!normalizedPendingRangesEqual(normalized, pendingRange)) {
           if (!window.confirm('Discard your comment draft?')) {
             setSelectedLines(pendingRangeToPierreSelection(pendingRange))
@@ -371,17 +471,34 @@ export const DiffFileSection = memo(function DiffFileSection({
       diffStyle: inline ? ('unified' as const) : ('split' as const),
       diffIndicators: 'bars' as const,
       lineDiffType: 'word-alt' as const,
-      overflow: 'scroll' as const,
+      maxLineDiffLength: PIERRE_MAX_LINE_DIFF_LENGTH,
+      overflow: 'wrap' as const,
       expandUnchanged: showFullContext,
       disableFileHeader: false,
       enableLineSelection: true,
       enableHoverUtility: true,
+      preferredHighlighter: 'shiki-js' as const,
+      tokenizeMaxLineLength: PIERRE_MAX_HIGHLIGHT_LINE_LENGTH,
       unsafeCSS: HOVER_UTILITY_UNSAFE_CSS,
       onLineSelectionStart: handleLineSelectionStart,
       onLineSelectionEnd: handleLineSelectionEnd,
     }),
     [inline, showFullContext, handleLineSelectionStart, handleLineSelectionEnd],
   )
+
+  const renderFileDiff = useMemo(
+    () => (
+      fileDiffState
+        ? {
+          ...fileDiffState,
+          cacheKey: fileDiffState.cacheKey ?? pierreCacheKey,
+        }
+        : null
+    ),
+    [fileDiffState, pierreCacheKey],
+  )
+
+  const disablePierreWorkerPool = showFullContext && data.fileDiff != null
 
   const clearSelectionAndComposer = useCallback(() => {
     setSelectedLines(null)
@@ -511,6 +628,8 @@ export const DiffFileSection = memo(function DiffFileSection({
               side={pendingRange.side}
               lineNumber={pendingRange.lineNumber}
               lineEnd={pendingRange.lineEnd}
+              body={composerBody}
+              onBodyChange={setComposerBody}
               onCancel={clearSelectionAndComposer}
               onApply={onApplyAnnotation}
               onDirtyChange={handleComposerDirtyChange}
@@ -533,29 +652,29 @@ export const DiffFileSection = memo(function DiffFileSection({
       handleAcceptHunk,
       handleRejectHunk,
       handleComposerDirtyChange,
+      composerBody,
+      setComposerBody,
     ],
   )
 
   const expandSection = useCallback(() => {
-    collapseTouchedRef.current = true
-    setCollapsed(false)
+    applyCollapsed(false)
     if (enableViewedToggle && viewedProp) {
       onViewedChange?.(false)
     }
-  }, [enableViewedToggle, viewedProp, onViewedChange])
+  }, [applyCollapsed, enableViewedToggle, viewedProp, onViewedChange])
 
   const handleViewedInputChange = useCallback(
     (e: { target: { checked: boolean } }) => {
       const next = e.target.checked
       onViewedChange?.(next)
-      collapseTouchedRef.current = true
       if (next) {
-        setCollapsed(true)
+        applyCollapsed(true)
       } else {
-        setCollapsed(false)
+        applyCollapsed(false)
       }
     },
-    [onViewedChange],
+    [applyCollapsed, onViewedChange],
   )
 
   const renderViewedControl = useCallback(
@@ -594,8 +713,7 @@ export const DiffFileSection = memo(function DiffFileSection({
           aria-pressed={!collapsed}
           onClick={(e) => {
             e.stopPropagation()
-            collapseTouchedRef.current = true
-            setCollapsed((prev) => !prev)
+            applyCollapsed(!collapsed)
           }}
         >
           {collapsed ? 'Expand' : 'Collapse'}
@@ -659,7 +777,7 @@ export const DiffFileSection = memo(function DiffFileSection({
 
   if (collapsed) {
     return (
-      <div className={styles.diffFileSection} id={`diff-${data.filePath}`}>
+      <div ref={sectionRef} className={styles.diffFileSection} id={`diff-${data.filePath}`}>
         <div
           className={styles.collapsedFileHeader}
           role="button"
@@ -715,7 +833,7 @@ export const DiffFileSection = memo(function DiffFileSection({
   }
 
   return (
-    <div className={styles.diffFileSection} id={`diff-${data.filePath}`}>
+    <div ref={sectionRef} className={styles.diffFileSection} id={`diff-${data.filePath}`}>
       <div className={styles.expandedFileBody}>
       {data.patch || fileDiffState ? (
         combinedMergePatch ? (
@@ -764,15 +882,17 @@ export const DiffFileSection = memo(function DiffFileSection({
               </div>
             }
           >
-            {fileDiffState ? (
+            {renderFileDiff ? (
               <FileDiff<DiffAnnotation[]>
-                fileDiff={fileDiffState}
+                key={`${data.filePath}:${showFullContext ? 'full' : 'patch'}`}
+                fileDiff={renderFileDiff}
                 options={patchOptions}
                 selectedLines={selectedLines}
                 lineAnnotations={hasAnnotationUi ? displayLineAnnotations : undefined}
                 renderAnnotation={hasAnnotationUi ? renderAnnotation : undefined}
                 renderHeaderMetadata={renderHeaderMetadata}
-                renderHoverUtility={renderHoverUtility}
+                renderGutterUtility={renderHoverUtility}
+                disableWorkerPool={disablePierreWorkerPool}
               />
             ) : (
               <PatchDiff<DiffAnnotation[]>
@@ -782,7 +902,7 @@ export const DiffFileSection = memo(function DiffFileSection({
                 lineAnnotations={hasAnnotationUi ? displayLineAnnotations : undefined}
                 renderAnnotation={hasAnnotationUi ? renderAnnotation : undefined}
                 renderHeaderMetadata={renderHeaderMetadata}
-                renderHoverUtility={renderHoverUtility}
+                renderGutterUtility={renderHoverUtility}
               />
             )}
             {showPatchAnchorNote && fileAnnotations.length > 0 && (
@@ -792,6 +912,8 @@ export const DiffFileSection = memo(function DiffFileSection({
             )}
           </ErrorBoundary>
         )
+      ) : data.patchLoaded === false ? (
+        <div style={{ padding: 12, color: '#888', fontSize: 13 }}>Loading diff...</div>
       ) : (
         <div style={{ padding: 12, color: '#888', fontSize: 13 }}>No diff available</div>
       )}

@@ -4,10 +4,10 @@
   background: var(--scrim-overlay, rgba(0, 0, 0, 0.46));
   backdrop-filter: blur(var(--scrim-blur, 6px));
   -webkit-backdrop-filter: blur(var(--scrim-blur, 6px));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: max(56px, env(safe-area-inset-top)) 24px 32px;
+  z-index: 2000;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -22,7 +22,8 @@
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-xl, 14px);
   padding: var(--space-8);
-  width: 340px;
+  width: min(380px, calc(100vw - 48px));
+  max-height: calc(100vh - 88px);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);

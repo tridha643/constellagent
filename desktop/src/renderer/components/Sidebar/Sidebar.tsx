@@ -615,7 +615,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const updateProject = useAppStore((s) => s.updateProject);
   const deleteProject = useAppStore((s) => s.deleteProject);
   const showConfirmDialog = useAppStore((s) => s.showConfirmDialog);
-  const updateConfirmDialog = useAppStore((s) => s.updateConfirmDialog);
   const dismissConfirmDialog = useAppStore((s) => s.dismissConfirmDialog);
   const toggleSettings = useAppStore((s) => s.toggleSettings);
   const toggleAutomations = useAppStore((s) => s.toggleAutomations);
@@ -1341,18 +1340,13 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
         message: `Delete workspace "${ws.name}"? This will remove the git worktree from disk.`,
         confirmLabel: "Delete",
         destructive: true,
-        confirmInPlace: true,
         tip: "Tip: Hold \u21e7 Shift while deleting to skip this dialog",
         onConfirm: () => {
-          updateConfirmDialog({ loading: true });
-          void deleteWorkspace(ws.id).then(
-            () => dismissConfirmDialog(),
-            () => updateConfirmDialog({ loading: false }),
-          );
+          void deleteWorkspace(ws.id);
         },
       });
     },
-    [showConfirmDialog, updateConfirmDialog, deleteWorkspace, dismissConfirmDialog],
+    [showConfirmDialog, deleteWorkspace],
   );
 
   const handleDeleteProject = useCallback(

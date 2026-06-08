@@ -10,7 +10,8 @@ import { extractFilePathFromGitPatchSegment, splitGitPatchIntoFiles } from '../.
 const DEFAULT_CONCURRENCY = 4
 const EARLY_PROGRESS_UPDATES = 3
 const PROGRESS_UPDATE_EVERY = 5
-const PRELOAD_FULL_DIFF_COUNT = 3
+// Pre-parse Pierre metadata for the first expanded files so the initial window renders code.
+const PRELOAD_FULL_DIFF_COUNT = 5
 
 interface LoadWorkingTreeDiffFilesOptions {
   worktreePath: string
@@ -31,7 +32,7 @@ export async function loadWorkingTreeDiffFiles({
   statusSnapshot,
   source,
 }: LoadWorkingTreeDiffFilesOptions): Promise<DiffFileData[]> {
-  const snapshot = statusSnapshot ?? await measureAsync('git:get-status-snapshot-for-diff', async () => {
+  const snapshot: GitStatusSnapshot = statusSnapshot ?? await measureAsync('git:get-status-snapshot-for-diff', async () => {
     const [statuses, headHash] = await Promise.all([
       window.api.git.getStatus(worktreePath),
       window.api.git.getHeadHash(worktreePath),
@@ -62,6 +63,18 @@ export async function loadWorkingTreeDiffFiles({
     kinds.add(status.staged ? 'staged' : 'unstaged')
   }
 
+  const statusOnlyFiles: DiffFileData[] = statuses.map((status) => ({
+    filePath: status.path,
+    patch: '',
+    status: status.status,
+    staged: status.staged,
+    additions: status.additions,
+    deletions: status.deletions,
+    hasMixedStageState: statusKindsByPath.get(status.path)?.size === 2,
+    patchLoaded: false,
+  }))
+  onProgress?.(statusOnlyFiles)
+
   const workingTreePatch = await measureAsync('git:get-working-tree-diff-for-diff', () => (
     window.api.git.getWorkingTreeDiff(worktreePath)
   ), {
@@ -75,14 +88,12 @@ export async function loadWorkingTreeDiffFiles({
   }
 
   const results: Array<DiffFileData | undefined> = new Array(statuses.length)
-  const orderedProgress: DiffFileData[] = []
   let nextIndex = 0
-  let nextContiguousIndex = 0
   let resolvedCount = 0
 
   const publishProgress = () => {
     if (!onProgress) return
-    onProgress([...orderedProgress])
+    onProgress(statusOnlyFiles.map((file, index) => results[index] ?? file))
   }
 
   const shouldPublish = () =>
@@ -109,10 +120,6 @@ export async function loadWorkingTreeDiffFiles({
       if (isCancelled?.()) return
 
       results[index] = result
-      while (nextContiguousIndex < results.length && results[nextContiguousIndex]) {
-        orderedProgress.push(results[nextContiguousIndex]!)
-        nextContiguousIndex += 1
-      }
       resolvedCount += 1
       if (shouldPublish()) publishProgress()
     }

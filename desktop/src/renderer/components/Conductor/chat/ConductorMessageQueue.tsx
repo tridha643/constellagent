@@ -5,12 +5,14 @@ import styles from '../Conductor.module.css'
 export function ConductorMessageQueue({
   messages,
   editingMessageId,
+  selectedMessageId,
   onEdit,
   onRemove,
   onMoveUp,
 }: {
   messages: readonly QueuedAgentMessage[]
   editingMessageId?: string | null
+  selectedMessageId?: string | null
   onEdit: (messageId: string) => void
   onRemove: (messageId: string) => void
   onMoveUp: (messageId: string) => void
@@ -24,6 +26,12 @@ export function ConductorMessageQueue({
     const timer = window.setTimeout(() => setRemovingId(null), 160)
     return () => window.clearTimeout(timer)
   }, [removingId])
+
+  useEffect(() => {
+    if (selectedMessageId) {
+      setExpanded(true)
+    }
+  }, [selectedMessageId])
 
   if (messages.length === 0) return null
 
@@ -54,6 +62,7 @@ export function ConductorMessageQueue({
         <ul id={listId} className={styles.composerQueueList} role="list">
           {messages.map((message, index) => {
             const editing = editingMessageId === message.id
+            const selected = selectedMessageId === message.id
             const exiting = removingId === message.id
             return (
               <li
@@ -61,12 +70,15 @@ export function ConductorMessageQueue({
                 className={[
                   styles.composerQueueListItem,
                   editing ? styles.composerQueueListItemEditing : '',
+                  selected ? styles.composerQueueListItemSelected : '',
                   exiting ? styles.composerQueueListItemExit : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
                 data-testid="conductor-message-queue-row"
                 data-editing={editing ? 'true' : undefined}
+                data-selected={selected ? 'true' : undefined}
+                aria-current={selected ? 'true' : undefined}
               >
                 <button
                   type="button"

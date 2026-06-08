@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import type { DiffRow, DiffToken } from './diff-utils'
-import { parseDiffRows } from './diff-utils'
+import { MAX_COMPACT_ROWS, parseDiffRows } from './diff-utils'
 import styles from '../../Conductor.module.css'
 
 function renderTokens(tokens: readonly DiffToken[] | undefined, fallback: string): ReactNode {
@@ -97,7 +97,10 @@ const MAX_CONTEXT_ROWS = 2
 
 /** Compact unified diff body for Conductor tool cards (uses diffRow chrome, not Pierre). */
 export function ConductorDiffBody({ patch }: { patch: string }) {
-  const { rows, hasNoNewline } = useMemo(() => parseDiffRows(patch), [patch])
+  const { rows, hasNoNewline } = useMemo(
+    () => parseDiffRows(patch, { maxRows: MAX_COMPACT_ROWS }),
+    [patch],
+  )
 
   const visibleRows = useMemo(() => {
     if (rows.length === 0) return rows

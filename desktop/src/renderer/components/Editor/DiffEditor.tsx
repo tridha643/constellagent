@@ -1,4 +1,12 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useCallback,
+  useRef,
+  useMemo,
+} from 'react'
+import { WorkerPoolContextProvider } from '@pierre/diffs/react'
 import type { AnnotationPatch, DiffAnnotation } from '@shared/diff-annotation-types'
 import type { GitHunkActionRequest } from '@shared/git-hunk-action-types'
 import { useAppStore } from '../../store/app-store'
@@ -9,12 +17,27 @@ import { getPreferredScrollBehavior } from '../../utils/preferred-scroll-behavio
 import { extractFilePathFromGitPatchSegment, splitGitPatchIntoFiles } from '../../utils/git-patch'
 import type { DiffFileData } from '../../types/working-tree-diff'
 import { DiffFileSection, FileStrip } from './DiffFileSection'
+import { isDiffCommentDraftDirty, type DiffCommentDraft } from './diff-comment-draft'
 import { loadWorkingTreeExpandableDiffMetadata } from './buildWorkingTreeDiffFileData'
 import { loadWorkingTreeDiffFiles } from './loadWorkingTreeDiffFiles'
 import { registerChangesFindSource } from '../../utils/changes-file-find-bridge'
 import { markPaint, measureAsync } from '../../utils/perf'
-import { diffStatsFromPatch } from '../DiffPreview/diff-model'
+import { CODEX_ABSOLUTELY_DIFF_THEME_ID } from '../../themes/diff/codex-absolutely-dark'
+import { createPierreDiffWorker } from '../../utils/pierre-diff-worker'
+import {
+  buildDiffFileVirtualLayout,
+  ensureFileInVirtualWindow,
+  findHeaderOwningFileSection,
+  getDiffFileReviewLineCount,
+  getDiffReviewSummary,
+  getScrollTopForFileHeader,
+  getVirtualDiffFileWindow,
+} from './diff-viewer-model'
 import styles from './Editor.module.css'
+
+const EMPTY_ANNS: DiffAnnotation[] = []
+const DIFF_FILE_OVERSCAN_PX = 1600
+const DEFAULT_DIFF_VIEWPORT_HEIGHT = 900
 
 interface Props {
   worktreePath: string
@@ -24,14 +47,12 @@ interface Props {
 }
 
 const FILE_DIFF_LOAD_CONCURRENCY = 2
-const STATUS_SNAPSHOT_TTL_MS = 2000
+const STATUS_SNAPSHOT_TTL_MS = 5000
 const AUTO_COLLAPSE_FILE_THRESHOLD = 25
 const AUTO_COLLAPSE_PATCH_LINE_THRESHOLD = 2000
 const AUTO_EXPAND_MIN_FILES = 10
 const AUTO_EXPAND_MAX_FILES = 15
 const AUTO_EXPAND_PATCH_LINE_BUDGET = 1500
-const INITIAL_VISIBLE_FILES = 15
-const VISIBLE_FILE_INCREMENT = 12
 
 /**
  * Merge a refreshed list of libSQL annotations into the prior in-memory list,
@@ -82,11 +103,27 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   )
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [viewedFilePaths, setViewedFilePaths] = useState<Set<string>>(() => new Set())
+  const [collapsedFileOverrides, setCollapsedFileOverrides] = useState<Map<string, boolean>>(() => new Map())
   const [expectedFileCount, setExpectedFileCount] = useState(0)
-  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_FILES)
+  const [commentDraftsByFile, setCommentDraftsByFile] = useState<Map<string, DiffCommentDraft>>(() => new Map())
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const defaultCollapsedPathsRef = useRef<ReadonlySet<string>>(new Set())
+  const virtualLayoutRef = useRef<ReturnType<typeof buildDiffFileVirtualLayout>>([])
+  const virtualWindowRef = useRef({ startIndex: 0, endIndex: 0 })
+  const savedScrollTopRef = useRef(0)
   const loadGenerationRef = useRef(0)
+  const reconcileGenerationRef = useRef(0)
   const filesRef = useRef<DiffFileData[]>([])
+  const scrollRafRef = useRef<number | null>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [scrollTargetFilePath, setScrollTargetFilePath] = useState<string | null>(null)
+  const [scrollRequest, setScrollRequest] = useState<{ filePath: string; token: number } | null>(null)
+  const [viewportHeight, setViewportHeight] = useState(DEFAULT_DIFF_VIEWPORT_HEIGHT)
+  const suppressViewportSelectionSyncRef = useRef(false)
+  const [measuredFileHeights, setMeasuredFileHeights] = useState<Map<string, number>>(() => new Map())
+  const measuredFileHeightsRef = useRef(measuredFileHeights)
+  const pendingHeightUpdatesRef = useRef(new Map<string, number>())
+  const heightFlushRafRef = useRef<number | null>(null)
   const fileDiffQueueRef = useRef<string[]>([])
   const fileDiffLoadingRef = useRef(new Set<string>())
   const fileDiffLoadedRef = useRef(new Set<string>())
@@ -124,6 +161,20 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
     void toggleHunkReview()
   }, [closeHunkReview, hunkReviewOpen, hunkReviewWorkspaceId, reviewWorkspace?.id, toggleHunkReview])
 
+  const setFileCollapsed = useCallback((filePath: string, collapsed: boolean) => {
+    setCollapsedFileOverrides((prev) => {
+      const defaultCollapsed = defaultCollapsedPathsRef.current.has(filePath)
+      const existing = prev.get(filePath)
+      if (existing === collapsed) return prev
+      if (!prev.has(filePath) && defaultCollapsed === collapsed) return prev
+
+      const next = new Map(prev)
+      if (collapsed === defaultCollapsed) next.delete(filePath)
+      else next.set(filePath, collapsed)
+      return next
+    })
+  }, [])
+
   const setFileViewed = useCallback((filePath: string, viewed: boolean) => {
     setViewedFilePaths((prev) => {
       const next = new Set(prev)
@@ -131,11 +182,19 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
       else next.delete(filePath)
       return next
     })
-  }, [])
+    if (viewed) setFileCollapsed(filePath, true)
+  }, [setFileCollapsed])
 
   useEffect(() => {
     setViewedFilePaths(new Set())
-    setVisibleCount(INITIAL_VISIBLE_FILES)
+    setCollapsedFileOverrides(new Map())
+    setCommentDraftsByFile(new Map())
+    setMeasuredFileHeights(new Map())
+    measuredFileHeightsRef.current = new Map()
+    pendingHeightUpdatesRef.current.clear()
+    savedScrollTopRef.current = 0
+    setScrollTop(0)
+    scrollAreaRef.current?.scrollTo({ top: 0 })
   }, [worktreePath, commitHash])
 
   const showViewedToggle = !commitHash
@@ -159,8 +218,10 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   // standalone diff tab uses the same approach so its comment writes don't
   // flicker either.
   const reconcileAnnotations = useCallback(async () => {
+    const generation = ++reconcileGenerationRef.current
     try {
       const rows = await window.api.review.commentList(worktreePath)
+      if (reconcileGenerationRef.current !== generation) return
       const next: DiffAnnotation[] = rows.map((r) => ({
         id: r.id,
         filePath: r.file_path,
@@ -180,8 +241,9 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   }, [worktreePath])
 
   useEffect(() => {
+    if (!active) return
     void reconcileAnnotations()
-  }, [reconcileAnnotations])
+  }, [active, reconcileAnnotations])
 
   const applyAnnotationPatch = useCallback((patch: AnnotationPatch) => {
     setLocalAnnotations((prev) => {
@@ -241,40 +303,12 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
     return grouped
   }, [annotations])
 
-  const fileIndexByPath = useMemo(() => {
-    const next = new Map<string, number>()
-    files.forEach((file, index) => {
-      next.set(file.filePath, index)
-    })
-    return next
-  }, [files])
-
   const totalPatchLineCount = useMemo(
-    () => files.reduce((sum, file) => sum + (file.patch ? file.patch.split('\n').length : 0), 0),
+    () => files.reduce((sum, file) => sum + getDiffFileReviewLineCount(file), 0),
     [files],
   )
 
-  const reviewSummary = useMemo(() => {
-    let additions = 0
-    let deletions = 0
-    let staged = 0
-    let unstaged = 0
-    for (const file of files) {
-      const stats = diffStatsFromPatch(file.patch)
-      additions += stats.additions
-      deletions += stats.deletions
-      if (file.staged) staged += 1
-      else unstaged += 1
-    }
-    return { additions, deletions, staged, unstaged }
-  }, [files])
-
-  const visibleFiles = useMemo(
-    () => files.slice(0, commitHash ? files.length : visibleCount),
-    [commitHash, files, visibleCount],
-  )
-
-  const hasMoreFiles = visibleFiles.length < files.length
+  const reviewSummary = useMemo(() => getDiffReviewSummary(files), [files])
 
   const autoCollapseFiles = !commitHash && (
     expectedFileCount >= AUTO_COLLAPSE_FILE_THRESHOLD
@@ -287,7 +321,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
 
     let expandedPatchLines = 0
     files.forEach((file, index) => {
-      const patchLineCount = file.patch ? file.patch.split('\n').length : 0
+      const patchLineCount = getDiffFileReviewLineCount(file)
       const shouldExpand =
         index < AUTO_EXPAND_MIN_FILES
         || (index < AUTO_EXPAND_MAX_FILES && expandedPatchLines + patchLineCount <= AUTO_EXPAND_PATCH_LINE_BUDGET)
@@ -298,6 +332,170 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
 
     return collapsed
   }, [autoCollapseFiles, files])
+
+  useEffect(() => {
+    defaultCollapsedPathsRef.current = defaultCollapsedPaths
+  }, [defaultCollapsedPaths])
+
+  const effectiveCollapsedPaths = useMemo(() => {
+    const collapsed = new Set(defaultCollapsedPaths)
+    for (const [filePath, isCollapsed] of collapsedFileOverrides) {
+      if (isCollapsed) collapsed.add(filePath)
+      else collapsed.delete(filePath)
+    }
+    return collapsed
+  }, [collapsedFileOverrides, defaultCollapsedPaths])
+
+  const virtualLayout = useMemo(
+    () => buildDiffFileVirtualLayout(files, effectiveCollapsedPaths, measuredFileHeights),
+    [effectiveCollapsedPaths, files, measuredFileHeights],
+  )
+
+  useEffect(() => {
+    virtualLayoutRef.current = virtualLayout
+  }, [virtualLayout])
+
+  const virtualWindow = useMemo(() => {
+    const base = getVirtualDiffFileWindow(virtualLayout, scrollTop, viewportHeight, DIFF_FILE_OVERSCAN_PX)
+    if (!scrollTargetFilePath) return base
+    return ensureFileInVirtualWindow(base, virtualLayout, scrollTargetFilePath)
+  }, [scrollTop, scrollTargetFilePath, viewportHeight, virtualLayout])
+
+  useEffect(() => {
+    virtualWindowRef.current = {
+      startIndex: virtualWindow.startIndex,
+      endIndex: virtualWindow.endIndex,
+    }
+  }, [virtualWindow.endIndex, virtualWindow.startIndex])
+
+  const visibleWindowFiles = useMemo(
+    () => virtualWindow.items.map((item) => item.file),
+    [virtualWindow],
+  )
+
+  const flushMeasuredHeights = useCallback(() => {
+    heightFlushRafRef.current = null
+    const pending = pendingHeightUpdatesRef.current
+    if (pending.size === 0) return
+    const snapshot = new Map(pending)
+    pending.clear()
+    setMeasuredFileHeights((prev) => {
+      let changed = false
+      const next = new Map(prev)
+      for (const [filePath, height] of snapshot) {
+        if (next.get(filePath) === height) continue
+        next.set(filePath, height)
+        changed = true
+      }
+      if (!changed) return prev
+      measuredFileHeightsRef.current = next
+      return next
+    })
+  }, [])
+
+  const handleMeasuredHeightChange = useCallback((filePath: string, height: number) => {
+    pendingHeightUpdatesRef.current.set(filePath, height)
+    if (heightFlushRafRef.current != null) return
+    heightFlushRafRef.current = requestAnimationFrame(flushMeasuredHeights)
+  }, [flushMeasuredHeights])
+
+  const scrollContentHeight = useMemo(() => {
+    if (virtualLayout.length === 0) return 0
+    const last = virtualLayout[virtualLayout.length - 1]!
+    return last.top + last.height
+  }, [virtualLayout])
+
+  const pendingRangeHandlers = useMemo(() => {
+    const handlers = new Map<string, {
+      pendingRange: DiffPendingCommentRange | null
+      composerBody: string
+      composerDirty: boolean
+      onPendingRangeChange: (range: DiffPendingCommentRange | null) => void
+      onComposerBodyChange: (body: string) => void
+      onComposerDirtyChange: (dirty: boolean) => void
+    }>()
+    for (const file of files) {
+      const filePath = file.filePath
+      const draft = commentDraftsByFile.get(filePath)
+      handlers.set(filePath, {
+        pendingRange: draft?.range ?? null,
+        composerBody: draft?.body ?? '',
+        composerDirty: isDiffCommentDraftDirty(draft),
+        onPendingRangeChange: (range) => {
+          setCommentDraftsByFile((prev) => {
+            const next = new Map(prev)
+            if (range == null) {
+              next.delete(filePath)
+              return next.size === prev.size ? prev : next
+            }
+            const existing = next.get(filePath)
+            if (existing?.range.side === range.side
+              && existing.range.lineNumber === range.lineNumber
+              && existing.range.lineEnd === range.lineEnd
+              && !isDiffCommentDraftDirty(existing)) {
+              return prev
+            }
+            next.set(filePath, { range, body: existing?.body ?? '' })
+            return next
+          })
+        },
+        onComposerBodyChange: (body) => {
+          setCommentDraftsByFile((prev) => {
+            const existing = prev.get(filePath)
+            if (!existing || existing.body === body) return prev
+            const next = new Map(prev)
+            next.set(filePath, { ...existing, body })
+            return next
+          })
+        },
+        onComposerDirtyChange: (dirty) => {
+          setCommentDraftsByFile((prev) => {
+            const existing = prev.get(filePath)
+            if (!existing) {
+              if (!dirty) return prev
+              return prev
+            }
+            if (isDiffCommentDraftDirty(existing) === dirty) return prev
+            return prev
+          })
+        },
+      })
+    }
+    return handlers
+  }, [commentDraftsByFile, files])
+
+  const pierreWorkerPoolOptions = useMemo(
+    () => ({
+      poolOptions: {
+        workerFactory: createPierreDiffWorker,
+        poolSize: 4,
+      },
+      highlighterOptions: {
+        theme: CODEX_ABSOLUTELY_DIFF_THEME_ID,
+        lineDiffType: 'word-alt' as const,
+        tokenizeMaxLineLength: 2000,
+        maxLineDiffLength: 2000,
+        preferredHighlighter: 'shiki-js' as const,
+      },
+    }),
+    [],
+  )
+
+  const collapsedChangeHandlers = useMemo(() => {
+    const handlers = new Map<string, (collapsed: boolean) => void>()
+    for (const file of files) {
+      handlers.set(file.filePath, (collapsed: boolean) => setFileCollapsed(file.filePath, collapsed))
+    }
+    return handlers
+  }, [files, setFileCollapsed])
+
+  const viewedChangeHandlers = useMemo(() => {
+    const handlers = new Map<string, (viewed: boolean) => void>()
+    for (const file of files) {
+      handlers.set(file.filePath, (viewed: boolean) => setFileViewed(file.filePath, viewed))
+    }
+    return handlers
+  }, [files, setFileViewed])
 
   const persistWorkingTreeSnapshot = useCallback((
     snapshot: GitStatusSnapshot | null,
@@ -313,19 +511,51 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   }, [setWorkingTreeDiffSnapshot, worktreePath])
 
   const scrollToFile = useCallback((filePath: string) => {
-    const index = fileIndexByPath.get(filePath)
-    const root = scrollAreaRef.current
-    if (index == null || !root) return
-    if (!commitHash && index >= visibleCount) {
-      setVisibleCount(Math.min(filesRef.current.length, index + 1))
+    if (effectiveCollapsedPaths.has(filePath)) {
+      setFileCollapsed(filePath, false)
     }
+    setActiveFile(filePath)
+    setScrollRequest({ filePath, token: Date.now() })
+  }, [effectiveCollapsedPaths, setFileCollapsed])
+
+  useLayoutEffect(() => {
+    if (!scrollRequest || !active) return
+    const { filePath } = scrollRequest
+    const layout = virtualLayoutRef.current
+    const root = scrollAreaRef.current
+    const viewport = root?.clientHeight || viewportHeight || DEFAULT_DIFF_VIEWPORT_HEIGHT
+    const targetTop = getScrollTopForFileHeader(layout, filePath, viewport)
+    if (targetTop == null) return
+
+    const nextWindow = ensureFileInVirtualWindow(
+      getVirtualDiffFileWindow(layout, targetTop, viewport, DIFF_FILE_OVERSCAN_PX),
+      layout,
+      filePath,
+    )
+    virtualWindowRef.current = {
+      startIndex: nextWindow.startIndex,
+      endIndex: nextWindow.endIndex,
+    }
+    suppressViewportSelectionSyncRef.current = true
+    setScrollTargetFilePath(filePath)
+    setScrollTop(targetTop)
+    savedScrollTopRef.current = targetTop
+
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const el = document.getElementById(`diff-${filePath}`)
-        el?.scrollIntoView({ behavior: getPreferredScrollBehavior(), block: 'start' })
+        const scrollRoot = scrollAreaRef.current
+        if (!scrollRoot) return
+        scrollRoot.scrollTo({ top: targetTop, behavior: getPreferredScrollBehavior() })
+        const section = document.getElementById(`diff-${filePath}`)
+        section?.scrollIntoView({ behavior: getPreferredScrollBehavior(), block: 'start' })
+        setScrollRequest(null)
+        window.setTimeout(() => {
+          suppressViewportSelectionSyncRef.current = false
+          setScrollTargetFilePath(null)
+        }, 200)
       })
     })
-  }, [commitHash, fileIndexByPath, visibleCount])
+  }, [active, scrollRequest, viewportHeight])
 
   useEffect(() => {
     if (!active) return
@@ -350,7 +580,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
 
   // ── GitHub PR comment loading ──
   useEffect(() => {
-    if (commitHash) return // Don't load PR comments for commit diffs
+    if (!active || commitHash) return // Don't load PR comments for commit diffs
     let cancelled = false
     ;(async () => {
       try {
@@ -387,7 +617,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
       }
     })()
     return () => { cancelled = true }
-  }, [worktreePath, commitHash])
+  }, [active, worktreePath, commitHash])
 
   const notifyGitFilesChanged = useCallback((paths: string[]) => {
     window.dispatchEvent(new CustomEvent('git:files-changed', {
@@ -430,11 +660,17 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
     const canReuseWarmStatus = warmSnapshot != null && (Date.now() - warmSnapshot.updatedAt) < STATUS_SNAPSHOT_TTL_MS
     let resolvedSnapshot: GitStatusSnapshot | null = warmSnapshot ?? null
     if (warmSnapshot) {
-      setExpectedFileCount(warmSnapshot.statuses.length)
+      setExpectedFileCount(warmSnapshot.statuses?.length ?? 0)
     }
     if (warmFiles.length > 0) {
       setFiles(warmFiles)
       setLoading(false)
+    }
+    if (warmSnapshot?.complete && warmFiles.length > 0 && canReuseWarmStatus) {
+      for (const file of warmFiles) {
+        if (file.fileDiff) fileDiffLoadedRef.current.add(file.filePath)
+      }
+      return warmFiles
     }
     try {
       const results = await loadWorkingTreeDiffFiles({
@@ -499,24 +735,51 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   }, [loadFiles])
 
   useEffect(() => {
-    fileDiffQueueRef.current = []
-    fileDiffLoadingRef.current.clear()
-    fileDiffLoadedRef.current.clear()
-    fileDiffInFlightRef.current = 0
-    diffLoadStartedAtRef.current = performance.now()
-    paintMarkedRef.current = false
-    setExpectedFileCount(0)
-    scrollAreaRef.current?.scrollTo({ top: 0 })
-    setLoading(true)
+    if (!active) return
+
+    const warmSnapshot = useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath)
+    const warmFiles = warmSnapshot?.files ?? []
+    const canReuseWarmComplete = !commitHash
+      && warmSnapshot?.complete
+      && warmFiles.length > 0
+      && (Date.now() - warmSnapshot.updatedAt) < STATUS_SNAPSHOT_TTL_MS
+
+    const alreadyLoaded = filesRef.current.length > 0
+
+    if (!alreadyLoaded) {
+      fileDiffQueueRef.current = []
+      fileDiffLoadingRef.current.clear()
+      fileDiffLoadedRef.current.clear()
+      fileDiffInFlightRef.current = 0
+      diffLoadStartedAtRef.current = performance.now()
+      paintMarkedRef.current = false
+
+      if (canReuseWarmComplete && warmSnapshot) {
+        setExpectedFileCount(warmSnapshot.statuses?.length ?? 0)
+        setFiles(warmFiles)
+        setLoading(false)
+        for (const file of warmFiles) {
+          if (file.fileDiff) fileDiffLoadedRef.current.add(file.filePath)
+        }
+      } else {
+        setExpectedFileCount(0)
+        scrollAreaRef.current?.scrollTo({ top: 0 })
+        setLoading(true)
+      }
+    } else {
+      diffLoadStartedAtRef.current = performance.now()
+      paintMarkedRef.current = false
+    }
+
     if (commitHash) {
       void loadCommitDiff()
     } else {
       void loadFiles()
     }
-  }, [commitHash, loadCommitDiff, loadFiles])
+  }, [active, commitHash, loadCommitDiff, loadFiles, worktreePath])
 
-  // Auto-refresh on filesystem changes (only for working-tree diffs)
-  useFileWatcher(worktreePath, handleWatchedDirChange, !commitHash)
+  // Auto-refresh on filesystem changes (only for active working-tree diffs)
+  useFileWatcher(worktreePath, handleWatchedDirChange, active && !commitHash)
 
   const pumpFileDiffQueue = useCallback(() => {
     while (fileDiffInFlightRef.current < FILE_DIFF_LOAD_CONCURRENCY && fileDiffQueueRef.current.length > 0) {
@@ -578,27 +841,62 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   useEffect(() => {
     const root = scrollAreaRef.current
     if (!root) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            const id = entry.target.id
-            if (id.startsWith('diff-')) {
-              setActiveFile(id.slice(5))
-            }
-          }
-        }
-      },
-      { root, threshold: 0.3 },
-    )
-
-    for (const file of files) {
-      const el = document.getElementById(`diff-${file.filePath}`)
-      if (el) observer.observe(el)
+    if (!active) {
+      savedScrollTopRef.current = root.scrollTop
+      return
     }
+    if (!scrollRequest) {
+      root.scrollTop = savedScrollTopRef.current
+    }
+    const onScroll = () => {
+      if (scrollRafRef.current != null) return
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = null
+        const nextTop = root.scrollTop
+        if (!suppressViewportSelectionSyncRef.current) {
+          const owner = findHeaderOwningFileSection(virtualLayoutRef.current, nextTop)
+          if (owner) setActiveFile(owner.filePath)
+        }
 
+        const nextWindow = getVirtualDiffFileWindow(
+          virtualLayoutRef.current,
+          nextTop,
+          root.clientHeight || DEFAULT_DIFF_VIEWPORT_HEIGHT,
+          DIFF_FILE_OVERSCAN_PX,
+        )
+        const prev = virtualWindowRef.current
+        if (prev.startIndex === nextWindow.startIndex && prev.endIndex === nextWindow.endIndex) {
+          return
+        }
+        virtualWindowRef.current = {
+          startIndex: nextWindow.startIndex,
+          endIndex: nextWindow.endIndex,
+        }
+        setScrollTop(nextTop)
+      })
+    }
+    onScroll()
+    root.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      root.removeEventListener('scroll', onScroll)
+      if (scrollRafRef.current != null) {
+        cancelAnimationFrame(scrollRafRef.current)
+        scrollRafRef.current = null
+      }
+    }
+  }, [active, files.length, commitHash, scrollRequest])
+
+  useEffect(() => {
+    const root = scrollAreaRef.current
+    if (!root || !active) return
+    const syncViewportHeight = () => {
+      setViewportHeight(root.clientHeight || DEFAULT_DIFF_VIEWPORT_HEIGHT)
+    }
+    syncViewportHeight()
+    const observer = new ResizeObserver(syncViewportHeight)
+    observer.observe(root)
     return () => observer.disconnect()
-  }, [files])
+  }, [active, files.length, commitHash])
 
   useEffect(() => {
     if (!active) return
@@ -612,9 +910,13 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
     })
   }, [active, files.length, worktreePath, commitHash])
 
+  const viewerContainerClass = active
+    ? styles.diffViewerContainer
+    : `${styles.diffViewerContainer} ${styles.inactive}`
+
   if (loading && files.length === 0) {
     return (
-      <div className={styles.diffViewerContainer}>
+      <div className={viewerContainerClass}>
         <div className={styles.diffEmpty}>
           <span className={styles.diffEmptyText}>Loading changes...</span>
         </div>
@@ -624,7 +926,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
 
   if (files.length === 0) {
     return (
-      <div className={styles.diffViewerContainer}>
+      <div className={viewerContainerClass}>
         <div className={styles.diffEmpty}>
           <span className={styles.diffEmptyIcon}>&#10003;</span>
           <span className={styles.diffEmptyText}>No changes</span>
@@ -634,7 +936,7 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
   }
 
   return (
-    <div className={styles.diffViewerContainer}>
+    <div className={viewerContainerClass}>
       {/* Toolbar */}
       <div className={styles.diffToolbar}>
         <div className={styles.diffReviewSummary}>
@@ -699,40 +1001,55 @@ export function DiffViewer({ worktreePath, active, commitHash, commitMessage }: 
         viewedFilePaths={showViewedToggle ? viewedFilePaths : undefined}
       />
 
-      {/* Stacked diffs */}
+      {/* Stacked diffs — file-level windowing only (no Pierre line Virtualizer; matches HunkReview). */}
       <div ref={scrollAreaRef} className={styles.diffScrollArea}>
-        {files.map((file, index) => (
-          <DiffFileSection
-            key={file.filePath}
-            data={file}
-            defaultCollapsed={(!commitHash && index >= visibleCount) || defaultCollapsedPaths.has(file.filePath)}
-            inline={inline}
-            defaultShowFullContext={defaultShowFullContext}
-            worktreePath={worktreePath}
-            onOpenFile={openFileFromDiff}
-            fileAnnotations={annotationsByFile.get(file.filePath) ?? []}
-            onApplyAnnotation={applyAnnotationPatch}
-            showPatchAnchorNote={!!commitHash}
-            enableAcceptReject={enableAcceptReject}
-            onHunkAccepted={applyHunkAction}
-            onHunkRejected={applyHunkAction}
-            onEnsureFileDiff={commitHash ? undefined : ensureFileDiffLoaded}
-            enableViewedToggle={showViewedToggle}
-            viewed={viewedFilePaths.has(file.filePath)}
-            onViewedChange={(v) => setFileViewed(file.filePath, v)}
-          />
-        ))}
-        {hasMoreFiles && (
-          <div className={styles.diffLoadMore}>
-            <button
-              type="button"
-              className={styles.diffLoadMoreButton}
-              onClick={() => setVisibleCount((current) => Math.min(files.length, current + VISIBLE_FILE_INCREMENT))}
-            >
-              Show {Math.min(VISIBLE_FILE_INCREMENT, files.length - visibleFiles.length)} more files
-            </button>
-          </div>
-        )}
+        <div className={styles.diffScrollContent}>
+          {active ? (
+            <WorkerPoolContextProvider {...pierreWorkerPoolOptions}>
+              {virtualWindow.beforeHeight > 0 && (
+                <div style={{ height: virtualWindow.beforeHeight }} aria-hidden />
+              )}
+              {visibleWindowFiles.map((file) => {
+                const draftHandlers = pendingRangeHandlers.get(file.filePath)
+                return (
+                  <DiffFileSection
+                    key={file.filePath}
+                    data={file}
+                    defaultCollapsed={defaultCollapsedPaths.has(file.filePath)}
+                    collapsed={effectiveCollapsedPaths.has(file.filePath)}
+                    onCollapsedChange={collapsedChangeHandlers.get(file.filePath)}
+                    inline={inline}
+                    defaultShowFullContext={defaultShowFullContext}
+                    worktreePath={worktreePath}
+                    onOpenFile={openFileFromDiff}
+                    fileAnnotations={annotationsByFile.get(file.filePath) ?? EMPTY_ANNS}
+                    onApplyAnnotation={applyAnnotationPatch}
+                    showPatchAnchorNote={!!commitHash}
+                    enableAcceptReject={enableAcceptReject}
+                    onHunkAccepted={applyHunkAction}
+                    onHunkRejected={applyHunkAction}
+                    onEnsureFileDiff={commitHash ? undefined : ensureFileDiffLoaded}
+                    enableViewedToggle={showViewedToggle}
+                    viewed={viewedFilePaths.has(file.filePath)}
+                    onViewedChange={viewedChangeHandlers.get(file.filePath)}
+                    onMeasuredHeightChange={handleMeasuredHeightChange}
+                    pendingRange={draftHandlers?.pendingRange ?? null}
+                    onPendingRangeChange={draftHandlers?.onPendingRangeChange}
+                    composerBody={draftHandlers?.composerBody ?? ''}
+                    onComposerBodyChange={draftHandlers?.onComposerBodyChange}
+                    composerDirty={draftHandlers?.composerDirty ?? false}
+                    onComposerDirtyChange={draftHandlers?.onComposerDirtyChange}
+                  />
+                )
+              })}
+              {virtualWindow.afterHeight > 0 && (
+                <div style={{ height: virtualWindow.afterHeight }} aria-hidden />
+              )}
+            </WorkerPoolContextProvider>
+          ) : scrollContentHeight > 0 ? (
+            <div style={{ height: scrollContentHeight }} aria-hidden />
+          ) : null}
+        </div>
       </div>
     </div>
   )
