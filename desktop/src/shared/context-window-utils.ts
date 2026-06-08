@@ -6,6 +6,7 @@ import type { TranscriptMessage } from './pi/pi-desktop-state'
 
 const CHARS_PER_TOKEN = 4
 const DEFAULT_CONTEXT_WINDOW_SIZE = 200_000
+const OPENAI_CONTEXT_WINDOW_SIZE = 272_000
 const LARGE_CONTEXT_WINDOW_SIZE = 1_000_000
 
 /** Conservative visual estimate for one image input; do not count base64 bytes as text tokens. */
@@ -53,7 +54,22 @@ function isKnownOneMillionContextModel(model: string): boolean {
   return false
 }
 
+function isKnownOpenAiContextModel(model: string): boolean {
+  const id = normalizeModelIdForContext(model)
+  if (!id) return false
+
+  // GPT-5.4/GPT-5.5 Codex sessions report a 272K token window. Some model
+  // presets still carry historical "1M" labels, so classify these before the
+  // generic one-million-context lookup.
+  if (/^gpt-5\.(?:4|5)(?:$|[-_])/.test(id) && !/^gpt-5\.4[-_](mini|nano)(?:$|[-_])/.test(id)) {
+    return true
+  }
+
+  return false
+}
+
 export function inferContextWindowSize(model: string, _usedTokens = 0): number {
+  if (isKnownOpenAiContextModel(model)) return OPENAI_CONTEXT_WINDOW_SIZE
   return isKnownOneMillionContextModel(model) ? LARGE_CONTEXT_WINDOW_SIZE : DEFAULT_CONTEXT_WINDOW_SIZE
 }
 

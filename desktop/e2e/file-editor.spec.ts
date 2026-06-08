@@ -117,7 +117,6 @@ function createRepoWithHiddenConfigChanges(name: string): string {
   const repoPath = createTestRepo(name)
   mkdirSync(join(repoPath, '.codex', 'skills', 'hunk-review-comments'), { recursive: true })
   mkdirSync(join(repoPath, '.cursor', 'rules'), { recursive: true })
-  mkdirSync(join(repoPath, '.cursor', 'skills'), { recursive: true })
   mkdirSync(join(repoPath, '.gemini', 'skills'), { recursive: true })
   mkdirSync(join(repoPath, 'desktop', '.claude', 'skills'), { recursive: true })
 
@@ -125,7 +124,8 @@ function createRepoWithHiddenConfigChanges(name: string): string {
   writeFileSync(join(repoPath, '.codex', 'skills', 'hunk-review-comments', 'SKILL.md'), '# Hunk review\n')
   writeFileSync(join(repoPath, '.cursor', 'rules', 'constellagent.mdc'), 'rule: keep it fast\n')
   writeFileSync(join(repoPath, '.gemini', 'AGENTS.md'), '# Gemini agent\n')
-  symlinkSync('../../desktop/.claude/skills', join(repoPath, '.cursor', 'skills', 'hunk-review'))
+  // Use .codex/skills for the symlink case — .cursor/skills is gitignored globally on dev machines.
+  symlinkSync('../../desktop/.claude/skills', join(repoPath, '.codex', 'skills', 'hunk-review'))
   symlinkSync('../../desktop/.claude/skills', join(repoPath, '.gemini', 'skills', 'hunk-review'))
 
   return repoPath
@@ -790,7 +790,7 @@ test.describe('Changed files & diff viewer', () => {
       await expect(codexSection).toBeVisible({ timeout: 10000 })
       await expect(codexSection).toContainText('Codex agent')
 
-      const symlinkSection = window.locator('[id="diff-.cursor/skills/hunk-review"]')
+      const symlinkSection = window.locator('[id="diff-.codex/skills/hunk-review"]')
       await expect(symlinkSection).toBeVisible({ timeout: 10000 })
       await expect(symlinkSection).not.toContainText('No diff available')
     } finally {

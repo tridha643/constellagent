@@ -238,7 +238,7 @@ test.describe('Conductor chat view', () => {
     await expect(ring).toHaveAttribute('aria-label', 'Context window 0.1% used')
   })
 
-  test('shows a global GSD-scaled context pill in the Conductor panel', async () => {
+  test('does not show a global context indicator in the Conductor panel', async () => {
     const repoPath = createTestRepo('conductor-global-context-pill')
     await setupWorkspace(window, repoPath)
 
@@ -253,11 +253,8 @@ test.describe('Conductor chat view', () => {
       },
     ])
 
-    const pill = window.getByTestId('conductor-global-context-pill')
-    await expect(pill).toBeVisible({ timeout: 5000 })
-    await expect(pill).toHaveAttribute('data-tier', 'low')
-    await expect(pill).toContainText('13%')
-    await expect(pill).toHaveAttribute('title', /Claude Code 80% limit/)
+    await expect(window.getByTestId('conductor-global-context-pill')).toHaveCount(0)
+    await expect(window.getByTestId('conductor-global-context-ring')).toHaveCount(0)
   })
 
   test('opens previous messages panel from turn rail', async () => {

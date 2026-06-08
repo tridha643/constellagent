@@ -1576,7 +1576,14 @@ export class GitService {
         const tracked = await git(['ls-files', '--error-unmatch', '--', path], worktreePath)
           .then(() => true)
           .catch(() => false)
-        if (!tracked) out.push({ path, status: 'untracked', staged: false })
+        if (tracked) continue
+        // Local skill symlinks are gitignored setup artifacts (ce-*, conductor-*, etc.).
+        // Surfacing them as untracked changes is confusing — git already excludes them.
+        const ignored = await git(['check-ignore', '-q', '--', path], worktreePath)
+          .then(() => true)
+          .catch(() => false)
+        if (ignored) continue
+        out.push({ path, status: 'untracked', staged: false })
       }
     }
     return out
