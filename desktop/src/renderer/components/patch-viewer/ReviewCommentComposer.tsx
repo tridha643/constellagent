@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AnnotationPatch, DiffAnnotation, DiffAnnotationSide } from '@shared/diff-annotation-types'
 import { useAppStore } from '../../store/app-store'
 import { modShortcutHintLabel, reviewAnnotationErrorMessage } from './review-attribution'
@@ -31,6 +31,7 @@ export function ReviewCommentComposer({
   suggestionLanguage = '',
   selectedLineLabel,
   onAddToChat,
+  onSeedPristine,
 }: {
   worktreePath: string
   filePath: string
@@ -48,6 +49,8 @@ export function ReviewCommentComposer({
   suggestionLanguage?: string
   selectedLineLabel?: string
   onAddToChat?: () => void
+  /** Records a seeded body as the pristine baseline (no spurious dirty/discard). */
+  onSeedPristine?: (body: string) => void
 }) {
   const [internalBody, setInternalBody] = useState('')
   const body = bodyProp ?? internalBody
@@ -63,16 +66,36 @@ export function ReviewCommentComposer({
     onDirtyChange?.(body.trim().length > 0)
   }, [body, onDirtyChange])
 
+  const suggestionBlock = useCallback(
+    () => {
+      const fence = suggestionLanguage ? `suggestion ${suggestionLanguage}` : 'suggestion'
+      return `\`\`\`${fence}\n${suggestionSeed}\n\`\`\`\n`
+    },
+    [suggestionSeed, suggestionLanguage],
+  )
+
+  // Multi-line selection → grab the selected code into the composer as a
+  // ```suggestion block (rudu's seed). Runs once per draft mount (the composer
+  // is keyed per draft target). Recorded as pristine so it isn't a dirty draft.
+  const seededRef = useRef(false)
+  useEffect(() => {
+    if (seededRef.current) return
+    if (!suggestionSeed || lineEnd <= lineNumber) return
+    if (body.trim().length > 0) return
+    seededRef.current = true
+    const seeded = suggestionBlock()
+    setSuggesting(true)
+    if (onSeedPristine) onSeedPristine(seeded)
+    else setBody(seeded)
+  }, [suggestionSeed, lineEnd, lineNumber, body, suggestionBlock, onSeedPristine, setBody])
+
   const toggleSuggestion = useCallback(() => {
     setSuggesting((prev) => {
       const next = !prev
-      if (next && body.trim().length === 0) {
-        const fence = suggestionLanguage ? `suggestion ${suggestionLanguage}` : 'suggestion'
-        setBody(`\`\`\`${fence}\n${suggestionSeed}\n\`\`\`\n`)
-      }
+      if (next && body.trim().length === 0) setBody(suggestionBlock())
       return next
     })
-  }, [body, setBody, suggestionSeed, suggestionLanguage])
+  }, [body, setBody, suggestionBlock])
 
   const submit = async () => {
     const trimmed = body.trim()

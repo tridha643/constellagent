@@ -1,0 +1,21 @@
+.root {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--duration-slow) var(--ease-out);
+}
+
+.root[data-state='open'] {
+  grid-template-rows: 1fr;
+}
+
+/* The clipped track: must keep min-height:0 so the 1fr→0fr row can shrink. */
+.inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    transition: none;
+  }
+}

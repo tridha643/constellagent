@@ -20,6 +20,11 @@ import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { GraphiteStack } from "./GraphiteStack";
 import { BranchAndPrLauncher } from "./BranchAndPrLauncher";
 import { AddProjectDialog } from "./AddProjectDialog";
+import {
+  getWorkspaceBarLocalTitle,
+  isDefaultWorkspaceBarBranch,
+  shouldRenderWorkspaceBarStats,
+} from "./workspace-bar-display";
 
 import {
   AlertCircle,
@@ -485,6 +490,7 @@ function WorkspaceBarFaces({
   const pr = useAppStore((s) => s.prStatusMap.get(`${ws.projectId}:${ws.branch}`));
   const barStats = useAppStore((s) => s.workspaceBarStatsMap.get(ws.id));
   const modeOverride = useAppStore((s) => s.workspaceBarModeOverride.get(ws.id));
+  const defaultBranch = useAppStore((s) => s.defaultBranchByProjectId.get(project.id));
   const toggleWorkspaceBarMode = useAppStore((s) => s.toggleWorkspaceBarMode);
   const prLinkProvider = project.prLinkProvider ?? "github";
 
@@ -495,10 +501,18 @@ function WorkspaceBarFaces({
 
   const localAdditions = barStats?.additions ?? 0;
   const localDeletions = barStats?.deletions ?? 0;
-  const localSubject = barStats?.subject || displayName;
+  const localSubject = getWorkspaceBarLocalTitle({
+    workspaceBranch: ws.branch,
+    defaultBranch,
+    displayName,
+    subject: barStats?.subject,
+  });
+  const isDefaultBranch = isDefaultWorkspaceBarBranch(ws.branch, defaultBranch);
+  const showLocalStats = shouldRenderWorkspaceBarStats(true, localAdditions, localDeletions);
 
   const prAdditions = pr?.additions ?? 0;
   const prDeletions = pr?.deletions ?? 0;
+  const showPrStats = shouldRenderWorkspaceBarStats(!!pr, prAdditions, prDeletions);
   const prAuthor = pr?.authorLogin;
 
   return (
@@ -539,7 +553,7 @@ function WorkspaceBarFaces({
           >
             {pr?.title ?? "(no open PR)"}
           </span>
-          <WorkspaceStats additions={prAdditions} deletions={prDeletions} />
+          {showPrStats && <WorkspaceStats additions={prAdditions} deletions={prDeletions} />}
         </div>
       </div>
 
@@ -560,14 +574,18 @@ function WorkspaceBarFaces({
           <span className={styles.wsTitle} title={localSubject}>
             {localSubject}
           </span>
-          <WorkspaceStats additions={localAdditions} deletions={localDeletions} />
+          {showLocalStats && (
+            <WorkspaceStats additions={localAdditions} deletions={localDeletions} />
+          )}
         </div>
-        <GraphiteStack
-          workspaceId={ws.id}
-          worktreePath={ws.worktreePath}
-          repoPath={project.repoPath}
-          graphitePreferredTrunk={project.graphitePreferredTrunk}
-        />
+        {!isDefaultBranch && (
+          <GraphiteStack
+            workspaceId={ws.id}
+            worktreePath={ws.worktreePath}
+            repoPath={project.repoPath}
+            graphitePreferredTrunk={project.graphitePreferredTrunk}
+          />
+        )}
       </div>
       </div>
       {/* Local⇄PR flip (rudu .flip): hover-revealed beside delete; pure override. */}
@@ -859,6 +877,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   >({});
   const [pullingPrKey, setPullingPrKey] = useState<string | null>(null);
   const [projectPrSearch, setProjectPrSearch] = useState("");
+  const [projectPrScope, setProjectPrScope] = useState<"all" | "reviewRequested">("all");
   const draggingWorkspaceIdRef = useRef<string | null>(null);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [dropTargetProjectId, setDropTargetProjectId] = useState<string | null>(null);
@@ -914,6 +933,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       if (event.key === "Escape") {
         setOpenProjectPrPopoverId(null);
         setProjectPrSearch("");
+        setProjectPrScope("all");
       }
     };
 
@@ -928,6 +948,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
     if (!projects.some((p) => p.id === openProjectPrPopoverId)) {
       setOpenProjectPrPopoverId(null);
       setProjectPrSearch("");
+      setProjectPrScope("all");
     }
   }, [openProjectPrPopoverId, projects]);
 
@@ -946,6 +967,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const closeProjectPrModal = useCallback(() => {
     setOpenProjectPrPopoverId(null);
     setProjectPrSearch("");
+    setProjectPrScope("all");
   }, []);
 
   const isProjectExpanded = useCallback(
@@ -1268,9 +1290,11 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
         const next = prev === project.id ? null : project.id;
         if (next === project.id) {
           setProjectPrSearch("");
+          setProjectPrScope("all");
           void loadProjectOpenPrs(project);
         } else {
           setProjectPrSearch("");
+          setProjectPrScope("all");
         }
         return next;
       });
@@ -1578,13 +1602,18 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
     ? projectPrError[projectPrModalProject.id] ?? null
     : null;
   const searchNeedle = projectPrSearch.trim().toLowerCase();
+  const scopedModalPrs = projectPrScope === "reviewRequested"
+    ? modalOpenPrs.filter((pr) => pr.isReviewRequestedFromViewer)
+    : modalOpenPrs;
   const filteredModalPrs =
     searchNeedle.length === 0
-      ? modalOpenPrs
-      : modalOpenPrs.filter((pr) => {
+      ? scopedModalPrs
+      : scopedModalPrs.filter((pr) => {
           const haystack = [
             pr.title,
             pr.authorLogin ?? "",
+            ...(pr.assigneeLogins ?? []),
+            ...(pr.reviewRequestLogins ?? []),
             pr.headRefName,
             `#${pr.number}`,
           ]
@@ -2286,6 +2315,28 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
             </div>
 
             <div className={styles.projectPrModalToolbar}>
+              <div className={styles.projectPrScopeControl} role="group" aria-label="Pull request scope">
+                <button
+                  type="button"
+                  className={`${styles.projectPrScopeButton} ${
+                    projectPrScope === "all" ? styles.projectPrScopeButtonActive : ""
+                  }`}
+                  onClick={() => setProjectPrScope("all")}
+                  aria-pressed={projectPrScope === "all"}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.projectPrScopeButton} ${
+                    projectPrScope === "reviewRequested" ? styles.projectPrScopeButtonActive : ""
+                  }`}
+                  onClick={() => setProjectPrScope("reviewRequested")}
+                  aria-pressed={projectPrScope === "reviewRequested"}
+                >
+                  review:requested
+                </button>
+              </div>
               <input
                 className={styles.projectPrSearchInput}
                 placeholder="Filter by title, author, branch, #"
@@ -2329,7 +2380,11 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
               modalOpenPrs.length > 0 &&
               filteredModalPrs.length === 0 && (
                 <div className={styles.projectPrStatus}>
-                  No pull requests match "{projectPrSearch}".
+                  {projectPrScope === "reviewRequested" && searchNeedle.length === 0
+                    ? "No open pull requests with review requested from you."
+                    : projectPrScope === "reviewRequested"
+                      ? `No review-requested pull requests match "${projectPrSearch}".`
+                      : `No pull requests match "${projectPrSearch}".`}
                 </div>
               )}
             {!modalPrError && filteredModalPrs.length > 0 && (

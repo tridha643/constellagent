@@ -943,30 +943,33 @@
   }
 }
 
-/* Hover utility: "+" comment button */
+/* Hover utility: "+" comment button (rudu gutter affordance — ink box, amber on hover) */
 .hoverAddBtn {
   width: 20px;
   height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-secondary);
+  border: 1px solid var(--review-badge-border);
+  border-radius: var(--radius-md);
+  background: var(--review-badge-bg);
+  color: var(--review-text-muted);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   line-height: 1;
   transition:
     background-color var(--motion-fast),
+    border-color var(--motion-fast),
     color var(--motion-fast),
     transform var(--duration-micro) var(--ease-press);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .hoverAddBtn:hover {
-    background: rgba(255, 255, 255, 0.14);
+    background: var(--review-accent-soft);
+    border-color: var(--review-accent);
+    color: var(--review-accent);
   }
 }
 

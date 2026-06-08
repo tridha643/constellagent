@@ -45,8 +45,18 @@ async function runGit(args: string[], cwd: string): Promise<string> {
   const { stdout } = await execFileAsync('git', args, {
     cwd,
     maxBuffer: 8 * 1024 * 1024,
+    env: nonInteractiveGitEnv(),
   })
   return stdout
+}
+
+function nonInteractiveGitEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return {
+    ...baseEnv,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_ASKPASS: 'echo',
+    SSH_ASKPASS: 'echo',
+  }
 }
 
 async function gitBranchesWithStatus(cwd: string): Promise<Record<string, unknown>> {
@@ -191,4 +201,5 @@ export async function handleMobileGitBridgeMethod(
 export const __testing = {
   extractManagedWorktreeToken,
   managedWorktreeToken,
+  nonInteractiveGitEnv,
 }

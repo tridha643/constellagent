@@ -1,6 +1,7 @@
 import { describe, expect, test, mock } from 'bun:test'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import type { MobileGitBridgeError } from './mobile-git-bridge'
 
 mock.module('electron', () => ({
   app: {
@@ -12,12 +13,11 @@ mock.module('electron', () => ({
   },
 }))
 
-import {
+const {
   __testing,
   handleMobileGitBridgeMethod,
   isMobileGitBridgeMethod,
-  MobileGitBridgeError,
-} from './mobile-git-bridge'
+} = await import('./mobile-git-bridge')
 
 describe('mobile-git-bridge', () => {
   test('isMobileGitBridgeMethod recognizes slash git RPC namespace', () => {
@@ -33,5 +33,15 @@ describe('mobile-git-bridge', () => {
 
   test('managed worktree token is 8 hex chars', () => {
     expect(__testing.managedWorktreeToken()).toMatch(/^[0-9a-f]{8}$/)
+  })
+
+  test('mobile git subprocesses disable interactive credential prompts', () => {
+    const env = __testing.nonInteractiveGitEnv({ PATH: '/usr/bin', HOME: '/tmp/home' })
+
+    expect(env.PATH).toBe('/usr/bin')
+    expect(env.HOME).toBe('/tmp/home')
+    expect(env.GIT_TERMINAL_PROMPT).toBe('0')
+    expect(env.GIT_ASKPASS).toBe('echo')
+    expect(env.SSH_ASKPASS).toBe('echo')
   })
 })

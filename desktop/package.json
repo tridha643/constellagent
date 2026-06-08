@@ -51,7 +51,7 @@
     "@libsql/client": "^0.17.2",
     "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.78.0",
     "@monaco-editor/react": "^4.7.0",
-    "@openai/codex-sdk": "0.132.0",
+    "@openai/codex-sdk": "^0.137.0",
     "@openrouter/ai-sdk-provider": "^2.3.3",
     "@phosphor-icons/react": "^2.1.10",
     "@pi-gui/catalogs": "workspace:*",

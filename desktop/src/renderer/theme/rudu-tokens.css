@@ -1,0 +1,105 @@
+/*
+ * rudu palette — ink / canvas / surface design tokens (EXACT port)
+ *
+ * Values copied verbatim from tanvesh01/rudu (`src/index.css` + `tailwind.config.js`):
+ *   canvas      = rgb(var(--color-canvas))        app pit / card fill
+ *   canvasDark  = rgb(var(--color-canvas-hover))  hover surface
+ *   surface     = rgb(var(--color-surface))       inset (textarea) fill
+ *   ink-50..900 = inverted Tailwind-Zinc ramp, SEMANTIC: ink-50 is always the
+ *                 lightest surface tint and ink-900 the strongest text, in BOTH
+ *                 poles. rudu keys its dark pole on `html.dark`.
+ *
+ * Constellagent always carries `.dark` on <html> (see global.css note), so the
+ * dark pole below is what renders live; the light (warm-paper) pole is the
+ * faithful counterpart and shows if `.dark` is ever removed.
+ *
+ * Imported after design-tokens.css (global.css) so it can lean on the base
+ * radius / shadow / motion tokens.
+ */
+
+/* ── Light pole (rudu `:root`) ── */
+:root {
+  --rudu-canvas: #f2f1ed;
+  --rudu-canvas-hover: #e6e4dd;
+  --rudu-surface: #f7f7f3;
+  --rudu-ink-50: #fafafa;
+  --rudu-ink-100: #f4f4f5;
+  --rudu-ink-200: #e4e4e7;
+  --rudu-ink-300: #d4d4d8;
+  --rudu-ink-400: #a1a1aa;
+  --rudu-ink-500: #71717a;
+  --rudu-ink-600: #52525b;
+  --rudu-ink-700: #3f3f46;
+  --rudu-ink-800: #27272a;
+  --rudu-ink-900: #18181b;
+
+  /* primary (submit) button — rudu light: bg-ink-900 text-white */
+  --review-submit-bg: var(--rudu-ink-900);
+  --review-submit-bg-hover: var(--rudu-ink-700);
+  --review-submit-text: #ffffff;
+}
+
+/* ── Dark pole (rudu `html.dark`) — the live constellagent palette ── */
+:root.dark,
+.dark {
+  --rudu-canvas: #18181b;
+  --rudu-canvas-hover: #27272a;
+  --rudu-surface: #202124;
+  --rudu-ink-50: #18181b;
+  --rudu-ink-100: #27272a;
+  --rudu-ink-200: #3f3f46;
+  --rudu-ink-300: #52525b;
+  --rudu-ink-400: #71717a;
+  --rudu-ink-500: #a1a1aa;
+  --rudu-ink-600: #d4d4d8;
+  --rudu-ink-700: #e4e4e7;
+  --rudu-ink-800: #f4f4f5;
+  --rudu-ink-900: #fafafb;
+
+  /* primary (submit) button — rudu dark: bg-ink-200 text-ink-900 hover bg-ink-300 */
+  --review-submit-bg: var(--rudu-ink-200);
+  --review-submit-bg-hover: var(--rudu-ink-300);
+  --review-submit-text: var(--rudu-ink-900);
+}
+
+/*
+ * Semantic review-box tokens — map rudu's actual Tailwind recipe onto names the
+ * CSS modules consume. These reference the ink/canvas vars above, so they flip
+ * automatically with the pole.
+ */
+:root {
+  /* card: rounded-lg border border-ink-200 bg-canvas text-ink-800 shadow-sm p-3 */
+  --review-card-bg: var(--rudu-canvas);
+  --review-card-bg-hover: var(--rudu-canvas-hover);
+  --review-card-border: var(--rudu-ink-200);
+  --review-card-radius: var(--radius-lg);
+  --review-card-shadow: var(--shadow-sm);
+
+  /* text ramp on a card */
+  --review-text-strong: var(--rudu-ink-900); /* line label, headings */
+  --review-text-body: var(--rudu-ink-800); /* comment body */
+  --review-text-author: var(--rudu-ink-600); /* author name */
+  --review-text-muted: var(--rudu-ink-500); /* meta, timestamps */
+
+  /* pill / badge: rounded-full bg-canvas px-2 py-0.5 text-ink-700 */
+  --review-badge-bg: var(--rudu-canvas);
+  --review-badge-border: var(--rudu-ink-200);
+  --review-badge-text: var(--rudu-ink-700);
+  --review-badge-radius: var(--radius-full);
+
+  /* avatar: bg-ink-200 text-ink-700 */
+  --review-avatar-bg: var(--rudu-ink-200);
+  --review-avatar-text: var(--rudu-ink-700);
+
+  /* textarea: bg-surface text-ink-900 placeholder:text-ink-500 */
+  --review-input-bg: var(--rudu-surface);
+  --review-input-text: var(--rudu-ink-900);
+  --review-input-placeholder: var(--rudu-ink-500);
+
+  /* rudu's amber selection / accent (#f59e0b — selected-line marker, "+" hover) */
+  --review-accent: #f59e0b;
+  --review-accent-soft: color-mix(in srgb, #f59e0b 16%, transparent);
+
+  /* motion: list stagger step (the one motion token base lacked) */
+  --stagger: 40ms;
+}

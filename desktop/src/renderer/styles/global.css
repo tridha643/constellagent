@@ -4,6 +4,7 @@
  */
 @import "tailwindcss";
 @import './design-tokens.css';
+@import '../theme/rudu-tokens.css';
 @import '../theme/file-tree-icon-bridge.css';
 @import '../components/ui/loaders/grid.css';
 @import '../components/ui/loaders/reduced-motion.css';

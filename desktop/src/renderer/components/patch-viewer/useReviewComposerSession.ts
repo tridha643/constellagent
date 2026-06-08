@@ -7,6 +7,12 @@ export interface ReviewComposerSession {
   draftTarget: PatchDraftTarget | null
   composerBody: string
   setComposerBody: (body: string) => void
+  /**
+   * Record a programmatically seeded body (e.g. a ```suggestion pre-fill) as the
+   * pristine baseline so an untouched seed isn't treated as a dirty draft (no
+   * spurious discard prompt when re-selecting).
+   */
+  markComposerPristine: (body: string) => void
   /** Single entry point for selection changes (drag-select, gutter "+", clear). */
   onSelectionChange: (selection: CodeViewLineSelection | null) => void
   onAddToChat: (target: PatchDraftTarget) => void
@@ -26,8 +32,16 @@ function languageIdFromPath(filePath: string): string {
 export function useReviewComposerSession(): ReviewComposerSession {
   const [draftTarget, setDraftTarget] = useState<PatchDraftTarget | null>(null)
   const [composerBody, setComposerBody] = useState('')
+  // Programmatically seeded baseline (suggestion pre-fill). A body equal to this
+  // is "pristine" — the user hasn't typed, so switching drafts needs no confirm.
+  const [pristineBody, setPristineBody] = useState('')
 
-  const isDirty = composerBody.trim().length > 0
+  const isDirty = composerBody.trim().length > 0 && composerBody !== pristineBody
+
+  const markComposerPristine = useCallback((body: string) => {
+    setComposerBody(body)
+    setPristineBody(body)
+  }, [])
 
   const openDraft = useCallback(
     (target: PatchDraftTarget) => {
@@ -35,7 +49,10 @@ export function useReviewComposerSession(): ReviewComposerSession {
         if (current && isDirty && !draftTargetsEqual(target, current)) {
           if (!window.confirm('Discard your comment draft?')) return current
         }
-        if (!draftTargetsEqual(target, current)) setComposerBody('')
+        if (!draftTargetsEqual(target, current)) {
+          setComposerBody('')
+          setPristineBody('')
+        }
         return target
       })
     },
@@ -50,6 +67,7 @@ export function useReviewComposerSession(): ReviewComposerSession {
         }
         setDraftTarget(null)
         setComposerBody('')
+        setPristineBody('')
         return
       }
       openDraft(selectionToDraft(selection))
@@ -67,5 +85,13 @@ export function useReviewComposerSession(): ReviewComposerSession {
     sendAddToChatText(filePath, languageIdFromPath(filePath), reference)
   }, [])
 
-  return { draftTarget, composerBody, setComposerBody, onSelectionChange, onAddToChat, openDraft }
+  return {
+    draftTarget,
+    composerBody,
+    setComposerBody,
+    markComposerPristine,
+    onSelectionChange,
+    onAddToChat,
+    openDraft,
+  }
 }

@@ -731,6 +731,7 @@ export function ConductorChatView({
         running={running}
         disabled={!worktreePath || awaitingUser}
         queuedMessages={controller.state?.queuedMessages ?? []}
+        transcript={controller.transcript}
         onSubmit={handleSubmit}
         onCancel={controller.cancel}
         onReplaceQueue={handleReplaceQueue}
@@ -740,6 +741,7 @@ export function ConductorChatView({
         onSetPlan={handleSetPlan}
         onHistoryUp={() => timelineRef.current?.openHistory()}
         composerRef={composerRef}
+        sessionId={agentSessionId}
         workspacePath={worktreePath}
         repoPath={repoPath}
         onSlashAction={handleSlashAction}

@@ -2,12 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { SessionRef } from '@pi-gui/session-driver'
+import type { SessionDriverEvent, SessionRef } from '@pi-gui/session-driver'
 import { AGENT_SDK_HOOK_CAPABILITIES } from './agent-sdk-hooks'
 import { buildAgentPrompt, CONDUCTOR_RTK_PROMPT_PREFIX } from './agent-driver'
 import {
   applyCodexToolHook,
   buildCodexUserInput,
+  CodexDriver,
   codexCliSupportsSdkExec,
   codexConfigForWebSockets,
   codexSdkEnv,
@@ -92,6 +93,171 @@ describe('CodexDriver streaming transport', () => {
     expect(source).not.toContain('upsertSyntheticCanvasFromText')
     expect(source).toContain('evAssistantDelta')
   })
+
+  test('suspends the stream after native request_user_input before follow-up assistant text', async () => {
+    const driver = new CodexDriver()
+    const emitted: SessionDriverEvent[] = []
+    const sessionRef: SessionRef = { workspaceId: 'workspace-1', sessionId: 'session-1' }
+    const state = {
+      thread: null,
+      codexThreadId: null,
+      model: 'gpt-5.3-codex',
+      effort: 'medium',
+      plan: false,
+      webSocketsEnabled: false,
+      formatPrimed: false,
+      emittedByItem: new Map<string, string>(),
+      lastToolUpdateByItem: new Map<string, { text: string; emittedAt: number }>(),
+      collab: {},
+      pendingAskUserRequest: null,
+    }
+    const thread = {
+      runStreamed: async () => ({
+        events: (async function* () {
+          yield {
+            type: 'item.completed',
+            item: {
+              id: 'ask-1',
+              type: 'mcp_tool_call',
+              server: 'functions',
+              tool: 'request_user_input',
+              arguments: {
+                questions: [
+                  {
+                    header: 'Scope',
+                    question: 'Which path?',
+                    options: [{ label: 'A' }, { label: 'B' }],
+                  },
+                ],
+              },
+              status: 'completed',
+            },
+          }
+          yield {
+            type: 'item.started',
+            item: {
+              id: 'msg-1',
+              type: 'agent_message',
+              text: 'I used the request_user_input tool. It returned no selected answer yet.',
+            },
+          }
+        })(),
+      }),
+    }
+
+    await (
+      driver as unknown as {
+        runCodexStreamedTurn(
+          ctx: unknown,
+          state: unknown,
+          thread: unknown,
+          input: unknown,
+          logContext: unknown,
+        ): Promise<void>
+      }
+    ).runCodexStreamedTurn(
+      {
+        sessionRef,
+        workspacePath: '/tmp/workspace',
+        signal: new AbortController().signal,
+        emit: (event: SessionDriverEvent) => emitted.push(event),
+      },
+      state,
+      thread,
+      'prompt',
+      {
+        model: 'gpt-5.3-codex',
+        effort: 'medium',
+        seedTranscript: false,
+        webSocketsEnabled: false,
+      },
+    )
+
+    expect(state.pendingAskUserRequest?.request.questions[0]?.question).toBe('Which path?')
+    expect(emitted).toEqual([])
+  })
+
+  test('suspends the stream when Codex emits request_user_input as a function_call item', async () => {
+    const driver = new CodexDriver()
+    const emitted: SessionDriverEvent[] = []
+    const sessionRef: SessionRef = { workspaceId: 'workspace-1', sessionId: 'session-1' }
+    const state = {
+      thread: null,
+      codexThreadId: null,
+      model: 'gpt-5.3-codex',
+      effort: 'medium',
+      plan: false,
+      webSocketsEnabled: false,
+      formatPrimed: false,
+      emittedByItem: new Map<string, string>(),
+      lastToolUpdateByItem: new Map<string, { text: string; emittedAt: number }>(),
+      collab: {},
+      pendingAskUserRequest: null,
+    }
+    const thread = {
+      runStreamed: async () => ({
+        events: (async function* () {
+          yield {
+            type: 'item.completed',
+            item: {
+              id: 'call-1',
+              type: 'function_call',
+              name: 'request_user_input',
+              call_id: 'call_native_request_user_input',
+              arguments: JSON.stringify({
+                questions: [
+                  {
+                    header: 'Choice',
+                    question: 'Pick one?',
+                    options: [{ label: 'One' }, { label: 'Two' }],
+                  },
+                ],
+              }),
+            },
+          }
+          yield {
+            type: 'item.started',
+            item: {
+              id: 'msg-1',
+              type: 'agent_message',
+              text: 'The request_user_input tool returned no answer.',
+            },
+          }
+        })(),
+      }),
+    }
+
+    await (
+      driver as unknown as {
+        runCodexStreamedTurn(
+          ctx: unknown,
+          state: unknown,
+          thread: unknown,
+          input: unknown,
+          logContext: unknown,
+        ): Promise<void>
+      }
+    ).runCodexStreamedTurn(
+      {
+        sessionRef,
+        workspacePath: '/tmp/workspace',
+        signal: new AbortController().signal,
+        emit: (event: SessionDriverEvent) => emitted.push(event),
+      },
+      state,
+      thread,
+      'prompt',
+      {
+        model: 'gpt-5.3-codex',
+        effort: 'medium',
+        seedTranscript: false,
+        webSocketsEnabled: false,
+      },
+    )
+
+    expect(state.pendingAskUserRequest?.request.questions[0]?.question).toBe('Pick one?')
+    expect(emitted).toEqual([])
+  })
 })
 
 describe('CodexDriver CLI environment', () => {
@@ -145,15 +311,22 @@ describe('Codex WebSocket config', () => {
     expect(shouldUseCodexWebSockets('auto', 'gpt-5.5')).toBe(false)
   })
 
-  test('builds the Codex CLI provider capability override only when enabled', () => {
+  test('always enables default-mode request_user_input and conditionally adds WebSockets', () => {
     expect(codexConfigForWebSockets(true)).toEqual({
+      features: {
+        default_mode_request_user_input: true,
+      },
       model_providers: {
         openai: {
           supports_websockets: true,
         },
       },
     })
-    expect(codexConfigForWebSockets(false)).toBeUndefined()
+    expect(codexConfigForWebSockets(false)).toEqual({
+      features: {
+        default_mode_request_user_input: true,
+      },
+    })
   })
 })
 

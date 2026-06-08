@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useMemo, type CSSProperties } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { CodeView, type CodeViewHandle } from '@pierre/diffs/react'
 import type { CodeViewDiffItem, DiffLineAnnotation } from '@pierre/diffs/react'
 import type { CodeViewLineSelection, CodeViewOptions } from '@pierre/diffs'
@@ -13,6 +13,7 @@ import type { PatchViewFile } from './patch-view-model'
 import { draftToSelection, draftTargetFor, type PatchDraftTarget } from './line-selection'
 import { filePathFromItemId } from './patch-utils'
 import { normalizePath } from './review-threads'
+import { getSuggestionSeedForLineRange } from './review-suggestion-seeds'
 import editorStyles from '../Editor/Editor.module.css'
 import annotationUi from '../Editor/AnnotationBubble.module.css'
 
@@ -37,6 +38,39 @@ const HOVER_UTILITY_UNSAFE_CSS = `
   min-height: 100%;
   box-sizing: border-box;
 }
+/* rudu parity: amber selected-line marker (matches the "+" affordance accent) */
+[data-column-number][data-selected-line]::before {
+  background-color: #f59e0b;
+  background-image: none;
+}
+/* Kill Pierre's bluish selected-line wash — the amber gutter marker is the only
+   review-range cue (rudu). Code text stays its normal colour so it reads cleanly. */
+[data-selected-line]:is([data-line],[data-line-annotation],[data-gutter-buffer],[data-column-number]) {
+  --diffs-line-bg: var(--diffs-computed-diff-line-bg) !important;
+}
+/* Native text-selection (⌘C copy) uses a soft amber tint instead of OS blue. */
+[data-code] ::selection {
+  background-color: rgba(245, 158, 11, 0.3);
+}
+/* rudu parity (overflow:'scroll'): hide diff scrollbars so long lines scroll cleanly */
+[data-overflow='scroll'],
+[data-code] {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+[data-overflow='scroll']::-webkit-scrollbar,
+[data-code]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+[data-code]::-webkit-scrollbar-track,
+[data-code]::-webkit-scrollbar-corner,
+[data-code]::-webkit-scrollbar-thumb,
+[data-diff]:hover [data-code]::-webkit-scrollbar-thumb,
+[data-file]:hover [data-code]::-webkit-scrollbar-thumb {
+  background-color: transparent !important;
+}
 `.trim()
 
 const PIERRE_MAX = 2000
@@ -58,6 +92,10 @@ const ITEM_METRICS = {
 /** Flat layout — our own toolbar/file-strip owns surrounding spacing. */
 const FLAT_LAYOUT = { paddingTop: 0, paddingBottom: 0, gap: 0 } as const
 
+/** `display:contents` wrapper adds no box, so the CodeView root stays the scroll
+ *  container while still being a DOM ancestor we can attach a capture listener to. */
+const CONTENTS_WRAPPER_STYLE: CSSProperties = { display: 'contents' }
+
 export type CodeViewDiffItemArr = CodeViewDiffItem<DiffAnnotation[]>
 
 export interface PatchCodeViewProps {
@@ -68,6 +106,7 @@ export interface PatchCodeViewProps {
   draftTarget: PatchDraftTarget | null
   composerBody: string
   onComposerBodyChange: (body: string) => void
+  onComposerSeedPristine?: (body: string) => void
   onSelectionChange: (selection: CodeViewLineSelection | null) => void
   onApplyAnnotation: (patch: AnnotationPatch) => void
   onOpenFile: (fullPath: string) => void
@@ -104,6 +143,7 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
       draftTarget,
       composerBody,
       onComposerBodyChange,
+      onComposerSeedPristine,
       onSelectionChange,
       onApplyAnnotation,
       onOpenFile,
@@ -273,10 +313,20 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
                 lineEnd={draftTarget.lineEnd}
                 body={composerBody}
                 onBodyChange={onComposerBodyChange}
+                onSeedPristine={onComposerSeedPristine}
                 onCancel={() => onSelectionChange(null)}
                 onSaved={() => onSelectionChange(null)}
                 onApply={onApplyAnnotation}
                 allowSuggestion
+                suggestionSeed={
+                  draftTarget.side === 'additions'
+                    ? getSuggestionSeedForLineRange(
+                        viewFile?.fileDiff,
+                        draftTarget.lineNumber,
+                        draftTarget.lineEnd,
+                      )
+                    : undefined
+                }
                 suggestionLanguage={languageIdFromPath(filePath)}
                 selectedLineLabel={
                   draftTarget.lineEnd > draftTarget.lineNumber
@@ -289,19 +339,21 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
           </div>
         )
       },
-      [byItemId, draftTarget, worktreePath, composerBody, onComposerBodyChange, onSelectionChange, onApplyAnnotation, onHunkAccept, onHunkReject, hunkActionPending, tourMode, activeTourAnnotationId, selectedCommentIds, onToggleComment, onAddToChat],
+      [byItemId, draftTarget, worktreePath, composerBody, onComposerBodyChange, onComposerSeedPristine, onSelectionChange, onApplyAnnotation, onHunkAccept, onHunkReject, hunkActionPending, tourMode, activeTourAnnotationId, selectedCommentIds, onToggleComment, onAddToChat],
     )
 
     const options = useMemo<CodeViewOptions<DiffAnnotation[]>>(
       () => ({
         theme: CODEX_ABSOLUTELY_DIFF_THEME_ID,
         themeType: 'dark',
+        // diffStyle kept as our split/inline toggle (rudu is always 'unified').
         diffStyle: inline ? 'unified' : 'split',
+        // rudu render options: 'bars' indicators, intra-line 'word' diff, scroll overflow.
         diffIndicators: 'bars',
-        lineDiffType: 'word-alt',
+        lineDiffType: 'word',
         maxLineDiffLength: PIERRE_MAX,
         tokenizeMaxLineLength: PIERRE_MAX,
-        overflow: 'wrap',
+        overflow: 'scroll',
         // CodeView defaults this to true. We keep it false so changed-only files
         // collapse unchanged regions (separators + gap expanders); per-file "show
         // full file" is emulated by re-parsing into a single gap-free hunk.
@@ -338,20 +390,52 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
       [style],
     )
 
+    // Selection routing (GitHub/rudu model): dragging the line-number gutter (or
+    // the hover "+" slot) selects a review range and opens the composer; dragging
+    // the code text is a normal text selection the user can copy. Pierre would
+    // otherwise hijack EVERY content drag into a line selection and
+    // preventDefault() the browser's text selection (no copy). We stop Pierre's
+    // pointerdown in the capture phase — before it reaches its listener on the
+    // inner <pre> (across the shadow boundary via composedPath) — for any drag
+    // that doesn't start on the gutter. The wrapper is `display:contents` so it
+    // adds no box and the CodeView root stays the scroll container.
+    const selectionGuardRef = useRef<HTMLDivElement>(null)
+    useEffect(() => {
+      const el = selectionGuardRef.current
+      if (!el) return
+      const onPointerDownCapture = (e: PointerEvent) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return
+        const onGutter = e
+          .composedPath()
+          .some(
+            (n) =>
+              n instanceof Element &&
+              n.matches?.(
+                '[data-column-number],[data-gutter-buffer],[data-hover-slot],[slot="hover-slot"]',
+              ),
+          )
+        if (!onGutter) e.stopImmediatePropagation()
+      }
+      el.addEventListener('pointerdown', onPointerDownCapture, true)
+      return () => el.removeEventListener('pointerdown', onPointerDownCapture, true)
+    }, [])
+
     return (
-      <CodeView<DiffAnnotation[]>
-        ref={ref}
-        className={className}
-        style={rootStyle}
-        items={items}
-        options={options}
-        selectedLines={selectedLines}
-        onSelectedLinesChange={onSelectionChange}
-        renderAnnotation={renderAnnotation}
-        renderHeaderMetadata={renderHeaderMetadata}
-        renderGutterUtility={renderGutterUtility}
-        onScroll={onScroll ? (scrollTop) => onScroll(scrollTop) : undefined}
-      />
+      <div ref={selectionGuardRef} style={CONTENTS_WRAPPER_STYLE}>
+        <CodeView<DiffAnnotation[]>
+          ref={ref}
+          className={className}
+          style={rootStyle}
+          items={items}
+          options={options}
+          selectedLines={selectedLines}
+          onSelectedLinesChange={onSelectionChange}
+          renderAnnotation={renderAnnotation}
+          renderHeaderMetadata={renderHeaderMetadata}
+          renderGutterUtility={renderGutterUtility}
+          onScroll={onScroll ? (scrollTop) => onScroll(scrollTop) : undefined}
+        />
+      </div>
     )
   },
 )
