@@ -8,17 +8,64 @@ import {
 
 export interface CodexAskUserRequest {
   readonly questions: readonly ConductorAskQuestionPrompt[]
+  readonly questionIds: readonly string[]
   readonly rawBlock: string
+}
+
+export interface CodexAppServerRequestUserInputParams {
+  readonly itemId: string
+  readonly threadId: string
+  readonly turnId: string
+  readonly questions: unknown
 }
 
 export function parseCodexAskUserToolRequest(value: unknown): CodexAskUserRequest | null {
   const parsed = parseToolArguments(value)
-  const questions = normalizeCodexAskUserQuestions(parsed)
-  if (!questions) return null
+  const normalized = normalizeCodexAskUserQuestions(parsed)
+  if (!normalized) return null
   return {
-    questions,
+    questions: normalized.questions,
+    questionIds: normalized.questionIds,
     rawBlock: typeof value === 'string' ? value : JSON.stringify(value),
   }
+}
+
+export function parseAppServerRequestUserInput(params: unknown): CodexAskUserRequest | null {
+  if (!isRecord(params) || !Array.isArray(params.questions)) return null
+  const questions: ConductorAskQuestionPrompt[] = []
+  const questionIds: string[] = []
+  for (const rawQuestion of params.questions) {
+    const normalized = normalizeAppServerAskUserQuestion(rawQuestion)
+    if (!normalized) return null
+    questions.push(normalized.prompt)
+    questionIds.push(normalized.id)
+  }
+  if (questions.length < 1 || questions.length > 4) return null
+  return {
+    questions,
+    questionIds,
+    rawBlock: JSON.stringify(params),
+  }
+}
+
+export function formatAppServerRequestUserInputResult(
+  details: ConductorAskQuestionDetails,
+  questionIds: readonly string[],
+): { answers: Record<string, { answers: string[] }> } {
+  const answers: Record<string, { answers: string[] }> = {}
+  if (details.cancelled) return { answers }
+  for (const [index, answer] of details.answers.entries()) {
+    const questionId = questionIds[index]
+    if (!questionId) continue
+    const values = Array.isArray(answer.answer)
+      ? answer.answer.map((entry) => entry.trim()).filter(Boolean)
+      : answer.answer.trim()
+        ? [answer.answer.trim()]
+        : []
+    if (!values.length) continue
+    answers[questionId] = { answers: values }
+  }
+  return { answers }
 }
 
 export function formatCodexAskUserContinuation(details: ConductorAskQuestionDetails): string | null {
@@ -34,31 +81,89 @@ export function formatCodexAskUserContinuation(details: ConductorAskQuestionDeta
   ].join('\n')
 }
 
-function normalizeCodexAskUserQuestions(value: unknown): ConductorAskQuestionPrompt[] | null {
+function normalizeCodexAskUserQuestions(
+  value: unknown,
+): { questions: ConductorAskQuestionPrompt[]; questionIds: string[] } | null {
   if (!isRecord(value) || !Array.isArray(value.questions)) return null
-  const questions = value.questions
-    .map(normalizeCodexAskUserQuestion)
-    .filter((question): question is ConductorAskQuestionPrompt => question !== null)
-  if (questions.length < 1 || questions.length > 3) return null
-  return questions
+  const questions: ConductorAskQuestionPrompt[] = []
+  const questionIds: string[] = []
+  for (const [index, rawQuestion] of value.questions.entries()) {
+    const normalized = normalizeCodexAskUserQuestion(rawQuestion, `question-${index + 1}`)
+    if (!normalized) return null
+    questions.push(normalized.prompt)
+    questionIds.push(normalized.id)
+  }
+  if (questions.length < 1 || questions.length > 4) return null
+  return { questions, questionIds }
 }
 
-function normalizeCodexAskUserQuestion(value: unknown): ConductorAskQuestionPrompt | null {
-  if (!isRecord(value)) return null
-  if (typeof value.question !== 'string' || typeof value.header !== 'string') return null
+function normalizeAppServerAskUserQuestion(
+  value: unknown,
+): { id: string; prompt: ConductorAskQuestionPrompt } | null {
+  if (!isRecord(value) || typeof value.question !== 'string') return null
   const question = value.question.trim()
-  const header = clampAskQuestionHeader(value.header)
   if (!question) return null
+  const id =
+    typeof value.id === 'string' && value.id.trim()
+      ? value.id.trim()
+      : typeof value.header === 'string' && value.header.trim()
+        ? value.header.trim()
+        : null
+  if (!id) return null
+  const header = clampAskQuestionHeader(
+    typeof value.header === 'string' && value.header.trim() ? value.header : id,
+  )
   if (!Array.isArray(value.options)) return null
   const options = value.options
     .map(normalizeCodexAskUserOption)
     .filter((option): option is ConductorAskQuestionOption => option !== null)
-  if (options.length < 2 || options.length > 3) return null
+  if (options.length < 2 || options.length > 4) return null
+  const selectionLimit =
+    typeof value.selectionLimit === 'number'
+      ? value.selectionLimit
+      : typeof value.selection_limit === 'number'
+        ? value.selection_limit
+        : 1
   return {
-    question,
-    header,
-    options,
-    ...(value.multiSelect === true ? { multiSelect: true } : {}),
+    id,
+    prompt: {
+      question,
+      header,
+      options,
+      ...(selectionLimit > 1 ? { multiSelect: true } : {}),
+    },
+  }
+}
+
+function normalizeCodexAskUserQuestion(
+  value: unknown,
+  fallbackId: string,
+): { id: string; prompt: ConductorAskQuestionPrompt } | null {
+  if (!isRecord(value) || typeof value.question !== 'string') return null
+  const question = value.question.trim()
+  if (!question) return null
+  const id =
+    typeof value.id === 'string' && value.id.trim()
+      ? value.id.trim()
+      : typeof value.header === 'string' && value.header.trim()
+        ? value.header.trim()
+        : fallbackId
+  const header = clampAskQuestionHeader(
+    typeof value.header === 'string' && value.header.trim() ? value.header : id,
+  )
+  if (!Array.isArray(value.options)) return null
+  const options = value.options
+    .map(normalizeCodexAskUserOption)
+    .filter((option): option is ConductorAskQuestionOption => option !== null)
+  if (options.length < 2 || options.length > 4) return null
+  return {
+    id,
+    prompt: {
+      question,
+      header,
+      options,
+      ...(value.multiSelect === true ? { multiSelect: true } : {}),
+    },
   }
 }
 

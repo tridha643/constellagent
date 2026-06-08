@@ -1,8 +1,7 @@
 /**
- * Codex Conductor driver — maps `@openai/codex-sdk` thread items to the shared timeline.
+ * Codex Conductor driver — maps `codex app-server` notifications to the shared timeline.
  *
- * Delegated subagent runs arrive as runtime `collab_tool_call` JSONL items (spawn_agent / wait)
- * even when the published SDK `ThreadItem` union omits them; see `codex-driver-collab.ts`.
+ * Delegated subagent runs arrive as `collab_tool_call` items (spawn_agent / wait); see `codex-driver-collab.ts`.
  */
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -10,10 +9,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  Codex,
-  type Input,
   type ModelReasoningEffort,
-  type Thread,
   type ThreadEvent,
   type ThreadItem,
   type ThreadOptions,
@@ -53,16 +49,29 @@ import {
   type AgentSdkToolHookResult,
 } from './agent-sdk-hooks'
 import {
-  formatCodexAskUserContinuation,
-  parseCodexAskUserToolRequest,
-  type CodexAskUserRequest,
+  formatAppServerRequestUserInputResult,
+  parseAppServerRequestUserInput,
 } from './codex-ask-user'
 import { getConductorQuestionBridge } from './conductor-question-bridge'
+import {
+  buildCodexAppServerConfigArgs,
+  CodexAppServerClient,
+} from './codex-app-server-client'
+import {
+  createCodexAppServerEventMapperState,
+  mapAppServerNotification,
+  type CodexAppServerEventMapperState,
+} from './codex-app-server-events'
+
+interface CodexThreadHandle {
+  readonly threadId: string
+}
 
 interface CodexSessionState {
-  thread: Thread
-  /** From `thread.started` — used with `resumeThread()` if the in-memory Thread is lost. */
+  thread: CodexThreadHandle
+  /** From `thread.started` — used with `thread/resume` if the in-memory handle is lost. */
   codexThreadId: string | null
+  activeTurnId: string | null
   model: string
   effort: ModelReasoningEffort
   plan: boolean
@@ -72,7 +81,13 @@ interface CodexSessionState {
   readonly emittedByItem: Map<string, string>
   readonly lastToolUpdateByItem: Map<string, { text: string; emittedAt: number }>
   readonly collab: CodexCollabSessionState
-  pendingAskUserRequest: CodexPendingAskUserRequest | null
+}
+
+interface CodexActiveTurnContext {
+  readonly ctx: AgentTurnContext
+  readonly state: CodexSessionState
+  readonly mapper: CodexAppServerEventMapperState
+  readonly completion: TurnCompletionGate
 }
 
 interface CodexContextUsage {
@@ -88,11 +103,6 @@ interface CodexSessionRecovery {
   webSocketsEnabled: boolean
   /** After user interrupt or stale resume — next turn seeds Conductor transcript instead of CLI resume. */
   preferTranscriptFallback: boolean
-}
-
-interface CodexPendingAskUserRequest {
-  readonly itemId: string
-  readonly request: CodexAskUserRequest
 }
 
 type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexConfigObject
@@ -128,11 +138,17 @@ const CODEX_IMAGE_EXTENSION_BY_MIME: Record<ConductorImageAttachment['mimeType']
   'image/webp': 'webp',
 }
 
-export function buildCodexUserInput(prompt: string, imagePaths: readonly string[]): Input {
-  if (imagePaths.length === 0) return prompt
+export interface CodexAppServerTurnInput {
+  readonly type: 'text' | 'localImage'
+  readonly text?: string
+  readonly path?: string
+}
+
+export function buildCodexUserInput(prompt: string, imagePaths: readonly string[]): CodexAppServerTurnInput[] {
+  if (imagePaths.length === 0) return [{ type: 'text', text: prompt }]
   return [
     { type: 'text', text: prompt },
-    ...imagePaths.map((path) => ({ type: 'local_image' as const, path })),
+    ...imagePaths.map((path) => ({ type: 'localImage' as const, path })),
   ]
 }
 
@@ -181,29 +197,6 @@ function toolDescriptor(item: ThreadItem): { toolName: string; input?: unknown }
     default:
       return null
   }
-}
-
-function requestUserInputRequestFromItem(item: ThreadItem): CodexAskUserRequest | null {
-  if (!isRecord(item)) return null
-  const itemType = typeof item.type === 'string' ? item.type : ''
-
-  if (itemType === 'mcp_tool_call') {
-    const tool = typeof item.tool === 'string' ? item.tool : ''
-    if (tool !== 'request_user_input') return null
-    return parseCodexAskUserToolRequest(item.arguments)
-  }
-
-  if (itemType === 'function_call') {
-    const name = typeof item.name === 'string' ? item.name : ''
-    if (name !== 'request_user_input') return null
-    return parseCodexAskUserToolRequest(item.arguments)
-  }
-
-  return null
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function toolSucceeded(item: ThreadItem): boolean {
@@ -353,28 +346,89 @@ function configMatches(
   )
 }
 
+class TurnCompletionGate {
+  private completed = false
+  private failed: Error | null = null
+  private readonly waiters: Array<() => void> = []
+
+  markCompleted(): void {
+    if (this.completed || this.failed) return
+    this.completed = true
+    this.flush()
+  }
+
+  markFailed(error: Error): void {
+    if (this.completed || this.failed) return
+    this.failed = error
+    this.flush()
+  }
+
+  async wait(signal: AbortSignal): Promise<void> {
+    if (this.completed) return
+    if (this.failed) throw this.failed
+    if (signal.aborted) return
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        cleanup()
+        resolve()
+      }
+      const cleanup = () => {
+        signal.removeEventListener('abort', onAbort)
+        const index = this.waiters.indexOf(onResolve)
+        if (index >= 0) this.waiters.splice(index, 1)
+      }
+      const onResolve = () => {
+        cleanup()
+        if (this.failed) {
+          reject(this.failed)
+          return
+        }
+        resolve()
+      }
+      this.waiters.push(onResolve)
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+    if (this.failed) throw this.failed
+  }
+
+  private flush(): void {
+    for (const waiter of this.waiters.splice(0)) {
+      waiter()
+    }
+  }
+}
+
 export class CodexDriver implements AgentDriver {
   readonly provider = 'codex' as const
-  private codex: { client: Codex; webSocketsEnabled: boolean } | null = null
+  private appServer: { client: CodexAppServerClient; webSocketsEnabled: boolean } | null = null
+  private activeTurn: CodexActiveTurnContext | null = null
   private readonly sessions = new Map<string, CodexSessionState>()
   private readonly recovery = new Map<string, CodexSessionRecovery>()
   private readonly contextUsage = new Map<string, CodexContextUsage>()
 
   constructor(private readonly hooks: CodexDriverHooks = {}) {}
 
-  private getCodex(webSocketsEnabled: boolean): Codex {
-    if (!this.codex || this.codex.webSocketsEnabled !== webSocketsEnabled) {
-      const codexPathOverride = resolveCodexCliPath()
-      const config = codexConfigForWebSockets(webSocketsEnabled)
-      const client = new Codex({
-        ...(getOpenaiApiKey() ? { apiKey: getOpenaiApiKey() } : {}),
-        env: codexSdkEnv(),
-        ...(codexPathOverride ? { codexPathOverride } : {}),
-        config,
+  private async getAppServerClient(webSocketsEnabled: boolean): Promise<CodexAppServerClient> {
+    if (!this.appServer || this.appServer.webSocketsEnabled !== webSocketsEnabled) {
+      this.appServer?.client.dispose()
+      const codexPath = resolveCodexCliPath()
+      if (!codexPath) {
+        throw new Error('Codex CLI not found. Install Codex and ensure it supports app-server.')
+      }
+      const client = new CodexAppServerClient({
+        codexPath,
+        env: {
+          ...codexSdkEnv(),
+          ...(getOpenaiApiKey() ? { OPENAI_API_KEY: getOpenaiApiKey()! } : {}),
+        },
+        configArgs: buildCodexAppServerConfigArgs(webSocketsEnabled),
+        onNotification: (method, params) => this.handleAppServerNotification(method, params),
+        onServerRequest: (method, id, params) => this.handleAppServerServerRequest(method, id, params),
       })
-      this.codex = { client, webSocketsEnabled }
+      this.appServer = { client, webSocketsEnabled }
     }
-    return this.codex.client
+    await this.appServer.client.ensureReady()
+    return this.appServer.client
   }
 
   checkAuth(): string | null {
@@ -403,7 +457,7 @@ export class CodexDriver implements AgentDriver {
     const state = this.sessions.get(sessionId)
     if (state) {
       this.recovery.set(sessionId, {
-        codexThreadId: state.codexThreadId ?? state.thread.id,
+        codexThreadId: state.codexThreadId ?? state.thread.threadId,
         model: state.model,
         effort: state.effort,
         plan: state.plan,
@@ -427,7 +481,12 @@ export class CodexDriver implements AgentDriver {
   async compactSession(ctx: AgentCompactContext): Promise<void> {
     const key = ctx.sessionRef.sessionId
     const state = this.sessions.get(key)
-    if (state && await tryNativeCompact(state.thread, ctx.customInstructions)) {
+    if (state) {
+      const client = await this.getAppServerClient(state.webSocketsEnabled)
+      await client.request('thread/compact/start', {
+        threadId: state.thread.threadId,
+        ...(ctx.customInstructions?.trim() ? { customInstructions: ctx.customInstructions.trim() } : {}),
+      })
       this.contextUsage.delete(key)
       return
     }
@@ -456,73 +515,68 @@ export class CodexDriver implements AgentDriver {
     let state: CodexSessionState
     let seedTranscript = forceTranscriptFallback
 
+    const client = await this.getAppServerClient(webSocketsEnabled)
+
     if (existing && !configChanged && !forceTranscriptFallback) {
-      // SDK primary path: same Thread instance, repeated runStreamed (see sdk/typescript/README.md).
       state = existing
       existing.emittedByItem.clear()
-      existing.pendingAskUserRequest = null
+      existing.activeTurnId = null
       clearCodexCollabSessionState(existing.collab)
     } else if (!forceTranscriptFallback && !configChanged && recovery?.codexThreadId && !recovery.preferTranscriptFallback) {
-      // In-memory Thread lost but persisted session may still be resumable (~/.codex/sessions).
-      const thread = this.getCodex(webSocketsEnabled).resumeThread(recovery.codexThreadId, options)
+      await client.request('thread/resume', threadResumeParams(recovery.codexThreadId, options))
       this.recovery.delete(key)
       state = {
-        thread,
+        thread: { threadId: recovery.codexThreadId },
         codexThreadId: recovery.codexThreadId,
+        activeTurnId: null,
         model: baseModel,
         effort,
         plan,
         webSocketsEnabled,
-        // Resumed rollout already carries the first-turn formatting prefix in its history.
         formatPrimed: true,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
         collab: createCodexCollabSessionState(),
-        pendingAskUserRequest: null,
       }
       this.sessions.set(key, state)
     } else if (!forceTranscriptFallback && !configChanged && recovery?.codexThreadId && recovery.preferTranscriptFallback) {
-      // Interrupted prior turn — do not resume a broken rollout; seed transcript on a fresh thread.
-      const thread = this.getCodex(webSocketsEnabled).startThread(options)
+      const threadId = await startAppServerThread(client, options)
       seedTranscript = Boolean(ctx.previousTranscript?.length)
       this.recovery.delete(key)
       state = {
-        thread,
-        codexThreadId: null,
+        thread: { threadId },
+        codexThreadId: threadId,
+        activeTurnId: null,
         model: baseModel,
         effort,
         plan,
         webSocketsEnabled,
-        // Fresh thread (seeded transcript is prior context, not the format prefix) — needs priming.
         formatPrimed: false,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
         collab: createCodexCollabSessionState(),
-        pendingAskUserRequest: null,
       }
       this.sessions.set(key, state)
     } else {
-      const thread = this.getCodex(webSocketsEnabled).startThread(options)
+      const threadId = await startAppServerThread(client, options)
       seedTranscript = shouldSeedFreshCodexThread(forceTranscriptFallback, ctx.previousTranscript)
       this.recovery.delete(key)
       state = {
-        thread,
-        codexThreadId: recovery?.codexThreadId ?? existing?.codexThreadId ?? null,
+        thread: { threadId },
+        codexThreadId: threadId,
+        activeTurnId: null,
         model: baseModel,
         effort,
         plan,
         webSocketsEnabled,
-        // Brand-new thread — send the formatting prefix on this first turn.
         formatPrimed: false,
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
         collab: createCodexCollabSessionState(),
-        pendingAskUserRequest: null,
       }
       this.sessions.set(key, state)
     }
 
-    const thread = state.thread
     state.lastToolUpdateByItem.clear()
 
     // Send the markdown formatting prefix only on a thread's first turn; it
@@ -543,32 +597,13 @@ export class CodexDriver implements AgentDriver {
     let input = buildCodexUserInput(prompt, imageInput.inputPaths)
 
     try {
-      let askUserContinuationCount = 0
-      while (true) {
-        state.emittedByItem.clear()
-        state.pendingAskUserRequest = null
-        await this.runCodexStreamedTurn(ctx, state, thread, input, {
-          model: baseModel,
-          effort,
-          seedTranscript,
-          webSocketsEnabled,
-        })
-
-        const pendingAskUserRequest = state.pendingAskUserRequest
-        if (!pendingAskUserRequest || ctx.signal.aborted) {
-          break
-        }
-        if (askUserContinuationCount >= 3) {
-          throw new Error('Codex requested user input too many times in one turn')
-        }
-
-        const continuation = await this.resolveCodexAskUserRequest(ctx, pendingAskUserRequest)
-        askUserContinuationCount += 1
-        if (!continuation || ctx.signal.aborted) {
-          break
-        }
-        input = continuation
-      }
+      state.emittedByItem.clear()
+      await this.runCodexAppServerTurn(ctx, state, client, input, {
+        model: baseModel,
+        effort,
+        seedTranscript,
+        webSocketsEnabled,
+      })
     } catch (err) {
       if (!isBenignCodexInterruptError(err, ctx.signal) && isStaleCodexThreadError(err)) {
         this.sessions.delete(key)
@@ -584,11 +619,11 @@ export class CodexDriver implements AgentDriver {
     }
   }
 
-  private async runCodexStreamedTurn(
+  private async runCodexAppServerTurn(
     ctx: AgentTurnContext,
     state: CodexSessionState,
-    thread: Thread,
-    input: Input,
+    client: CodexAppServerClient,
+    input: CodexAppServerTurnInput[],
     logContext: {
       readonly model: string
       readonly effort: ModelReasoningEffort
@@ -596,74 +631,115 @@ export class CodexDriver implements AgentDriver {
       readonly webSocketsEnabled: boolean
     },
   ): Promise<void> {
-    const runStreamedStartedAt = performance.now()
-    const { events } = await thread.runStreamed(input, { signal: ctx.signal })
-    logMainPerfEvent('codex.runStreamed_ready', performance.now() - runStreamedStartedAt, logContext)
+    const turnStartedAt = performance.now()
+    const mapper = createCodexAppServerEventMapperState()
+    const completion = new TurnCompletionGate()
+    this.activeTurn = { ctx, state, mapper, completion }
+
+    const abortHandler = () => {
+      const turnId = state.activeTurnId
+      if (!turnId) return
+      void client.request('turn/interrupt', {
+        threadId: state.thread.threadId,
+        turnId,
+      }).catch(() => {})
+    }
+    ctx.signal.addEventListener('abort', abortHandler)
+
     try {
-      let firstEventAt: number | undefined
-      let eventCount = 0
-      for await (const event of events) {
-        eventCount += 1
-        if (firstEventAt === undefined) {
-          firstEventAt = performance.now()
-          logMainPerfEvent('codex.runStreamed_first_event', firstEventAt - runStreamedStartedAt, {
-            model: logContext.model,
-            effort: logContext.effort,
-            eventType: event.type,
-            webSocketsEnabled: logContext.webSocketsEnabled,
-          })
-        }
-        this.handleEvent(ctx, state, event)
-        if (state.pendingAskUserRequest) {
-          logMainPerfEvent('codex.request_user_input_suspended', performance.now() - runStreamedStartedAt, {
-            model: logContext.model,
-            effort: logContext.effort,
-            eventCount,
-            webSocketsEnabled: logContext.webSocketsEnabled,
-          })
-          break
-        }
-      }
-      logMainPerfEvent('codex.runStreamed_events_total', performance.now() - runStreamedStartedAt, {
-        model: logContext.model,
+      await client.request('turn/start', {
+        threadId: state.thread.threadId,
+        input,
         effort: logContext.effort,
-        eventCount,
-        webSocketsEnabled: logContext.webSocketsEnabled,
+        model: logContext.model,
       })
+      logMainPerfEvent('codex.appServer.turn_started', performance.now() - turnStartedAt, logContext)
+      await completion.wait(ctx.signal)
+      logMainPerfEvent('codex.appServer.turn_completed', performance.now() - turnStartedAt, logContext)
     } catch (err) {
       if (!isBenignCodexInterruptError(err, ctx.signal)) throw err
+    } finally {
+      ctx.signal.removeEventListener('abort', abortHandler)
+      this.activeTurn = null
+      state.activeTurnId = null
     }
   }
 
-  private async resolveCodexAskUserRequest(
-    ctx: AgentTurnContext,
-    pending: CodexPendingAskUserRequest,
-  ): Promise<string | null> {
-    const callId = `codex-ask-user:${pending.itemId}`
-    ctx.emit(evToolStarted(ctx.sessionRef, callId, 'AskQuestion', { questions: pending.request.questions }))
+  private handleAppServerNotification(method: string, params: unknown): void {
+    const activeTurn = this.activeTurn
+    if (!activeTurn) return
+    const events = mapAppServerNotification(method, params, activeTurn.mapper)
+    for (const event of events) {
+      if (event.type === 'turn.started') {
+        activeTurn.state.activeTurnId = activeTurn.mapper.activeTurnId
+      }
+      this.handleEvent(activeTurn.ctx, activeTurn.state, event)
+      if (event.type === 'turn.completed') {
+        activeTurn.completion.markCompleted()
+      }
+      if (event.type === 'turn.failed' || event.type === 'error') {
+        const message =
+          event.type === 'turn.failed'
+            ? event.error?.message ?? 'Codex turn failed'
+            : event.message ?? 'Codex error'
+        activeTurn.completion.markFailed(new Error(message))
+      }
+    }
+  }
+
+  private async handleAppServerServerRequest(
+    method: string,
+    _id: string | number,
+    params: unknown,
+  ): Promise<unknown> {
+    if (method === 'item/tool/requestUserInput' || method === 'tool/requestUserInput') {
+      return this.resolveAppServerRequestUserInput(params)
+    }
+    if (
+      method === 'item/commandExecution/requestApproval'
+      || method === 'item/fileChange/requestApproval'
+      || method.endsWith('requestApproval')
+    ) {
+      return { decision: 'accept' }
+    }
+    throw new Error(`Unsupported Codex app-server request: ${method}`)
+  }
+
+  private async resolveAppServerRequestUserInput(params: unknown): Promise<unknown> {
+    const activeTurn = this.activeTurn
+    if (!activeTurn) {
+      return { answers: {} }
+    }
+    const request = parseAppServerRequestUserInput(params)
+    if (!request) {
+      return { answers: {} }
+    }
+    const itemId =
+      typeof (params as { itemId?: unknown })?.itemId === 'string'
+        ? (params as { itemId: string }).itemId
+        : 'request-user-input'
+    const callId = `codex-ask-user:${itemId}`
+    const { ctx, state } = activeTurn
+    ctx.emit(evToolStarted(ctx.sessionRef, callId, 'AskQuestion', { questions: request.questions }))
     try {
       const details = await getConductorQuestionBridge().registerPending({
         sessionId: ctx.sessionRef.sessionId,
         callId,
         provider: 'codex',
         source: 'askQuestion',
-        questions: pending.request.questions,
+        questions: request.questions,
       })
-      if (details.cancelled) {
-        ctx.emit(evToolFinished(ctx.sessionRef, callId, false, details))
-        return null
-      }
-      const continuation = formatCodexAskUserContinuation(details)
-      if (!continuation) {
-        ctx.emit(evToolFinished(ctx.sessionRef, callId, false, details))
-        return null
-      }
-      ctx.emit(evToolFinished(ctx.sessionRef, callId, true, details))
-      return continuation
+      const result = formatAppServerRequestUserInputResult(details, request.questionIds)
+      ctx.emit(evToolFinished(ctx.sessionRef, callId, !details.cancelled, details))
+      return result
     } catch (err) {
       ctx.emit(evToolFinished(ctx.sessionRef, callId, false, undefined))
-      if (isBenignCodexInterruptError(err, ctx.signal)) return null
+      if (isBenignCodexInterruptError(err, ctx.signal)) {
+        return { answers: {} }
+      }
       throw err
+    } finally {
+      state.activeTurnId = state.activeTurnId ?? activeTurn.mapper.activeTurnId
     }
   }
 
@@ -679,15 +755,6 @@ export class CodexDriver implements AgentDriver {
       state.emittedByItem.set(itemId, emitted)
       ctx.emit(evAssistantDelta(ctx.sessionRef, delta))
     }
-  }
-
-  private captureRequestUserInputTool(state: CodexSessionState, item: ThreadItem): boolean {
-    const request = requestUserInputRequestFromItem(item)
-    if (!request) return false
-    if (!state.pendingAskUserRequest) {
-      state.pendingAskUserRequest = { itemId: item.id, request }
-    }
-    return true
   }
 
   private emitToolStarted(
@@ -793,9 +860,6 @@ export class CodexDriver implements AgentDriver {
         } else if (item.type === 'reasoning') {
           this.emitAgentMessageText(ctx, state, item.id, item.text ?? '')
         }
-        if (this.captureRequestUserInputTool(state, item)) {
-          break
-        }
         const descriptor = toolDescriptor(item)
         if (descriptor) {
           this.emitToolStarted(ctx, item, descriptor.toolName, descriptor.input)
@@ -811,9 +875,6 @@ export class CodexDriver implements AgentDriver {
         }
         if (item.type === 'agent_message' || item.type === 'reasoning') {
           this.emitAgentMessageText(ctx, state, item.id, item.text ?? '')
-          break
-        }
-        if (this.captureRequestUserInputTool(state, item)) {
           break
         }
         if (item.type === 'todo_list') {
@@ -854,14 +915,38 @@ export class CodexDriver implements AgentDriver {
   }
 }
 
-async function tryNativeCompact(target: unknown, customInstructions?: string): Promise<boolean> {
-  if (!target || typeof target !== 'object') return false
-  const compact =
-    (target as { compactSession?: unknown }).compactSession ??
-    (target as { compact?: unknown }).compact
-  if (typeof compact !== 'function') return false
-  await compact.call(target, customInstructions?.trim() || undefined)
-  return true
+async function startAppServerThread(
+  client: CodexAppServerClient,
+  options: ThreadOptions,
+): Promise<string> {
+  const result = await client.request<{ thread?: { id?: string } }>('thread/start', threadStartParams(options))
+  const threadId = result.thread?.id
+  if (!threadId) {
+    throw new Error('Codex thread/start response missing thread id')
+  }
+  return threadId
+}
+
+function threadStartParams(options: ThreadOptions): Record<string, unknown> {
+  return {
+    ...(options.model ? { model: options.model } : {}),
+    ...(options.workingDirectory ? { cwd: options.workingDirectory } : {}),
+    ...(options.modelReasoningEffort ? { effort: options.modelReasoningEffort } : {}),
+    ...(options.sandboxMode ? { sandbox: options.sandboxMode } : {}),
+    ...(options.approvalPolicy ? { approvalPolicy: options.approvalPolicy } : {}),
+    ...(options.networkAccessEnabled === false ? { networkAccess: false } : {}),
+  }
+}
+
+function threadResumeParams(threadId: string, options: ThreadOptions): Record<string, unknown> {
+  return {
+    threadId,
+    ...(options.workingDirectory ? { cwd: options.workingDirectory } : {}),
+    ...(options.model ? { model: options.model } : {}),
+    ...(options.modelReasoningEffort ? { effort: options.modelReasoningEffort } : {}),
+    ...(options.sandboxMode ? { sandbox: options.sandboxMode } : {}),
+    ...(options.approvalPolicy ? { approvalPolicy: options.approvalPolicy } : {}),
+  }
 }
 
 const MAX_SHELL_STREAM_CHARS = 8_000

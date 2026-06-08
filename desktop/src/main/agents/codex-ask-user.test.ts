@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  formatAppServerRequestUserInputResult,
   formatCodexAskUserContinuation,
+  parseAppServerRequestUserInput,
   parseCodexAskUserToolRequest,
 } from './codex-ask-user'
 
@@ -74,5 +76,70 @@ describe('Codex request_user_input tool support', () => {
 
   test('cancelled answers do not produce a continuation', () => {
     expect(formatCodexAskUserContinuation({ cancelled: true, answers: [] })).toBeNull()
+  })
+
+  test('parses app-server requestUserInput questions with ids and four options', () => {
+    const parsed = parseAppServerRequestUserInput({
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      itemId: 'item-1',
+      questions: [
+        {
+          id: 'scope-q',
+          header: 'Scope',
+          question: 'Which path?',
+          options: [
+            { label: 'A', description: 'Narrow' },
+            { label: 'B', description: 'Medium' },
+            { label: 'C', description: 'Broad' },
+            { label: 'D', description: 'Wildcard' },
+          ],
+        },
+      ],
+    })
+
+    expect(parsed?.questionIds).toEqual(['scope-q'])
+    expect(parsed?.questions[0]?.options).toHaveLength(4)
+  })
+
+  test('falls back to question id when app-server header is missing', () => {
+    const parsed = parseAppServerRequestUserInput({
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      itemId: 'item-1',
+      questions: [
+        {
+          id: 'fallback-header',
+          question: 'Pick one?',
+          options: [{ label: 'One', description: '' }, { label: 'Two', description: '' }],
+        },
+      ],
+    })
+
+    expect(parsed?.questions[0]?.header).toBe('fallback-hea')
+  })
+
+  test('formats app-server answer envelope by question id', () => {
+    expect(
+      formatAppServerRequestUserInputResult(
+        {
+          cancelled: false,
+          answers: [
+            {
+              header: 'Scope',
+              question: 'Which path?',
+              answer: 'A',
+              wasCustom: false,
+              selectedOptions: ['A'],
+            },
+          ],
+        },
+        ['scope-q'],
+      ),
+    ).toEqual({
+      answers: {
+        'scope-q': { answers: ['A'] },
+      },
+    })
   })
 })

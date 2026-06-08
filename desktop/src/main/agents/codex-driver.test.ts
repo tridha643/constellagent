@@ -20,6 +20,9 @@ import {
   shouldSeedFreshCodexThread,
   shouldUseCodexWebSockets,
 } from './codex-driver'
+import { createCodexAppServerEventMapperState } from './codex-app-server-events'
+import { createCodexCollabSessionState } from './codex-driver-collab'
+import { getConductorQuestionBridge } from './conductor-question-bridge'
 
 describe('CodexDriver prompt seeding', () => {
   test('omits transcript when SDK thread carries history (primary path)', () => {
@@ -75,16 +78,11 @@ describe('CodexDriver prompt seeding', () => {
   })
 })
 
-describe('CodexDriver streaming transport', () => {
-  test('keeps the Codex turn on runStreamed', () => {
+describe('CodexDriver app-server transport', () => {
+  test('routes Codex turns through codex app-server turn/start', () => {
     const source = readFileSync(new URL('./codex-driver.ts', import.meta.url), 'utf8')
-    expect(source).toContain('thread.runStreamed(input,')
-  })
-
-  test('passes structured input (with local_image) to runStreamed, not prompt alone', () => {
-    const source = readFileSync(new URL('./codex-driver.ts', import.meta.url), 'utf8')
-    expect(source).toContain('thread.runStreamed(input')
-    expect(source).not.toMatch(/thread\.runStreamed\(prompt/)
+    expect(source).toContain("request('turn/start'")
+    expect(source).not.toContain('thread.runStreamed')
   })
 
   test('streams inline canvas text through assistant deltas', () => {
@@ -94,13 +92,14 @@ describe('CodexDriver streaming transport', () => {
     expect(source).toContain('evAssistantDelta')
   })
 
-  test('suspends the stream after native request_user_input before follow-up assistant text', async () => {
+  test('resolves item/tool/requestUserInput with structured answers', async () => {
     const driver = new CodexDriver()
     const emitted: SessionDriverEvent[] = []
     const sessionRef: SessionRef = { workspaceId: 'workspace-1', sessionId: 'session-1' }
     const state = {
-      thread: null,
-      codexThreadId: null,
+      thread: { threadId: 'thread-1' },
+      codexThreadId: 'thread-1',
+      activeTurnId: 'turn-1',
       model: 'gpt-5.3-codex',
       effort: 'medium',
       plan: false,
@@ -108,155 +107,64 @@ describe('CodexDriver streaming transport', () => {
       formatPrimed: false,
       emittedByItem: new Map<string, string>(),
       lastToolUpdateByItem: new Map<string, { text: string; emittedAt: number }>(),
-      collab: {},
-      pendingAskUserRequest: null,
+      collab: createCodexCollabSessionState(),
     }
-    const thread = {
-      runStreamed: async () => ({
-        events: (async function* () {
-          yield {
-            type: 'item.completed',
-            item: {
-              id: 'ask-1',
-              type: 'mcp_tool_call',
-              server: 'functions',
-              tool: 'request_user_input',
-              arguments: {
-                questions: [
-                  {
-                    header: 'Scope',
-                    question: 'Which path?',
-                    options: [{ label: 'A' }, { label: 'B' }],
-                  },
-                ],
-              },
-              status: 'completed',
-            },
-          }
-          yield {
-            type: 'item.started',
-            item: {
-              id: 'msg-1',
-              type: 'agent_message',
-              text: 'I used the request_user_input tool. It returned no selected answer yet.',
-            },
-          }
-        })(),
-      }),
-    }
-
-    await (
-      driver as unknown as {
-        runCodexStreamedTurn(
-          ctx: unknown,
-          state: unknown,
-          thread: unknown,
-          input: unknown,
-          logContext: unknown,
-        ): Promise<void>
-      }
-    ).runCodexStreamedTurn(
-      {
+    const controller = new AbortController()
+    ;(driver as unknown as { activeTurn: unknown }).activeTurn = {
+      ctx: {
         sessionRef,
         workspacePath: '/tmp/workspace',
-        signal: new AbortController().signal,
+        signal: controller.signal,
         emit: (event: SessionDriverEvent) => emitted.push(event),
       },
       state,
-      thread,
-      'prompt',
-      {
-        model: 'gpt-5.3-codex',
-        effort: 'medium',
-        seedTranscript: false,
-        webSocketsEnabled: false,
-      },
-    )
-
-    expect(state.pendingAskUserRequest?.request.questions[0]?.question).toBe('Which path?')
-    expect(emitted).toEqual([])
-  })
-
-  test('suspends the stream when Codex emits request_user_input as a function_call item', async () => {
-    const driver = new CodexDriver()
-    const emitted: SessionDriverEvent[] = []
-    const sessionRef: SessionRef = { workspaceId: 'workspace-1', sessionId: 'session-1' }
-    const state = {
-      thread: null,
-      codexThreadId: null,
-      model: 'gpt-5.3-codex',
-      effort: 'medium',
-      plan: false,
-      webSocketsEnabled: false,
-      formatPrimed: false,
-      emittedByItem: new Map<string, string>(),
-      lastToolUpdateByItem: new Map<string, { text: string; emittedAt: number }>(),
-      collab: {},
-      pendingAskUserRequest: null,
-    }
-    const thread = {
-      runStreamed: async () => ({
-        events: (async function* () {
-          yield {
-            type: 'item.completed',
-            item: {
-              id: 'call-1',
-              type: 'function_call',
-              name: 'request_user_input',
-              call_id: 'call_native_request_user_input',
-              arguments: JSON.stringify({
-                questions: [
-                  {
-                    header: 'Choice',
-                    question: 'Pick one?',
-                    options: [{ label: 'One' }, { label: 'Two' }],
-                  },
-                ],
-              }),
-            },
-          }
-          yield {
-            type: 'item.started',
-            item: {
-              id: 'msg-1',
-              type: 'agent_message',
-              text: 'The request_user_input tool returned no answer.',
-            },
-          }
-        })(),
-      }),
+      mapper: createCodexAppServerEventMapperState(),
+      completion: { markCompleted() {}, markFailed() {} },
     }
 
-    await (
+    const bridge = getConductorQuestionBridge()
+    let requestId = ''
+    bridge.setHostNotifier((question) => {
+      requestId = question.requestId
+    })
+    const pending = (
       driver as unknown as {
-        runCodexStreamedTurn(
-          ctx: unknown,
-          state: unknown,
-          thread: unknown,
-          input: unknown,
-          logContext: unknown,
-        ): Promise<void>
+        resolveAppServerRequestUserInput(params: unknown): Promise<unknown>
       }
-    ).runCodexStreamedTurn(
-      {
-        sessionRef,
-        workspacePath: '/tmp/workspace',
-        signal: new AbortController().signal,
-        emit: (event: SessionDriverEvent) => emitted.push(event),
-      },
-      state,
-      thread,
-      'prompt',
-      {
-        model: 'gpt-5.3-codex',
-        effort: 'medium',
-        seedTranscript: false,
-        webSocketsEnabled: false,
-      },
-    )
+    ).resolveAppServerRequestUserInput({
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      itemId: 'item-1',
+      questions: [
+        {
+          id: 'scope-q',
+          header: 'Scope',
+          question: 'Which path?',
+          options: [{ label: 'A', description: '' }, { label: 'B', description: '' }],
+        },
+      ],
+    })
+    await Promise.resolve()
+    expect(requestId).not.toBe('')
+    bridge.resolve(requestId, {
+      cancelled: false,
+      answers: [
+        {
+          header: 'Scope',
+          question: 'Which path?',
+          answer: 'A',
+          wasCustom: false,
+          selectedOptions: ['A'],
+        },
+      ],
+    })
 
-    expect(state.pendingAskUserRequest?.request.questions[0]?.question).toBe('Pick one?')
-    expect(emitted).toEqual([])
+    await expect(pending).resolves.toEqual({
+      answers: {
+        'scope-q': { answers: ['A'] },
+      },
+    })
+    expect(emitted.map((event) => event.type)).toEqual(['toolStarted', 'toolFinished'])
   })
 })
 
@@ -364,14 +272,14 @@ describe('isStaleCodexThreadError', () => {
 })
 
 describe('buildCodexUserInput', () => {
-  test('returns plain prompt when no image paths exist', () => {
-    expect(buildCodexUserInput('hello', [])).toBe('hello')
+  test('returns plain text input when no image paths exist', () => {
+    expect(buildCodexUserInput('hello', [])).toEqual([{ type: 'text', text: 'hello' }])
   })
 
-  test('builds structured text plus local_image input', () => {
+  test('builds structured text plus localImage input for app-server turns', () => {
     expect(buildCodexUserInput('look', ['/tmp/a.png'])).toEqual([
       { type: 'text', text: 'look' },
-      { type: 'local_image', path: '/tmp/a.png' },
+      { type: 'localImage', path: '/tmp/a.png' },
     ])
   })
 })
