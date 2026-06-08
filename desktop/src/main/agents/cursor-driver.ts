@@ -42,6 +42,13 @@ import { createCursorAskQuestionHandler } from './cursor-interaction-bridge'
 import { setCursorAskQuestionHandler } from './cursor-sdk-interaction-patch'
 import { cursorConductorLocalPermissions } from './conductor-sdk-cli-permissions'
 import type { ConductorComposerAttachment } from '../../shared/conductor-attachments'
+import {
+  AGENT_SDK_HOOK_CAPABILITIES,
+  applyAgentSdkToolHook,
+  type AgentSdkToolEmission,
+  type AgentSdkToolHookEvent,
+  type AgentSdkToolHookResult,
+} from './agent-sdk-hooks'
 
 interface CursorSessionState {
   agent: SDKAgent
@@ -60,6 +67,17 @@ interface CursorSessionState {
 const CONNECT_CODE_CANCELED = 1
 /** Connect "unknown" — often surfaced when a local agent stream is torn down mid-flight. */
 const CONNECT_CODE_UNKNOWN = 2
+
+export interface CursorToolHookEvent extends AgentSdkToolHookEvent<'cursor', SDKMessage> {
+  readonly message: SDKMessage
+}
+
+export type CursorToolHookResult = AgentSdkToolHookResult
+export type CursorToolHook = (event: CursorToolHookEvent) => CursorToolHookResult | void
+
+export interface CursorDriverHooks {
+  readonly onToolEvent?: CursorToolHook
+}
 
 export function connectErrorCode(err: unknown): number | undefined {
   if (!err || typeof err !== 'object' || !('code' in err)) return undefined
@@ -210,9 +228,18 @@ export function buildCursorUserMessage(
   return { text, images }
 }
 
+export function applyCursorToolHook(
+  event: CursorToolHookEvent,
+  hook?: CursorToolHook,
+): AgentSdkToolEmission | null {
+  return applyAgentSdkToolHook(event, hook)
+}
+
 export class CursorDriver implements AgentDriver {
   readonly provider = 'cursor' as const
   private readonly sessions = new Map<string, CursorSessionState>()
+
+  constructor(private readonly hooks: CursorDriverHooks = {}) {}
 
   checkAuth(): string | null {
     return checkCursorAuth()
@@ -354,19 +381,12 @@ export class CursorDriver implements AgentDriver {
           if (isSubagentTool(message.name)) {
             state.activeSubagentCallId = message.call_id
           }
-          ctx.emit(evToolStarted(ctx.sessionRef, message.call_id, message.name, message.args))
+          this.emitToolStarted(ctx, message)
         } else {
           if (state.activeSubagentCallId === message.call_id) {
             state.activeSubagentCallId = undefined
           }
-          ctx.emit(
-            evToolFinished(
-              ctx.sessionRef,
-              message.call_id,
-              message.status === 'completed',
-              message.result,
-            ),
-          )
+          this.emitToolFinished(ctx, message)
         }
         break
       }
@@ -379,6 +399,55 @@ export class CursorDriver implements AgentDriver {
       default:
         break
     }
+  }
+
+  private emitToolStarted(ctx: AgentTurnContext, message: SDKMessage & { type: 'tool_call' }): void {
+    const emission = applyCursorToolHook(
+      {
+        provider: 'cursor',
+        phase: 'started',
+        callId: message.call_id,
+        toolName: message.name,
+        message,
+        raw: message,
+        workspacePath: ctx.workspacePath,
+        sessionRef: ctx.sessionRef,
+        input: message.args,
+        capabilities: AGENT_SDK_HOOK_CAPABILITIES,
+      },
+      this.hooks.onToolEvent,
+    )
+    if (!emission) return
+    ctx.emit(evToolStarted(ctx.sessionRef, message.call_id, emission.toolName, emission.input))
+  }
+
+  private emitToolFinished(ctx: AgentTurnContext, message: SDKMessage & { type: 'tool_call' }): void {
+    const success = message.status === 'completed'
+    const emission = applyCursorToolHook(
+      {
+        provider: 'cursor',
+        phase: 'finished',
+        callId: message.call_id,
+        toolName: message.name,
+        message,
+        raw: message,
+        workspacePath: ctx.workspacePath,
+        sessionRef: ctx.sessionRef,
+        success,
+        output: message.result,
+        capabilities: AGENT_SDK_HOOK_CAPABILITIES,
+      },
+      this.hooks.onToolEvent,
+    )
+    if (!emission) return
+    ctx.emit(
+      evToolFinished(
+        ctx.sessionRef,
+        message.call_id,
+        emission.success ?? success,
+        emission.output,
+      ),
+    )
   }
 
   closeSession(sessionId: string): void {

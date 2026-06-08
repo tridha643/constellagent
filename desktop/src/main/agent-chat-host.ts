@@ -22,6 +22,7 @@ import { evToolFinished, type AgentDriver } from './agents/agent-driver'
 import { CodexDriver } from './agents/codex-driver'
 import { CursorDriver } from './agents/cursor-driver'
 import { PiConductorDriver } from './agents/pi-conductor-driver'
+import type { AgentSdkHooks } from './agents/agent-sdk-hooks'
 import {
   cloneTranscriptWithNewIds,
   compactTranscriptForAgentContext,
@@ -98,6 +99,10 @@ interface TurnTelemetry {
 
 export type AgentChatBroadcastListener = (channel: string, payload: unknown) => void
 
+export interface AgentChatHostOptions {
+  readonly sdkHooks?: AgentSdkHooks
+}
+
 export class AgentChatHost {
   private readonly sessions = new Map<string, RuntimeSession>()
   private readonly questionBridge = getConductorQuestionBridge()
@@ -111,11 +116,7 @@ export class AgentChatHost {
     userRequestedGeneratedImagesBySession: new Map(),
   }
   private readonly store = new AgentChatStore()
-  private readonly drivers: Record<AgentProvider, AgentDriver> = {
-    codex: new CodexDriver(),
-    cursor: new CursorDriver(),
-    pi: new PiConductorDriver(),
-  }
+  private readonly drivers: Record<AgentProvider, AgentDriver>
   /** Coalesces high-frequency transcript broadcasts during streaming (~25fps). */
   private readonly pendingTranscriptFlush = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly turnTelemetry = new Map<string, TurnTelemetry>()
@@ -125,7 +126,12 @@ export class AgentChatHost {
   private readonly assistantDeltaDebugSequenceBySession = new Map<string, number>()
   private static readonly TRANSCRIPT_FLUSH_MS = 40
 
-  constructor() {
+  constructor(options: AgentChatHostOptions = {}) {
+    this.drivers = {
+      codex: new CodexDriver(options.sdkHooks),
+      cursor: new CursorDriver(options.sdkHooks),
+      pi: new PiConductorDriver(),
+    }
     this.questionBridge.setHostNotifier((question) => {
       this.setBlockingQuestion(question.sessionId, question)
     })

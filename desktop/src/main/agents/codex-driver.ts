@@ -46,6 +46,12 @@ import {
   handleCodexCollabItem,
   type CodexCollabSessionState,
 } from './codex-driver-collab'
+import {
+  AGENT_SDK_HOOK_CAPABILITIES,
+  applyAgentSdkToolHook,
+  type AgentSdkToolEmission,
+  type AgentSdkToolHookResult,
+} from './agent-sdk-hooks'
 
 interface CodexSessionState {
   thread: Thread
@@ -81,34 +87,26 @@ type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexCo
 type CodexConfigObject = { [key: string]: CodexConfigValue }
 
 export interface CodexToolHookEvent {
+  readonly provider: 'codex'
   readonly phase: 'started' | 'updated' | 'finished'
   readonly callId: string
   readonly toolName: string
   readonly item: ThreadItem
+  readonly raw: ThreadItem
+  readonly workspacePath: string
+  readonly sessionRef: AgentTurnContext['sessionRef']
   readonly input?: unknown
   readonly output?: unknown
   readonly success?: boolean
+  readonly capabilities: typeof AGENT_SDK_HOOK_CAPABILITIES
 }
 
-export interface CodexToolHookResult {
-  readonly toolName?: string
-  readonly input?: unknown
-  readonly output?: unknown
-  readonly success?: boolean
-  readonly suppress?: boolean
-}
+export type CodexToolHookResult = AgentSdkToolHookResult
 
 export type CodexToolHook = (event: CodexToolHookEvent) => CodexToolHookResult | void
 
 export interface CodexDriverHooks {
   readonly onToolEvent?: CodexToolHook
-}
-
-interface CodexToolEmission {
-  readonly toolName: string
-  readonly input?: unknown
-  readonly output?: unknown
-  readonly success?: boolean
 }
 
 const CODEX_IMAGE_EXTENSION_BY_MIME: Record<ConductorImageAttachment['mimeType'], string> = {
@@ -136,15 +134,8 @@ export function shouldSeedFreshCodexThread(
 export function applyCodexToolHook(
   event: CodexToolHookEvent,
   hook?: CodexToolHook,
-): CodexToolEmission | null {
-  const result = hook?.(event)
-  if (result?.suppress) return null
-  return {
-    toolName: result?.toolName ?? event.toolName,
-    input: 'input' in (result ?? {}) ? result?.input : event.input,
-    output: 'output' in (result ?? {}) ? result?.output : event.output,
-    success: 'success' in (result ?? {}) ? result?.success : event.success,
-  }
+): AgentSdkToolEmission | null {
+  return applyAgentSdkToolHook(event, hook)
 }
 
 async function writeCodexImageAttachments(
@@ -577,7 +568,18 @@ export class CodexDriver implements AgentDriver {
     input?: unknown,
   ): void {
     const emission = applyCodexToolHook(
-      { phase: 'started', callId: item.id, toolName, item, input },
+      {
+        provider: 'codex',
+        phase: 'started',
+        callId: item.id,
+        toolName,
+        item,
+        raw: item,
+        workspacePath: ctx.workspacePath,
+        sessionRef: ctx.sessionRef,
+        input,
+        capabilities: AGENT_SDK_HOOK_CAPABILITIES,
+      },
       this.hooks.onToolEvent,
     )
     if (!emission) return
@@ -591,7 +593,18 @@ export class CodexDriver implements AgentDriver {
     output?: unknown,
   ): void {
     const emission = applyCodexToolHook(
-      { phase: 'updated', callId: item.id, toolName, item, output },
+      {
+        provider: 'codex',
+        phase: 'updated',
+        callId: item.id,
+        toolName,
+        item,
+        raw: item,
+        workspacePath: ctx.workspacePath,
+        sessionRef: ctx.sessionRef,
+        output,
+        capabilities: AGENT_SDK_HOOK_CAPABILITIES,
+      },
       this.hooks.onToolEvent,
     )
     if (!emission) return
@@ -606,7 +619,19 @@ export class CodexDriver implements AgentDriver {
     output?: unknown,
   ): void {
     const emission = applyCodexToolHook(
-      { phase: 'finished', callId: item.id, toolName, item, success, output },
+      {
+        provider: 'codex',
+        phase: 'finished',
+        callId: item.id,
+        toolName,
+        item,
+        raw: item,
+        workspacePath: ctx.workspacePath,
+        sessionRef: ctx.sessionRef,
+        success,
+        output,
+        capabilities: AGENT_SDK_HOOK_CAPABILITIES,
+      },
       this.hooks.onToolEvent,
     )
     if (!emission) return
