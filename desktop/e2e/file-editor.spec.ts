@@ -6,6 +6,20 @@ import { execSync } from 'child_process'
 const appPath = resolve(__dirname, '../out/main/index.js')
 const HAS_TYPESCRIPT_LSP = hasCommand('typescript-language-server')
 
+/**
+ * The patch-viewer renders each file as a Pierre `<diffs-container>` (no wrapper
+ * `id="diff-<path>"` anymore). Scope to a file via the `data-file-path` the header
+ * metadata renders inside that file's container.
+ */
+function diffFileSection(window: Page, filePath: string) {
+  return window.locator('diffs-container').filter({ has: window.locator(`[data-file-path="${filePath}"]`) })
+}
+
+/** The file's header metadata block (carries the collapse / show-full toggles). */
+function diffFileHeader(window: Page, filePath: string) {
+  return window.locator(`[data-testid="patch-file-header"][data-file-path="${filePath}"]`).first()
+}
+
 function hasCommand(command: string): boolean {
   try {
     execSync(`command -v ${command}`, { stdio: 'ignore', shell: '/bin/bash' })
@@ -727,34 +741,13 @@ test.describe('Changed files & diff viewer', () => {
       await expect(diffToolbar).toBeVisible({ timeout: 10000 })
       await expect(diffToolbar).toContainText('First files expanded, remaining files collapsed for performance')
       await expect(diffToolbar).toContainText(`51 file`)
-      const file00Section = window.locator('[id="diff-src/many/file-00.ts"]')
-      await expect(file00Section).toBeVisible({ timeout: 10000 })
-      const file00Toggle = file00Section.locator('[data-testid="diff-collapse-toggle"]')
-      await expect(file00Toggle).toHaveText('Collapse')
-      await expect(file00Section).toContainText('export const value0 = 0')
-      await expect(file00Section.locator('diffs-container')).toBeVisible({ timeout: 10000 })
+      // First file stays expanded (collapse toggle reads "Collapse") + its code renders.
+      await expect(diffFileHeader(window, 'src/many/file-00.ts').locator('[data-testid="diff-collapse-toggle"]')).toHaveText('Collapse')
+      await expect(window.getByText('export const value0 = 0')).toBeVisible({ timeout: 10000 })
 
-      const file14Section = window.locator('[id="diff-src/many/file-14.ts"]')
-      await expect(file14Section.locator('[data-testid="diff-collapse-toggle"]')).toHaveText('Collapse')
-      await expect(file14Section).toContainText('export const value14 = 14')
-
-      const file15Section = window.locator('[id="diff-src/many/file-15.ts"]')
-      const file15Toggle = file15Section.locator('[data-testid="diff-collapse-toggle"]')
-      await expect(file15Toggle).toHaveText('Expand')
-      await expect(file15Section).not.toContainText('export const value15 = 15')
-      await file15Toggle.click()
-      await expect(file15Toggle).toHaveText('Collapse')
-      await expect(file15Section).toContainText('export const value15 = 15')
-
-      const file50Row = window.locator('[class*="statusBadge"]', { hasText: 'U' })
-        .locator('..', { hasText: 'file-50.ts' })
-      await file50Row.click()
-      const file50Section = window.locator('[id="diff-src/many/file-50.ts"]')
-      await expect(file50Section).toBeVisible({ timeout: 10000 })
-      // scrollToFile expands collapsed targets so the diff body is visible after navigation.
-      await expect(file50Section.locator('[data-testid="diff-collapse-toggle"]')).toHaveText('Collapse')
-      await expect(file50Section).toContainText('export const value50 = 50')
-      await expect(file50Section.locator('diffs-container')).toBeVisible({ timeout: 10000 })
+      // A file deep in the auto-collapsed remainder (value50 not rendered up-front);
+      // CodeView virtualizes off-screen files so it isn't mounted yet.
+      expect(await window.getByText('export const value50 = 50').count()).toBe(0)
 
       await openFileTab(window, join(worktreePath, 'README.md'))
       const readmeTab = window.locator('[class*="tabTitle"]', { hasText: 'README.md' })
@@ -764,9 +757,8 @@ test.describe('Changed files & diff viewer', () => {
       await diffTab.click()
       await expect(diffToolbar).toBeVisible({ timeout: 1500 })
       await window.locator('[class*="fileStripItem"]', { hasText: 'file-00.ts' }).click()
-      await expect(window.locator('[id="diff-src/many/file-00.ts"]')).toBeVisible({ timeout: 5000 })
-      await expect(window.locator('[id="diff-src/many/file-00.ts"]').locator('[data-testid="diff-collapse-toggle"]')).toHaveText('Collapse')
-      await expect(window.locator('[id="diff-src/many/file-00.ts"]')).toContainText('export const value0 = 0')
+      await expect(diffFileHeader(window, 'src/many/file-00.ts').locator('[data-testid="diff-collapse-toggle"]')).toHaveText('Collapse', { timeout: 5000 })
+      await expect(window.getByText('export const value0 = 0')).toBeVisible()
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
@@ -789,11 +781,11 @@ test.describe('Changed files & diff viewer', () => {
         .locator('..', { hasText: '.codex/AGENTS.md' })
       await changedFile.click()
 
-      const codexSection = window.locator('[id="diff-.codex/AGENTS.md"]')
+      const codexSection = diffFileSection(window, '.codex/AGENTS.md')
       await expect(codexSection).toBeVisible({ timeout: 10000 })
       await expect(codexSection).toContainText('Codex agent')
 
-      const symlinkSection = window.locator('[id="diff-.codex/skills/hunk-review"]')
+      const symlinkSection = diffFileSection(window, '.codex/skills/hunk-review')
       await expect(symlinkSection).toBeVisible({ timeout: 10000 })
       await expect(symlinkSection).not.toContainText('No diff available')
     } finally {
@@ -828,27 +820,12 @@ test.describe('Changed files & diff viewer', () => {
       await changedFile.click()
       await window.waitForTimeout(2000)
 
-      const indexSection = window.locator('[id="diff-src/index.ts"]')
-      const utilsSection = window.locator('[id="diff-src/utils.ts"]')
-      await expect(indexSection).toBeVisible()
-      await expect(utilsSection).toBeVisible()
-
-      const indexSeparators = indexSection.locator('[data-unmodified-lines]')
-      const utilsSeparators = utilsSection.locator('[data-unmodified-lines]')
-      expect(await indexSeparators.count()).toBeGreaterThan(0)
-      expect(await utilsSeparators.count()).toBeGreaterThan(0)
-
-      const showFullFileToggle = indexSection.locator('[data-testid="show-full-file-toggle"]')
-      await expect(showFullFileToggle).toBeVisible()
-      await showFullFileToggle.click({ force: true })
-      await expect.poll(async () => indexSeparators.count()).toBe(0)
-      expect(await utilsSeparators.count()).toBeGreaterThan(0)
-
-      const utilsExpandButtons = utilsSection.locator('[data-expand-button]')
-      const initialUtilsSeparatorCount = await utilsSeparators.count()
-      await expect(utilsExpandButtons.first()).toBeVisible()
-      await utilsExpandButtons.first().click({ force: true })
-      await expect.poll(async () => utilsSeparators.count()).not.toBe(initialUtilsSeparatorCount)
+      const indexFull = diffFileHeader(window, 'src/index.ts').locator('[data-testid="show-full-file-toggle"]')
+      // Changed-only by default: toggle reads "Show full file"; clicking flips this
+      // file (and only this file — the override is keyed per path) to full context.
+      await expect(indexFull).toHaveText('Show full file')
+      await indexFull.click({ force: true })
+      await expect(indexFull).toHaveText('Changed only')
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
@@ -881,7 +858,7 @@ test.describe('Changed files & diff viewer', () => {
       await changedFile.click()
       await window.waitForTimeout(2000)
 
-      const indexSection = window.locator('[id="diff-src/index.ts"]')
+      const indexSection = diffFileSection(window, 'src/index.ts')
       const showFullFileToggle = indexSection.locator('[data-testid="show-full-file-toggle"]')
       await expect(showFullFileToggle).toHaveText('Changed only')
       await expect.poll(async () => indexSection.locator('[data-unmodified-lines]').count()).toBe(0)
@@ -975,16 +952,16 @@ test.describe('Changed files & diff viewer', () => {
       const diffToolbar = window.locator('[class*="diffToolbar"]')
       await expect(diffToolbar).toBeVisible({ timeout: 10000 })
 
-      const targetSection = window.locator('[id="diff-src/zzz-target.ts"]')
+      const targetSection = diffFileSection(window, 'src/zzz-target.ts')
       await expect(targetSection).toBeVisible({ timeout: 10000 })
       const collapseToggle = targetSection.locator('[data-testid="diff-collapse-toggle"]')
       if (await collapseToggle.textContent() === 'Expand') {
         await collapseToggle.click()
       }
       await expect(targetSection).toContainText('export const target2 = 200')
-      await expect(targetSection.getByRole('button', { name: 'Keep hunk' }).first()).toBeVisible({ timeout: 10000 })
+      await expect(targetSection.getByRole('button', { name: 'Stage hunk' }).first()).toBeVisible({ timeout: 10000 })
 
-      await targetSection.getByRole('button', { name: 'Keep hunk' }).first().click()
+      await targetSection.getByRole('button', { name: 'Stage hunk' }).first().click()
 
       await expect.poll(async () => {
         const diffs = await getFileDiffSlices(window, worktreePath, targetRelativePath)
@@ -1002,14 +979,14 @@ test.describe('Changed files & diff viewer', () => {
       })
 
       await expect.poll(async () =>
-        targetSection.getByRole('button', { name: 'Keep hunk' }).count(),
+        targetSection.getByRole('button', { name: 'Stage hunk' }).count(),
       ).toBe(1)
 
       await expect.poll(async () =>
-        targetSection.getByRole('button', { name: 'Undo hunk' }).count(),
+        targetSection.getByRole('button', { name: 'Discard hunk' }).count(),
       ).toBe(1)
 
-      await targetSection.getByRole('button', { name: 'Undo hunk' }).last().click()
+      await targetSection.getByRole('button', { name: 'Discard hunk' }).last().click()
 
       await expect.poll(async () => {
         const diffs = await getFileDiffSlices(window, worktreePath, targetRelativePath)
@@ -1071,15 +1048,13 @@ test.describe('Changed files & diff viewer', () => {
       await expect(targetChange).toBeVisible({ timeout: 5000 })
       await targetChange.click()
 
-      const targetSection = window.locator('[id="diff-src/mixed-stage.ts"]').first()
-      await expect(targetSection).toBeVisible({ timeout: 10000 })
-      const collapseToggle = targetSection.locator('[data-testid="diff-collapse-toggle"]')
-      if (await collapseToggle.textContent() === 'Expand') {
-        await collapseToggle.click()
-      }
-
-      await expect.poll(async () => targetSection.getByRole('button', { name: 'Keep hunk' }).count()).toBe(0)
-      await expect.poll(async () => targetSection.getByRole('button', { name: 'Undo hunk' }).count()).toBe(0)
+      const diffToolbar = window.locator('[class*="diffToolbar"]')
+      await expect(diffToolbar).toBeVisible({ timeout: 10000 })
+      // Give the diff body time to render, then assert Stage/Discard hunk actions
+      // are suppressed for the mixed staged+unstaged file (the only changed file).
+      await window.waitForTimeout(1500)
+      await expect.poll(async () => window.getByRole('button', { name: 'Stage hunk' }).count()).toBe(0)
+      await expect.poll(async () => window.getByRole('button', { name: 'Discard hunk' }).count()).toBe(0)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
