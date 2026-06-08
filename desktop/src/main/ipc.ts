@@ -92,6 +92,7 @@ import {
 } from './automations/composio-definition-store'
 
 const ptyManager = new PtyManager()
+setTimeout(() => ptyManager.prewarm(), 0)
 const worktreeSyncService = new WorktreeSyncService()
 const spotlightService = new SpotlightService()
 

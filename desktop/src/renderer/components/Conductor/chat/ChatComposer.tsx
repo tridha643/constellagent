@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent,
 import { Plus, X } from 'lucide-react'
 import type { AgentProvider, QueuedAgentMessage, QueuedAgentMessageMode } from '../../../../shared/agent-chat-types'
 import type { ConductorComposerAttachment } from '../../../../shared/conductor-attachments'
-import type { TranscriptMessage } from '../../../../shared/pi/pi-desktop-state'
 import type { ConductorSlashCommand } from '../../../../shared/conductor-composer-commands'
 import { hasEffortVariants, hasFastVariant, isFastModel } from '../../../../shared/conductor-model-utils'
 import { normalizeThinkingLevel, isReasoningEffortActive, type ThinkingLevel } from '../../../../shared/conductor-thinking'
@@ -35,9 +34,6 @@ import {
 } from '../../../../shared/composer-draft-segments'
 import { hasComposerDraftInput } from '../../../../shared/composer-at-mention'
 import {
-  ContextUsageHover,
-} from './ContextWindowControl'
-import {
   CONDUCTOR_IMAGE_ACCEPT,
   extractImageFilesFromClipboardData,
   extractImageFilesFromDataTransfer,
@@ -64,7 +60,6 @@ export function ChatComposer({
   running,
   disabled,
   queuedMessages,
-  transcript,
   onSubmit,
   onCancel,
   onReplaceQueue,
@@ -74,7 +69,6 @@ export function ChatComposer({
   onSetPlan,
   onHistoryUp,
   composerRef,
-  sessionId,
   workspacePath,
   repoPath,
   onSlashAction,
@@ -88,7 +82,6 @@ export function ChatComposer({
   running: boolean
   disabled?: boolean
   queuedMessages: readonly QueuedAgentMessage[]
-  transcript: readonly TranscriptMessage[]
   onSubmit: (
     text: string,
     deliverAs?: QueuedAgentMessageMode,
@@ -102,7 +95,6 @@ export function ChatComposer({
   onSetPlan: (plan: boolean) => void
   onHistoryUp: () => void
   composerRef?: React.RefObject<ChatComposerHandle | null>
-  sessionId: string | null
   workspacePath: string
   repoPath: string
   onSlashAction: (command: ConductorSlashCommand, context: ConductorSlashActionContext) => void
@@ -211,17 +203,6 @@ export function ChatComposer({
       : 'Ask to make changes, @mention files, reference PRs with #, run /commands'
 
   const composerPayload = useMemo(() => text.trim(), [text])
-
-  const contextQueuedMessages = useMemo(() => {
-    if (!editingQueueId) return queuedMessages
-    return queuedMessages.map((message) =>
-      message.id === editingQueueId
-        ? { ...message, text: composerPayload, attachments: [...attachments] }
-        : message,
-    )
-  }, [attachments, composerPayload, editingQueueId, queuedMessages])
-  const contextDraftText = editingQueueId ? '' : composerPayload
-  const contextDraftAttachments = editingQueueId ? [] : attachments
 
   const composerInnerClass = [
     styles.composerInner,
@@ -694,15 +675,6 @@ export function ChatComposer({
             </button>
           </div>
           <div className={styles.composerActionsRight}>
-            <ContextUsageHover
-              provider={provider}
-              sessionId={sessionId}
-              model={model}
-              transcript={transcript}
-              queuedMessages={contextQueuedMessages}
-              draftText={contextDraftText}
-              draftAttachments={contextDraftAttachments}
-            />
             <button
               type="button"
               className={styles.composerAttachBtn}
