@@ -1,6 +1,11 @@
 import { defineConfig } from 'electron-vite'
 import { resolve } from 'path'
 import tailwindcss from '@tailwindcss/vite'
+import { indexHtmlCachePlugin } from './scripts/vite-index-html-cache-plugin'
+
+const rendererRoot = resolve(__dirname, 'src/renderer')
+const rendererIndexHtml = resolve(rendererRoot, 'index.html')
+const repoRoot = resolve(__dirname, '..')
 
 export default defineConfig({
   main: {
@@ -25,10 +30,11 @@ export default defineConfig({
     }
   },
   renderer: {
+    root: rendererRoot,
     worker: {
       format: 'es',
     },
-    plugins: [tailwindcss()],
+    plugins: [indexHtmlCachePlugin(rendererIndexHtml), tailwindcss()],
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src/renderer'),
@@ -40,7 +46,7 @@ export default defineConfig({
       // bundled Electron Chromium, which supports `<link rel=modulepreload>`.
       modulePreload: { polyfill: false },
       rollupOptions: {
-        input: resolve(__dirname, 'src/renderer/index.html'),
+        input: rendererIndexHtml,
         output: {
           // Split node_modules into per-package vendor chunks instead of one
           // ~8.7 MB monolithic `index` chunk. Vendor code rarely changes, so
@@ -82,6 +88,10 @@ export default defineConfig({
     },
     server: {
       strictPort: false,
+      fs: {
+        // Monorepo packages + repo root; avoids dev-server denials outside rendererRoot.
+        allow: [rendererRoot, repoRoot],
+      },
       ...(process.env.CONSTELLAGENT_VITE_PORT
         ? { port: Number.parseInt(process.env.CONSTELLAGENT_VITE_PORT, 10) || 5173 }
         : process.env.CONSTELL_PORT
