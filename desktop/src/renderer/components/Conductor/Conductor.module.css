@@ -140,6 +140,80 @@
   flex: 1;
 }
 
+.globalContextPill {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 132px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, currentColor 28%, var(--border-subtle));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  color: var(--accent-green);
+  box-shadow: 0 6px 18px color-mix(in srgb, #000 14%, transparent);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+.globalContextPill[data-tier='medium'] {
+  color: var(--accent-yellow);
+}
+
+.globalContextPill[data-tier='high'] {
+  color: #d58a45;
+}
+
+.globalContextPill[data-tier='critical'] {
+  color: var(--accent-red);
+}
+
+.globalContextPill[data-idle='true'] {
+  opacity: 0.62;
+}
+
+.globalContextLabel {
+  color: color-mix(in srgb, currentColor 72%, var(--text-tertiary));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.globalContextBar {
+  display: inline-grid;
+  grid-template-columns: repeat(10, 4px);
+  gap: 2px;
+  align-items: center;
+}
+
+.globalContextSegment {
+  width: 4px;
+  height: 10px;
+  border-radius: 1px;
+  background: color-mix(in srgb, currentColor 18%, var(--surface-3));
+}
+
+.globalContextSegment[data-filled='true'] {
+  background: currentColor;
+}
+
+.globalContextPercent {
+  min-width: 32px;
+  color: color-mix(in srgb, currentColor 88%, var(--text-primary));
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+}
+
 .iconButton {
   appearance: none;
   border: 1px solid var(--border-default);

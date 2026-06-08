@@ -1,8 +1,11 @@
 import { describe, expect, it, mock } from 'bun:test'
+import type { SessionRef } from '@pi-gui/session-driver'
+import { AGENT_SDK_HOOK_CAPABILITIES } from './agent-sdk-hooks'
 
 mock.module('../cursor-sdk-interaction-config', () => ({}))
 
 const {
+  applyCursorToolHook,
   buildCursorUserMessage,
   isBenignConnectTransportError,
   isBenignCursorRunError,
@@ -58,6 +61,73 @@ describe('buildCursorUserMessage', () => {
     ).toEqual({
       text: 'look',
       images: [{ data: 'aW1hZ2U=', mimeType: 'image/png' }],
+    })
+  })
+})
+
+describe('applyCursorToolHook', () => {
+  const sessionRef: SessionRef = { workspaceId: 'workspace-1', sessionId: 'session-1' }
+  const message = {
+    type: 'tool_call',
+    call_id: 'call-1',
+    name: 'shell',
+    status: 'running',
+    args: { command: 'bun test' },
+  } as const
+
+  const startedEvent = {
+    provider: 'cursor',
+    phase: 'started',
+    callId: message.call_id,
+    toolName: message.name,
+    message,
+    raw: message,
+    workspacePath: '/tmp/project',
+    sessionRef,
+    input: message.args,
+    capabilities: AGENT_SDK_HOOK_CAPABILITIES,
+  } as const
+
+  it('passes through Cursor tool calls when no hook is registered', () => {
+    expect(applyCursorToolHook(startedEvent)).toEqual({
+      toolName: 'shell',
+      input: { command: 'bun test' },
+      output: undefined,
+      success: undefined,
+      diagnostics: undefined,
+    })
+  })
+
+  it('lets hooks rewrite Cursor tool display fields', () => {
+    expect(
+      applyCursorToolHook(startedEvent, () => ({
+        toolName: 'terminal',
+        input: 'rtk test bun test',
+      })),
+    ).toEqual({
+      toolName: 'terminal',
+      input: 'rtk test bun test',
+      output: undefined,
+      success: undefined,
+      diagnostics: undefined,
+    })
+  })
+
+  it('lets hooks suppress Cursor timeline rows', () => {
+    expect(applyCursorToolHook(startedEvent, () => ({ suppress: true }))).toBeNull()
+  })
+
+  it('keeps Cursor tool rows visible when a hook throws', () => {
+    expect(
+      applyCursorToolHook(startedEvent, () => {
+        throw new Error('cursor hook failed')
+      }),
+    ).toEqual({
+      toolName: 'shell',
+      input: { command: 'bun test' },
+      output: undefined,
+      success: undefined,
+      diagnostics: [{ level: 'error', message: 'cursor hook failed' }],
     })
   })
 })

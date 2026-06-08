@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import type { SessionRef } from '@pi-gui/session-driver'
+import { AGENT_SDK_HOOK_CAPABILITIES } from './agent-sdk-hooks'
 import { buildAgentPrompt, CONDUCTOR_RTK_PROMPT_PREFIX } from './agent-driver'
 import {
   applyCodexToolHook,
@@ -202,6 +204,7 @@ describe('buildCodexUserInput', () => {
 })
 
 describe('applyCodexToolHook', () => {
+  const sessionRef: SessionRef = { workspaceId: 'workspace-1', sessionId: 'session-1' }
   const item = {
     id: 'call-1',
     type: 'mcp_tool_call',
@@ -211,32 +214,32 @@ describe('applyCodexToolHook', () => {
     status: 'in_progress',
   } as const
 
+  const startedEvent = {
+    provider: 'codex',
+    phase: 'started',
+    callId: item.id,
+    toolName: 'assets.image_gen',
+    item,
+    raw: item,
+    workspacePath: '/tmp/project',
+    sessionRef,
+    input: item.arguments,
+    capabilities: AGENT_SDK_HOOK_CAPABILITIES,
+  } as const
+
   test('passes through tool emissions when no hook is registered', () => {
-    expect(
-      applyCodexToolHook({
-        phase: 'started',
-        callId: item.id,
-        toolName: 'assets.image_gen',
-        item,
-        input: item.arguments,
-      }),
-    ).toEqual({
+    expect(applyCodexToolHook(startedEvent)).toEqual({
       toolName: 'assets.image_gen',
       input: { prompt: 'button' },
       output: undefined,
       success: undefined,
+      diagnostics: undefined,
     })
   })
 
   test('lets app hooks reshape SDK tool rows for image generation display', () => {
     const emission = applyCodexToolHook(
-      {
-        phase: 'started',
-        callId: item.id,
-        toolName: 'assets.image_gen',
-        item,
-        input: item.arguments,
-      },
+      startedEvent,
       (event) => ({
         toolName: 'image_gen',
         input: {
@@ -251,21 +254,25 @@ describe('applyCodexToolHook', () => {
       input: { prompt: 'button, UI asset style' },
       output: undefined,
       success: undefined,
+      diagnostics: undefined,
     })
   })
 
   test('lets app hooks suppress noisy tool rows', () => {
+    expect(applyCodexToolHook(startedEvent, () => ({ suppress: true }))).toBeNull()
+  })
+
+  test('surfaces hook failures as diagnostics without dropping the tool event', () => {
     expect(
-      applyCodexToolHook(
-        {
-          phase: 'started',
-          callId: item.id,
-          toolName: 'assets.image_gen',
-          item,
-          input: item.arguments,
-        },
-        () => ({ suppress: true }),
-      ),
-    ).toBeNull()
+      applyCodexToolHook(startedEvent, () => {
+        throw new Error('display hook failed')
+      }),
+    ).toEqual({
+      toolName: 'assets.image_gen',
+      input: { prompt: 'button' },
+      output: undefined,
+      success: undefined,
+      diagnostics: [{ level: 'error', message: 'display hook failed' }],
+    })
   })
 })
