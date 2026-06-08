@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'os'
 import { promisify } from 'util'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import type { CreateWorktreeProgress } from '../shared/workspace-creation'
-import type { GitLogEntry, WorktreeInfo } from '../shared/git-types'
+import type { GitLogEntry, WorkspaceBarStats, WorktreeInfo } from '../shared/git-types'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
@@ -1461,6 +1461,52 @@ export class GitService {
     } catch {
       return ''
     }
+  }
+
+  /**
+   * Local-mode workspace bar stats: the latest commit subject plus a
+   * working-tree-inclusive diff against `merge-base(defaultBranch, HEAD)`.
+   *
+   * Using `git diff <baseSha>` (not `<baseSha>..HEAD`) compares the base commit
+   * to the working tree, so uncommitted edits to tracked files are counted —
+   * the bar stays accurate to disk. Pass `defaultBranch` from the store to skip
+   * re-resolving the base per workspace.
+   */
+  static async getWorkspaceBarStats(
+    worktreePath: string,
+    defaultBranch?: string,
+  ): Promise<WorkspaceBarStats> {
+    const empty: WorkspaceBarStats = { subject: '', additions: 0, deletions: 0, headSha: '' }
+    if (!existsSync(worktreePath)) return empty
+
+    const headSha = await git(['rev-parse', 'HEAD'], worktreePath).catch(() => '')
+    if (!headSha) return empty
+
+    const subject = await git(['log', '-1', '--format=%s'], worktreePath).catch(() => '')
+
+    const base = (defaultBranch?.trim() || (await this.getDefaultBranch(worktreePath))).trim()
+    const baseSha = base
+      ? await git(['merge-base', base, 'HEAD'], worktreePath).catch(() => '')
+      : ''
+
+    let additions = 0
+    let deletions = 0
+    if (baseSha) {
+      try {
+        const output = await git(
+          ['diff', '--numstat', '-z', '--find-renames', baseSha],
+          worktreePath,
+        )
+        for (const stats of parseGitNumstat(output).values()) {
+          additions += stats.additions
+          deletions += stats.deletions
+        }
+      } catch {
+        // Empty/zero diff or transient git error → leave +0 -0
+      }
+    }
+
+    return { subject, additions, deletions, headSha }
   }
 
   static async getStatus(worktreePath: string): Promise<FileStatus[]> {

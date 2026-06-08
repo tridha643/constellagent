@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sidebar · rudu-port — interactive spec</title>
+<style>
+  /* ============================================================
+     EASING + TIMING TOKENS  (Emil / animations.dev)
+     - custom curves: built-ins are too weak
+     - --t = global slow-mo multiplier (debugging w/ fresh eyes)
+     - sidebar is HIGH-FREQUENCY UI → restraint: hovers are
+       opacity-only, fast (≤150ms), never bouncy
+     ============================================================ */
+  :root{
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);     /* enter/exit */
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1); /* on-screen move */
+    --ease-hover: ease;                             /* hover/color */
+    --t: 1;
+    --d-hover:    calc(150ms * var(--t));
+    --d-press:    calc(140ms * var(--t));
+    --d-select:   calc(200ms * var(--t));
+    --d-flip:     calc(240ms * var(--t));
+    --d-accordion:calc(280ms * var(--t));
+    --d-count:    calc(640ms * var(--t));
+
+    --bg:#0f0f10; --panel:#161617; --row-hover:#202022; --row-sel:#26262a;
+    --border:#262629; --text:#c9c9cd; --muted:#7d7d83; --dim:#5a5a60;
+    --green:#7ee787; --red:#f8868c; --gold:#d6b94c; --accent:#6ea8fe; --teal:#2fb89a;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+        radial-gradient(1200px 600px at 20% -10%, #15151a 0%, #08080a 60%);
+       color:var(--text);font-family:var(--sans);min-height:100vh;
+       display:flex;gap:30px;padding:30px;justify-content:center;align-items:flex-start}
+
+  /* ---------- sidebar shell ---------- */
+  .sidebar{width:344px;background:var(--panel);border:1px solid var(--border);border-radius:13px;
+           padding:9px 7px;user-select:none;flex:none;
+           box-shadow:0 18px 50px -20px #000, inset 0 1px 0 #ffffff08}
+  .projectSection{margin-bottom:5px}
+
+  /* ---------- project header ---------- */
+  .projectHeader{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;
+                 cursor:pointer;position:relative;
+                 transition:background-color var(--d-hover) var(--ease-hover)}
+  .projectHeader:active{transform:scale(0.992)} /* whole-row press feedback, very subtle */
+  .projectHeader{transition:background-color var(--d-hover) var(--ease-hover),
+                            transform var(--d-press) var(--ease-out)}
+
+  /* avatar ⇄ chevron swap (rudu): crossfade, hover-gated, opacity-only */
+  .glyphSlot{position:relative;width:20px;height:20px;flex:none}
+  .glyphSlot img{position:absolute;inset:0;width:20px;height:20px;border-radius:50%;object-fit:cover;
+                 transition:opacity var(--d-hover) var(--ease-hover)}
+  .glyphSlot .chev{position:absolute;left:50%;top:50%;width:13px;height:13px;color:var(--muted);
+                   transform:translate(-50%,-50%);opacity:0;
+                   transition:opacity var(--d-hover) var(--ease-hover),
+                              transform var(--d-accordion) var(--ease-in-out)}
+  .glyphSlot .fallback{position:absolute;inset:0;display:grid;place-items:center;border-radius:6px;
+                       background:#2a2a2e;color:var(--muted);font-size:11px}
+  .projectSection.open .glyphSlot .chev{transform:translate(-50%,-50%) rotate(90deg)}
+
+  .repoName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+            font-size:13.5px;color:#d7d7db;letter-spacing:.1px}
+  .repoName .owner{color:var(--muted)}
+
+  /* header actions: hidden at rest, stagger in on hover */
+  .hdrActions{display:flex;align-items:center;gap:2px}
+  .hdrActions button{all:unset;cursor:pointer;width:22px;height:20px;display:grid;place-items:center;
+                     border-radius:6px;color:var(--muted);font-size:12px;opacity:0;transform:translateX(4px);
+                     transition:opacity var(--d-hover) var(--ease-out),
+                                transform var(--d-hover) var(--ease-out),
+                                background-color var(--d-press) var(--ease-hover),
+                                color var(--d-press) var(--ease-hover)}
+  .hdrActions button:active{transform:scale(0.94)}
+  .hdrActions button:hover{background:#303036;color:var(--text)}
+
+  @media (hover:hover) and (pointer:fine){
+    .projectHeader:hover{background:#1d1d20}
+    .projectHeader:hover .glyphSlot img{opacity:0}
+    .projectHeader:hover .glyphSlot .chev{opacity:1}
+    .projectHeader:hover .hdrActions button{opacity:1;transform:none}
+    .projectHeader:hover .hdrActions button:nth-child(1){transition-delay:calc(0ms*var(--t))}
+    .projectHeader:hover .hdrActions button:nth-child(2){transition-delay:calc(22ms*var(--t))}
+    .projectHeader:hover .hdrActions button:nth-child(3){transition-delay:calc(44ms*var(--t))}
+    .projectHeader:hover .hdrActions button:nth-child(4){transition-delay:calc(66ms*var(--t))}
+  }
+
+  /* ---------- accordion (grid-rows 0fr→1fr, no JS height) ---------- */
+  .wsWrap{display:grid;grid-template-rows:0fr;
+          transition:grid-template-rows var(--d-accordion) var(--ease-out)}
+  .projectSection.open .wsWrap{grid-template-rows:1fr}
+  .wsWrapInner{overflow:hidden;min-height:0;display:flex;flex-direction:column;gap:1px;padding-top:2px}
+
+  /* ---------- the workspace bar ---------- */
+  .wsBar{position:relative;border-radius:8px;cursor:pointer;background:transparent;
+         padding:8px 10px 9px 26px;will-change:transform,opacity;
+         transition:background-color var(--d-hover) var(--ease-hover)}
+  .wsBar:active{transform:scale(0.992)}
+  .wsBar{transition:background-color var(--d-hover) var(--ease-hover),
+                    transform var(--d-press) var(--ease-out)}
+  .wsBar.sel{background:var(--row-sel)}
+  @media (hover:hover) and (pointer:fine){ .wsBar:hover{background:var(--row-hover)} }
+
+  /* staggered entrance on expand */
+  .projectSection.open .wsBar{animation:rowIn var(--d-accordion) var(--ease-out) backwards;
+                              animation-delay:calc(var(--i) * 45ms * var(--t))}
+  @keyframes rowIn{from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none}}
+
+  /* left selection accent — grows from center (scaleY), GPU-only */
+  .accent{position:absolute;left:7px;top:50%;width:3px;height:62%;border-radius:2px;
+          background:var(--accent);transform:translateY(-50%) scaleY(0);transform-origin:center;
+          transition:transform var(--d-select) var(--ease-out)}
+  .wsBar.sel .accent{transform:translateY(-50%) scaleY(1)}
+  .modeTag{position:absolute;left:8px;top:50%;transform:translateY(-50%);width:3px;height:62%;border-radius:2px;
+           background:#34343a;transition:background-color var(--d-flip) var(--ease-hover)}
+  .wsBar[data-mode="pr"] .modeTag{background:var(--gold)}
+  .wsBar.sel .modeTag{opacity:0}
+
+  /* two faces share one grid cell → crossfade w/ blur (Emil's mask) */
+  .faces{display:grid}
+  .face{grid-area:1/1;display:flex;flex-direction:column;gap:3px;
+        transition:opacity var(--d-flip) var(--ease-hover),
+                   filter   var(--d-flip) var(--ease-hover);
+        will-change:opacity,filter}
+  .wsBar[data-mode="local"] .face.pr,
+  .wsBar[data-mode="pr"]    .face.local{opacity:0;filter:blur(3px);pointer-events:none}
+
+  .topline{display:flex;align-items:center;gap:7px;min-height:15px}
+  .ident{font-size:11.5px;color:var(--muted);font-family:var(--mono);overflow:hidden;
+          text-overflow:ellipsis;white-space:nowrap}
+  .author{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted)}
+  .author img{width:14px;height:14px;border-radius:50%}
+
+  .chips{margin-left:auto;display:flex;align-items:center;gap:6px}
+  .dot{width:7px;height:7px;border-radius:50%}
+  .dot.spot{background:var(--accent);animation:spot 2.2s var(--ease-in-out) infinite}
+  @keyframes spot{0%,100%{opacity:.35;box-shadow:0 0 0 var(--accent)}50%{opacity:1;box-shadow:0 0 7px var(--accent)}}
+  .spin{width:11px;height:11px;border:1.6px solid #3a3a40;border-top-color:var(--muted);
+        border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .ci{width:12px;height:12px}
+  .ci.pass{color:var(--green)} .ci.pend{color:var(--gold);animation:sp 1.4s linear infinite} .ci.fail{color:var(--red)}
+
+  .mainline{display:flex;align-items:center;gap:8px}
+  .pricon{width:14px;height:14px;flex:none;color:var(--gold)}
+  .pricon.local{color:var(--muted)}
+  .title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+         font-size:13px;color:#cdcdd2}
+  .stats{flex:none;font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.2px;
+         transition:opacity var(--d-hover) var(--ease-hover),
+                    transform var(--d-count) var(--ease-out),
+                    filter var(--d-count) var(--ease-out)}
+  .stats .add{color:var(--green)} .stats .del{color:var(--red)}
+  .stats.pulse{animation:pulse var(--d-count) var(--ease-out)}
+  @keyframes pulse{0%{transform:scale(1)}30%{transform:scale(1.09);filter:brightness(1.5)}100%{transform:scale(1)}}
+  @media (hover:hover) and (pointer:fine){ .wsBar:hover .stats{opacity:0} }
+
+  /* hover actions (flip + delete) — ONE consistent cluster, revealed where
+     the stats were (rudu). .flip is a <button>, so reset native chrome. */
+  .del,.flip{position:absolute;top:50%;width:22px;height:22px;display:grid;place-items:center;
+       border-radius:7px;color:var(--muted);background:#2a2a30;opacity:0;z-index:3;
+       font-size:12px;line-height:1;
+       transform:translateY(-50%) scale(0.9);
+       transition:opacity var(--d-hover) var(--ease-out),
+                  transform var(--d-hover) var(--ease-out),
+                  background-color var(--d-press) var(--ease-hover),
+                  color var(--d-press) var(--ease-hover)}
+  .flip{appearance:none;-webkit-appearance:none;border:0;padding:0;margin:0;
+        font-family:inherit;cursor:pointer}
+  .del{right:9px}
+  .flip{right:37px}
+  .del:active,.flip:active{transform:translateY(-50%) scale(0.94)}
+  .del:hover{color:var(--red);background:#3a2529}
+  .flip:hover{color:var(--teal);background:#243b37}
+
+  /* scrim so a long title fades under the actions instead of colliding */
+  .wsBar::after{content:'';position:absolute;inset:0 0 0 auto;width:100px;z-index:2;pointer-events:none;
+       border-radius:0 8px 8px 0;opacity:0;
+       background:linear-gradient(90deg,rgba(32,32,34,0),var(--row-hover) 58%);
+       transition:opacity var(--d-hover) var(--ease-hover)}
+  .wsBar.sel::after{background:linear-gradient(90deg,rgba(38,38,42,0),var(--row-sel) 58%)}
+  @media (hover:hover) and (pointer:fine){
+    .wsBar:hover .del,.wsBar:hover .flip{opacity:1;transform:translateY(-50%) scale(1)}
+    .wsBar:hover .flip{transition-delay:calc(28ms * var(--t))}
+    .wsBar:hover::after{opacity:1}
+  }
+
+  /* graphite stack */
+  .stack{display:flex;align-items:center;gap:5px;padding-left:2px;margin-top:1px}
+  .stack i{width:5px;height:5px;border-radius:50%;background:#3c3c44;display:inline-block;
+           transition:background-color var(--d-select) var(--ease-out)}
+  .stack i.on{background:var(--teal)}
+  .stack span{font-size:10px;color:var(--dim);font-family:var(--mono)}
+
+  /* ============================================================
+     annotations / control panel
+     ============================================================ */
+  .notes{width:468px;flex:none;color:#cfcfd4;font-size:13px;line-height:1.55}
+  .notes h1{font-size:18px;margin:0 0 3px;color:#fff;letter-spacing:.2px}
+  .notes .sub{color:var(--muted);font-size:12px;margin-bottom:15px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:13px 15px;margin-bottom:11px}
+  .card h2{font-size:11.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--accent);margin:0 0 9px;
+           display:flex;align-items:center;gap:7px}
+  .card ul{margin:0;padding-left:17px} .card li{margin:3px 0}
+  .k{color:var(--gold);font-family:var(--mono);font-size:11.5px}
+  .file{color:var(--teal);font-family:var(--mono);font-size:11px}
+  code{background:#202024;padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:11px;color:#d9d9de}
+  .pill{display:inline-block;font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:20px;
+        background:#202024;border:1px solid var(--border);color:var(--muted);margin-left:6px}
+
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:13px}
+  .controls button,.controls label{all:unset;cursor:pointer;padding:8px 13px;border-radius:8px;background:#1c1c21;
+                   border:1px solid var(--border);font-size:12px;color:var(--text);display:inline-flex;
+                   align-items:center;gap:7px;
+                   transition:background-color var(--d-press) var(--ease-hover),transform var(--d-press) var(--ease-out)}
+  .controls button:hover,.controls label:hover{background:#26262c}
+  .controls button:active{transform:scale(0.97)}
+  .controls input{accent-color:var(--accent)}
+  .hint{font-size:11.5px;color:var(--muted);margin:8px 0 0;line-height:1.5}
+
+  /* the spec table */
+  table{width:100%;border-collapse:collapse;font-size:11.5px}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #202024;vertical-align:top}
+  th{color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;font-size:10px}
+  td:first-child{color:#d7d7db;white-space:nowrap}
+  td .c{font-family:var(--mono);font-size:10.5px;color:var(--gold)}
+  .tag{font-family:var(--mono);font-size:10px;color:var(--teal)}
+
+  /* reduced motion — gentler, not zero: kill movement, keep opacity */
+  @media (prefers-reduced-motion: reduce){
+    *{transition-duration:.001ms !important; animation-duration:.001ms !important;
+      animation-iteration-count:1 !important}
+    .glyphSlot .chev,.projectSection.open .glyphSlot .chev{transition:opacity .15s linear}
+    .face{transition:opacity .15s linear} .face{filter:none !important}
+    .wsWrap{transition:none}
+  }
+</style>
+</head>
+<body>
+
+  <div class="sidebar" id="sidebar">
+
+    <!-- PROJECT 1 : GitHub, expanded, mixed rows -->
+    <div class="projectSection open" data-proj>
+      <div class="projectHeader" onclick="toggleProj(event,this)">
+        <span class="glyphSlot">
+          <img src="https://github.com/tridha643.png?size=40" alt="tridha643"/>
+          <svg class="chev" viewBox="0 0 12 12" fill="currentColor"><path d="M4.22 2.47a.75.75 0 0 1 1.06 0L8.53 5.72a.75.75 0 0 1 0 1.06L5.28 10.03a.75.75 0 0 1-1.06-1.06L6.97 6.25 4.22 3.53a.75.75 0 0 1 0-1.06Z"/></svg>
+        </span>
+        <span class="repoName"><span class="owner">tridha643/</span>constellagent</span>
+        <span class="hdrActions" onclick="event.stopPropagation()">
+          <button title="Project settings">⚙</button>
+          <button title="Open pull requests">PR</button>
+          <button title="Sync all worktrees">↻</button>
+          <button title="Delete project">✕</button>
+        </span>
+      </div>
+
+      <div class="wsWrap"><div class="wsWrapInner">
+
+        <!-- PR mode, selected -->
+        <div class="wsBar sel" data-mode="pr" style="--i:0" onclick="selectRow(this)">
+          <span class="accent"></span><span class="modeTag"></span>
+          <div class="faces">
+            <div class="face pr">
+              <div class="topline">
+                <span class="author"><img src="https://github.com/tridha643.png?size=24"/>tridha643</span>
+                <span class="chips"><svg class="ci pass" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06l2.72 2.72 6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg></span>
+              </div>
+              <div class="mainline">
+                <svg class="pricon" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 2.122a2.25 2.25 0 1 0-1.5 0v5.256a2.251 2.251 0 1 0 1.5 0V5.372ZM11 3a2.25 2.25 0 0 0-2.236 2.5H8.75a.75.75 0 0 0-.75.75v3.128a2.251 2.251 0 1 0 1.5 0V7h.014A2.25 2.25 0 1 0 11 3Z"/></svg>
+                <span class="title">docs(agents): document email-to-PR automation in AGENTS</span>
+                <span class="stats" data-add="21" data-del="0"><span class="add">+21</span> <span class="del">-0</span></span>
+              </div>
+            </div>
+            <div class="face local">
+              <div class="topline"><span class="ident">docs/email-pr-automation</span></div>
+              <div class="mainline">
+                <svg class="pricon local" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0-6.628v5.256a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0Z"/></svg>
+                <span class="title">docs: add email-to-PR section</span>
+                <span class="stats" data-add="21" data-del="0"><span class="add">+21</span> <span class="del">-0</span></span>
+              </div>
+            </div>
+          </div>
+          <button class="flip" title="Switch view · local ⇄ PR" onclick="flipRow(event,this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="6"/><circle cx="16" cy="12" r="2.7" fill="currentColor" stroke="none"/></svg></button>
+          <div class="del" title="Delete workspace" onclick="event.stopPropagation()">✕</div>
+        </div>
+
+        <!-- local mode, sync + spotlight + graphite -->
+        <div class="wsBar" data-mode="local" style="--i:1" onclick="selectRow(this)">
+          <span class="accent"></span><span class="modeTag"></span>
+          <div class="faces">
+            <div class="face local">
+              <div class="topline">
+                <span class="ident">feat/faster-terminal-spawn</span>
+                <span class="chips"><span class="spin" title="syncing"></span><span class="dot spot" title="Spotlight activity"></span></span>
+              </div>
+              <div class="mainline">
+                <svg class="pricon local" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0-6.628v5.256a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0Z"/></svg>
+                <span class="title">refactor(desktop): simplify conductor UI and terminal lifecycle</span>
+                <span class="stats" data-add="840" data-del="210"><span class="add">+840</span> <span class="del">-210</span></span>
+              </div>
+              <div class="stack"><i class="on"></i><i class="on"></i><i></i><span>stack · 2/3</span></div>
+            </div>
+            <div class="face pr">
+              <div class="topline">
+                <span class="author"><img src="https://github.com/tridha643.png?size=24"/>tridha643</span>
+                <span class="chips"><svg class="ci pend" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8.75 5a.75.75 0 0 0-1.5 0v3.25c0 .2.08.39.22.53l2 2a.75.75 0 1 0 1.06-1.06L8.75 7.94V5Z"/></svg></span>
+              </div>
+              <div class="mainline">
+                <svg class="pricon" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 2.122a2.25 2.25 0 1 0-1.5 0v5.256a2.251 2.251 0 1 0 1.5 0V5.372ZM11 3a2.25 2.25 0 0 0-2.236 2.5H8.75a.75.75 0 0 0-.75.75v3.128a2.251 2.251 0 1 0 1.5 0V7h.014A2.25 2.25 0 1 0 11 3Z"/></svg>
+                <span class="title">feat(desktop): faster terminal spawn</span>
+                <span class="stats" data-add="612" data-del="158"><span class="add">+612</span> <span class="del">-158</span></span>
+              </div>
+            </div>
+          </div>
+          <button class="flip" title="Switch view · local ⇄ PR" onclick="flipRow(event,this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="6"/><circle cx="16" cy="12" r="2.7" fill="currentColor" stroke="none"/></svg></button>
+          <div class="del" title="Delete workspace" onclick="event.stopPropagation()">✕</div>
+        </div>
+
+        <!-- local, clean -->
+        <div class="wsBar" data-mode="local" style="--i:2" onclick="selectRow(this)">
+          <span class="accent"></span><span class="modeTag"></span>
+          <div class="faces">
+            <div class="face local">
+              <div class="topline"><span class="ident">fix/quick-open-focus</span></div>
+              <div class="mainline">
+                <svg class="pricon local" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0-6.628v5.256a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0Z"/></svg>
+                <span class="title">wip: focus trap on quick-open reopen</span>
+                <span class="stats" data-add="34" data-del="12"><span class="add">+34</span> <span class="del">-12</span></span>
+              </div>
+            </div>
+            <div class="face pr">
+              <div class="topline"><span class="author"><img src="https://github.com/tridha643.png?size=24"/>tridha643</span></div>
+              <div class="mainline"><span class="title">(no open PR)</span></div>
+            </div>
+          </div>
+          <button class="flip" title="Switch view · local ⇄ PR" onclick="flipRow(event,this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="6"/><circle cx="16" cy="12" r="2.7" fill="currentColor" stroke="none"/></svg></button>
+          <div class="del" title="Delete workspace" onclick="event.stopPropagation()">✕</div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- PROJECT 2 : GitHub -->
+    <div class="projectSection open" data-proj>
+      <div class="projectHeader" onclick="toggleProj(event,this)">
+        <span class="glyphSlot">
+          <img src="https://github.com/modem-dev.png?size=40" alt="modem-dev"
+               onerror="this.style.opacity=0;this.parentElement.querySelector('.fallback').style.display='grid'"/>
+          <svg class="chev" viewBox="0 0 12 12" fill="currentColor"><path d="M4.22 2.47a.75.75 0 0 1 1.06 0L8.53 5.72a.75.75 0 0 1 0 1.06L5.28 10.03a.75.75 0 0 1-1.06-1.06L6.97 6.25 4.22 3.53a.75.75 0 0 1 0-1.06Z"/></svg>
+          <span class="fallback" style="display:none">◆</span>
+        </span>
+        <span class="repoName"><span class="owner">modem-dev/</span>modem</span>
+        <span class="hdrActions" onclick="event.stopPropagation()">
+          <button>⚙</button><button>PR</button><button>↻</button><button>✕</button>
+        </span>
+      </div>
+      <div class="wsWrap"><div class="wsWrapInner">
+        <div class="wsBar" data-mode="pr" style="--i:0" onclick="selectRow(this)">
+          <span class="accent"></span><span class="modeTag"></span>
+          <div class="faces">
+            <div class="face pr">
+              <div class="topline">
+                <span class="author"><img src="https://github.com/mikeclarke.png?size=24"/>mikeclarke</span>
+                <span class="chips"><svg class="ci pend" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8.75 5a.75.75 0 0 0-1.5 0v3.25c0 .2.08.39.22.53l2 2a.75.75 0 1 0 1.06-1.06L8.75 7.94V5Z"/></svg></span>
+              </div>
+              <div class="mainline">
+                <svg class="pricon" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 2.122a2.25 2.25 0 1 0-1.5 0v5.256a2.251 2.251 0 1 0 1.5 0V5.372ZM11 3a2.25 2.25 0 0 0-2.236 2.5H8.75a.75.75 0 0 0-.75.75v3.128a2.251 2.251 0 1 0 1.5 0V7h.014A2.25 2.25 0 1 0 11 3Z"/></svg>
+                <span class="title">feat(discord): channel sync + backfill management</span>
+                <span class="stats" data-add="1971" data-del="276"><span class="add">+1971</span> <span class="del">-276</span></span>
+              </div>
+            </div>
+            <div class="face local">
+              <div class="topline"><span class="ident">feat/discord-channel-sync</span></div>
+              <div class="mainline">
+                <svg class="pricon local" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0-6.628v5.256a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0Z"/></svg>
+                <span class="title">feat: discord channel sync + backfill</span>
+                <span class="stats" data-add="2014" data-del="276"><span class="add">+2014</span> <span class="del">-276</span></span>
+              </div>
+            </div>
+          </div>
+          <button class="flip" title="Switch view · local ⇄ PR" onclick="flipRow(event,this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="6"/><circle cx="16" cy="12" r="2.7" fill="currentColor" stroke="none"/></svg></button>
+          <div class="del" onclick="event.stopPropagation()">✕</div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- PROJECT 3 : non-GitHub remote → fallback, collapsed -->
+    <div class="projectSection" data-proj>
+      <div class="projectHeader" onclick="toggleProj(event,this)">
+        <span class="glyphSlot">
+          <span class="fallback" style="display:grid">▦</span>
+          <svg class="chev" viewBox="0 0 12 12" fill="currentColor" style="z-index:2"><path d="M4.22 2.47a.75.75 0 0 1 1.06 0L8.53 5.72a.75.75 0 0 1 0 1.06L5.28 10.03a.75.75 0 0 1-1.06-1.06L6.97 6.25 4.22 3.53a.75.75 0 0 1 0-1.06Z"/></svg>
+        </span>
+        <span class="repoName">internal-tooling <span class="pill">non-GitHub → name fallback</span></span>
+        <span class="hdrActions" onclick="event.stopPropagation()">
+          <button>⚙</button><button>PR</button><button>↻</button><button>✕</button>
+        </span>
+      </div>
+      <div class="wsWrap"><div class="wsWrapInner">
+        <div class="wsBar" data-mode="local" style="--i:0" onclick="selectRow(this)">
+          <span class="accent"></span><span class="modeTag"></span>
+          <div class="faces"><div class="face local">
+            <div class="topline"><span class="ident">main</span></div>
+            <div class="mainline">
+              <svg class="pricon local" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0Z"/></svg>
+              <span class="title">chore: bump internal deps</span>
+              <span class="stats" data-add="8" data-del="3"><span class="add">+8</span> <span class="del">-3</span></span>
+            </div>
+          </div></div>
+          <div class="del" onclick="event.stopPropagation()">✕</div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ====================== annotations ====================== -->
+  <div class="notes">
+    <h1>Sidebar — rudu <span style="color:var(--muted);font-weight:400">RepoSidebarItem</span> port</h1>
+    <div class="sub">Interactive design spec. Every motion below is justified by frequency, purpose, easing &amp; duration.</div>
+
+    <div class="controls">
+      <button onclick="simulatePoll()">⟳ Simulate 90s poll</button>
+      <button onclick="flipAll()">⇄ Flip all rows</button>
+      <button onclick="expandAll(true)">Expand all</button>
+      <button onclick="expandAll(false)">Collapse all</button>
+      <label><input type="checkbox" onchange="document.documentElement.style.setProperty('--t', this.checked?5:1)"> 5× slow-mo</label>
+    </div>
+    <div class="hint"><b>Try:</b> hover a header (avatar→chevron, actions stagger in) · hover a row (stats blur out → delete fades in) · click a row (accent bar grows) · click <b>⇄</b> on a row (local⇄PR crossfade through blur) · <b>Simulate poll</b> (stats count up + pulse — the staleness tension, made visible) · toggle <b>slow-mo</b> then re-hover to inspect frame-by-frame.</div>
+
+    <div class="card">
+      <h2>What you're looking at</h2>
+      <ul>
+        <li><b>Header</b>: avatar <span class="k">github.com/{owner}.png</span> + <span class="k">owner/repo</span>; non-GitHub → name + glyph</li>
+        <li><b>Universal bar</b>, hybrid content — <b>local</b> (mono identity · commit subject · local <span class="k">+N -N</span>) ⇄ <b>PR</b> (author · PR title · PR <span class="k">+N -N</span>)</li>
+        <li>Source flips on PR-open; <b>layout never moves</b> — that's why the flip is a pure opacity+blur crossfade, no reflow</li>
+        <li>Keeps sync · Spotlight · Graphite stack · CI badge · delete-on-hover</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>◷ Motion spec — every animation</h2>
+      <table>
+        <thead><tr><th>Interaction</th><th>Easing · dur</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Avatar→chevron (hover)</td><td><span class="c">ease</span> · 150ms</td><td>hover/color → <span class="tag">ease</span>; opacity-only</td></tr>
+          <tr><td>Header actions reveal</td><td><span class="c">ease-out</span> · 150ms</td><td>enter → <span class="tag">ease-out</span>; 22ms stagger</td></tr>
+          <tr><td>Accordion expand</td><td><span class="c">ease-out</span> · 280ms</td><td>occasional → ok; <code>grid-rows 0→1fr</code></td></tr>
+          <tr><td>Row entrance stagger</td><td><span class="c">ease-out</span> · 45ms/row</td><td>cascade; ≤80ms keeps it snappy</td></tr>
+          <tr><td>Row hover bg</td><td><span class="c">ease</span> · 150ms</td><td>high-frequency → opacity/color only</td></tr>
+          <tr><td>Stats→delete (hover)</td><td><span class="c">ease-out</span> · 150ms</td><td>rudu's swap; delete <code>scale .9→1</code></td></tr>
+          <tr><td>local⇄PR flip</td><td><span class="c">ease</span> · 240ms</td><td>crossfade <code>+ blur(3px)</code> masks 2 states</td></tr>
+          <tr><td>Selection accent</td><td><span class="c">ease-out</span> · 200ms</td><td><code>scaleY</code> from center; GPU-only</td></tr>
+          <tr><td>Poll count-up</td><td><span class="c">ease-out</span> · 640ms</td><td>rAF tween + <code>scale 1.09</code> pulse</td></tr>
+          <tr><td>Button press</td><td><span class="c">ease-out</span> · 140ms</td><td><code>scale(0.97)</code> — "it heard you"</td></tr>
+          <tr><td>Spotlight dot</td><td><span class="c">ease-in-out</span> · 2.2s</td><td>ambient pulse, low urgency</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>⚑ Craft decisions (Emil)</h2>
+      <ul>
+        <li><b>Restraint by frequency</b>: a sidebar is opened 100×/day → hovers are <b>opacity-only</b>, ≤150ms, zero bounce. No springs.</li>
+        <li><b>Never <code>scale(0)</code></b>: delete/flip handles enter from <code>scale(0.9)</code>+opacity.</li>
+        <li><b>Blur-masks the crossfade</b>: the flip overlaps two text states — <code>filter:blur(3px)</code> blends them into one motion.</li>
+        <li><b>Custom curves</b>: built-ins too weak → <code>cubic-bezier(.23,1,.32,1)</code>.</li>
+        <li><b>GPU-only</b>: every animation is <code>transform</code>/<code>opacity</code>/<code>filter</code>; <code>grid-rows</code> is the one layout exception (occasional, cheap here).</li>
+        <li><b>Reduced-motion</b>: movement removed, opacity kept — toggle your OS setting to verify.</li>
+        <li><b>Hover-gated</b>: all <code>:hover</code> behind <code>@media (hover:hover)</code> so touch taps don't false-fire.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>⌁ Data plumbing</h2>
+      <ul>
+        <li><span class="file">github-service.ts:817</span> — add <code>author{login} additions deletions</code> to <code>PrFields</code></li>
+        <li><span class="file">github-types.ts</span> — <code>PrInfo.additions/deletions/authorLogin?</code></li>
+        <li>New local-git IPC: commit subject + numstat vs <code>merge-base(origin/HEAD,HEAD)</code> → working tree; cached by HEAD+base sha</li>
+        <li>Refresh: piggyback the 90s PR poll <span class="pill">staleness ↔ live-accuracy: see "Simulate poll"</span></li>
+        <li>Render: <span class="file">Sidebar.tsx:1536 / :1819</span> — CSS-Modules re-skin, not Tailwind</li>
+      </ul>
+    </div>
+  </div>
+
+<script>
+  const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function toggleProj(e,h){ h.parentElement.classList.toggle('open'); }
+  function expandAll(on){ document.querySelectorAll('.projectSection').forEach(p=>p.classList.toggle('open',on)); }
+  function selectRow(row){
+    document.querySelectorAll('.wsBar.sel').forEach(r=>r.classList.remove('sel'));
+    row.classList.add('sel');
+  }
+  function flipRow(e,btn){
+    e.stopPropagation();
+    const bar = btn.closest('.wsBar');
+    bar.dataset.mode = bar.dataset.mode === 'pr' ? 'local' : 'pr';
+  }
+  function flipAll(){ document.querySelectorAll('.wsBar').forEach(b=> b.dataset.mode = b.dataset.mode==='pr'?'local':'pr'); }
+
+  // rAF count-up tween (ease-out) — only animate the ACTIVE face's stats
+  function tween(node, key, to, dur){
+    const from = +node.dataset[key] || 0;
+    if(from === to){ return; }
+    node.dataset[key] = to;
+    const span = node.querySelector(key==='add'?'.add':'.del');
+    if(RM){ span.textContent = (key==='add'?'+':'-')+to; return; }
+    const t0 = performance.now();
+    const ease = x => 1 - Math.pow(1 - x, 3); // ease-out cubic
+    (function frame(now){
+      const p = Math.min(1, (now - t0)/dur);
+      const v = Math.round(from + (to-from)*ease(p));
+      span.textContent = (key==='add'?'+':'-') + v;
+      if(p < 1) requestAnimationFrame(frame);
+    })(t0);
+  }
+  // Simulate a 90s poll: working-tree-inclusive numbers drift; pulse to show the refresh
+  function simulatePoll(){
+    const dur = 640 * (RM?0.001: (document.documentElement.style.getPropertyValue('--t')||1)*1);
+    document.querySelectorAll('.wsBar[data-mode="local"] .face.local .stats').forEach(st=>{
+      const add = (+st.dataset.add) + Math.floor(Math.random()*60);
+      const del = (+st.dataset.del) + Math.floor(Math.random()*20);
+      tween(st,'add',add,dur); tween(st,'del',del,dur);
+      st.classList.remove('pulse'); void st.offsetWidth; st.classList.add('pulse');
+    });
+  }
+</script>
+</body>
+</html>

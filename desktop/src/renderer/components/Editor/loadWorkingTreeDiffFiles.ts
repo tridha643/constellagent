@@ -10,8 +10,13 @@ import { extractFilePathFromGitPatchSegment, splitGitPatchIntoFiles } from '../.
 const DEFAULT_CONCURRENCY = 4
 const EARLY_PROGRESS_UPDATES = 3
 const PROGRESS_UPDATE_EVERY = 5
-// Pre-parse Pierre metadata for the first expanded files so the initial window renders code.
-const PRELOAD_FULL_DIFF_COUNT = 5
+// CodeView renders the changed-only view from patch-only metadata (parsed in
+// usePatchParsing), so the first paint needs NO expandable full-file metadata.
+// Loading it here only delays first paint (an extra git show + file read + full
+// parse per file on the critical path); the lazy `ensureFileDiffLoaded` queue
+// (run from PatchViewerMain after mount) fetches it off the critical path for
+// "show full file". Keep it at 0 so the diff appears as soon as patches land.
+const PRELOAD_FULL_DIFF_COUNT = 0
 
 interface LoadWorkingTreeDiffFilesOptions {
   worktreePath: string

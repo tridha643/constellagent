@@ -178,6 +178,104 @@
   white-space: nowrap;
 }
 
+/* ── rudu project-header glyph: owner avatar ⇄ chevron crossfade ──
+ * Opacity-only, hover-gated. The avatar and chevron share the same 20px slot;
+ * on header hover the avatar fades out and the chevron fades in (merging the
+ * old standalone ▶). The chevron rotates 90° when the section is expanded. */
+.glyphSlot {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.glyphAvatar {
+  position: absolute;
+  inset: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  transition: opacity var(--duration-default) ease;
+}
+
+.glyphFallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-tertiary);
+}
+
+/* Template glyph (bundled Lucide icon tinted by an accent); crossfades to the
+ * chevron on hover like the avatar. Color is set inline from the chosen swatch. */
+.glyphTemplate {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transition: opacity var(--duration-default) ease;
+}
+
+.glyphChevron {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  color: var(--text-tertiary);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition:
+    opacity var(--duration-default) ease,
+    transform var(--motion-default);
+}
+
+.glyphChevronOpen {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.repoName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+
+.repoOwner {
+  color: var(--text-tertiary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .projectHeader:hover .glyphAvatar,
+  .projectHeader:hover .glyphTemplate {
+    opacity: 0;
+  }
+
+  .projectHeader:hover .glyphChevron {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glyphAvatar,
+  .glyphTemplate,
+  .glyphChevron {
+    transition: opacity var(--duration-fast) linear;
+  }
+
+  .glyphChevron {
+    transition: opacity var(--duration-fast) linear;
+  }
+}
+
 /* Settings button — hidden by default, shown on hover */
 .settingsBtn {
   display: none;
@@ -1013,9 +1111,12 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  /* Concrete row: no left accent gutter — content sits at the normal inset and
+   * selection/hover read as a filled background rather than a left bar. */
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-3);
   margin: 0;
   border-radius: var(--radius-md);
+  will-change: transform, opacity;
   border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
@@ -1062,7 +1163,8 @@
 }
 
 .workspaceItem.active {
-  background: transparent;
+  /* Concrete selected fill (mockup --row-sel) — replaces the old left accent. */
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
   border-color: transparent;
   color: var(--accent-blue);
   font-weight: var(--weight-semibold);
@@ -1084,11 +1186,12 @@
   --sidebar-spotlight-color: var(--spotlight-blocked, var(--accent-red));
 }
 
-/* Small accent bar — not a full-row wash. Opacity + scaleY only (GPU). */
+/* Small accent bar — not a full-row wash. Opacity + scaleY only (GPU).
+ * Anchored to the row's left padding (concrete rows have no accent gutter). */
 .workspaceItem.spotlightWorkspace::before {
   content: '';
   position: absolute;
-  left: 5px;
+  left: 2px;
   top: 50%;
   width: 3px;
   height: 16px;
@@ -1132,27 +1235,33 @@
   visibility: hidden;
 }
 
-/* Unread indicator — light blue dot (replaces icon) */
+/* Unread / Claude-active rows reserve a small left gutter for their status
+ * indicator so the (otherwise flush) faces don't sit under it. */
+.workspaceItem.unread .wsFaces,
+.workspaceItem.claudeActive .wsFaces {
+  margin-left: 14px;
+}
+
+/* Unread indicator — light blue dot in the reserved gutter */
 .workspaceItem.unread::after {
   content: '';
   position: absolute;
-  left: calc(var(--space-3) + 8px);
+  left: 6px;
   top: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateY(-50%);
   width: 7px;
   height: 7px;
   background: var(--accent-blue);
   border-radius: var(--radius-full);
 }
 
-/* Claude active indicator — smooth arc spinner (replaces icon) */
+/* Claude active indicator — smooth arc spinner in the reserved gutter */
 .workspaceItem.claudeActive::after {
   content: '';
   position: absolute;
-  left: calc(var(--space-3) + 8px);
+  left: 4px;
   top: 50%;
   margin-top: -5.5px;
-  margin-left: -5.5px;
   width: 11px;
   height: 11px;
   border-radius: var(--radius-full);
@@ -1306,8 +1415,13 @@
   }
 
   .workspaceItem:hover {
-    background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
     color: var(--text-primary);
+  }
+
+  /* Selected row keeps its stronger fill even while hovered. */
+  .workspaceItem.active:hover {
+    background: color-mix(in srgb, var(--text-primary) 12%, transparent);
   }
 
   .prInline:hover {
@@ -2279,5 +2393,243 @@
   .folderMenuItem:active,
   .projectAddSummary:active {
     transform: none;
+  }
+}
+
+/* ============================================================
+ * Workspace bar (rudu RepoSidebarItem port)
+ *
+ * A universal two-face bar whose data source flips by PR existence; the layout
+ * never changes, so local⇄PR is a pure opacity+blur crossfade (no reflow).
+ * All motion is GPU-only (transform / opacity / filter), hovers are opacity-only
+ * and ≤150ms (sidebar is high-frequency UI → restraint, no springs).
+ * ============================================================ */
+
+/* Two faces share one grid cell → crossfade with blur (masks the two states).
+ * Selection/mode no longer use a left accent bar — the row itself fills (see
+ * .workspaceItem.active) and the gold .wsPrIcon tint is the only PR-mode cue. */
+.wsFaces {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  /* Breathing room so the numstats column isn't flush against the row edge. */
+  padding-right: var(--space-1);
+}
+
+.wsFace {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  transition:
+    opacity var(--duration-flip, 240ms) ease,
+    filter var(--duration-flip, 240ms) ease;
+  will-change: opacity, filter;
+}
+
+.wsFaces[data-mode="local"] .wsFacePr,
+.wsFaces[data-mode="pr"] .wsFaceLocal {
+  opacity: 0;
+  filter: blur(3px);
+  pointer-events: none;
+}
+
+.wsTopline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 15px;
+  min-width: 0;
+}
+
+.wsIdent {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.wsAuthor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.wsAuthorAvatar {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  flex: none;
+  object-fit: cover;
+}
+
+.wsAuthorLogin {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wsChips {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.wsMainline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.wsPrIcon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--accent-yellow);
+}
+
+.wsPrIconLocal {
+  color: var(--text-tertiary);
+}
+
+.wsTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.wsStats {
+  flex: none;
+  margin-left: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  transition: opacity var(--duration-default) ease;
+}
+
+.wsStatAdd {
+  color: var(--accent-green);
+}
+
+.wsStatDel {
+  color: var(--accent-red);
+}
+
+/* CI rollup chip (PR mode). */
+.wsCi {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.wsCiPass {
+  color: var(--accent-green);
+}
+
+.wsCiFail {
+  color: var(--accent-red);
+}
+
+.wsCiPending {
+  color: var(--accent-yellow);
+  animation: spin 1.4s linear infinite;
+}
+
+/* rudu stats→delete swap: on hover the stats blur out and the delete fades in
+ * where they were. Scoped to the workspace row so the project header delete
+ * keeps its own display toggle. */
+.workspaceItem .deleteBtn {
+  display: flex;
+  opacity: 0;
+  transform: scale(0.9);
+  transition:
+    opacity var(--duration-default) var(--ease-out),
+    transform var(--duration-default) var(--ease-out),
+    background-color var(--duration-exit-fast) ease,
+    color var(--duration-exit-fast) ease;
+}
+
+/* Local⇄PR flip — part of the same hover cluster as delete (rudu .flip). Sits
+ * just left of the delete/branch buttons; never scale(0) on enter (scale .9→1). */
+.wsFlip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  right: calc(var(--space-2) + 46px);
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  z-index: 1;
+  opacity: 0;
+  transform: translateY(-50%) scale(0.9);
+  transition:
+    opacity var(--duration-default) var(--ease-out),
+    transform var(--duration-default) var(--ease-out),
+    background-color var(--duration-exit-fast) ease,
+    color var(--duration-exit-fast) ease;
+}
+
+.wsFlip:active {
+  transform: translateY(-50%) scale(0.94);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .workspaceItem:hover .wsStats {
+    opacity: 0;
+  }
+
+  .workspaceItem:hover .deleteBtn {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .workspaceItem:hover .wsFlip {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+    transition-delay: 28ms;
+  }
+
+  .wsFlip:hover {
+    background: color-mix(in srgb, var(--accent-green) 18%, transparent);
+    color: var(--accent-green);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wsFlip {
+    transition: opacity var(--duration-fast) linear;
+  }
+
+  .wsFace {
+    transition: opacity var(--duration-fast) linear;
+    filter: none !important;
+  }
+
+  .wsCiPending {
+    animation: none;
   }
 }

@@ -23,6 +23,8 @@ interface GraphqlPullRequestNode {
   title: string
   url: string
   updatedAt: string
+  additions?: number
+  deletions?: number
   headRefName?: string | null
   baseRefName?: string | null
   headRepository?: {
@@ -820,6 +822,11 @@ export class GithubService {
         title
         url
         updatedAt
+        additions
+        deletions
+        author {
+          login
+        }
         headRefName
         baseRefName
         headRepository {
@@ -877,6 +884,11 @@ export class GithubService {
         title
         url
         updatedAt
+        additions
+        deletions
+        author {
+          login
+        }
         headRefName
         baseRefName
         headRepository {
@@ -917,6 +929,8 @@ export class GithubService {
               title
               url
               updatedAt
+              additions
+              deletions
               headRefName
               baseRefName
               headRepository {
@@ -995,6 +1009,9 @@ export class GithubService {
       isApproved: isOpen && reviewDecision === 'APPROVED',
       isChangesRequested: isOpen && reviewDecision === 'CHANGES_REQUESTED',
       updatedAt: pr.updatedAt,
+      authorLogin: pr.author?.login || undefined,
+      additions: pr.additions,
+      deletions: pr.deletions,
     }
   }
 

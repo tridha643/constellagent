@@ -46,7 +46,7 @@ function cleanupTestRepo(repoPath: string): void {
   }
 }
 
-test.describe('PR status indicators', () => {
+test.describe('PR status (data + sidebar bar)', () => {
   test('getPrStatuses returns unavailable for local-only repo', async () => {
     const repoPath = createTestRepo('pr-local')
     const { app, window } = await launchApp()
@@ -66,11 +66,11 @@ test.describe('PR status indicators', () => {
     }
   })
 
-  test('store setPrStatuses populates prStatusMap', async () => {
+  test('store setPrStatuses populates prStatusMap including author + diff stats', async () => {
     const { app, window } = await launchApp()
 
     try {
-      const prNumber = await window.evaluate(() => {
+      const result = await window.evaluate(() => {
         const store = (window as any).__store.getState()
         store.setPrStatuses('proj-1', {
           'feature-branch': {
@@ -85,21 +85,27 @@ test.describe('PR status indicators', () => {
             isApproved: false,
             isChangesRequested: false,
             updatedAt: new Date().toISOString(),
+            authorLogin: 'octocat',
+            additions: 120,
+            deletions: 4,
           },
         })
 
         const updated = (window as any).__store.getState()
         const pr = updated.prStatusMap.get('proj-1:feature-branch')
-        return pr?.number ?? null
+        return { number: pr?.number ?? null, author: pr?.authorLogin ?? null, additions: pr?.additions ?? null, deletions: pr?.deletions ?? null }
       })
 
-      expect(prNumber).toBe(42)
+      expect(result.number).toBe(42)
+      expect(result.author).toBe('octocat')
+      expect(result.additions).toBe(120)
+      expect(result.deletions).toBe(4)
     } finally {
       await app.close()
     }
   })
 
-  test('linked workspace can show PR status when local branch differs from head ref', async () => {
+  test('linked workspace maps PR status under the local branch alias', async () => {
     const repoPath = createTestRepo('pr-linked-alias')
     const { app, window } = await launchApp()
 
@@ -148,13 +154,17 @@ test.describe('PR status indicators', () => {
             isApproved: false,
             isChangesRequested: false,
             updatedAt: new Date().toISOString(),
+            authorLogin: 'fork-owner',
+            additions: 5,
+            deletions: 1,
           },
         })
 
+        const after = (window as any).__store.getState()
         return {
-          byAlias: store.prStatusMap.get('test-proj-linked-pr:pr/42-feature-from-fork')?.number ?? null,
-          byHead: store.prStatusMap.get('test-proj-linked-pr:feature/from-fork')?.number ?? null,
-          linkedNumber: store.workspaces.find((w: { id: string }) => w.id === 'ws-linked-pr')?.linkedPullRequest?.number ?? null,
+          byAlias: after.prStatusMap.get('test-proj-linked-pr:pr/42-feature-from-fork')?.number ?? null,
+          byHead: after.prStatusMap.get('test-proj-linked-pr:feature/from-fork')?.number ?? null,
+          linkedNumber: after.workspaces.find((w: { id: string }) => w.id === 'ws-linked-pr')?.linkedPullRequest?.number ?? null,
         }
       })
 
@@ -162,10 +172,10 @@ test.describe('PR status indicators', () => {
       expect(result.byHead).toBeNull()
       expect(result.linkedNumber).toBe(42)
 
-      await window.waitForTimeout(500)
-      const prBadge = window.locator('[class*="prInline"]')
-      await expect(prBadge).toBeVisible({ timeout: 3000 })
-      await expect(prBadge).toContainText('#42')
+      // The bar flips to PR mode and shows the PR title.
+      await window.waitForTimeout(400)
+      const prFace = window.locator('[class*="wsFacePr"]')
+      await expect(prFace.locator('[class*="wsTitle"]')).toContainText('Fork PR')
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)
@@ -195,394 +205,55 @@ test.describe('PR status indicators', () => {
     }
   })
 
-  test('PR badge renders in sidebar when store has PR data', async () => {
-    const repoPath = createTestRepo('pr-badge')
+  test('CI rollup chip reflects the PR check status', async () => {
+    const repoPath = createTestRepo('pr-ci-chip')
     const { app, window } = await launchApp()
 
     try {
-      // Set up project and workspace first
       await window.evaluate(async (repo: string) => {
         const store = (window as any).__store.getState()
         store.hydrateState({ projects: [], workspaces: [] })
-
-        const projectId = 'test-proj-id'
-        store.addProject({ id: projectId, name: 'pr-test-project', repoPath: repo })
-
+        const projectId = 'test-proj-ci'
+        store.addProject({ id: projectId, name: 'ci-project', repoPath: repo })
         store.addWorkspace({
           id: crypto.randomUUID(),
-          name: 'main-ws',
+          name: 'main',
           branch: 'main',
           worktreePath: repo,
           projectId,
         })
       }, repoPath)
 
-      // Wait for the poller's initial run to settle so injected state isn't immediately overwritten.
       await window.waitForTimeout(2500)
 
-      // Now inject PR data after the poller has settled
       await window.evaluate(() => {
         const store = (window as any).__store.getState()
-        const ws = store.workspaces.find((w: { projectId: string }) => w.projectId === 'test-proj-id')
-        const branch = ws?.branch ?? 'main'
-        store.setGhAvailability('test-proj-id', true)
-        store.setPrStatuses('test-proj-id', {
-          [branch]: {
+        store.setGhAvailability('test-proj-ci', true)
+        store.setPrStatuses('test-proj-ci', {
+          main: {
             number: 99,
             state: 'open',
-            title: 'My cool PR',
+            title: 'Failing PR',
             url: 'https://github.com/test/repo/pull/99',
-            checkStatus: 'passing',
-            hasPendingComments: false,
-            pendingCommentCount: 0,
-            isBlockedByCi: false,
-            isApproved: false,
-            isChangesRequested: false,
-            updatedAt: new Date().toISOString(),
-          },
-        })
-      })
-
-      await window.waitForTimeout(500)
-
-      // PR badge should be visible in sidebar with #99
-      const prBadge = window.locator('[class*="prInline"]')
-      await expect(prBadge).toBeVisible({ timeout: 3000 })
-
-      const prText = await prBadge.textContent()
-      expect(prText).toContain('#99')
-
-      // Badge should carry open-state styling.
-      await expect(prBadge).toHaveClass(/pr_open/)
-    } finally {
-      await app.close()
-      cleanupTestRepo(repoPath)
-    }
-  })
-
-  test('PR badge does not render when ghAvailability is false', async () => {
-    const repoPath = createTestRepo('pr-no-gh')
-    const { app, window } = await launchApp()
-
-    try {
-      await window.evaluate(async (repo: string) => {
-        const store = (window as any).__store.getState()
-        store.hydrateState({ projects: [], workspaces: [] })
-
-        const projectId = 'test-proj-nope'
-        store.addProject({ id: projectId, name: 'no-gh-project', repoPath: repo })
-        store.addWorkspace({
-          id: crypto.randomUUID(),
-          name: 'main',
-          branch: 'main',
-          worktreePath: repo,
-          projectId,
-        })
-
-        // Set gh as unavailable — PR badge should not render
-        store.setGhAvailability(projectId, false)
-        store.setPrStatuses(projectId, {
-          main: {
-            number: 50,
-            state: 'open',
-            title: 'Should not show',
-            url: 'https://github.com/test/repo/pull/50',
-            checkStatus: 'passing',
-            hasPendingComments: false,
-            pendingCommentCount: 0,
-            isBlockedByCi: false,
-            isApproved: false,
-            isChangesRequested: false,
-            updatedAt: new Date().toISOString(),
-          },
-        })
-      }, repoPath)
-
-      await window.waitForTimeout(500)
-
-      const prBadge = window.locator('[class*="prInline"]')
-      await expect(prBadge).not.toBeVisible()
-    } finally {
-      await app.close()
-      cleanupTestRepo(repoPath)
-    }
-  })
-
-  test('open PR shows pending comments and CI blocked badges', async () => {
-    const repoPath = createTestRepo('pr-signals-blocked')
-    const { app, window } = await launchApp()
-
-    try {
-      await window.evaluate(async (repo: string) => {
-        const store = (window as any).__store.getState()
-        store.hydrateState({ projects: [], workspaces: [] })
-
-        const projectId = 'test-proj-signals-blocked'
-        store.addProject({ id: projectId, name: 'signals-project', repoPath: repo })
-        store.addWorkspace({
-          id: crypto.randomUUID(),
-          name: 'main',
-          branch: 'main',
-          worktreePath: repo,
-          projectId,
-        })
-      }, repoPath)
-
-      await window.waitForTimeout(4000)
-
-      await window.evaluate(() => {
-        const store = (window as any).__store.getState()
-        store.setGhAvailability('test-proj-signals-blocked', true)
-        store.setPrStatuses('test-proj-signals-blocked', {
-          main: {
-            number: 123,
-            state: 'open',
-            title: 'Blocked PR',
-            url: 'https://github.com/test/repo/pull/123',
             checkStatus: 'failing',
-            hasPendingComments: true,
-            pendingCommentCount: 12,
+            hasPendingComments: false,
+            pendingCommentCount: 0,
             isBlockedByCi: true,
             isApproved: false,
             isChangesRequested: false,
             updatedAt: new Date().toISOString(),
+            authorLogin: 'octocat',
+            additions: 1,
+            deletions: 1,
           },
         })
       })
 
-      await window.waitForTimeout(500)
+      await window.waitForTimeout(400)
 
-      await expect(window.locator('[class*="prPendingComments"]')).toBeVisible()
-      await expect(window.locator('[class*="prBlockedCi"]')).toBeVisible()
-      await expect(window.locator('[class*="prCiPending"]')).not.toBeVisible()
-      await expect(window.locator('[class*="prApproved"]')).not.toBeVisible()
-      await expect(window.locator('[class*="prCiPassing"]')).not.toBeVisible()
-    } finally {
-      await app.close()
-      cleanupTestRepo(repoPath)
-    }
-  })
-
-  test('open PR shows pending CI badge without red failure badge', async () => {
-    const repoPath = createTestRepo('pr-signals-pending')
-    const { app, window } = await launchApp()
-
-    try {
-      await window.evaluate(async (repo: string) => {
-        const store = (window as any).__store.getState()
-        store.hydrateState({ projects: [], workspaces: [] })
-
-        const projectId = 'test-proj-signals-pending'
-        store.addProject({ id: projectId, name: 'pending-project', repoPath: repo })
-        store.addWorkspace({
-          id: crypto.randomUUID(),
-          name: 'main',
-          branch: 'main',
-          worktreePath: repo,
-          projectId,
-        })
-      }, repoPath)
-
-      await window.waitForTimeout(4000)
-
-      await window.evaluate(() => {
-        const store = (window as any).__store.getState()
-        store.setGhAvailability('test-proj-signals-pending', true)
-        store.setPrStatuses('test-proj-signals-pending', {
-          main: {
-            number: 125,
-            state: 'open',
-            title: 'Pending CI PR',
-            url: 'https://github.com/test/repo/pull/125',
-            checkStatus: 'pending',
-            hasPendingComments: false,
-            pendingCommentCount: 0,
-            // Keep true to ensure UI no longer renders this as red while running.
-            isBlockedByCi: true,
-            isApproved: false,
-            updatedAt: new Date().toISOString(),
-          },
-        })
-      })
-
-      await window.waitForTimeout(500)
-
-      await expect(window.locator('[class*="prCiPending"]')).toBeVisible()
-      await expect(window.locator('[class*="prBlockedCi"]')).not.toBeVisible()
-      await expect(window.locator('[class*="prCiPassing"]')).not.toBeVisible()
-      await expect(window.locator('[class*="prApproved"]')).not.toBeVisible()
-    } finally {
-      await app.close()
-      cleanupTestRepo(repoPath)
-    }
-  })
-
-  test('open PR shows approved badge', async () => {
-    const repoPath = createTestRepo('pr-signals-approved')
-    const { app, window } = await launchApp()
-
-    try {
-      await window.evaluate(async (repo: string) => {
-        const store = (window as any).__store.getState()
-        store.hydrateState({ projects: [], workspaces: [] })
-
-        const projectId = 'test-proj-signals-approved'
-        store.addProject({ id: projectId, name: 'approved-project', repoPath: repo })
-        store.addWorkspace({
-          id: crypto.randomUUID(),
-          name: 'main',
-          branch: 'main',
-          worktreePath: repo,
-          projectId,
-        })
-      }, repoPath)
-
-      await window.waitForTimeout(4000)
-
-      await window.evaluate(() => {
-        const store = (window as any).__store.getState()
-        store.setGhAvailability('test-proj-signals-approved', true)
-        store.setPrStatuses('test-proj-signals-approved', {
-          main: {
-            number: 124,
-            state: 'open',
-            title: 'Approved PR',
-            url: 'https://github.com/test/repo/pull/124',
-            checkStatus: 'passing',
-            hasPendingComments: false,
-            pendingCommentCount: 0,
-            isBlockedByCi: false,
-            isApproved: true,
-            isChangesRequested: false,
-            updatedAt: new Date().toISOString(),
-          },
-        })
-      })
-
-      await window.waitForTimeout(500)
-
-      await expect(window.locator('[class*="prApproved"]')).toBeVisible()
-      await expect(window.locator('[class*="prChangesRequested"]')).not.toBeVisible()
-      await expect(window.locator('[class*="prPendingComments"]')).not.toBeVisible()
-      await expect(window.locator('[class*="prBlockedCi"]')).not.toBeVisible()
-      await expect(window.locator('[class*="prCiPassing"]')).toBeVisible()
-    } finally {
-      await app.close()
-      cleanupTestRepo(repoPath)
-    }
-  })
-
-  test('open PR shows changes requested icon', async () => {
-    const repoPath = createTestRepo('pr-signals-changes-requested')
-    const { app, window } = await launchApp()
-
-    try {
-      await window.evaluate(async (repo: string) => {
-        const store = (window as any).__store.getState()
-        store.hydrateState({ projects: [], workspaces: [] })
-
-        const projectId = 'test-proj-signals-changes-requested'
-        store.addProject({ id: projectId, name: 'changes-requested-project', repoPath: repo })
-        store.addWorkspace({
-          id: crypto.randomUUID(),
-          name: 'main',
-          branch: 'main',
-          worktreePath: repo,
-          projectId,
-        })
-      }, repoPath)
-
-      await window.waitForTimeout(4000)
-
-      await window.evaluate(() => {
-        const store = (window as any).__store.getState()
-        store.setGhAvailability('test-proj-signals-changes-requested', true)
-        store.setPrStatuses('test-proj-signals-changes-requested', {
-          main: {
-            number: 125,
-            state: 'open',
-            title: 'Changes Requested PR',
-            url: 'https://github.com/test/repo/pull/125',
-            checkStatus: 'passing',
-            hasPendingComments: false,
-            pendingCommentCount: 0,
-            isBlockedByCi: false,
-            isApproved: false,
-            isChangesRequested: true,
-            updatedAt: new Date().toISOString(),
-          },
-        })
-      })
-
-      await window.waitForTimeout(500)
-
-      await expect(window.locator('[class*="prChangesRequested"]')).toBeVisible()
-      await expect(window.locator('[class*="prApproved"]')).not.toBeVisible()
-      await expect(window.locator('[class*="prPendingComments"]')).not.toBeVisible()
-      await expect(window.locator('[class*="prBlockedCi"]')).not.toBeVisible()
-      await expect(window.locator('[class*="prCiPassing"]')).toBeVisible()
-    } finally {
-      await app.close()
-      cleanupTestRepo(repoPath)
-    }
-  })
-
-  test('merged PR shows without check indicator', async () => {
-    const repoPath = createTestRepo('pr-merged')
-    const { app, window } = await launchApp()
-
-    try {
-      // Set up project and workspace
-      await window.evaluate(async (repo: string) => {
-        const store = (window as any).__store.getState()
-        store.hydrateState({ projects: [], workspaces: [] })
-
-        const projectId = 'test-proj-merged'
-        store.addProject({ id: projectId, name: 'merged-project', repoPath: repo })
-        store.addWorkspace({
-          id: crypto.randomUUID(),
-          name: 'merged-ws',
-          branch: 'main',
-          worktreePath: repo,
-          projectId,
-        })
-      }, repoPath)
-
-      // Wait for poller to settle before injecting PR data
-      await window.waitForTimeout(2500)
-
-      await window.evaluate(() => {
-        const store = (window as any).__store.getState()
-        const ws = store.workspaces.find((w: { projectId: string }) => w.projectId === 'test-proj-merged')
-        const branch = ws?.branch ?? 'main'
-        store.setGhAvailability('test-proj-merged', true)
-        store.setPrStatuses('test-proj-merged', {
-          [branch]: {
-            number: 77,
-            state: 'merged',
-            title: 'Already merged',
-            url: 'https://github.com/test/repo/pull/77',
-            checkStatus: 'passing',
-            hasPendingComments: false,
-            pendingCommentCount: 0,
-            isBlockedByCi: false,
-            isApproved: false,
-            isChangesRequested: false,
-            updatedAt: new Date().toISOString(),
-          },
-        })
-      })
-
-      await window.waitForTimeout(500)
-
-      // PR number should show
-      const prBadge = window.locator('[class*="prInline"]')
-      await expect(prBadge).toBeVisible({ timeout: 3000 })
-      const prText = await prBadge.textContent()
-      expect(prText).toContain('#77')
-
-      // Badge should carry merged-state styling.
-      await expect(prBadge).toHaveClass(/pr_merged/)
+      const prFace = window.locator('[class*="wsFacePr"]')
+      await expect(prFace.locator('[class*="wsCiFail"]')).toBeVisible({ timeout: 3000 })
+      await expect(prFace.locator('[class*="wsCiPass"]')).toHaveCount(0)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

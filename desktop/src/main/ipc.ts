@@ -13,6 +13,7 @@ import type { CreateWorktreeProgressEvent } from '../shared/workspace-creation'
 import type { CloneRepoOptions, CloneRepoProgressEvent, CloneRepoResult } from '../shared/clone-repo'
 import { CLONE_ERROR_CODES } from '../shared/clone-repo'
 import { parseGithubUrl } from '../shared/github-url'
+import { getGithubRepoForRepoPath } from './composio-repo-resolve'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GraphiteStackAction } from '../shared/graphite-types'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
@@ -141,12 +142,53 @@ interface FsWatcherEntry {
   timer: ReturnType<typeof setTimeout> | null
   subscribers: Map<number, FsWatchSubscriber>
   totalRefs: number
+  /** Timestamp of the last notification sent, for leading-edge throttling. */
+  lastNotifyAt: number
 }
 
 // Filesystem watchers keyed by watched directory.
 // Each renderer subscription increments a ref count so one panel unmounting
 // does not tear down a shared watcher used by another panel.
 const fsWatchers = new Map<string, FsWatcherEntry>()
+
+// Leading-edge throttle for FS change notifications: the first change after a
+// quiet period (or a sustained burst that has run past this window) notifies
+// renderers immediately, so surfaces like the diff viewer reflect edits
+// near-instantly instead of waiting out the trailing debounce.
+const FS_WATCH_LEADING_MS = 600
+// Trailing quiet window: after activity stops, deliver the final settled state
+// once and run the (heavier) quick-open index refresh.
+const FS_WATCH_TRAILING_QUIET_MS = 500
+
+/**
+ * Notify all live subscribers of a watched dir, pruning destroyed renderers and
+ * closing the watcher if none remain. `refreshSearch` triggers the heavier
+ * quick-open re-index (trailing edge only).
+ */
+function notifyFsWatchers(
+  dirPath: string,
+  entry: FsWatcherEntry,
+  now: number,
+  refreshSearch: boolean,
+): void {
+  entry.lastNotifyAt = now
+  if (refreshSearch) void FileService.refreshQuickOpenSearch(dirPath)
+  for (const [id, subscriber] of entry.subscribers.entries()) {
+    if (subscriber.webContents.isDestroyed()) {
+      entry.totalRefs = Math.max(0, entry.totalRefs - subscriber.refs)
+      entry.subscribers.delete(id)
+      continue
+    }
+    subscriber.webContents.send(IPC.FS_WATCH_CHANGED, dirPath)
+  }
+
+  if (entry.totalRefs <= 0 || entry.subscribers.size === 0) {
+    if (entry.timer) clearTimeout(entry.timer)
+    entry.timer = null
+    entry.watcher.close()
+    fsWatchers.delete(dirPath)
+  }
+}
 
 function sameWorktreePath(a: string, b: string): boolean {
   if (a === b) return true
@@ -547,6 +589,14 @@ export function registerIpcHandlers(): void {
     return GitService.getDefaultBranch(repoPath)
   })
 
+  ipcMain.handle(IPC.GIT_GET_WORKSPACE_BAR_STATS, async (_e, worktreePath: string, defaultBranch?: string) => {
+    return measureMainAsync(
+      'git:get-workspace-bar-stats',
+      () => GitService.getWorkspaceBarStats(worktreePath, defaultBranch),
+      { worktreePath },
+    )
+  })
+
   ipcMain.handle(IPC.GIT_SHOW_FILE_AT_HEAD, async (_e, worktreePath: string, filePath: string) => {
     return measureMainAsync('git:show-file-at-head', () => GitService.showFileAtHead(worktreePath, filePath), {
       worktreePath,
@@ -660,6 +710,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.GITHUB_CLONE_SUGGESTIONS, async (_e, query: string) => {
     return typeof query === 'string' ? GithubService.listCloneRepoSuggestions(query) : []
+  })
+
+  ipcMain.handle(IPC.GITHUB_GET_REPO_INFO, async (_e, repoPath: string) => {
+    return getGithubRepoForRepoPath(repoPath)
   })
 
   // ── Graphite handlers ──
@@ -912,25 +966,21 @@ export function registerIpcHandlers(): void {
         const entry = fsWatchers.get(dirPath)
         if (!entry) return
 
-        // Debounce: wait 500ms of quiet before notifying
+        const now = Date.now()
+        // Leading edge: notify immediately when idle (or once per window during a
+        // sustained burst) so the change shows near-instantly. Cheap renderer ping
+        // only — the quick-open re-index waits for the trailing edge.
+        if (now - entry.lastNotifyAt >= FS_WATCH_LEADING_MS) {
+          notifyFsWatchers(dirPath, entry, now, false)
+          if (!fsWatchers.has(dirPath)) return // watcher closed (no subscribers left)
+        }
+        // Trailing edge: (re)arm a quiet-window timer to deliver the final settled
+        // state once and refresh the quick-open index after activity stops.
         if (entry.timer) clearTimeout(entry.timer)
         entry.timer = setTimeout(() => {
-          void FileService.refreshQuickOpenSearch(dirPath)
-          for (const [id, subscriber] of entry.subscribers.entries()) {
-            if (subscriber.webContents.isDestroyed()) {
-              entry.totalRefs = Math.max(0, entry.totalRefs - subscriber.refs)
-              entry.subscribers.delete(id)
-              continue
-            }
-            subscriber.webContents.send(IPC.FS_WATCH_CHANGED, dirPath)
-          }
-
-          if (entry.totalRefs <= 0 || entry.subscribers.size === 0) {
-            if (entry.timer) clearTimeout(entry.timer)
-            entry.watcher.close()
-            fsWatchers.delete(dirPath)
-          }
-        }, 500)
+          entry.timer = null
+          notifyFsWatchers(dirPath, entry, Date.now(), true)
+        }, FS_WATCH_TRAILING_QUIET_MS)
       })
 
       fsWatchers.set(dirPath, {
@@ -938,6 +988,7 @@ export function registerIpcHandlers(): void {
         timer: null,
         subscribers: new Map([[senderId, { webContents: _e.sender, refs: 1 }]]),
         totalRefs: 1,
+        lastNotifyAt: 0,
       })
     } catch {
       // Directory may not exist or be inaccessible — ignore
@@ -2013,6 +2064,20 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.AGENT_CHAT_PICK_IMAGES, async () => {
     const { pickConductorImageAttachments } = await import('./conductor-image-picker')
     return pickConductorImageAttachments()
+  })
+
+  const projectIconsDir = () => join(app.getPath('userData'), 'project-icons')
+  ipcMain.handle(IPC.PROJECT_ICON_PICK, async (_e, projectId: string) => {
+    const { pickAndStoreCustomIcon } = await import('./project-icon-service')
+    return pickAndStoreCustomIcon(projectIconsDir(), projectId)
+  })
+  ipcMain.handle(IPC.PROJECT_ICON_GET, async (_e, projectId: string) => {
+    const { getCustomIconDataUrl } = await import('./project-icon-service')
+    return getCustomIconDataUrl(projectIconsDir(), projectId)
+  })
+  ipcMain.handle(IPC.PROJECT_ICON_CLEAR, async (_e, projectId: string) => {
+    const { clearCustomIcon } = await import('./project-icon-service')
+    return clearCustomIcon(projectIconsDir(), projectId)
   })
   ipcMain.handle(IPC.AGENT_CHAT_LIST_PI_MODELS, async (_e, workspacePath: string) =>
     agentChatHost.listPiModels(workspacePath),

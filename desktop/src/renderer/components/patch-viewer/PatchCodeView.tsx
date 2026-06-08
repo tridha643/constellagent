@@ -41,6 +41,23 @@ const HOVER_UTILITY_UNSAFE_CSS = `
 
 const PIERRE_MAX = 2000
 
+/**
+ * Pre-measure layout estimate for CodeView's virtualizer (rudu's
+ * `VIRTUAL_FILE_METRICS`). CodeView refines these with measured deltas, but it
+ * needs a starting estimate to size items and compute the render window — without
+ * it the surface paints blank/janky on first load.
+ */
+const ITEM_METRICS = {
+  hunkLineCount: 50,
+  lineHeight: 20,
+  diffHeaderHeight: 44,
+  hunkSeparatorHeight: 32,
+  spacing: 8,
+} as const
+
+/** Flat layout — our own toolbar/file-strip owns surrounding spacing. */
+const FLAT_LAYOUT = { paddingTop: 0, paddingBottom: 0, gap: 0 } as const
+
 export type CodeViewDiffItemArr = CodeViewDiffItem<DiffAnnotation[]>
 
 export interface PatchCodeViewProps {
@@ -293,16 +310,39 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
         enableGutterUtility: true,
         controlledSelection: true,
         stickyHeaders: true,
+        // Layout estimate the virtualizer uses BEFORE a line is measured. Without
+        // it CodeView can't size items, so the render window is wrong and the
+        // surface renders blank/janky on load (rudu's VIRTUAL_FILE_METRICS).
+        itemMetrics: ITEM_METRICS,
+        // Zero out CodeView's default 8px container padding/gap so our own
+        // toolbar/strip own the spacing (rudu uses the same flat layout).
+        layout: FLAT_LAYOUT,
         unsafeCSS: HOVER_UTILITY_UNSAFE_CSS,
       }),
       [inline],
+    )
+
+    // The CodeView root element IS the vertical scroll container — it reads its
+    // OWN scrollTop to drive virtualization. It must therefore be height-bounded
+    // AND have `overflow-y: auto`; a bare `flex:1` child (overflow:visible) spills
+    // its content and cannot scroll, which is why the surface was unscrollable.
+    const rootStyle = useMemo<CSSProperties>(
+      () => ({
+        minHeight: 0,
+        minWidth: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        overflowAnchor: 'none',
+        ...style,
+      }),
+      [style],
     )
 
     return (
       <CodeView<DiffAnnotation[]>
         ref={ref}
         className={className}
-        style={style}
+        style={rootStyle}
         items={items}
         options={options}
         selectedLines={selectedLines}

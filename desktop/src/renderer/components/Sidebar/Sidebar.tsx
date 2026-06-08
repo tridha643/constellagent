@@ -5,13 +5,15 @@ import {
   type AgentType,
   type Folder,
   type Project,
+  type ProjectIcon,
   type PrLinkProvider,
   type SidebarActionId,
   type StartupCommand,
+  type Workspace,
 } from "../../store/types";
 import { getRenderableFolderGroups } from "../../store/sidebar-navigation";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
-import type { GithubLookupError, LinkedPullRequest, OpenPrInfo, ResolvedPrInfo } from "../../../shared/github-types";
+import type { GithubLookupError, LinkedPullRequest, OpenPrInfo, PrInfo, ResolvedPrInfo } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import { FolderDialog } from "./FolderDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
@@ -28,6 +30,7 @@ import {
   Loader2,
   Timer,
 } from "lucide-react";
+import { getProjectIconComponent } from "./project-icon-glyphs";
 import type { WorkspaceSyncInfo } from "@shared/worktree-sync-types";
 import { Tooltip } from "../Tooltip/Tooltip";
 import {
@@ -41,13 +44,15 @@ import { SpotlightStatusDot } from "../Spotlight/SpotlightStatusDot";
 import { SpotlightIcon } from "../Icons/SpotlightIcon";
 import styles from "./Sidebar.module.css";
 import { maybeShowStaleMainToast } from "../../utils/ipc-stale-main";
-import { buildGithubHttpsCloneUrl } from "../../../shared/github-url";
+import {
+  buildGithubHttpsCloneUrl,
+  getGithubUserAvatarUrl,
+  getOwnerAvatarUrl,
+} from "../../../shared/github-url";
 import type { SpotlightState, SpotlightStatus } from "../../../shared/spotlight-types";
 
 const PR_ICON_SIZE = 10;
-const PR_REVIEW_ICON_SIZE = 10;
 const START_TERMINAL_MESSAGE = "Starting terminal...";
-const MAX_COMMENT_COUNT_DISPLAY = 9;
 const PR_PROVIDER_DOMAINS: Record<PrLinkProvider, string> = {
   github: "github.com",
   graphite: "graphite.dev",
@@ -270,149 +275,6 @@ function PrStateIcon({ state }: { state: "open" | "merged" | "closed" }) {
   );
 }
 
-function CommentCountIcon({ count }: { count: number }) {
-  const text =
-    count > MAX_COMMENT_COUNT_DISPLAY
-      ? `${MAX_COMMENT_COUNT_DISPLAY}+`
-      : String(count);
-  return (
-    <span className={styles.prCommentIcon}>
-      <svg
-        className={styles.prCommentIconBubble}
-        width="18"
-        height="14"
-        viewBox="0 0 18 14"
-        aria-hidden="true"
-      >
-        <path d="M2.25 2.75C2.25 1.784 3.034 1 4 1h10c.966 0 1.75.784 1.75 1.75v6.5c0 .966-.784 1.75-1.75 1.75H9L5.5 13V11H4c-.966 0-1.75-.784-1.75-1.75Z" />
-      </svg>
-      <span className={styles.prCommentIconCount}>{text}</span>
-    </span>
-  );
-}
-
-function PrReviewDecisionIcon({
-  decision,
-}: {
-  decision: "approved" | "changes_requested";
-}) {
-  if (decision === "approved") {
-    return (
-      <svg width={PR_REVIEW_ICON_SIZE} height={PR_REVIEW_ICON_SIZE} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-        <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0L2.22 7.28a.75.75 0 1 1 1.06-1.06L7 9.94l5.72-5.72a.75.75 0 0 1 1.06 0Z" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg width={PR_REVIEW_ICON_SIZE} height={PR_REVIEW_ICON_SIZE} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      <path d="M6.78 2.97a.75.75 0 0 1 0 1.06L4.81 6H9.5A4.5 4.5 0 0 1 14 10.5v1.75a.75.75 0 0 1-1.5 0V10.5A3 3 0 0 0 9.5 7.5H4.81l1.97 1.97a.75.75 0 1 1-1.06 1.06L2.47 7.28a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" />
-    </svg>
-  );
-}
-
-function WorkspaceMeta({
-  projectId,
-  branch,
-  showBranch,
-}: {
-  projectId: string;
-  branch: string;
-  showBranch: boolean;
-}) {
-  const prInfo = useAppStore((s) =>
-    s.prStatusMap.get(`${projectId}:${branch}`),
-  );
-  const ghAvailable = useAppStore((s) => s.ghAvailability.get(projectId));
-  const prLinkProvider = useAppStore(
-    (s) => s.projects.find((p) => p.id === projectId)?.prLinkProvider ?? "github",
-  );
-  const hasPr = !!(ghAvailable && prInfo !== undefined && prInfo !== null);
-
-  if (!hasPr && !showBranch) return null;
-
-  const stateClass = hasPr ? styles[`pr_${prInfo!.state}`] || "" : "";
-  const openPr = hasPr && prInfo!.state === "open";
-  const pendingCommentCount = openPr ? Math.max(0, prInfo!.pendingCommentCount || 0) : 0;
-  const hasPendingComments = pendingCommentCount > 0;
-  const isCiPending = openPr && prInfo!.checkStatus === "pending";
-  const isBlockedByCi = openPr && prInfo!.checkStatus === "failing";
-  const isApproved = openPr && !!prInfo!.isApproved;
-  const isCiPassing = openPr && prInfo!.checkStatus === "passing";
-  const isChangesRequested = openPr && !!prInfo!.isChangesRequested;
-  const reviewDecision: "approved" | "changes_requested" | null = isChangesRequested
-    ? "changes_requested"
-    : isApproved
-      ? "approved"
-      : null;
-
-  return (
-    <span className={styles.workspaceMeta}>
-      {hasPr && (
-        <span
-          className={`${styles.prInline} ${stateClass}`}
-          title={`PR #${prInfo!.number}: ${prInfo!.title}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            window.open(providerUrl(prInfo!.url, prLinkProvider));
-          }}
-        >
-          <PrStateIcon state={prInfo!.state} />
-          <span className={styles.prNumber}>#{prInfo!.number}</span>
-          {openPr && reviewDecision && (
-            <span
-              className={`${styles.prReviewDecisionIcon} ${styles.prReviewDecisionInline} ${
-                reviewDecision === "approved" ? styles.prApproved : styles.prChangesRequested
-              }`}
-              title={reviewDecision === "approved" ? "Approved" : "Changes requested"}
-            >
-              <PrReviewDecisionIcon decision={reviewDecision} />
-            </span>
-          )}
-          {openPr && (
-            <span className={styles.prSignals}>
-              {hasPendingComments && (
-                <span
-                  className={styles.prPendingComments}
-                  title={`${pendingCommentCount} unresolved review comment${pendingCommentCount === 1 ? "" : "s"}`}
-                >
-                  <CommentCountIcon count={pendingCommentCount} />
-                </span>
-              )}
-              {isCiPending && (
-                <span
-                  className={`${styles.prBadge} ${styles.prCiPending}`}
-                  title="CI checks running"
-                >
-                  CI
-                </span>
-              )}
-              {isBlockedByCi && (
-                <span
-                  className={`${styles.prBadge} ${styles.prBlockedCi}`}
-                  title="CI checks failing"
-                >
-                  CI
-                </span>
-              )}
-              {isCiPassing && (
-                <span
-                  className={`${styles.prBadge} ${styles.prCiPassing}`}
-                  title="CI checks passing"
-                >
-                  CI
-                </span>
-              )}
-            </span>
-          )}
-        </span>
-      )}
-      {hasPr && showBranch && <span style={{ marginRight: 4 }} />}
-      {showBranch && branch}
-    </span>
-  );
-}
-
 function labelForSpotlightState(state: SpotlightState): string {
   switch (state) {
     case "preparing":
@@ -528,6 +390,304 @@ function WorkspaceSyncIndicator({ workspaceId }: { workspaceId: string }) {
   );
 }
 
+/** GitHub git-pull-request icon (open PR) used on the workspace bar mainline. */
+function PrBranchIcon({ local }: { local?: boolean }) {
+  return (
+    <svg
+      className={`${styles.wsPrIcon} ${local ? styles.wsPrIconLocal : ""}`}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      {local ? (
+        <path d="M3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0-6.628v5.256a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0Z" />
+      ) : (
+        <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 2.122a2.25 2.25 0 1 0-1.5 0v5.256a2.251 2.251 0 1 0 1.5 0V5.372ZM11 3a2.25 2.25 0 0 0-2.236 2.5H8.75a.75.75 0 0 0-.75.75v3.128a2.251 2.251 0 1 0 1.5 0V7h.014A2.25 2.25 0 1 0 11 3Z" />
+      )}
+    </svg>
+  );
+}
+
+/** Small CI rollup chip for the PR-mode topline (mirrors mockup `.ci`). */
+function CiChip({ status }: { status: PrInfo["checkStatus"] }) {
+  if (status === "none") return null;
+  if (status === "pending") {
+    return (
+      <svg
+        className={`${styles.wsCi} ${styles.wsCiPending}`}
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        aria-label="CI checks running"
+      >
+        <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8.75 5a.75.75 0 0 0-1.5 0v3.25c0 .2.08.39.22.53l2 2a.75.75 0 1 0 1.06-1.06L8.75 7.94V5Z" />
+      </svg>
+    );
+  }
+  if (status === "failing") {
+    return (
+      <svg
+        className={`${styles.wsCi} ${styles.wsCiFail}`}
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        aria-label="CI checks failing"
+      >
+        <path d="M2.343 13.657A8 8 0 1 1 13.657 2.343 8 8 0 0 1 2.343 13.657ZM6.03 4.97a.75.75 0 0 0-1.06 1.06L6.94 8 4.97 9.97a.75.75 0 1 0 1.06 1.06L8 9.06l1.97 1.97a.75.75 0 1 0 1.06-1.06L9.06 8l1.97-1.97a.75.75 0 0 0-1.06-1.06L8 6.94 6.03 4.97Z" />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      className={`${styles.wsCi} ${styles.wsCiPass}`}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-label="CI checks passing"
+    >
+      <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06l2.72 2.72 6.72-6.72a.75.75 0 0 1 1.06 0Z" />
+    </svg>
+  );
+}
+
+function WorkspaceStats({ additions, deletions }: { additions: number; deletions: number }) {
+  return (
+    <span
+      className={styles.wsStats}
+      aria-label={`${additions} additions, ${deletions} deletions`}
+    >
+      <span className={styles.wsStatAdd}>+{additions}</span>{" "}
+      <span className={styles.wsStatDel}>-{deletions}</span>
+    </span>
+  );
+}
+
+/**
+ * The "rudu" workspace bar: a universal two-face layout whose data source flips
+ * by whether an open PR exists. Both faces are always rendered into one grid
+ * cell so the local⇄PR change is a pure opacity+blur crossfade (no reflow).
+ * Local mode = name≡branch · latest commit subject · working-tree-inclusive
+ * `+N -N`. PR mode = PR author (+avatar) · PR title · the PR's real `+N -N`.
+ */
+function WorkspaceBarFaces({
+  ws,
+  project,
+  displayName,
+  sync,
+  isSpotlightWorkspace,
+  spotlightStatus,
+}: {
+  ws: Workspace;
+  project: Project;
+  displayName: string;
+  sync: WorkspaceSyncInfo | undefined;
+  isSpotlightWorkspace: boolean;
+  spotlightStatus: SpotlightStatus | undefined;
+}) {
+  const pr = useAppStore((s) => s.prStatusMap.get(`${ws.projectId}:${ws.branch}`));
+  const barStats = useAppStore((s) => s.workspaceBarStatsMap.get(ws.id));
+  const modeOverride = useAppStore((s) => s.workspaceBarModeOverride.get(ws.id));
+  const toggleWorkspaceBarMode = useAppStore((s) => s.toggleWorkspaceBarMode);
+  const prLinkProvider = project.prLinkProvider ?? "github";
+
+  // Auto mode follows PR state; a manual flip override wins until it lands back
+  // on auto (the store clears the override at that point).
+  const autoMode = pr?.state === "open" ? "pr" : "local";
+  const mode = modeOverride ?? autoMode;
+
+  const localAdditions = barStats?.additions ?? 0;
+  const localDeletions = barStats?.deletions ?? 0;
+  const localSubject = barStats?.subject || displayName;
+
+  const prAdditions = pr?.additions ?? 0;
+  const prDeletions = pr?.deletions ?? 0;
+  const prAuthor = pr?.authorLogin;
+
+  return (
+    <>
+      <div className={styles.wsFaces} data-mode={mode}>
+      {/* PR face */}
+      <div className={`${styles.wsFace} ${styles.wsFacePr}`} aria-hidden={mode !== "pr"}>
+        <div className={styles.wsTopline}>
+          <span className={styles.wsAuthor}>
+            {prAuthor && (
+              <img
+                className={styles.wsAuthorAvatar}
+                src={getGithubUserAvatarUrl(prAuthor, 24)}
+                alt=""
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
+            )}
+            <span className={styles.wsAuthorLogin}>{prAuthor ?? "PR"}</span>
+          </span>
+          {pr && (
+            <span className={styles.wsChips}>
+              <CiChip status={pr.checkStatus} />
+            </span>
+          )}
+        </div>
+        <div className={styles.wsMainline}>
+          <PrBranchIcon />
+          <span
+            className={styles.wsTitle}
+            title={pr ? `PR #${pr.number}: ${pr.title}` : undefined}
+            onClick={(e) => {
+              if (!pr) return;
+              e.stopPropagation();
+              window.open(providerUrl(pr.url, prLinkProvider));
+            }}
+          >
+            {pr?.title ?? "(no open PR)"}
+          </span>
+          <WorkspaceStats additions={prAdditions} deletions={prDeletions} />
+        </div>
+      </div>
+
+      {/* Local face */}
+      <div className={`${styles.wsFace} ${styles.wsFaceLocal}`} aria-hidden={mode !== "local"}>
+        <div className={styles.wsTopline}>
+          <span className={styles.wsIdent}>{displayName}</span>
+          <span className={styles.wsChips}>
+            <SidebarWorkspaceGlyph sync={sync} automationId={ws.automationId} />
+            <WorkspaceSyncIndicator workspaceId={ws.id} />
+            {isSpotlightWorkspace && spotlightStatus && (
+              <SidebarSpotlightStatusChip status={spotlightStatus} />
+            )}
+          </span>
+        </div>
+        <div className={styles.wsMainline}>
+          <PrBranchIcon local />
+          <span className={styles.wsTitle} title={localSubject}>
+            {localSubject}
+          </span>
+          <WorkspaceStats additions={localAdditions} deletions={localDeletions} />
+        </div>
+        <GraphiteStack
+          workspaceId={ws.id}
+          worktreePath={ws.worktreePath}
+          repoPath={project.repoPath}
+          graphitePreferredTrunk={project.graphitePreferredTrunk}
+        />
+      </div>
+      </div>
+      {/* Local⇄PR flip (rudu .flip): hover-revealed beside delete; pure override. */}
+      <button
+        className={styles.wsFlip}
+        title="Switch view · local ⇄ PR"
+        aria-label="Switch between local and PR view"
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleWorkspaceBarMode(ws.id);
+        }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="2" y="6" width="20" height="12" rx="6" />
+          <circle cx="16" cy="12" r="2.7" fill="currentColor" stroke="none" />
+        </svg>
+      </button>
+    </>
+  );
+}
+
+/**
+ * Project header glyph. Resolution priority: custom PNG → template glyph →
+ * GitHub owner avatar → fallback branch glyph. Whatever resolves crossfades to
+ * the expand/collapse chevron on hover (merging the old standalone ▶).
+ */
+function ProjectHeaderGlyph({
+  owner,
+  isExpanded,
+  icon,
+  projectId,
+}: {
+  owner: string | null;
+  isExpanded: boolean;
+  icon?: ProjectIcon;
+  projectId: string;
+}) {
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const [customUrl, setCustomUrl] = useState<string | null>(null);
+  const [customFailed, setCustomFailed] = useState(false);
+
+  const isCustom = icon?.type === "custom";
+  const customVersion = isCustom ? icon.version : 0;
+
+  // Fetch the custom icon data URL; re-fetch when the version bumps (replace).
+  useEffect(() => {
+    if (!isCustom) {
+      setCustomUrl(null);
+      setCustomFailed(false);
+      return;
+    }
+    let cancelled = false;
+    setCustomFailed(false);
+    window.api.projectIcon
+      .get(projectId)
+      .then((url) => {
+        if (!cancelled) setCustomUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setCustomFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCustom, customVersion, projectId]);
+
+  const TemplateIcon =
+    icon?.type === "template" ? getProjectIconComponent(icon.glyph) : null;
+  const templateColor = icon?.type === "template" ? icon.color : undefined;
+
+  const showCustom = isCustom && !!customUrl && !customFailed;
+  const showTemplate = !showCustom && !!TemplateIcon;
+  const showAvatar = !showCustom && !showTemplate && !!owner && !avatarFailed;
+
+  return (
+    <span className={styles.glyphSlot}>
+      {showCustom ? (
+        <img
+          className={styles.glyphAvatar}
+          src={customUrl ?? undefined}
+          alt=""
+          onError={() => setCustomFailed(true)}
+        />
+      ) : showTemplate && TemplateIcon ? (
+        <span className={styles.glyphTemplate} style={{ color: templateColor }} aria-hidden="true">
+          <TemplateIcon size={15} strokeWidth={2} />
+        </span>
+      ) : showAvatar && owner ? (
+        <img
+          className={styles.glyphAvatar}
+          src={getOwnerAvatarUrl(owner, 40)}
+          alt=""
+          onError={() => setAvatarFailed(true)}
+        />
+      ) : (
+        <span className={styles.glyphFallback} aria-hidden="true">
+          <GitBranch size={12} strokeWidth={2} />
+        </span>
+      )}
+      <svg
+        className={`${styles.glyphChevron} ${isExpanded ? styles.glyphChevronOpen : ""}`}
+        viewBox="0 0 12 12"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path d="M4.22 2.47a.75.75 0 0 1 1.06 0L8.53 5.72a.75.75 0 0 1 0 1.06L5.28 10.03a.75.75 0 0 1-1.06-1.06L6.97 6.25 4.22 3.53a.75.75 0 0 1 0-1.06Z" />
+      </svg>
+    </span>
+  );
+}
+
 function FolderActionsMenu({
   folder,
   projectFolderCount,
@@ -635,6 +795,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const worktreeSyncMap = useAppStore((s) => s.worktreeSyncStatus);
   const spotlightStatusByProject = useAppStore((s) => s.spotlightStatusByProject);
   const graphiteStacks = useAppStore((s) => s.graphiteStacks);
+  const repoInfoByProjectId = useAppStore((s) => s.repoInfoByProjectId);
   const collapsedProjectIds = useAppStore((s) => s.collapsedProjectIds);
   const toggleProjectCollapsed = useAppStore((s) => s.toggleProjectCollapsed);
   const lastActiveWorkspaceByProjectId = useAppStore((s) => s.lastActiveWorkspaceByProjectId);
@@ -1500,6 +1661,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
 
         {projects.map((project) => {
           const isExpanded = isProjectExpanded(project.id);
+          const repoInfo = repoInfoByProjectId.get(project.id) ?? null;
           const folderGroups = getRenderableFolderGroups(
             project.id,
             folders,
@@ -1549,12 +1711,22 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                 }}
                 onClick={() => toggleProject(project.id)}
               >
-                <span
-                  className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`}
-                >
-                  ▶
+                <ProjectHeaderGlyph
+                  owner={repoInfo?.owner ?? null}
+                  isExpanded={isExpanded}
+                  icon={project.icon}
+                  projectId={project.id}
+                />
+                <span className={styles.repoName} title={repoInfo ? `${repoInfo.owner}/${repoInfo.name}` : project.name}>
+                  {repoInfo ? (
+                    <>
+                      <span className={styles.repoOwner}>{repoInfo.owner}/</span>
+                      {repoInfo.name}
+                    </>
+                  ) : (
+                    project.name
+                  )}
                 </span>
-                <span className={styles.projectName}>{project.name}</span>
                 <Tooltip label="Project settings">
                   <button
                     className={styles.settingsBtn}
@@ -1807,8 +1979,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                           const isEditing = editingWorkspaceId === ws.id;
                           const isAutoName = /^ws-[a-z0-9]+$/.test(ws.name);
                           const displayName = isAutoName ? ws.branch : ws.name;
-                          const showMeta =
-                            !isAutoName && ws.branch && ws.branch !== ws.name;
                           const spotlightStatus = spotlightStatusByProject.get(ws.projectId);
                           const isSpotlightWorkspace =
                             !!spotlightStatus &&
@@ -1875,63 +2045,43 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                 setDropTargetWsId(null);
                               }}
                             >
-                              <span className={styles.workspaceIcon}>
-                                <SidebarWorkspaceGlyph
-                                  sync={worktreeSyncMap.get(ws.id)}
-                                  automationId={ws.automationId}
-                                />
-                              </span>
-                              <div className={styles.workspaceNameCol}>
-                                {isEditing ? (
-                                  <input
-                                    className={styles.workspaceNameInput}
-                                    defaultValue={displayName}
-                                    autoFocus
-                                    ref={(el) => {
-                                      if (el) {
-                                        el.select();
-                                      }
-                                    }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.currentTarget.blur();
-                                      } else if (e.key === "Escape") {
-                                        editRef.current = "";
-                                        setEditingWorkspaceId(null);
-                                      }
-                                    }}
-                                    onBlur={(e) => {
-                                      const val = e.currentTarget.value.trim();
-                                      if (val && val !== ws.name) {
-                                        renameWorkspace(ws.id, val);
-                                      }
+                              {isEditing ? (
+                                <input
+                                  className={styles.workspaceNameInput}
+                                  defaultValue={displayName}
+                                  autoFocus
+                                  ref={(el) => {
+                                    if (el) {
+                                      el.select();
+                                    }
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.currentTarget.blur();
+                                    } else if (e.key === "Escape") {
+                                      editRef.current = "";
                                       setEditingWorkspaceId(null);
-                                    }}
-                                  />
-                                ) : (
-                                  <span className={styles.workspaceName}>
-                                    {displayName}
-                                  </span>
-                                )}
-                                <span className={styles.workspaceMetaRow}>
-                                  <WorkspaceMeta
-                                    projectId={ws.projectId}
-                                    branch={ws.branch}
-                                    showBranch={!!showMeta}
-                                  />
-                                  <WorkspaceSyncIndicator workspaceId={ws.id} />
-                                  {isSpotlightWorkspace && (
-                                    <SidebarSpotlightStatusChip status={spotlightStatus!} />
-                                  )}
-                                </span>
-                                <GraphiteStack
-                                  workspaceId={ws.id}
-                                  worktreePath={ws.worktreePath}
-                                  repoPath={project.repoPath}
-                                  graphitePreferredTrunk={project.graphitePreferredTrunk}
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    const val = e.currentTarget.value.trim();
+                                    if (val && val !== ws.name) {
+                                      renameWorkspace(ws.id, val);
+                                    }
+                                    setEditingWorkspaceId(null);
+                                  }}
                                 />
-                              </div>
+                              ) : (
+                                <WorkspaceBarFaces
+                                  ws={ws}
+                                  project={project}
+                                  displayName={displayName}
+                                  sync={worktreeSyncMap.get(ws.id)}
+                                  isSpotlightWorkspace={isSpotlightWorkspace}
+                                  spotlightStatus={spotlightStatus}
+                                />
+                              )}
                               <BranchAndPrLauncher
                                 projectId={project.id}
                                 repoPath={project.repoPath}
@@ -2305,10 +2455,11 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       {editingProject && (
         <ProjectSettingsDialog
           project={editingProject}
-          onSave={({ startupCommands, prLinkProvider }) => {
+          onSave={({ startupCommands, prLinkProvider, icon }) => {
             updateProject(editingProject.id, {
               startupCommands,
               prLinkProvider,
+              icon: icon ?? undefined,
             });
             setEditingProject(null);
           }}

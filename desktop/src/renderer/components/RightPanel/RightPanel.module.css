@@ -589,29 +589,6 @@
   border: 0;
 }
 
-.changeStats {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 5px;
-  min-width: 44px;
-  padding-top: 1px;
-  font-size: 11px;
-  font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  letter-spacing: 0;
-  transition: opacity var(--motion-fast);
-}
-
-.changeStatAdd {
-  color: var(--accent-green);
-}
-
-.changeStatDel {
-  color: var(--accent-red);
-}
-
 /* ── File Action Buttons (hover-reveal) ──
  *
  * Resting state has the actions slightly offset so they slide in from the
@@ -917,10 +894,6 @@
   .changedFile:hover .fileActions {
     opacity: 1;
     transform: translate(0, -50%);
-  }
-
-  .changedFile:hover .changeStats {
-    opacity: 0;
   }
 
   .fileActionBtn:hover {
