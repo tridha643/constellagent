@@ -770,6 +770,11 @@ const api = {
       sessionId: string,
       response: import('../shared/conductor-ask-question-types').ConductorBlockingQuestionResponse,
     ) => ipcRenderer.invoke(IPC.AGENT_CHAT_RESPOND_BLOCKING_QUESTION, sessionId, response),
+    simulateCodexRequestUserInput: (
+      sessionId: string,
+      questions: import('../shared/conductor-ask-question-types').ConductorAskQuestionPrompt[],
+      itemId?: string,
+    ) => ipcRenderer.invoke(IPC.AGENT_CHAT_SIMULATE_CODEX_REQUEST_USER_INPUT, sessionId, questions, itemId),
     respondPiHostUi: (
       sessionId: string,
       response: import('@pi-gui/session-driver').HostUiResponse,

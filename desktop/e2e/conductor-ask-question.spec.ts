@@ -88,6 +88,64 @@ test.describe('Conductor AskQuestion UI', () => {
     expect(hasRespond).toBe(true)
   })
 
+  test('simulates Codex request_user_input through the real bridge and clears on submit', async () => {
+    const repoPath = createTestRepo('conductor-ask-question-bridge')
+    await setupWorkspace(window, repoPath)
+
+    const title = `ask-bridge-${Date.now()}`
+    const sessionId = await createAndSelectSession(window, title)
+    const requestId = await window.evaluate(
+      async (sid: string) => {
+        const api = (
+          window as unknown as {
+            api: {
+              agentChat: {
+                simulateCodexRequestUserInput?: (
+                  sessionId: string,
+                  questions: Array<{
+                    header: string
+                    question: string
+                    options: Array<{ label: string; description?: string }>
+                  }>,
+                ) => Promise<string>
+              }
+            }
+          }
+        ).api
+        return await api.agentChat.simulateCodexRequestUserInput?.(sid, [
+          {
+            header: 'Scope',
+            question: 'Which implementation path should I take?',
+            options: [
+              { label: 'Keep scope narrow', description: 'Only wire the current panel behavior.' },
+              { label: 'Broaden coverage', description: 'Add cross-provider coverage too.' },
+            ],
+          },
+        ])
+      },
+      sessionId,
+    )
+    expect(requestId).toBeTruthy()
+
+    const dialog = window.getByRole('dialog', { name: 'Which implementation path should I take?' })
+    await expect(dialog).toBeVisible({ timeout: 5000 })
+    await dialog.getByText('A · Keep scope narrow').click()
+    await dialog.getByRole('button', { name: 'Submit answers' }).click()
+
+    await expect
+      .poll(async () => {
+        const session = await window.evaluate(async (sid: string) => {
+          return await (
+            window as unknown as {
+              api: { agentChat: { getSession: (id: string) => Promise<{ state: Record<string, unknown> } | null> } }
+            }
+          ).api.agentChat.getSession(sid)
+        }, sessionId)
+        return session?.state
+      })
+      .toMatchObject({ runPhase: 'running', blockingQuestion: null })
+  })
+
   test('renders a blocking question modal and enables answer submission', async () => {
     const repoPath = createTestRepo('conductor-ask-question')
     await setupWorkspace(window, repoPath)

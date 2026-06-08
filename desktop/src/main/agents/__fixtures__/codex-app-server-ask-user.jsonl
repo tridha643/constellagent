@@ -1,0 +1,6 @@
+{"method":"thread/started","params":{"threadId":"thread-ask-1"}}
+{"method":"turn/started","params":{"threadId":"thread-ask-1","turnId":"turn-ask-1"}}
+{"method":"item/agentMessage/delta","params":{"threadId":"thread-ask-1","turnId":"turn-ask-1","itemId":"msg-1","delta":"I'll ask you a question."}}
+{"method":"item/started","params":{"threadId":"thread-ask-1","turnId":"turn-ask-1","item":{"id":"tool-1","type":"mcpToolCall","server":"functions","tool":"request_user_input","arguments":{},"status":"inProgress"}}}
+{"method":"thread/tokenUsage/updated","params":{"threadId":"thread-ask-1","turnId":"turn-ask-1","tokenUsage":{"total":{"inputTokens":1200,"cachedInputTokens":300,"outputTokens":40,"reasoningOutputTokens":0,"totalTokens":1540}}}}
+{"method":"turn/completed","params":{"threadId":"thread-ask-1","turn":{"id":"turn-ask-1","status":"completed"}}}

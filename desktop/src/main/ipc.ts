@@ -2159,6 +2159,17 @@ export function registerIpcHandlers(): void {
       response: import('../shared/conductor-ask-question-types').ConductorBlockingQuestionResponse,
     ) => agentChatHost.respondBlockingQuestion(sessionId, response),
   )
+  if (process.env.CI_TEST === '1' || process.env.CI_TEST === 'true') {
+    ipcMain.handle(
+      IPC.AGENT_CHAT_SIMULATE_CODEX_REQUEST_USER_INPUT,
+      async (
+        _e,
+        sessionId: string,
+        questions: import('../shared/conductor-ask-question-types').ConductorAskQuestionPrompt[],
+        itemId?: string,
+      ) => agentChatHost.simulateCodexRequestUserInput(sessionId, questions, itemId),
+    )
+  }
   ipcMain.handle(
     IPC.AGENT_CHAT_RESPOND_PI_HOST_UI,
     async (_e, sessionId: string, response: HostUiResponse) =>

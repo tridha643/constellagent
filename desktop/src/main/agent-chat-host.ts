@@ -70,7 +70,10 @@ import type {
   QueuedAgentMessageMode,
 } from '../shared/agent-chat-types'
 import type { ModelPreset } from '../shared/plan-build-command'
-import type { ConductorBlockingQuestionResponse } from '../shared/conductor-ask-question-types'
+import type {
+  ConductorAskQuestionPrompt,
+  ConductorBlockingQuestionResponse,
+} from '../shared/conductor-ask-question-types'
 import {
   enqueueQueuedMessage,
   findSteerMessageIndex,
@@ -553,6 +556,30 @@ export class AgentChatHost {
     if (state.blockingQuestion.requestId !== response.requestId) return
     this.questionBridge.resolve(response.requestId, response.details)
     this.update(sessionId, { runPhase: 'running', blockingQuestion: null })
+  }
+
+  /** CI-only helper to exercise the real ask-user bridge without a live Codex turn. */
+  async simulateCodexRequestUserInput(
+    sessionId: string,
+    questions: readonly ConductorAskQuestionPrompt[],
+    itemId = 'ci-test-item',
+  ): Promise<string> {
+    const state = this.sessions.get(sessionId)?.state ?? (await this.rehydrate(sessionId))
+    if (!state) throw new Error(`Unknown Conductor session: ${sessionId}`)
+    const callId = `codex-ask-user:${itemId}`
+    const pending = this.questionBridge.registerPending({
+      sessionId,
+      callId,
+      provider: 'codex',
+      source: 'askQuestion',
+      questions,
+    })
+    void pending.catch(() => {})
+    const requestId = this.sessions.get(sessionId)?.state.blockingQuestion?.requestId
+    if (!requestId) {
+      throw new Error('simulateCodexRequestUserInput failed to surface blockingQuestion')
+    }
+    return requestId
   }
 
   async deleteSession(sessionId: string): Promise<void> {

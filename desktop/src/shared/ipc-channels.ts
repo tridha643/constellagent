@@ -288,6 +288,7 @@ export const IPC = {
   AGENT_CHAT_SET_THINKING_LEVEL: 'agent-chat:set-thinking-level',
   AGENT_CHAT_CANCEL: 'agent-chat:cancel',
   AGENT_CHAT_RESPOND_BLOCKING_QUESTION: 'agent-chat:respond-blocking-question',
+  AGENT_CHAT_SIMULATE_CODEX_REQUEST_USER_INPUT: 'agent-chat:simulate-codex-request-user-input',
   AGENT_CHAT_RESPOND_PI_HOST_UI: 'agent-chat:respond-pi-host-ui',
   AGENT_CHAT_PI_EXTENSION_TUI_INPUT: 'agent-chat:pi-extension-tui-input',
   AGENT_CHAT_DELETE_SESSION: 'agent-chat:delete-session',
