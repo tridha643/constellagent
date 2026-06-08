@@ -131,9 +131,9 @@ test.describe('Workspace project sections should not auto-collapse', () => {
 
       await window.waitForTimeout(1000)
 
-      // Both workspaces visible (use branch names for locators)
-      const wsA = window.locator('[class*="workspaceItem"]', { hasText: 'branch-kb-a' })
-      const wsB = window.locator('[class*="workspaceItem"]', { hasText: 'branch-kb-b' })
+      // Both workspaces visible (the bar shows the single identity string = name)
+      const wsA = window.locator('[class*="workspaceItem"]', { hasText: 'ws-kb-a' })
+      const wsB = window.locator('[class*="workspaceItem"]', { hasText: 'ws-kb-b' })
       await expect(wsA).toBeVisible()
       await expect(wsB).toBeVisible()
 
@@ -305,7 +305,7 @@ test.describe('Workspace project sections should not auto-collapse', () => {
       await window.waitForTimeout(1000)
 
       const projectAlphaHeader = window.locator('[class*="projectHeader"]', { hasText: 'project-alpha' }).first()
-      const wsA2 = window.locator('[class*="workspaceItem"]', { hasText: 'branch-shortcut-a2' })
+      const wsA2 = window.locator('[class*="workspaceItem"]', { hasText: 'ws-shortcut-a2' })
       await projectAlphaHeader.click()
       await window.waitForTimeout(300)
 
@@ -359,9 +359,9 @@ test.describe('Workspace project sections should not auto-collapse', () => {
       await projAlphaHeader.click()
       await window.waitForTimeout(300)
 
-      // ws-man-a should now be hidden, ws-man-b still visible (use branch names)
-      const wsA = window.locator('[class*="workspaceItem"]', { hasText: 'branch-man-a' })
-      const wsB = window.locator('[class*="workspaceItem"]', { hasText: 'branch-man-b' })
+      // ws-man-a should now be hidden, ws-man-b still visible (bar shows the name)
+      const wsA = window.locator('[class*="workspaceItem"]', { hasText: 'ws-man-a' })
+      const wsB = window.locator('[class*="workspaceItem"]', { hasText: 'ws-man-b' })
       await expect(wsA).not.toBeVisible()
       await expect(wsB).toBeVisible()
 

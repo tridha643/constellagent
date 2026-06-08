@@ -26,6 +26,21 @@ export function buildGithubHttpsCloneUrl(owner: string, name: string): string {
 }
 
 /**
+ * rudu's zero-API avatar trick: `https://github.com/{login}.png` redirects to
+ * the user/org avatar with no authenticated GraphQL call. Works for owners and
+ * users alike. Callers should provide an `onError` fallback for private/
+ * non-GitHub/offline cases.
+ */
+export function getGithubUserAvatarUrl(login: string, size = 40): string {
+  return `https://github.com/${encodeURIComponent(login)}.png?size=${size}`
+}
+
+/** Avatar URL for a repo owner (org or user). See {@link getGithubUserAvatarUrl}. */
+export function getOwnerAvatarUrl(owner: string, size = 40): string {
+  return getGithubUserAvatarUrl(owner, size)
+}
+
+/**
  * Parse a user-entered string into a GitHub repo spec.
  * Accepts:
  *   - https://github.com/owner/repo(.git)?(/.*)?

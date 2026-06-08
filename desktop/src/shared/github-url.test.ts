@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'bun:test'
-import { parseGithubUrl } from './github-url'
+import { getGithubUserAvatarUrl, getOwnerAvatarUrl, parseGithubUrl } from './github-url'
+
+describe('avatar URL builders', () => {
+  it('builds a user avatar URL with the default size', () => {
+    expect(getGithubUserAvatarUrl('tridha643')).toBe('https://github.com/tridha643.png?size=40')
+  })
+
+  it('honors an explicit size', () => {
+    expect(getGithubUserAvatarUrl('tridha643', 24)).toBe('https://github.com/tridha643.png?size=24')
+  })
+
+  it('owner avatar mirrors the user builder', () => {
+    expect(getOwnerAvatarUrl('modem-dev')).toBe('https://github.com/modem-dev.png?size=40')
+    expect(getOwnerAvatarUrl('modem-dev', 80)).toBe('https://github.com/modem-dev.png?size=80')
+  })
+
+  it('encodes the login so a malformed value cannot break the URL', () => {
+    expect(getGithubUserAvatarUrl('a b')).toBe('https://github.com/a%20b.png?size=40')
+  })
+})
 
 describe('parseGithubUrl', () => {
   it('parses https URLs with and without .git suffix', () => {

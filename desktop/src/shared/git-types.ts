@@ -8,6 +8,18 @@ export interface WorktreeInfo {
   isDetached?: boolean
 }
 
+/**
+ * Local-mode workspace bar stats: latest commit subject plus a
+ * working-tree-inclusive diff against `merge-base(defaultBranch, HEAD)`.
+ * `headSha` lets the poller skip recompute when HEAD is unchanged.
+ */
+export interface WorkspaceBarStats {
+  subject: string
+  additions: number
+  deletions: number
+  headSha: string
+}
+
 export interface GitLogEntry {
   hash: string
   parents: string[]

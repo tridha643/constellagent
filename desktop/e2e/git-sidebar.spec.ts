@@ -203,8 +203,8 @@ test.describe('Git & Sidebar functionality', () => {
 
       // Projects are expanded by default — no click needed
 
-      // Workspace should be visible (sidebar shows branch name)
-      const workspaceItem = window.locator('[class*="workspaceItem"]', { hasText: 'ws-branch' })
+      // Workspace should be visible (sidebar bar shows the single identity string = name)
+      const workspaceItem = window.locator('[class*="workspaceItem"]', { hasText: 'sidebar-ws' })
       await expect(workspaceItem).toBeVisible()
 
       // It should be active (since addWorkspace auto-sets activeWorkspaceId)

@@ -37,11 +37,27 @@ function createRepoWithLargeContextFile(name: string): string {
   return repoPath
 }
 
+// Lines per generated file. The review drawer auto-collapses large reviews,
+// always expanding the first ~10 files; making each file this tall ensures those
+// expanded files alone produce a tall, scrollable surface so the scroll /
+// line-virtualization assertions are actually exercised (a 1-line diff per file
+// leaves the surface shorter than the viewport, so it can never scroll).
+const BULK_FILE_LINES = 60
+
+function bulkFileContent(index: number, revision: number): string {
+  return (
+    Array.from(
+      { length: BULK_FILE_LINES },
+      (_, line) => `export const v${index}_${line} = ${line + revision};`,
+    ).join('\n') + '\n'
+  )
+}
+
 function seedTrackedFiles(repoPath: string, fileCount: number): void {
   const bulkDir = join(repoPath, 'bulk')
   mkdirSync(bulkDir, { recursive: true })
   for (let i = 0; i < fileCount; i++) {
-    writeFileSync(join(bulkDir, `file-${i}.ts`), `export const v${i} = ${i};\n`)
+    writeFileSync(join(bulkDir, `file-${i}.ts`), bulkFileContent(i, 0))
   }
   execSync('git add bulk', { cwd: repoPath })
   execSync(`git commit -m "seed ${fileCount} tracked files"`, { cwd: repoPath })
@@ -54,8 +70,9 @@ function createRepoWithManyTrackedFiles(name: string, fileCount: number): string
 }
 
 function mutateTrackedFiles(worktreePath: string, fileCount: number): void {
+  // Rewrite every line so each file has a large multi-line diff (not a 1-liner).
   for (let i = 0; i < fileCount; i++) {
-    writeFileSync(join(worktreePath, 'bulk', `file-${i}.ts`), `export const v${i} = ${i + 1};\n`)
+    writeFileSync(join(worktreePath, 'bulk', `file-${i}.ts`), bulkFileContent(i, 1))
   }
 }
 
@@ -344,6 +361,7 @@ test.describe('Review annotations IPC integration', () => {
   })
 
   test('fast scrollbar drag on 220-file review keeps mounted sections bounded', async () => {
+    test.setTimeout(90_000)
     const fileCount = 220
     const repoPath = createRepoWithManyTrackedFiles('review-many-files', fileCount)
     const realRepo = realpathSync(repoPath)
@@ -359,11 +377,34 @@ test.describe('Review annotations IPC integration', () => {
 
       const scrollArea = window.getByTestId('hunk-review-scroll-area')
       await expect(scrollArea).toBeVisible()
-      await window.waitForTimeout(800)
+      // The real vertical scroller is CodeView's own root (overflow-y:auto) nested
+      // inside the drawer's scroll-area, NOT the scroll-area div itself. Wait
+      // deterministically until the expanded files have loaded + parsed into a
+      // tall, scrollable surface there, instead of racing a fixed timeout.
+      await window.waitForFunction(
+        () => {
+          const area = document.querySelector('[data-testid="hunk-review-scroll-area"]')
+          if (!area) return false
+          for (const el of area.querySelectorAll('*')) {
+            if (!(el instanceof HTMLElement)) continue
+            const oy = getComputedStyle(el).overflowY
+            if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > 4000) return true
+          }
+          return false
+        },
+        { timeout: 30000 },
+      )
 
       const scrollMetrics = await window.evaluate(async () => {
-        const root = document.querySelector('[data-testid="hunk-review-scroll-area"]')
-        if (!(root instanceof HTMLElement)) return null
+        const area = document.querySelector('[data-testid="hunk-review-scroll-area"]')
+        if (!(area instanceof HTMLElement)) return null
+        let root: HTMLElement | null = null
+        for (const el of area.querySelectorAll('*')) {
+          if (!(el instanceof HTMLElement)) continue
+          const oy = getComputedStyle(el).overflowY
+          if (oy === 'auto' || oy === 'scroll') { root = el; break }
+        }
+        if (!root) return null
 
         const countSections = () => root.querySelectorAll('diffs-container').length
         const started = performance.now()

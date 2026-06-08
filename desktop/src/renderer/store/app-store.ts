@@ -680,6 +680,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   prStatusMap: new Map(),
   ghAvailability: new Map(),
   defaultBranchByProjectId: new Map(),
+  repoInfoByProjectId: new Map(),
+  workspaceBarStatsMap: new Map(),
+  workspaceBarModeOverride: new Map(),
   gitFileStatuses: new Map(),
   workingTreeDiffSnapshots: new Map(),
   worktreeSyncStatus: new Map(),
@@ -733,12 +736,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       newGhAvailability.delete(id)
       const newDefaultBranchByProjectId = new Map(s.defaultBranchByProjectId)
       newDefaultBranchByProjectId.delete(id)
+      const newRepoInfoByProjectId = new Map(s.repoInfoByProjectId)
+      newRepoInfoByProjectId.delete(id)
 
       const newWorktreeSyncStatus = new Map(s.worktreeSyncStatus)
       const newGraphiteStacks = new Map(s.graphiteStacks)
+      const newWorkspaceBarStatsMap = new Map(s.workspaceBarStatsMap)
+      const newWorkspaceBarModeOverride = new Map(s.workspaceBarModeOverride)
       for (const ws of s.workspaces.filter((w) => w.projectId === id)) {
         newWorktreeSyncStatus.delete(ws.id)
         newGraphiteStacks.delete(ws.id)
+        newWorkspaceBarStatsMap.delete(ws.id)
+        newWorkspaceBarModeOverride.delete(ws.id)
       }
       const newSpotlightStatusByProject = new Map(s.spotlightStatusByProject)
       newSpotlightStatusByProject.delete(id)
@@ -776,6 +785,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         prStatusMap: newPrStatusMap,
         ghAvailability: newGhAvailability,
         defaultBranchByProjectId: newDefaultBranchByProjectId,
+        repoInfoByProjectId: newRepoInfoByProjectId,
+        workspaceBarStatsMap: newWorkspaceBarStatsMap,
+        workspaceBarModeOverride: newWorkspaceBarModeOverride,
         worktreeSyncStatus: newWorktreeSyncStatus,
         graphiteStacks: newGraphiteStacks,
         spotlightStatusByProject: newSpotlightStatusByProject,
@@ -838,6 +850,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       newWorktreeSyncStatus.delete(id)
       const newGraphiteStacks = new Map(s.graphiteStacks)
       newGraphiteStacks.delete(id)
+      const newWorkspaceBarStatsMap = new Map(s.workspaceBarStatsMap)
+      newWorkspaceBarStatsMap.delete(id)
+      const newWorkspaceBarModeOverride = new Map(s.workspaceBarModeOverride)
+      newWorkspaceBarModeOverride.delete(id)
       const lastActiveWorkspaceByProjectId = pruneLastActiveWorkspaceByProjectId(
         s.lastActiveWorkspaceByProjectId,
         s.projects,
@@ -872,6 +888,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeClaudeWorkspaceIds: newActiveClaude,
         worktreeSyncStatus: newWorktreeSyncStatus,
         graphiteStacks: newGraphiteStacks,
+        workspaceBarStatsMap: newWorkspaceBarStatsMap,
+        workspaceBarModeOverride: newWorkspaceBarModeOverride,
         lastActiveWorkspaceByProjectId,
         lastActiveTabByWorkspace: tabMap,
         planBuildTerminalByPlanPath,
@@ -2532,6 +2550,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
+    // Best-effort: drop any custom icon copied into userData for this project.
+    void window.api.projectIcon.clear(projectId).catch(() => {})
+
     get().removeProject(projectId)
   },
 
@@ -2886,7 +2907,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           || prev.isBlockedByCi !== info.isBlockedByCi
           || prev.isApproved !== info.isApproved
           || prev.isChangesRequested !== info.isChangesRequested
-          || prev.updatedAt !== info.updatedAt) {
+          || prev.updatedAt !== info.updatedAt
+          || prev.authorLogin !== info.authorLogin
+          || prev.additions !== info.additions
+          || prev.deletions !== info.deletions) {
           newMap.set(key, info)
           changed = true
         }
@@ -2910,6 +2934,53 @@ export const useAppStore = create<AppState>((set, get) => ({
       const next = new Map(s.defaultBranchByProjectId)
       next.set(projectId, normalized)
       return { defaultBranchByProjectId: next }
+    }),
+
+  setProjectRepoInfo: (projectId, info) =>
+    set((s) => {
+      const prev = s.repoInfoByProjectId.get(projectId)
+      if (s.repoInfoByProjectId.has(projectId)
+        && prev?.owner === info?.owner
+        && prev?.name === info?.name) {
+        return {}
+      }
+      const next = new Map(s.repoInfoByProjectId)
+      next.set(projectId, info)
+      return { repoInfoByProjectId: next }
+    }),
+
+  setWorkspaceBarStats: (workspaceId, stats) =>
+    set((s) => {
+      const prev = s.workspaceBarStatsMap.get(workspaceId)
+      if (prev
+        && prev.subject === stats.subject
+        && prev.additions === stats.additions
+        && prev.deletions === stats.deletions
+        && prev.headSha === stats.headSha) {
+        return {}
+      }
+      const next = new Map(s.workspaceBarStatsMap)
+      next.set(workspaceId, stats)
+      return { workspaceBarStatsMap: next }
+    }),
+
+  toggleWorkspaceBarMode: (workspaceId) =>
+    set((s) => {
+      const ws = s.workspaces.find((w) => w.id === workspaceId)
+      if (!ws) return {}
+      const autoMode =
+        s.prStatusMap.get(`${ws.projectId}:${ws.branch}`)?.state === 'open' ? 'pr' : 'local'
+      const current = s.workspaceBarModeOverride.get(workspaceId) ?? autoMode
+      const nextMode = current === 'pr' ? 'local' : 'pr'
+      const next = new Map(s.workspaceBarModeOverride)
+      // Clear the override once a flip lands back on the auto mode — keeps the
+      // map sparse and lets PR-state changes resume driving the face.
+      if (nextMode === autoMode) {
+        next.delete(workspaceId)
+      } else {
+        next.set(workspaceId, nextMode)
+      }
+      return { workspaceBarModeOverride: next }
     }),
 
   setWorktreeSyncStatus: (projectId, workspaces) =>

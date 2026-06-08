@@ -4,12 +4,20 @@ import { useExitAnimation } from '../../hooks/useExitAnimation'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import type {
   Project,
+  ProjectIcon,
   PrLinkProvider,
   StartupCommand,
   WaitCondition,
 } from '../../store/types'
 import styles from './ProjectSettingsDialog.module.css'
 import { maybeShowStaleMainToast } from '../../utils/ipc-stale-main'
+import {
+  PROJECT_ICON_COLORS,
+  PROJECT_ICON_GLYPHS,
+  DEFAULT_PROJECT_ICON_COLOR,
+  DEFAULT_PROJECT_ICON_GLYPH,
+} from '../../../shared/project-icon-templates'
+import { getProjectIconComponent } from './project-icon-glyphs'
 
 interface CommandWithId extends StartupCommand {
   _id: number
@@ -20,9 +28,12 @@ interface Props {
   onSave: (settings: {
     startupCommands: StartupCommand[]
     prLinkProvider: PrLinkProvider
+    icon: ProjectIcon | null
   }) => void
   onCancel: () => void
 }
+
+type IconMode = 'github' | 'template' | 'custom'
 
 /** Match `constellagent-dialog-*--exiting` duration (`--duration-exit`). */
 const EXIT_MS = 140
@@ -195,6 +206,71 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
   const [prLinkProvider, setPrLinkProvider] = useState<PrLinkProvider>(
     project.prLinkProvider ?? 'github'
   )
+
+  // --- Icon override state ---
+  const [iconMode, setIconMode] = useState<IconMode>(() => project.icon?.type ?? 'github')
+  const [templateGlyph, setTemplateGlyph] = useState(
+    () => (project.icon?.type === 'template' ? project.icon.glyph : DEFAULT_PROJECT_ICON_GLYPH)
+  )
+  const [templateColor, setTemplateColor] = useState(
+    () => (project.icon?.type === 'template' ? project.icon.color : DEFAULT_PROJECT_ICON_COLOR)
+  )
+  const [customDataUrl, setCustomDataUrl] = useState<string | null>(null)
+  const [customVersion, setCustomVersion] = useState(
+    () => (project.icon?.type === 'custom' ? project.icon.version : 0)
+  )
+  const [hasCustom, setHasCustom] = useState(project.icon?.type === 'custom')
+
+  // Load the stored custom icon preview when the project already has one.
+  useEffect(() => {
+    if (project.icon?.type !== 'custom') return
+    let cancelled = false
+    const api = getRendererApi()
+    void api?.projectIcon
+      ?.get(project.id)
+      .then((url) => {
+        if (!cancelled) setCustomDataUrl(url)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [project.id])
+
+  const handlePickCustomIcon = useCallback(async () => {
+    const api = getRendererApi()
+    if (!api?.projectIcon) return
+    try {
+      const result = await api.projectIcon.pick(project.id)
+      if (result.canceled) return
+      if (result.error) {
+        addToast({ id: crypto.randomUUID(), message: result.error, type: 'error' })
+        return
+      }
+      if (result.dataUrl) {
+        setCustomDataUrl(result.dataUrl)
+        setCustomVersion((v) => v + 1)
+        setHasCustom(true)
+        setIconMode('custom')
+      }
+    } catch (err) {
+      maybeShowStaleMainToast(err, addToast)
+    }
+  }, [project.id, addToast])
+
+  const handleRemoveCustomIcon = useCallback(async () => {
+    const api = getRendererApi()
+    try {
+      await api?.projectIcon?.clear(project.id)
+    } catch {
+      // best-effort
+    }
+    setCustomDataUrl(null)
+    setHasCustom(false)
+    setIconMode('github')
+  }, [project.id])
+
+  const PreviewGlyph = getProjectIconComponent(templateGlyph)
   const enabledSkills = Array.isArray(settings.skills) ? settings.skills.filter((s) => s?.enabled) : []
   const enabledSubagents = Array.isArray(settings.subagents) ? settings.subagents.filter((s) => s?.enabled) : []
 
@@ -316,11 +392,28 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
     // Strip _id before saving
     const stripped: StartupCommand[] = commands.map(({ _id, ...rest }) => rest)
     const normalized = normalizeStartupCommands(stripped)
+    const icon: ProjectIcon | null =
+      iconMode === 'template'
+        ? { type: 'template', glyph: templateGlyph, color: templateColor }
+        : iconMode === 'custom' && hasCustom
+          ? { type: 'custom', version: customVersion }
+          : null
     beginExit(() => onSave({
       startupCommands: normalized.length > 0 ? normalized : [],
       prLinkProvider,
+      icon,
     }))
-  }, [beginExit, commands, onSave, prLinkProvider])
+  }, [
+    beginExit,
+    commands,
+    onSave,
+    prLinkProvider,
+    iconMode,
+    templateGlyph,
+    templateColor,
+    hasCustom,
+    customVersion,
+  ])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -422,6 +515,105 @@ export function ProjectSettingsDialog({ project, onSave, onCancel }: Props) {
               </button>
             </div>
           </>
+        )}
+
+        <label className={styles.label}>Icon</label>
+        <div className={styles.hint}>
+          How this project appears in the sidebar header.
+        </div>
+        <div className={styles.iconModeRow} role="group" aria-label="Project icon source">
+          {(['github', 'template', 'custom'] as IconMode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              className={`${styles.iconModeBtn} ${iconMode === m ? styles.iconModeBtnActive : ''}`}
+              onClick={() => {
+                if (m === 'custom' && !hasCustom) {
+                  void handlePickCustomIcon()
+                  return
+                }
+                setIconMode(m)
+              }}
+            >
+              {m === 'github' ? 'GitHub' : m === 'template' ? 'Template' : 'Custom'}
+            </button>
+          ))}
+        </div>
+
+        {iconMode === 'github' && (
+          <div className={styles.hint}>
+            Uses the GitHub owner avatar, falling back to a generic glyph for non-GitHub remotes.
+          </div>
+        )}
+
+        {iconMode === 'template' && (
+          <div className={styles.iconTemplatePanel}>
+            <div className={styles.iconPreview} style={{ color: templateColor }}>
+              <PreviewGlyph size={22} strokeWidth={2} />
+            </div>
+            <div className={styles.glyphGrid}>
+              {PROJECT_ICON_GLYPHS.map((g) => {
+                const Glyph = getProjectIconComponent(g.id)
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    className={`${styles.glyphBtn} ${templateGlyph === g.id ? styles.glyphBtnActive : ''}`}
+                    title={g.label}
+                    aria-label={g.label}
+                    aria-pressed={templateGlyph === g.id}
+                    onClick={() => setTemplateGlyph(g.id)}
+                  >
+                    <Glyph size={16} strokeWidth={2} />
+                  </button>
+                )
+              })}
+            </div>
+            <div className={styles.colorRow}>
+              {PROJECT_ICON_COLORS.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`${styles.colorSwatch} ${templateColor === c.var ? styles.colorSwatchActive : ''}`}
+                  style={{ background: c.var }}
+                  title={c.label}
+                  aria-label={c.label}
+                  aria-pressed={templateColor === c.var}
+                  onClick={() => setTemplateColor(c.var)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {iconMode === 'custom' && (
+          <div className={styles.iconCustomPanel}>
+            <div className={styles.iconPreview}>
+              {customDataUrl ? (
+                <img src={customDataUrl} alt="" className={styles.iconPreviewImg} />
+              ) : (
+                <span className={styles.iconPreviewEmpty}>No image</span>
+              )}
+            </div>
+            <div className={styles.uploadRow}>
+              <button
+                type="button"
+                className={styles.uploadBtn}
+                onClick={() => void handlePickCustomIcon()}
+              >
+                {hasCustom ? 'Replace…' : 'Upload…'}
+              </button>
+              {hasCustom && (
+                <button
+                  type="button"
+                  className={styles.removeIconBtn}
+                  onClick={() => void handleRemoveCustomIcon()}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
         )}
 
         <label className={styles.label}>PR Link Provider</label>

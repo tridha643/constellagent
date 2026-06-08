@@ -38,6 +38,7 @@ import { SpotlightHost } from './components/Spotlight/SpotlightHost'
 import { AddToChatButton } from './components/AddToChatButton/AddToChatButton'
 import { useShortcuts } from './hooks/useShortcuts'
 import { usePrStatusPoller } from './hooks/usePrStatusPoller'
+import { useWorkspaceBarStats } from './hooks/useWorkspaceBarStats'
 import { useWorktreeSyncPoller } from './hooks/useWorktreeSyncPoller'
 import { useContextWindowPoller } from './hooks/useContextWindowPoller'
 import { useGraphiteStackPoller } from './hooks/useGraphiteStackPoller'
@@ -93,6 +94,7 @@ function DockEdgeTarget({
 export function App() {
   useShortcuts()
   usePrStatusPoller()
+  useWorkspaceBarStats()
   useWorktreeSyncPoller()
   useContextWindowPoller()
   useGraphiteStackPoller()

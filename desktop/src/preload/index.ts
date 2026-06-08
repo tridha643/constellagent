@@ -143,6 +143,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_GET_HEAD_HASH, worktreePath) as Promise<string>,
     getDefaultBranch: (repoPath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_DEFAULT_BRANCH, repoPath) as Promise<string>,
+    getWorkspaceBarStats: (worktreePath: string, defaultBranch?: string) =>
+      ipcRenderer.invoke(IPC.GIT_GET_WORKSPACE_BAR_STATS, worktreePath, defaultBranch) as Promise<import('../shared/git-types').WorkspaceBarStats>,
     showFileAtHead: (worktreePath: string, filePath: string) =>
       ipcRenderer.invoke(IPC.GIT_SHOW_FILE_AT_HEAD, worktreePath, filePath) as Promise<string | null>,
     getLog: (worktreePath: string, maxCount?: number) =>
@@ -563,6 +565,8 @@ const api = {
       ipcRenderer.invoke(IPC.GITHUB_GET_PR_REVIEW_COMMENTS, repoPath, prNumber) as Promise<import('../main/github-service').PrReviewComment[]>,
     listCloneRepoSuggestions: (query: string) =>
       ipcRenderer.invoke(IPC.GITHUB_CLONE_SUGGESTIONS, query) as Promise<GithubCloneRepoSuggestion[]>,
+    getRepoInfo: (repoPath: string) =>
+      ipcRenderer.invoke(IPC.GITHUB_GET_REPO_INFO, repoPath) as Promise<import('../shared/github-url').GithubRepoInfo | null>,
   },
 
   lsp: {
@@ -653,6 +657,17 @@ const api = {
       ipcRenderer.invoke(IPC.PROJECT_STARTUP_SETTINGS_DELETE, repoPath) as Promise<void>,
     path: () =>
       ipcRenderer.invoke(IPC.PROJECT_STARTUP_SETTINGS_PATH) as Promise<string>,
+  },
+
+  projectIcon: {
+    pick: (projectId: string) =>
+      ipcRenderer.invoke(IPC.PROJECT_ICON_PICK, projectId) as Promise<
+        import('../main/project-icon-service').PickCustomIconResult
+      >,
+    get: (projectId: string) =>
+      ipcRenderer.invoke(IPC.PROJECT_ICON_GET, projectId) as Promise<string | null>,
+    clear: (projectId: string) =>
+      ipcRenderer.invoke(IPC.PROJECT_ICON_CLEAR, projectId) as Promise<void>,
   },
 
   /** Pi SDK agent thread (main-process PiSdkDriver + JsonCatalogStore under userData/pi-gui-data). */

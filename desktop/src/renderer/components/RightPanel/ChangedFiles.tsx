@@ -938,9 +938,6 @@ const FileRow = memo(function FileRow({
   const parts = file.path.split('/')
   const fileName = parts.pop()
   const dir = parts.length > 0 ? parts.join('/') + '/' : ''
-  const additions = file.additions ?? 0
-  const deletions = file.deletions ?? 0
-  const hasStats = additions > 0 || deletions > 0
 
   return (
     <div
@@ -963,12 +960,6 @@ const FileRow = memo(function FileRow({
         {dir && <span className={styles.changeDir}>{dir}</span>}
         <span className={styles.changeFullPathForFind}>{file.path}</span>
       </span>
-      {hasStats && (
-        <span className={styles.changeStats} aria-label={`${additions} additions, ${deletions} deletions`}>
-          {additions > 0 && <span className={styles.changeStatAdd}>+{additions}</span>}
-          {deletions > 0 && <span className={styles.changeStatDel}>-{deletions}</span>}
-        </span>
-      )}
       <span className={styles.fileActions}>
         <Tooltip label="Open side-by-side diff">
           <button

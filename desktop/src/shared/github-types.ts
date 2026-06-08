@@ -16,6 +16,12 @@ export interface PrInfo {
   isApproved: boolean
   isChangesRequested: boolean
   updatedAt: string
+  /** PR author login (for the workspace bar's PR-mode author + avatar). */
+  authorLogin?: string
+  /** Aggregate diff additions reported by the PR (PR-mode `+N`). */
+  additions?: number
+  /** Aggregate diff deletions reported by the PR (PR-mode `-N`). */
+  deletions?: number
 }
 
 export interface PullRequestRepoRef {

@@ -2,6 +2,8 @@ import type { editor } from 'monaco-editor'
 import type { ServiceStatus } from '@shared/service-types'
 import type { LinearIssueNode } from '../linear/linear-api'
 import type { LinkedPullRequest, PrInfo } from '@shared/github-types'
+import type { GithubRepoInfo } from '@shared/github-url'
+import type { WorkspaceBarStats } from '@shared/git-types'
 import type { WorkspaceSyncInfo } from '@shared/worktree-sync-types'
 import type { ContextWindowData } from '@shared/context-window-types'
 import type { UsageLimitsData } from '@shared/usage-limits-types'
@@ -75,12 +77,24 @@ export interface SubagentEntry {
   enabled: boolean
 }
 
+/**
+ * Per-project icon override. Absent ⇒ resolve the GitHub owner avatar, then a
+ * fallback glyph. `template` renders a bundled Lucide glyph tinted by a theme
+ * accent; `custom` points at a PNG copied into userData (the `version` busts the
+ * <img> cache when the file is replaced).
+ */
+export type ProjectIcon =
+  | { type: 'template'; glyph: string; color: string }
+  | { type: 'custom'; version: number }
+
 export interface Project {
   id: string
   name: string
   repoPath: string
   startupCommands?: StartupCommand[]
   prLinkProvider?: PrLinkProvider
+  /** Per-project icon override (template glyph or custom PNG). */
+  icon?: ProjectIcon
   graphiteNewBranchSource?: GraphiteNewBranchSource
   graphitePreferredTrunk?: string | null
   /** Folder the star toggle maps to (one per project). Migration seeds this. */
@@ -780,6 +794,19 @@ export interface AppState {
   ghAvailability: Map<string, boolean>
   /** Resolved default branch per project id (`git symbolic-ref refs/remotes/origin/HEAD`). */
   defaultBranchByProjectId: Map<string, string>
+  /**
+   * Resolved GitHub `{ owner, name }` per project id for the sidebar avatar + header.
+   * `null` means resolved-but-not-GitHub (name fallback); absent means not yet looked up.
+   */
+  repoInfoByProjectId: Map<string, GithubRepoInfo | null>
+  /** Local-mode workspace bar stats keyed by workspace id (commit subject + working-tree-inclusive numstat). */
+  workspaceBarStatsMap: Map<string, WorkspaceBarStats>
+  /**
+   * Manual local⇄PR face override per workspace id (ephemeral; resets on reload).
+   * Absent ⇒ the bar follows the auto mode derived from PR state. Cleared when a
+   * toggle lands back on the auto mode.
+   */
+  workspaceBarModeOverride: Map<string, 'local' | 'pr'>
   gitFileStatuses: Map<string, Map<string, string>>
   workingTreeDiffSnapshots: Map<string, WorkingTreeDiffSnapshot>
   /** Per-workspace worktree sync status (key = workspace id) */
@@ -981,6 +1008,12 @@ export interface AppState {
   setPrStatuses: (projectId: string, statuses: Record<string, PrInfo | null>) => void
   setGhAvailability: (projectId: string, available: boolean) => void
   setProjectDefaultBranch: (projectId: string, branch: string) => void
+  /** Cache resolved GitHub repo info (or `null` for non-GitHub) per project. */
+  setProjectRepoInfo: (projectId: string, info: GithubRepoInfo | null) => void
+  /** Update local-mode workspace bar stats for a workspace (dirty-checked). */
+  setWorkspaceBarStats: (workspaceId: string, stats: WorkspaceBarStats) => void
+  /** Flip the workspace bar between local and PR faces (ephemeral override). */
+  toggleWorkspaceBarMode: (workspaceId: string) => void
   setWorktreeSyncStatus: (projectId: string, workspaces: Record<string, WorkspaceSyncInfo>) => void
   /** Persist which workspace is spotlighting into a project's repo root (null = none). */
   setSpotlightWorkspace: (projectId: string, workspaceId: string | null) => void

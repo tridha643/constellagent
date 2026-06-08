@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodeView Migration — Plan (Locked)</title>
+<style>
+  :root{
+    --bg:#0c0d10; --bg2:#121419; --panel:#15171d; --panel2:#1a1d24;
+    --line:#23262f; --line2:#2c3038;
+    --ink:#e6e8ee; --ink-dim:#a3a8b4; --ink-faint:#6b7180;
+    --green:#34d058; --green-dim:#34d05822; --red:#ff5a5a; --red-dim:#ff5a5a1f;
+    --blue:#5aa9ff; --lav:#b794f6; --teal:#36d6c3; --amber:#f5a623; --pink:#ff7ab6;
+    --mono:"SF Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:linear-gradient(180deg,#0a0b0e,#0c0d10 240px);color:var(--ink);
+    font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1080px;margin:0 auto;padding:48px 28px 120px;}
+  code,.mono{font-family:var(--mono);font-size:.86em;}
+  a{color:var(--blue);text-decoration:none}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em;font-weight:680}
+  h2{font-size:14px;text-transform:uppercase;letter-spacing:.14em;color:var(--ink-faint);
+    margin:48px 0 16px;font-weight:600;display:flex;align-items:center;gap:10px}
+  h2::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green)}
+  .sub{color:var(--ink-dim);font-size:15px;max-width:760px}
+  .badge{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;
+    padding:5px 11px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);
+    color:var(--ink-dim);letter-spacing:.04em}
+  .badge.lock{color:var(--green);border-color:#2f5e3a;background:#11261a}
+  .badge.lock b{color:var(--green)}
+  .topbadges{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 4px}
+  .dot{width:6px;height:6px;border-radius:50%;display:inline-block}
+
+  /* TL;DR hero */
+  .hero{margin-top:30px;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+    background:linear-gradient(135deg,#14171e,#101218)}
+  .hero .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--line)}
+  .hero .cell{background:var(--panel);padding:22px 22px}
+  .hero .big{font-size:34px;font-weight:720;letter-spacing:-.02em;font-family:var(--mono)}
+  .hero .big.red{color:var(--red)} .hero .big.green{color:var(--green)} .hero .big.blue{color:var(--blue)}
+  .hero .lbl{color:var(--ink-faint);font-size:12px;text-transform:uppercase;letter-spacing:.1em;margin-top:6px}
+  .hero .note{padding:16px 22px;color:var(--ink-dim);font-size:13.5px;border-top:1px solid var(--line)}
+
+  /* arch columns */
+  .arch{display:grid;grid-template-columns:1fr 56px 1fr;gap:0;align-items:stretch;margin-top:6px}
+  .col{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+  .col.old{border-color:#3a2630}.col.new{border-color:#2a4a35}
+  .col h3{margin:0;padding:14px 18px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;
+    border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  .col.old h3{background:#1c1418;color:#ff9bb0}.col.new h3{background:#12211a;color:#7ee2a0}
+  .col ul{margin:0;padding:14px 18px 16px;list-style:none}
+  .col li{padding:7px 0;font-size:13.5px;color:var(--ink-dim);border-bottom:1px dashed var(--line);
+    display:flex;gap:9px;align-items:flex-start}
+  .col li:last-child{border-bottom:0}
+  .col li .f{font-family:var(--mono);color:var(--ink);font-size:12.5px}
+  .col .loc{font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-left:auto;white-space:nowrap}
+  .arrow{display:flex;align-items:center;justify-content:center;color:var(--green);font-size:24px}
+  .strike .f{text-decoration:line-through;text-decoration-color:#ff5a5a88;color:var(--ink-faint)}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:13.5px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--panel2);color:var(--ink-dim);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+  td:first-child{white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  td .mono{color:var(--teal)}
+  .tag{font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:6px;border:1px solid var(--line2);color:var(--ink-dim)}
+  .tag.dec{color:var(--green);border-color:#2f5e3a;background:#11261a}
+  .tag.res{color:var(--blue);border-color:#26456a;background:#101a26}
+
+  /* code block */
+  pre{background:#0a0b0e;border:1px solid var(--line);border-radius:12px;padding:18px 20px;overflow:auto;
+    font-family:var(--mono);font-size:12.5px;line-height:1.7;margin:0}
+  pre .c{color:var(--ink-faint)} pre .k{color:var(--lav)} pre .s{color:var(--pink)}
+  pre .fn{color:var(--blue)} pre .p{color:var(--teal)} pre .add{color:var(--green)} pre .rem{color:var(--red)}
+
+  .cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px 18px}
+  .card h4{margin:0 0 8px;font-size:13px;color:var(--ink)}
+  .card p{margin:0;font-size:12.5px;color:var(--ink-dim)}
+  .card .k{font-family:var(--mono);font-size:11px;color:var(--amber)}
+
+  .pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:7px;
+    background:var(--green-dim);color:var(--green);border:1px solid #2f5e3a}
+  .pill.rem{background:var(--red-dim);color:var(--red);border-color:#5e2f2f}
+  .pill.mod{background:#1a2230;color:var(--blue);border-color:#26456a}
+
+  .note-line{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px;color:var(--ink-dim)}
+  .note-line:last-child{border:0}
+  .note-line b{color:var(--ink)}
+  .risk{color:var(--amber)}
+  footer{margin-top:60px;color:var(--ink-faint);font-size:12px;border-top:1px solid var(--line);padding-top:18px;font-family:var(--mono)}
+  @media(max-width:820px){.hero .row{grid-template-columns:1fr}.arch{grid-template-columns:1fr}.arrow{transform:rotate(90deg);height:40px}.cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbadges">
+    <span class="badge lock"><span class="dot" style="background:var(--green)"></span><b>STATUS: LOCKED</b> · post-grill</span>
+    <span class="badge mono">@pierre/diffs@1.2.7 · already installed</span>
+    <span class="badge mono">1 PR · one-shot</span>
+  </div>
+
+  <h1>Migrating our Pierre diff surface to <code style="color:var(--teal)">CodeView</code></h1>
+  <p class="sub">Replace ~3,300 lines of hand-rolled diff virtualization (<code>DiffEditor</code> + <code>DiffFileSection</code> + <code>HunkReview</code> + <code>diff-viewer-model.ts</code>) with Pierre's <code>CodeView</code> — the virtualization-first single-scroll surface that already ships in the version we have installed. Modeled on <a href="https://github.com/tanvesh01/rudu">tanvesh01/rudu</a>'s 366-line <code>patch-code-view.tsx</code>.</p>
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="row">
+      <div class="cell"><div class="big red">~3,667</div><div class="lbl">LOC of custom windowing today<br>across 4 files</div></div>
+      <div class="cell"><div class="big green">~360</div><div class="lbl">rudu's whole review surface<br>on CodeView</div></div>
+      <div class="cell"><div class="big blue">0</div><div class="lbl">refs to CodeView in our src<br>(we ship it, never use it)</div></div>
+    </div>
+    <div class="note">
+      <b style="color:var(--ink)">The one fact that drives the design:</b> CodeView is the supported API for a multi-file diff review surface — it already does intra-file (line-range) virtualization, anti-blanking, scroll anchoring, element pooling, and selection — <b style="color:var(--green)">and we already have it installed.</b> Our custom layer reimplements a worse subset of it, and only windows <em>between</em> files (a single 5k-line file mounts every row today).
+    </div>
+  </div>
+
+  <!-- WHY -->
+  <h2>Why this is worth doing — the 3 problems that actually bite</h2>
+  <div class="cards">
+    <div class="card"><h4>① File-level windowing only</h4><p>Once a file enters the window its <span class="k">whole &lt;FileDiff&gt;</span> mounts. A 5k-line file = 5k DOM rows. CodeView renders only visible <em>lines</em> via binary search.</p></div>
+    <div class="card"><h4>② Two divergent copies</h4><p><span class="k">DiffEditor</span> &amp; <span class="k">HunkReview</span> each re-implement window-building, scroll-anchor capture/restore, and a load queue. Bugs fixed in one drift from the other.</p></div>
+    <div class="card"><h4>③ Hand-maintained guesses</h4><p><span class="k">estimateDiffFileHeight</span> multiplies magic constants then patches with measured heights. Wrong estimates cascade into scroll jumps. CodeView measures deltas internally.</p></div>
+  </div>
+
+  <!-- ARCHITECTURE -->
+  <h2>Before → After</h2>
+  <div class="arch">
+    <div class="col old">
+      <h3>Today <span class="loc" style="color:#ff9bb0">~3,667 LOC</span></h3>
+      <ul>
+        <li class="strike"><span class="f">diff-viewer-model.ts</span><span class="loc">368 · delete</span></li>
+        <li><span class="f">DiffEditor.tsx</span><span class="loc">1056 · gut</span></li>
+        <li><span class="f">DiffFileSection.tsx</span><span class="loc">965 · gut</span></li>
+        <li><span class="f">HunkReview.tsx</span><span class="loc">1277 · gut</span></li>
+        <li class="strike"><span class="f">pumpFileDiffQueue (render)</span><span class="loc">delete</span></li>
+        <li class="strike"><span class="f">WorkerPoolContextProvider</span><span class="loc">delete</span></li>
+        <li class="strike"><span class="f">PierreSelectedRange adapter</span><span class="loc">delete</span></li>
+      </ul>
+    </div>
+    <div class="arrow">→</div>
+    <div class="col new">
+      <h3>After <span class="loc" style="color:#7ee2a0">~1 component / surface</span></h3>
+      <ul>
+        <li><span class="f">&lt;CodeView items={…} /&gt;</span><span class="loc">×2 surfaces</span></li>
+        <li><span class="f">usePatchParsing()</span><span class="loc">new · worker</span></li>
+        <li><span class="f">pierre-patch-parser-worker.ts</span><span class="loc">new</span></li>
+        <li><span class="f">buildLineAnnotations()</span><span class="loc">comments + hunk-actions</span></li>
+        <li><span class="f">buildCodeViewVersion()</span><span class="loc">per-item hash</span></li>
+        <li><span class="f">item.collapsed</span><span class="loc">native</span></li>
+        <li><span class="f">ensureFileDiffLoaded → addItems()</span><span class="loc">kept · fetch only</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- DECISIONS -->
+  <h2>Locked decisions</h2>
+  <table>
+    <tr><th>Topic</th><th>Decision</th><th>Source</th></tr>
+    <tr><td><b>Sequencing</b></td><td>Convert <span class="mono">DiffEditor</span> + <span class="mono">HunkReview</span> and delete <span class="mono">diff-viewer-model.ts</span> in <b>one PR</b>. No interim fork of a shared model; test matrix is the safety net.</td><td><span class="tag dec">GRILL</span></td></tr>
+    <tr><td><b>Parsing</b></td><td><span class="mono">parsePatchFiles(trimPatchContext(patch,3), key)</span> in a <b>Web Worker</b>, main-thread fallback. Mirrors rudu's <span class="mono">usePatchParsing</span>.</td><td><span class="tag res">RUDU</span></td></tr>
+    <tr><td><b>Progressive load</b></td><td>Keep per-file patch <em>fetch</em> (<span class="mono">ensureFileDiffLoaded</span>), feed via <span class="mono">CodeViewHandle.addItems()</span>. Render windowing is now CodeView's job — fetch queue stays, render queue dies.</td><td><span class="tag res">DEFS</span></td></tr>
+    <tr><td><b>Accept / reject</b></td><td>Already a Pierre <em>annotation</em> at hunk-start (<span class="mono">getHunkActionLineKey</span>). Inject into each item's <span class="mono">annotations[]</span>, render in shared <span class="mono">renderAnnotation</span>. Git mutation (<span class="mono">diffAcceptRejectHunk</span>) sits below render — untouched. <b>No custom header.</b></td><td><span class="tag res">OUR CODE</span></td></tr>
+    <tr><td><b>Selection</b></td><td>One controlled <span class="mono">selectedLines</span> + <span class="mono">onSelectedLinesChange</span> + <span class="mono">onGutterUtilityClick</span> across all items. Deletes <span class="mono">normalizeDiffSelection</span> / <span class="mono">pendingRangeToPierreSelection</span> / per-file <span class="mono">LineSelectionManager</span>.</td><td><span class="tag res">RUDU</span></td></tr>
+    <tr><td><b>Height estimate</b></td><td>Delete magic constants. Declarative <span class="mono">options.itemMetrics</span> + CodeView measured deltas + <span class="mono">stickyHeaders</span>.</td><td><span class="tag res">RUDU</span></td></tr>
+    <tr><td><b>Collapsed files</b></td><td>Native <span class="mono">item.collapsed?: boolean</span> on <span class="mono">CodeViewDiffItem</span>. Maps <span class="mono">autoCollapseFiles</span>/overrides directly — no feature loss.</td><td><span class="tag res">DEFS</span></td></tr>
+    <tr><td><b>Re-render granularity</b></td><td>Per-item <span class="mono">version</span> hash (rudu's <span class="mono">buildCodeViewVersion</span>): cacheKey + add/del counts + annotation signature + draft signature.</td><td><span class="tag res">RUDU</span></td></tr>
+    <tr><td><b>Worker pool</b></td><td>CodeView owns its highlight pool (<span class="mono">WorkerPoolManager</span>; <span class="mono">disableWorkerPool</span> opt). <b>Delete</b> our <span class="mono">WorkerPoolContextProvider</span> + <span class="mono">createPierreDiffWorker</span>; <b>add</b> a separate <em>parser</em> worker.</td><td><span class="tag res">DEFS</span></td></tr>
+    <tr><td><b>Tab scroll restore</b></td><td>One persistent <span class="mono">&lt;CodeView&gt;</span> mount/tab; persist <span class="mono">scrollTop</span> via <span class="mono">onScroll</span>; restore via <span class="mono">scrollTo({type:"position"})</span> + controlled <span class="mono">selectedLines</span>.</td><td><span class="tag dec">DEFAULT</span></td></tr>
+  </table>
+
+  <!-- REFERENCE PATTERN -->
+  <h2>The target shape (rudu, verified)</h2>
+  <pre><span class="c">// items: one controlled record per file — CodeView virtualizes the lines inside</span>
+<span class="k">const</span> items = useMemo&lt;<span class="p">CodeViewItem</span>&lt;Ann&gt;[]&gt;(() =&gt;
+  files.map((file) =&gt; ({
+    id: getCodeViewItemId(file.fileDiff.name),
+    type: <span class="s">"diff"</span>,
+    fileDiff: file.fileDiff,            <span class="c">// FileDiffMetadata from parsePatchFiles (worker)</span>
+    annotations: buildLineAnnotations(file), <span class="c">// comments + draft + hunk accept/reject</span>
+    collapsed: collapsedPaths.has(file.path), <span class="c">// native collapse</span>
+    version: buildCodeViewVersion(file),     <span class="c">// hash → re-render just this item</span>
+  })), [files, collapsedPaths]);
+
+&lt;<span class="fn">CodeView</span>
+  ref={codeViewRef}                  <span class="c">// addItems · scrollTo · setSelectedLines</span>
+  items={items}                       <span class="c">// controlled mode</span>
+  options={options}                   <span class="c">// theme · diffStyle · itemMetrics · stickyHeaders</span>
+  selectedLines={selectedLines}       <span class="c">// controlled → comment composer</span>
+  onSelectedLinesChange={…}
+  renderAnnotation={renderAnnotation} <span class="c">// comment threads + accept/reject buttons</span>
+  renderHeaderMetadata={renderHeaderMetadata} <span class="c">// our per-file badges</span>
+/&gt;</pre>
+
+  <!-- SCOPE -->
+  <h2>Scope guardrails</h2>
+  <div class="note-line"><span class="pill mod">IN</span><span>The two review surfaces (<b>Review Changes / DiffEditor</b>, <b>HunkReview</b>) + shared <code>diff-viewer-model.ts</code>.</span></div>
+  <div class="note-line"><span class="pill rem">DON'T TOUCH</span><span>Compact non-Pierre previews (<code>diff-model.ts</code>, <code>ConductorDiffBody</code>, <code>CompactDiffPreview</code>); the <code>codex-absolutely-dark</code> theme + <code>registerPierreThemes</code>; <code>@pierre/trees</code> FileTree; the hunk git-patch mapping in <code>git-hunk-patch.ts</code> (below render layer).</span></div>
+  <div class="note-line"><span class="pill">PRESERVE</span><span>Annotation persistence (<code>annotation-service.ts</code> / review DB); the Cmd+Shift+R <b>selectable-human-comments</b> contract; accept/reject buttons; header metadata/badges.</span></div>
+
+  <!-- TEST MATRIX -->
+  <h2>Test matrix (the one-shot safety net)</h2>
+  <table>
+    <tr><th>Behavior</th><th>How</th></tr>
+    <tr><td>Large-file scroll, no blanking</td><td>Open a 5k+ line diff; fast-scroll/jump; assert no blank frames, sticky header stays.</td></tr>
+    <tr><td>Multi-file review (Cmd+Shift+R)</td><td><code>bun run test:review:e2e</code> (e2e/hunk-review.spec.ts) — both surfaces.</td></tr>
+    <tr><td>Select → comment composer</td><td>Line-select via gutter → composer opens at lowest line → persists to review DB → survives reload.</td></tr>
+    <tr><td>Hunk accept / reject</td><td>Accept one hunk → item re-renders with new <code>fileDiff</code> + bumped version → <code>git apply</code> staged; reject path mirrors.</td></tr>
+    <tr><td>Collapsed / auto-collapse</td><td>Toggle <code>item.collapsed</code>; auto-collapse large files; expand restores lines.</td></tr>
+    <tr><td>Tab-switch scroll restore</td><td>Scroll, switch tab, return → scrollTop + selection restored via <code>scrollTo</code>.</td></tr>
+    <tr><td>Progressive fetch</td><td>50+ file diff loads incrementally via <code>addItems()</code> without blocking the first paint.</td></tr>
+  </table>
+
+  <!-- VERIFY -->
+  <h2>Verification</h2>
+  <pre><span class="p">bun</span> run build 2&gt;&amp;1 | tail -40
+<span class="p">bun</span> run test:review:e2e              <span class="c"># e2e/hunk-review.spec.ts</span>
+<span class="p">bunx</span> playwright test e2e/file-editor.spec.ts --project=electron
+<span class="c"># manual: large-file scroll · sticky headers · select→comment · accept/reject · tab-switch restore</span></pre>
+
+  <!-- RISKS -->
+  <h2>Risks</h2>
+  <div class="note-line"><span class="risk">▲</span><span><b>One-shot blast radius.</b> Both surfaces + shared model in one PR. Mitigated by the e2e matrix above; no staged rollback by choice.</span></div>
+  <div class="note-line"><span class="risk">▲</span><span><b>Accept/reject controlled-update timing.</b> The one capability rudu has no reference for. Low-risk (it's already an annotation) but the <code>fileDiff</code>-replace + <code>version</code>-bump round-trip on stage/discard needs explicit e2e coverage.</span></div>
+  <div class="note-line"><span class="risk">▲</span><span><b>Secondary refs unverified.</b> modem/<code>hunk</code> + the OpenClaw reviewer weren't pinned down (bad slug / not discoverable). Not load-bearing — decision rests on the article + rudu + our installed type defs, all three confirmed.</span></div>
+
+  <footer>desktop/CODEVIEW_MIGRATION.md · grounded via nia (tanvesh01/rudu) + pierre.computer/writing/on-rendering-diffs + node_modules/@pierre/diffs type defs · grilled, all 5 open questions resolved · status: LOCKED</footer>
+
+</div>
+</body>
+</html>

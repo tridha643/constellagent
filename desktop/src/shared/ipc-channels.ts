@@ -33,6 +33,8 @@ export const IPC = {
   GIT_GET_CURRENT_BRANCHES: 'git:get-current-branches',
   GIT_GET_HEAD_HASH: 'git:get-head-hash',
   GIT_GET_DEFAULT_BRANCH: 'git:get-default-branch',
+  /** Local-mode workspace bar stats: commit subject + working-tree-inclusive numstat vs merge-base. */
+  GIT_GET_WORKSPACE_BAR_STATS: 'git:get-workspace-bar-stats',
   GIT_SHOW_FILE_AT_HEAD: 'git:show-file-at-head',
   GIT_GET_LOG: 'git:get-log',
   GIT_GET_COMMIT_DIFF: 'git:get-commit-diff',
@@ -158,6 +160,8 @@ export const IPC = {
   GITHUB_REOPEN_PR: 'github:reopen-pr',
   GITHUB_GET_PR_REVIEW_COMMENTS: 'github:get-pr-review-comments',
   GITHUB_CLONE_SUGGESTIONS: 'github:clone-suggestions',
+  /** Resolve `origin` to GitHub `{ owner, name }` for the sidebar avatar + header (cached). */
+  GITHUB_GET_REPO_INFO: 'github:get-repo-info',
 
   // LSP operations
   LSP_GET_PORT: 'lsp:get-port',
@@ -239,6 +243,11 @@ export const IPC = {
   PROJECT_STARTUP_SETTINGS_SET: 'project-startup-settings:set',
   PROJECT_STARTUP_SETTINGS_DELETE: 'project-startup-settings:delete',
   PROJECT_STARTUP_SETTINGS_PATH: 'project-startup-settings:path',
+
+  // Per-project icon override (custom PNG copied into userData/project-icons)
+  PROJECT_ICON_PICK: 'project-icon:pick',
+  PROJECT_ICON_GET: 'project-icon:get',
+  PROJECT_ICON_CLEAR: 'project-icon:clear',
 
   // Pi SDK (in-process agent UI; catalog + session data under app userData only)
   PI_GET_STATE: 'pi:get-state',
