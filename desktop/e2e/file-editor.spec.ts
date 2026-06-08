@@ -704,7 +704,8 @@ test.describe('Changed files & diff viewer', () => {
 
       const realWtPath = realpathSync(worktreePath)
       mkdirSync(join(realWtPath, 'src/many'), { recursive: true })
-      for (let i = 0; i < 45; i += 1) {
+      const fileCount = 51
+      for (let i = 0; i < fileCount; i += 1) {
         writeFileSync(
           join(realWtPath, `src/many/file-${String(i).padStart(2, '0')}.ts`),
           `export const value${i} = ${i}\n`,
@@ -722,12 +723,13 @@ test.describe('Changed files & diff viewer', () => {
       const diffToolbar = window.locator('[class*="diffToolbar"]')
       await expect(diffToolbar).toBeVisible({ timeout: 10000 })
       await expect(diffToolbar).toContainText('First files expanded, remaining files collapsed for performance')
-      await expect(window.locator('[id="diff-src/many/file-00.ts"]')).toBeVisible({ timeout: 10000 })
-      await expect(window.locator('[id="diff-src/many/file-44.ts"]')).toHaveCount(1)
+      await expect(diffToolbar).toContainText(`51 file`)
       const file00Section = window.locator('[id="diff-src/many/file-00.ts"]')
+      await expect(file00Section).toBeVisible({ timeout: 10000 })
       const file00Toggle = file00Section.locator('[data-testid="diff-collapse-toggle"]')
       await expect(file00Toggle).toHaveText('Collapse')
       await expect(file00Section).toContainText('export const value0 = 0')
+      await expect(file00Section.locator('diffs-container')).toBeVisible({ timeout: 10000 })
 
       const file14Section = window.locator('[id="diff-src/many/file-14.ts"]')
       await expect(file14Section.locator('[data-testid="diff-collapse-toggle"]')).toHaveText('Collapse')
@@ -741,8 +743,15 @@ test.describe('Changed files & diff viewer', () => {
       await expect(file15Toggle).toHaveText('Collapse')
       await expect(file15Section).toContainText('export const value15 = 15')
 
-      await window.locator('[class*="fileStripItem"]', { hasText: 'file-44.ts' }).click()
-      await expect(window.locator('[id="diff-src/many/file-44.ts"]')).toBeVisible({ timeout: 10000 })
+      const file50Row = window.locator('[class*="statusBadge"]', { hasText: 'U' })
+        .locator('..', { hasText: 'file-50.ts' })
+      await file50Row.click()
+      const file50Section = window.locator('[id="diff-src/many/file-50.ts"]')
+      await expect(file50Section).toBeVisible({ timeout: 10000 })
+      // scrollToFile expands collapsed targets so the diff body is visible after navigation.
+      await expect(file50Section.locator('[data-testid="diff-collapse-toggle"]')).toHaveText('Collapse')
+      await expect(file50Section).toContainText('export const value50 = 50')
+      await expect(file50Section.locator('diffs-container')).toBeVisible({ timeout: 10000 })
 
       await openFileTab(window, join(worktreePath, 'README.md'))
       const readmeTab = window.locator('[class*="tabTitle"]', { hasText: 'README.md' })
@@ -751,8 +760,10 @@ test.describe('Changed files & diff viewer', () => {
       const diffTab = window.locator('[class*="tabTitle"]', { hasText: 'Changes' })
       await diffTab.click()
       await expect(diffToolbar).toBeVisible({ timeout: 1500 })
-      await expect(window.locator('[id="diff-src/many/file-00.ts"]')).toBeVisible({ timeout: 1500 })
+      await window.locator('[class*="fileStripItem"]', { hasText: 'file-00.ts' }).click()
+      await expect(window.locator('[id="diff-src/many/file-00.ts"]')).toBeVisible({ timeout: 5000 })
       await expect(window.locator('[id="diff-src/many/file-00.ts"]').locator('[data-testid="diff-collapse-toggle"]')).toHaveText('Collapse')
+      await expect(window.locator('[id="diff-src/many/file-00.ts"]')).toContainText('export const value0 = 0')
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

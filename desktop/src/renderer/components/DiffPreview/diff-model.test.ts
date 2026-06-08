@@ -44,6 +44,49 @@ describe('diff preview model', () => {
     expect(parsed.deletions).toBe(0)
   })
 
+  it('caps preview rows without losing full-file stat counts', () => {
+    const patch = `diff --git a/big.ts b/big.ts
+index 1111111..2222222 100644
+--- a/big.ts
++++ b/big.ts
+@@ -1,6 +1,6 @@
+ unchanged 1
+-old 1
++new 1
+ unchanged 2
+-old 2
++new 2
+ unchanged 3
+-old 3
++new 3
+`
+    const parsed = parseDiffRows(patch, { maxRows: 2, tokenizeModifiedRows: false })
+
+    expect(parsed.rows).toHaveLength(2)
+    expect(parsed.additions).toBe(3)
+    expect(parsed.deletions).toBe(3)
+    expect(parsed.rows[1]?.type).toBe('modified')
+    expect(parsed.rows[1]?.leftTokens).toBeUndefined()
+  })
+
+  it('stops streaming parse once maxRows is reached', () => {
+    const hunkBody = Array.from({ length: 20 }, (_, index) => (
+      ` unchanged ${index}\n-old ${index}\n+new ${index}`
+    )).join('\n')
+    const patch = `diff --git a/big.ts b/big.ts
+index 1111111..2222222 100644
+--- a/big.ts
++++ b/big.ts
+@@ -1,60 +1,60 @@
+${hunkBody}
+`
+    const parsed = parseDiffRows(patch, { maxRows: 4, tokenizeModifiedRows: false })
+
+    expect(parsed.rows).toHaveLength(4)
+    expect(parsed.additions).toBe(20)
+    expect(parsed.deletions).toBe(20)
+  })
+
   it('falls back to raw stats for invalid patches', () => {
     const patch = `not a structured patch
 +added

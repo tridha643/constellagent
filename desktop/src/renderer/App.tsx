@@ -371,6 +371,8 @@ export function App() {
   // All file tabs — kept mounted so unsaved edits, scroll position, cursor,
   // selection, and undo stack survive tab switches (mirrors terminal pattern).
   const allFileTabs = allTabs.filter((t): t is Extract<typeof t, { type: 'file' }> => t.type === 'file')
+  // Keep diff tabs mounted so scroll position and loaded Pierre diffs survive tab switches.
+  const allDiffTabs = allTabs.filter((t): t is Extract<typeof t, { type: 'diff' }> => t.type === 'diff')
 
   return (
     <MotionConfig reducedMotion="user">
@@ -489,6 +491,28 @@ export function App() {
                     )
                   })}
 
+                  {allDiffTabs.map((t) => {
+                    const ws = workspaces.find((w) => w.id === t.workspaceId)
+                    if (!ws) return null
+                    return (
+                      <ErrorBoundary
+                        key={t.commitHash || t.id}
+                        fallback={
+                          <div className={styles.diffViewerError}>
+                            Couldn&apos;t load changes. Reload the window (⌘R) or switch tabs and try again.
+                          </div>
+                        }
+                      >
+                        <DiffViewer
+                          worktreePath={ws.worktreePath}
+                          active={t.id === activeTabId}
+                          commitHash={t.commitHash}
+                          commitMessage={t.commitMessage}
+                        />
+                      </ErrorBoundary>
+                    )
+                  })}
+
                   {!activeTab ? (
                     <div className={styles.welcomeWrap}>
                       <FloatingPanel.Surface className={styles.welcome}>
@@ -502,18 +526,7 @@ export function App() {
                     </div>
                   ) : (
                     <>
-                      {/* File editors are rendered above (mount-all pattern). */}
-
-                      {/* Render active diff viewer */}
-                      {activeTab?.type === 'diff' && workspace && (
-                        <DiffViewer
-                          key={activeTab.commitHash || activeTab.id}
-                          worktreePath={workspace.worktreePath}
-                          active={true}
-                          commitHash={activeTab.commitHash}
-                          commitMessage={activeTab.commitMessage}
-                        />
-                      )}
+                      {/* File and diff editors are rendered above (mount-all pattern). */}
 
                       {/* Render full-file (VS Code-style) diff viewer */}
                       {activeTab?.type === 'fileDiff' && workspace && (

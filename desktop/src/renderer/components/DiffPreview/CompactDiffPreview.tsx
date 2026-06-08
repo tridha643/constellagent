@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import type { DiffRow, DiffToken } from './diff-model'
-import { parseDiffRows } from './diff-model'
+import { MAX_COMPACT_ROWS, parseDiffRows } from './diff-model'
 import styles from './CompactDiffPreview.module.css'
 
 const MAX_CONTEXT_ROWS = 2
@@ -145,7 +145,10 @@ export function CompactDiffPreview({
   className?: string
   testId?: string
 }) {
-  const parsed = useMemo(() => (rows ? null : parseDiffRows(patch ?? '')), [patch, rows])
+  const parsed = useMemo(
+    () => (rows ? null : parseDiffRows(patch ?? '', { maxRows: MAX_COMPACT_ROWS })),
+    [patch, rows],
+  )
   const sourceRows = rows ?? parsed?.rows ?? []
   const visibleRows = useMemo(() => getCompactVisibleRows(sourceRows), [sourceRows])
   const noNewline = hasNoNewline ?? parsed?.hasNoNewline ?? false

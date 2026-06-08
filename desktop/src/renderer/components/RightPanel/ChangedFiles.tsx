@@ -1,16 +1,13 @@
-import { memo, useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { Columns2, Eye } from 'lucide-react'
+import { memo, useEffect, useState, useCallback, useRef } from 'react'
+import { Columns2 } from 'lucide-react'
 import { useAppStore } from '../../store/app-store'
 import { STATUS_LABELS } from '../../../shared/status-labels'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { PiIcon } from '../Icons/PiIcon'
-import { CompactDiffPreview } from '../DiffPreview/CompactDiffPreview'
-import { buildDiffPreviewModel, type DiffPreviewModel } from '../DiffPreview/diff-model'
 import styles from './RightPanel.module.css'
 import { registerChangesFindSource } from '../../utils/changes-file-find-bridge'
-import { buildWorkingTreeStatusSignature } from '../../types/working-tree-diff'
-import { markPaint } from '../../utils/perf'
+import { buildWorkingTreeStatusSignature, type WorkingTreeFileStatus } from '../../types/working-tree-diff'
 import {
   normalizeWorkspaceBranch,
   preserveWorkspaceBranch,
@@ -24,13 +21,10 @@ import { buildAdHocAgentCommand } from '../../../shared/plan-build-command'
 import { formatRebaseConflictAgentPrompt } from '../../agents/conflict-prompt'
 
 const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
-const PREVIEW_CACHE_LIMIT = 80
+const STATUS_SNAPSHOT_TTL_MS = 5_000
+const PANEL_METADATA_DELAY_MS = 80
 
-interface FileStatus {
-  path: string
-  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
-  staged: boolean
-}
+type FileStatus = WorkingTreeFileStatus
 
 interface Props {
   worktreePath: string
@@ -43,15 +37,32 @@ function errorMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
+function warmSnapshotFor(worktreePath: string) {
+  return useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath)
+}
+
+function isFreshStatusSnapshot(updatedAt: number): boolean {
+  return Date.now() - updatedAt < STATUS_SNAPSHOT_TTL_MS
+}
+
+function hasLineStats(status: FileStatus): boolean {
+  return status.additions != null || status.deletions != null
+}
+
+function deferPanelMetadata(work: () => void): () => void {
+  const id = window.setTimeout(work, PANEL_METADATA_DELAY_MS)
+  return () => window.clearTimeout(id)
+}
+
 export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   // Local-first seed: render the last-known working-tree statuses from the
   // in-memory snapshot synchronously on first paint instead of waiting on a git
   // round-trip. Mirrors the diff viewer's warm-snapshot reuse (DiffEditor.loadFiles).
   const [files, setFiles] = useState<FileStatus[]>(
-    () => useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath)?.statuses ?? [],
+    () => warmSnapshotFor(worktreePath)?.statuses ?? [],
   )
   const [loading, setLoading] = useState(
-    () => !useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath),
+    () => !warmSnapshotFor(worktreePath),
   )
   const [busy, setBusy] = useState(false)
   const [busyAction, setBusyAction] = useState<'commit' | 'pr' | 'graphite' | 'generate-commit-message' | null>(null)
@@ -61,14 +72,9 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const [defaultBranch, setDefaultBranch] = useState('')
   const [defaultBranchLoading, setDefaultBranchLoading] = useState(true)
   const [commitInputFlash, setCommitInputFlash] = useState(false)
-  const [hoverPreviewPath, setHoverPreviewPath] = useState<string | null>(null)
-  const [previewCache, setPreviewCache] = useState<Map<string, DiffPreviewModel>>(() => new Map())
   const commitInputRef = useRef<HTMLTextAreaElement | null>(null)
   const commitFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const previewPromiseRef = useRef(new Map<string, Promise<void>>())
-  const previewStartedAtRef = useRef(0)
-  const firstPreviewMarkedRef = useRef(false)
-  const firstSummaryMarkedRef = useRef(false)
+  const refreshInFlightRef = useRef<Promise<void> | null>(null)
   const openDiffTab = useAppStore((s) => s.openDiffTab)
   const openFullFileDiffTab = useAppStore((s) => s.openFullFileDiffTab)
   const setGitFileStatuses = useAppStore((s) => s.setGitFileStatuses)
@@ -83,7 +89,6 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const setProjectDefaultBranch = useAppStore((s) => s.setProjectDefaultBranch)
   const settings = useAppStore((s) => s.settings)
   const launchAgentTerminalWithCommand = useAppStore((s) => s.launchAgentTerminalWithCommand)
-  const warmDiffSnapshot = useAppStore((s) => s.workingTreeDiffSnapshots.get(worktreePath))
   const [isAheadOfRemote, setIsAheadOfRemote] = useState(false)
 
   const workspace = workspaces.find((ws) => ws.id === workspaceId)
@@ -91,24 +96,33 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const branch = normalizeWorkspaceBranch(currentBranch || workspace?.branch || '')
   const prInfo = project && branch ? prStatusMap.get(`${project.id}:${branch}`) ?? null : null
 
-  const refresh = useCallback(async () => {
-    try {
-      const [statuses, headHash] = await Promise.all([
-        window.api.git.getStatus(worktreePath),
-        window.api.git.getHeadHash(worktreePath),
-      ])
-      setFiles(statuses)
-      updateGitStatusSnapshot(worktreePath, {
-        statuses,
-        headHash,
-        signature: buildWorkingTreeStatusSignature(statuses, headHash),
-        updatedAt: Date.now(),
-      })
-    } catch {
-      // Best effort — empty state already communicates enough.
-    } finally {
-      setLoading(false)
-    }
+  const refresh = useCallback(() => {
+    if (refreshInFlightRef.current) return refreshInFlightRef.current
+    const promise = (async () => {
+      try {
+        const [statuses, headHash] = await Promise.all([
+          window.api.git.getStatus(worktreePath),
+          window.api.git.getHeadHash(worktreePath),
+        ])
+        setFiles(statuses)
+        updateGitStatusSnapshot(worktreePath, {
+          statuses,
+          headHash,
+          signature: buildWorkingTreeStatusSignature(statuses, headHash),
+          updatedAt: Date.now(),
+        })
+      } catch {
+        // Best effort — empty state already communicates enough.
+      } finally {
+        setLoading(false)
+      }
+    })()
+    refreshInFlightRef.current = promise
+    return promise.finally(() => {
+      if (refreshInFlightRef.current === promise) {
+        refreshInFlightRef.current = null
+      }
+    })
   }, [worktreePath, updateGitStatusSnapshot])
 
   useEffect(() => {
@@ -118,18 +132,23 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
       return
     }
 
-    window.api.git.getCurrentBranch(worktreePath).then((actual) => {
-      if (cancelled) return
-      const resolvedBranch = preserveWorkspaceBranch(workspace.branch, actual)
-      setCurrentBranch(resolvedBranch || workspace.branch)
-      if (resolvedBranch && resolvedBranch !== workspace.branch) {
-        updateWorkspaceBranch(workspace.id, resolvedBranch)
-      }
-    }).catch(() => {
-      if (!cancelled) setCurrentBranch(workspace.branch)
+    const cancelDeferred = deferPanelMetadata(() => {
+      window.api.git.getCurrentBranch(worktreePath).then((actual) => {
+        if (cancelled) return
+        const resolvedBranch = preserveWorkspaceBranch(workspace.branch, actual)
+        setCurrentBranch(resolvedBranch || workspace.branch)
+        if (resolvedBranch && resolvedBranch !== workspace.branch) {
+          updateWorkspaceBranch(workspace.id, resolvedBranch)
+        }
+      }).catch(() => {
+        if (!cancelled) setCurrentBranch(workspace.branch)
+      })
     })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      cancelDeferred()
+    }
   }, [workspace, worktreePath, updateWorkspaceBranch])
 
   useEffect(() => {
@@ -141,23 +160,28 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     }
 
     setDefaultBranchLoading(true)
-    window.api.git.getDefaultBranch(project.repoPath)
-      .then((resolved) => {
-        if (cancelled) return
-        const normalized = normalizeWorkspaceBranch(resolved)
-        setDefaultBranch(normalized)
-        setDefaultBranchLoading(false)
-        if (normalized) {
-          setProjectDefaultBranch(project.id, normalized)
-        }
-      })
-      .catch(() => {
-        if (cancelled) return
-        setDefaultBranch('')
-        setDefaultBranchLoading(false)
+    const cancelDeferred = deferPanelMetadata(() => {
+      window.api.git.getDefaultBranch(project.repoPath)
+        .then((resolved) => {
+          if (cancelled) return
+          const normalized = normalizeWorkspaceBranch(resolved)
+          setDefaultBranch(normalized)
+          setDefaultBranchLoading(false)
+          if (normalized) {
+            setProjectDefaultBranch(project.id, normalized)
+          }
+        })
+        .catch(() => {
+          if (cancelled) return
+          setDefaultBranch('')
+          setDefaultBranchLoading(false)
+        })
       })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      cancelDeferred()
+    }
   }, [project, setProjectDefaultBranch])
 
   const refreshPrStatus = useCallback(async (targetBranch?: string) => {
@@ -183,7 +207,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
   useEffect(() => {
     if (!isActive || !project || !branch) return
-    void refreshPrStatus()
+    return deferPanelMetadata(() => { void refreshPrStatus() })
   }, [isActive, project, branch, refreshPrStatus])
 
   useEffect(() => () => {
@@ -206,8 +230,15 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
   // Re-fetch when tab becomes visible (git ops only touch .git/ which the watcher ignores)
   useEffect(() => {
-    if (isActive) void refresh()
-  }, [isActive, refresh])
+    if (!isActive) return
+    const warm = warmSnapshotFor(worktreePath)
+    if (warm) {
+      setLoading(false)
+      if (isFreshStatusSnapshot(warm.updatedAt) && warm.statuses.every(hasLineStats)) return
+      return deferPanelMetadata(() => { void refresh() })
+    }
+    void refresh()
+  }, [isActive, refresh, worktreePath])
 
   // Push git file statuses to Zustand store for tab badges
   useEffect(() => {
@@ -244,84 +275,6 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     : needsCommitForPr
       ? 'Commit staged changes, push the branch, and create a pull request'
       : 'Push the branch and create a pull request'
-  const statusSignature = warmDiffSnapshot?.signature ?? buildWorkingTreeStatusSignature(files, '')
-  const statusSignatureRef = useRef(statusSignature)
-
-  useEffect(() => {
-    statusSignatureRef.current = statusSignature
-    setPreviewCache(new Map())
-    previewPromiseRef.current.clear()
-    firstPreviewMarkedRef.current = false
-    firstSummaryMarkedRef.current = false
-  }, [statusSignature])
-
-  const warmPreviewModels = useMemo(() => {
-    const models = new Map<string, DiffPreviewModel>()
-    const patchFiles = warmDiffSnapshot?.files ?? []
-    const statusByPath = new Map(files.map((file) => [file.path, file]))
-    for (const file of patchFiles) {
-      const status = statusByPath.get(file.filePath)
-      if (!status || !file.patch) continue
-      models.set(file.filePath, buildDiffPreviewModel(file.patch, status))
-    }
-    return models
-  }, [files, warmDiffSnapshot])
-
-  const previewCacheKey = useCallback((file: FileStatus) => (
-    `${worktreePath}\u0000${statusSignature}\u0000${file.path}`
-  ), [statusSignature, worktreePath])
-
-  const getPreviewModel = useCallback((file: FileStatus) => (
-    warmPreviewModels.get(file.path) ?? previewCache.get(previewCacheKey(file)) ?? null
-  ), [previewCache, previewCacheKey, warmPreviewModels])
-
-  const ensurePreview = useCallback((file: FileStatus) => {
-    if (warmPreviewModels.has(file.path)) return
-    const key = previewCacheKey(file)
-    if (previewCache.has(key) || previewPromiseRef.current.has(key)) return
-    if (!previewStartedAtRef.current) previewStartedAtRef.current = performance.now()
-    const signatureAtStart = statusSignature
-    const promise = window.api.git.getFileDiff(worktreePath, file.path)
-      .then((patch) => {
-        if (statusSignatureRef.current !== signatureAtStart || !patch) return
-        const model = buildDiffPreviewModel(patch, file)
-        setPreviewCache((prev) => {
-          const next = new Map(prev)
-          next.set(key, model)
-          while (next.size > PREVIEW_CACHE_LIMIT) {
-            const oldest = next.keys().next().value
-            if (!oldest) break
-            next.delete(oldest)
-          }
-          return next
-        })
-        if (!firstPreviewMarkedRef.current) {
-          firstPreviewMarkedRef.current = true
-          markPaint('changes-panel-first-preview', previewStartedAtRef.current, {
-            worktreePath,
-            filePath: file.path,
-          })
-        }
-      })
-      .catch(() => {
-        // Hover previews are opportunistic; the row still opens the full review surface.
-      })
-      .finally(() => {
-        previewPromiseRef.current.delete(key)
-      })
-    previewPromiseRef.current.set(key, promise)
-  }, [previewCache, previewCacheKey, statusSignature, warmPreviewModels, worktreePath])
-
-  useEffect(() => {
-    if (firstSummaryMarkedRef.current) return
-    if (warmPreviewModels.size === 0) return
-    firstSummaryMarkedRef.current = true
-    markPaint('changes-panel-first-summary', performance.now(), {
-      worktreePath,
-      fileCount: warmPreviewModels.size,
-    })
-  }, [warmPreviewModels.size, worktreePath])
-
   const isGraphiteDefaultBranch =
     !!project
     && !defaultBranchLoading
@@ -344,16 +297,19 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
       setIsAheadOfRemote(false)
       return
     }
-    window.api.git
-      .isAheadOfRemote(worktreePath, resolvedPushRemote, resolvedPushRef)
-      .then((ahead) => {
-        if (!cancelled) setIsAheadOfRemote(ahead)
-      })
-      .catch(() => {
-        if (!cancelled) setIsAheadOfRemote(false)
+    const cancelDeferred = deferPanelMetadata(() => {
+      window.api.git
+        .isAheadOfRemote(worktreePath, resolvedPushRemote, resolvedPushRef)
+        .then((ahead) => {
+          if (!cancelled) setIsAheadOfRemote(ahead)
+        })
+        .catch(() => {
+          if (!cancelled) setIsAheadOfRemote(false)
+        })
       })
     return () => {
       cancelled = true
+      cancelDeferred()
     }
   }, [worktreePath, hasOpenPr, resolvedPushRemote, resolvedPushRef, files])
 
@@ -731,8 +687,11 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
   const openDiff = useCallback((path: string) => {
     openDiffTab(workspaceId)
+    // Wait for the Changes tab to mount/activate before scrolling (layout-first navigation).
     requestAnimationFrame(() => {
-      window.dispatchEvent(new CustomEvent('diff:scrollToFile', { detail: path }))
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new CustomEvent('diff:scrollToFile', { detail: path }))
+      })
     })
   }, [openDiffTab, workspaceId])
 
@@ -890,13 +849,6 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
               actionTitle="Unstage"
               onOpenDiff={openDiff}
               onOpenFullDiff={openFullDiff}
-              previewModel={getPreviewModel(file)}
-              previewOpen={hoverPreviewPath === file.path}
-              onPreviewIntent={() => {
-                setHoverPreviewPath(file.path)
-                ensurePreview(file)
-              }}
-              onPreviewExit={() => setHoverPreviewPath((current) => current === file.path ? null : current)}
             />
           ))}
         </div>
@@ -949,13 +901,6 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
               onDiscard={() => discardFiles(file)}
               onOpenDiff={openDiff}
               onOpenFullDiff={openFullDiff}
-              previewModel={getPreviewModel(file)}
-              previewOpen={hoverPreviewPath === file.path}
-              onPreviewIntent={() => {
-                setHoverPreviewPath(file.path)
-                ensurePreview(file)
-              }}
-              onPreviewExit={() => setHoverPreviewPath((current) => current === file.path ? null : current)}
             />
           ))}
         </div>
@@ -980,10 +925,6 @@ const FileRow = memo(function FileRow({
   onDiscard,
   onOpenDiff,
   onOpenFullDiff,
-  previewModel,
-  previewOpen,
-  onPreviewIntent,
-  onPreviewExit,
 }: {
   file: FileStatus
   busy: boolean
@@ -993,17 +934,13 @@ const FileRow = memo(function FileRow({
   onDiscard?: () => void
   onOpenDiff: (path: string) => void
   onOpenFullDiff: (file: FileStatus) => void
-  previewModel: DiffPreviewModel | null
-  previewOpen: boolean
-  onPreviewIntent: () => void
-  onPreviewExit: () => void
 }) {
   const parts = file.path.split('/')
   const fileName = parts.pop()
   const dir = parts.length > 0 ? parts.join('/') + '/' : ''
-  const stats = previewModel
-    ? `${previewModel.additions > 0 ? `+${previewModel.additions}` : '+0'} / ${previewModel.deletions > 0 ? `-${previewModel.deletions}` : '-0'}`
-    : ''
+  const additions = file.additions ?? 0
+  const deletions = file.deletions ?? 0
+  const hasStats = additions > 0 || deletions > 0
 
   return (
     <div
@@ -1011,19 +948,10 @@ const FileRow = memo(function FileRow({
       role="button"
       tabIndex={0}
       onClick={() => onOpenDiff(file.path)}
-      onMouseEnter={onPreviewIntent}
-      onMouseLeave={onPreviewExit}
-      onFocus={onPreviewIntent}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) onPreviewExit()
-      }}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           e.preventDefault()
           onOpenDiff(file.path)
-        } else if (e.key === ' ') {
-          e.preventDefault()
-          onPreviewIntent()
         }
       }}
     >
@@ -1035,28 +963,13 @@ const FileRow = memo(function FileRow({
         {dir && <span className={styles.changeDir}>{dir}</span>}
         <span className={styles.changeFullPathForFind}>{file.path}</span>
       </span>
-      {stats && (
-        <span className={styles.changeStats} aria-label={`${previewModel?.additions ?? 0} additions and ${previewModel?.deletions ?? 0} deletions`}>
-          <span className={styles.changeStatsAdd}>{previewModel?.additions ? `+${previewModel.additions}` : '+0'}</span>
-          <span className={styles.changeStatsSep}>/</span>
-          <span className={styles.changeStatsDel}>{previewModel?.deletions ? `-${previewModel.deletions}` : '-0'}</span>
+      {hasStats && (
+        <span className={styles.changeStats} aria-label={`${additions} additions, ${deletions} deletions`}>
+          {additions > 0 && <span className={styles.changeStatAdd}>+{additions}</span>}
+          {deletions > 0 && <span className={styles.changeStatDel}>-{deletions}</span>}
         </span>
       )}
       <span className={styles.fileActions}>
-        <Tooltip label="Preview diff">
-          <button
-            className={styles.fileActionBtn}
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation()
-              onPreviewIntent()
-            }}
-            aria-label="Preview diff"
-            aria-expanded={previewOpen}
-          >
-            <Eye size={12} />
-          </button>
-        </Tooltip>
         <Tooltip label="Open side-by-side diff">
           <button
             className={styles.fileActionBtn}
@@ -1094,26 +1007,6 @@ const FileRow = memo(function FileRow({
           </button>
         </Tooltip>
       </span>
-      {previewOpen && (
-        <div className={styles.changePreviewPopover} role="dialog" aria-label={`Diff preview for ${file.path}`}>
-          <div className={styles.changePreviewHeader}>
-            <span className={styles.changePreviewPath}>{fileName}</span>
-            {stats && <span className={styles.changePreviewStats}>{stats}</span>}
-          </div>
-          <div className={styles.changePreviewBody}>
-            {previewModel ? (
-              <CompactDiffPreview
-                rows={previewModel.rows}
-                hasNoNewline={previewModel.hasNoNewline}
-                parseError={previewModel.parseError}
-                testId="changes-panel-diff-preview"
-              />
-            ) : (
-              <div className={styles.changePreviewLoading}>Loading preview...</div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 })

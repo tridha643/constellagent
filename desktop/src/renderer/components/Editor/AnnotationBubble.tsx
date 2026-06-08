@@ -192,6 +192,8 @@ export function CommentComposer({
   side,
   lineNumber,
   lineEnd,
+  body: bodyProp,
+  onBodyChange,
   onCancel,
   onSaved,
   onApply,
@@ -202,25 +204,26 @@ export function CommentComposer({
   side: DiffAnnotationSide
   lineNumber: number
   lineEnd: number
+  body?: string
+  onBodyChange?: (body: string) => void
   onCancel: () => void
   onSaved: () => void
   onApply: (patch: AnnotationPatch) => void
   /** Fires when non-whitespace content differs from empty (draft state). */
   onDirtyChange?: (dirty: boolean) => void
 }) {
-  const [body, setBody] = useState('')
+  const [internalBody, setInternalBody] = useState('')
+  const body = bodyProp ?? internalBody
+  const setBody = useCallback((next: string) => {
+    if (onBodyChange) onBodyChange(next)
+    else setInternalBody(next)
+  }, [onBodyChange])
   const [busy, setBusy] = useState(false)
   const addToast = useAppStore((s) => s.addToast)
 
   useEffect(() => {
     onDirtyChange?.(body.trim().length > 0)
   }, [body, onDirtyChange])
-
-  useEffect(() => {
-    return () => {
-      onDirtyChange?.(false)
-    }
-  }, [onDirtyChange])
 
   const submit = async () => {
     const trimmed = body.trim()
@@ -279,6 +282,7 @@ export function CommentComposer({
         </div>
       </div>
       <textarea
+        data-testid="diff-comment-composer-textarea"
         className={styles.composerTextarea}
         value={body}
         onChange={(e) => setBody(e.target.value)}

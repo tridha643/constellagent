@@ -57,7 +57,7 @@
     "@pi-gui/catalogs": "workspace:*",
     "@pi-gui/pi-sdk-driver": "workspace:*",
     "@pi-gui/session-driver": "workspace:*",
-    "@pierre/diffs": "^1.1.11",
+    "@pierre/diffs": "^1.2.7",
     "@pierre/theme": "0.0.28",
     "@pierre/trees": "^1.0.0-beta.3",
     "@radix-ui/react-accordion": "^1.2.12",

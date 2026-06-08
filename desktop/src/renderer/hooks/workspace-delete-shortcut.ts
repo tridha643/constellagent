@@ -5,8 +5,6 @@ type WorkspaceDeleteShortcutStore = Pick<
   | 'activeWorkspaceId'
   | 'workspaces'
   | 'showConfirmDialog'
-  | 'updateConfirmDialog'
-  | 'dismissConfirmDialog'
   | 'deleteWorkspace'
 >
 
@@ -24,14 +22,8 @@ export function showDeleteWorkspaceConfirmation(store: WorkspaceDeleteShortcutSt
     message: `Delete workspace "${workspace.name}"? This will remove the git worktree from disk.`,
     confirmLabel: 'Delete',
     destructive: true,
-    confirmInPlace: true,
     onConfirm: () => {
-      store.updateConfirmDialog({ loading: true })
       void store.deleteWorkspace(workspace.id)
-        .then(
-          () => store.dismissConfirmDialog(),
-          () => store.updateConfirmDialog({ loading: false }),
-        )
     },
   })
 }

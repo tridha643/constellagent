@@ -43,7 +43,7 @@
         "@pi-gui/catalogs": "workspace:*",
         "@pi-gui/pi-sdk-driver": "workspace:*",
         "@pi-gui/session-driver": "workspace:*",
-        "@pierre/diffs": "^1.1.11",
+        "@pierre/diffs": "^1.2.7",
         "@pierre/theme": "0.0.28",
         "@pierre/trees": "^1.0.0-beta.3",
         "@radix-ui/react-accordion": "^1.2.12",
@@ -770,7 +770,7 @@
 
     "@pi-gui/session-driver": ["@pi-gui/session-driver@workspace:packages/pi-gui-session-driver"],
 
-    "@pierre/diffs": ["@pierre/diffs@1.1.20", "", { "dependencies": { "@pierre/theme": "0.0.28", "@shikijs/transformers": "^3.0.0", "diff": "8.0.3", "hast-util-to-html": "9.0.5", "lru_map": "0.4.1", "shiki": "^3.0.0" }, "peerDependencies": { "react": "^18.3.1 || ^19.0.0", "react-dom": "^18.3.1 || ^19.0.0" } }, "sha512-lLi+3sLCm3QDd5/aLO9pw+WbF6UzhrkWm2oTZ5WZJTGemOyUNRJ4DDhcEKmVusu4C4bXx9Nssh6fF+wQcapb5w=="],
+    "@pierre/diffs": ["@pierre/diffs@1.2.7", "", { "dependencies": { "@pierre/theme": "1.0.3", "@shikijs/transformers": "^3.0.0", "diff": "8.0.3", "hast-util-to-html": "9.0.5", "lru_map": "0.4.1", "shiki": "^3.0.0" }, "peerDependencies": { "react": "^18.3.1 || ^19.0.0", "react-dom": "^18.3.1 || ^19.0.0" } }, "sha512-YrHmFZLDtiLZ4DkiVqMDUFqTFIct3ML3t20nMp0UeuiUtqrmRcenYVxPb4IafiNkhZZURhCiwcs89tVb/HrSDA=="],
 
     "@pierre/theme": ["@pierre/theme@0.0.28", "", {}, "sha512-1j/H/fECBuc9dEvntdWI+l435HZapw+RCJTlqCA6BboQ5TjlnE005j/ROWutXIs8aq5OAc82JI2Kwk4A1WWBgw=="],
 
@@ -2567,6 +2567,8 @@
     "@npmcli/agent/lru-cache": ["lru-cache@10.4.3", "", {}, "sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ=="],
 
     "@npmcli/fs/semver": ["semver@7.7.4", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA=="],
+
+    "@pierre/diffs/@pierre/theme": ["@pierre/theme@1.0.3", "", {}, "sha512-sWHv11TMoqKxKDgTIk5VbhQjdPhs8DCcBxbjh3mRlS3YOM/OcrWoGX6MM8eBGn9cUu3M46Py0JnxsG2nJaFTuA=="],
 
     "@pierre/diffs/diff": ["diff@8.0.3", "", {}, "sha512-qejHi7bcSD4hQAZE0tNAawRK1ZtafHDmMTMkrrIGgSLl7hTnQHmKCeB45xAcbfTqK2zowkM3j3bHt/4b/ARbYQ=="],
 

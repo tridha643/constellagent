@@ -39,7 +39,9 @@ export async function loadWorkingTreeExpandableDiffMetadata(
   file: Pick<DiffFileData, 'filePath' | 'patch' | 'status' | 'currentContent'>,
 ): Promise<FileDiffMetadata | undefined> {
   const previousPath = resolvePreviousPath(file.filePath, file.patch)
-  const currentContent = file.currentContent ?? await readWorkingTreeCurrentContent(worktreePath, file.filePath, file.status)
+  const currentContent = file.currentContent !== undefined
+    ? file.currentContent
+    : await readWorkingTreeCurrentContent(worktreePath, file.filePath, file.status)
 
   const headContent =
     file.status === 'added' || file.status === 'untracked'
@@ -69,13 +71,17 @@ export async function buildWorkingTreeDiffFileData(
 ): Promise<DiffFileData> {
   const includeFileDiff = options.includeFileDiff ?? true
   let patch = options.patch ?? ''
-  const currentContent = options.currentContent ?? await readWorkingTreeCurrentContent(worktreePath, file.path, file.status)
+  let currentContent = options.currentContent
+  const needsCurrentContentForPatch = !patch && (file.status === 'added' || file.status === 'untracked')
+  if (currentContent === undefined && (includeFileDiff || needsCurrentContentForPatch)) {
+    currentContent = await readWorkingTreeCurrentContent(worktreePath, file.path, file.status)
+  }
 
   if (!patch && (file.status === 'added' || file.status === 'untracked')) {
     patch = await window.api.git.getFileDiff(worktreePath, file.path)
   }
 
-  if (!patch && (file.status === 'added' || file.status === 'untracked') && currentContent !== null) {
+  if (!patch && (file.status === 'added' || file.status === 'untracked') && currentContent != null) {
     patch = buildSyntheticAddedPatch(file.path, currentContent)
   }
 
@@ -98,8 +104,11 @@ export async function buildWorkingTreeDiffFileData(
     patch: patch || '',
     status: file.status,
     staged: file.staged,
+    additions: file.additions,
+    deletions: file.deletions,
     hasMixedStageState: options.hasMixedStageState ?? false,
     fileDiff,
+    patchLoaded: true,
     currentContent,
   }
 }

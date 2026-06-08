@@ -37,6 +37,28 @@ function createRepoWithLargeContextFile(name: string): string {
   return repoPath
 }
 
+function seedTrackedFiles(repoPath: string, fileCount: number): void {
+  const bulkDir = join(repoPath, 'bulk')
+  mkdirSync(bulkDir, { recursive: true })
+  for (let i = 0; i < fileCount; i++) {
+    writeFileSync(join(bulkDir, `file-${i}.ts`), `export const v${i} = ${i};\n`)
+  }
+  execSync('git add bulk', { cwd: repoPath })
+  execSync(`git commit -m "seed ${fileCount} tracked files"`, { cwd: repoPath })
+}
+
+function createRepoWithManyTrackedFiles(name: string, fileCount: number): string {
+  const repoPath = createTestRepo(name)
+  seedTrackedFiles(repoPath, fileCount)
+  return repoPath
+}
+
+function mutateTrackedFiles(worktreePath: string, fileCount: number): void {
+  for (let i = 0; i < fileCount; i++) {
+    writeFileSync(join(worktreePath, 'bulk', `file-${i}.ts`), `export const v${i} = ${i + 1};\n`)
+  }
+}
+
 function cleanupTestRepo(repoPath: string): void {
   try {
     if (existsSync(repoPath)) rmSync(repoPath, { recursive: true, force: true })
@@ -315,6 +337,110 @@ test.describe('Review annotations IPC integration', () => {
 
       await expect(window.getByTestId('hunk-review-panel')).toBeVisible()
       await expect(window.locator('text=Start an agent terminal before submitting selected comments.')).toBeVisible()
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('fast scrollbar drag on 220-file review keeps mounted sections bounded', async () => {
+    const fileCount = 220
+    const repoPath = createRepoWithManyTrackedFiles('review-many-files', fileCount)
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const { worktreePath } = await setupWorkspaceWithAgent(window, realRepo, 'many-files')
+      mutateTrackedFiles(worktreePath, fileCount)
+
+      await window.waitForTimeout(1500)
+      await window.keyboard.press('Meta+Shift+R')
+      await expect(window.getByTestId('hunk-review-panel')).toBeVisible()
+
+      const scrollArea = window.getByTestId('hunk-review-scroll-area')
+      await expect(scrollArea).toBeVisible()
+      await window.waitForTimeout(800)
+
+      const scrollMetrics = await window.evaluate(async () => {
+        const root = document.querySelector('[data-testid="hunk-review-scroll-area"]')
+        if (!(root instanceof HTMLElement)) return null
+
+        const countSections = () => root.querySelectorAll('[id^="diff-"]').length
+        const started = performance.now()
+        const steps = 48
+        let maxMounted = countSections()
+
+        for (let step = 0; step < steps; step++) {
+          const ratio = step / Math.max(1, steps - 1)
+          root.scrollTop = Math.floor(ratio * Math.max(0, root.scrollHeight - root.clientHeight))
+          root.dispatchEvent(new Event('scroll', { bubbles: true }))
+          await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
+          maxMounted = Math.max(maxMounted, countSections())
+        }
+
+        return {
+          elapsedMs: performance.now() - started,
+          maxMounted,
+          scrollHeight: root.scrollHeight,
+          fileSections: root.querySelectorAll('[id^="diff-"]').length,
+        }
+      })
+
+      expect(scrollMetrics).not.toBeNull()
+      if (!scrollMetrics) return
+      expect(scrollMetrics.scrollHeight).toBeGreaterThan(4000)
+      expect(scrollMetrics.maxMounted).toBeLessThan(40)
+      expect(scrollMetrics.elapsedMs).toBeLessThan(5000)
+    } finally {
+      await app.close()
+      cleanupTestRepo(repoPath)
+    }
+  })
+
+  test('comment draft text survives virtualization scroll away and back', async () => {
+    const repoPath = createTestRepo('review-draft-scroll')
+    const realRepo = realpathSync(repoPath)
+    const { app, window } = await launchApp()
+
+    try {
+      const { worktreePath } = await setupWorkspaceWithAgent(window, realRepo, 'draft-scroll')
+      writeFileSync(join(worktreePath, 'README.md'), '# Modified\nLine two\nLine three\n')
+
+      await window.waitForTimeout(1200)
+      await window.keyboard.press('Meta+Shift+R')
+      await expect(window.getByTestId('hunk-review-panel')).toBeVisible()
+
+      const diffSection = window.locator('[data-testid="hunk-review-panel"] [id^="diff-"]').first()
+      await expect(diffSection).toBeVisible()
+      const sectionId = await diffSection.getAttribute('id')
+      expect(sectionId).toMatch(/^diff-/)
+      const filePath = sectionId!.slice('diff-'.length)
+
+      await window.evaluate((path) => {
+        window.dispatchEvent(new CustomEvent('diff:e2e-open-comment-composer', {
+          detail: { filePath: path, lineNumber: 2, side: 'additions' },
+        }))
+      }, filePath)
+
+      const textarea = window.getByTestId('diff-comment-composer-textarea')
+      await expect(textarea).toBeVisible()
+      const draftText = 'Draft should survive virtualization scroll'
+      await textarea.fill(draftText)
+
+      const afterScroll = await window.evaluate(async () => {
+        const root = document.querySelector('[data-testid="hunk-review-scroll-area"]')
+        if (!(root instanceof HTMLElement)) return null
+        root.scrollTop = root.scrollHeight
+        root.dispatchEvent(new Event('scroll', { bubbles: true }))
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
+        root.scrollTop = 0
+        root.dispatchEvent(new Event('scroll', { bubbles: true }))
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
+        const textarea = document.querySelector('[data-testid="diff-comment-composer-textarea"]')
+        return textarea instanceof HTMLTextAreaElement ? textarea.value : null
+      })
+
+      expect(afterScroll).toBe(draftText)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

@@ -269,3 +269,18 @@
     transform: translateY(-50%);
   }
 }
+
+.diffViewerError {
+  position: absolute;
+  inset: var(--side-panel-float-inset);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted, #888);
+  font-size: 14px;
+  background: var(--surface-1);
+  border-radius: var(--side-panel-float-radius);
+  border: 1px solid var(--panel-border);
+}
