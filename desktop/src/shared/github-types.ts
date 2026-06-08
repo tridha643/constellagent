@@ -49,6 +49,10 @@ export interface OpenPrInfo extends PrInfo {
   headRepository?: PullRequestRepoRef
   isCrossRepository: boolean
   authorLogin?: string
+  assigneeLogins?: string[]
+  isAssignedToViewer?: boolean
+  reviewRequestLogins?: string[]
+  isReviewRequestedFromViewer?: boolean
 }
 
 export interface ResolvedPrInfo extends PullRequestHeadMetadata {

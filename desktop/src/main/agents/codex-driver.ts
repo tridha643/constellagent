@@ -25,12 +25,12 @@ import { logMainPerfEvent } from '../perf'
 import { mapThinkingLevelToCodexEffort, parseModelEffort } from '../../shared/conductor-model-utils'
 import type { CodexWebSocketsSetting } from '../../shared/codex-websockets'
 import {
-  computeTextDelta,
   evAssistantDelta,
   evToolFinished,
   evToolStarted,
   evToolUpdated,
   buildAgentPrompt,
+  computeTextDelta,
   promptEmitsFormatPrefix,
   type AgentDriver,
   type AgentCompactContext,
@@ -52,6 +52,12 @@ import {
   type AgentSdkToolEmission,
   type AgentSdkToolHookResult,
 } from './agent-sdk-hooks'
+import {
+  formatCodexAskUserContinuation,
+  parseCodexAskUserToolRequest,
+  type CodexAskUserRequest,
+} from './codex-ask-user'
+import { getConductorQuestionBridge } from './conductor-question-bridge'
 
 interface CodexSessionState {
   thread: Thread
@@ -66,6 +72,7 @@ interface CodexSessionState {
   readonly emittedByItem: Map<string, string>
   readonly lastToolUpdateByItem: Map<string, { text: string; emittedAt: number }>
   readonly collab: CodexCollabSessionState
+  pendingAskUserRequest: CodexPendingAskUserRequest | null
 }
 
 interface CodexContextUsage {
@@ -81,6 +88,11 @@ interface CodexSessionRecovery {
   webSocketsEnabled: boolean
   /** After user interrupt or stale resume — next turn seeds Conductor transcript instead of CLI resume. */
   preferTranscriptFallback: boolean
+}
+
+interface CodexPendingAskUserRequest {
+  readonly itemId: string
+  readonly request: CodexAskUserRequest
 }
 
 type CodexConfigValue = string | number | boolean | CodexConfigValue[] | CodexConfigObject
@@ -169,6 +181,29 @@ function toolDescriptor(item: ThreadItem): { toolName: string; input?: unknown }
     default:
       return null
   }
+}
+
+function requestUserInputRequestFromItem(item: ThreadItem): CodexAskUserRequest | null {
+  if (!isRecord(item)) return null
+  const itemType = typeof item.type === 'string' ? item.type : ''
+
+  if (itemType === 'mcp_tool_call') {
+    const tool = typeof item.tool === 'string' ? item.tool : ''
+    if (tool !== 'request_user_input') return null
+    return parseCodexAskUserToolRequest(item.arguments)
+  }
+
+  if (itemType === 'function_call') {
+    const name = typeof item.name === 'string' ? item.name : ''
+    if (name !== 'request_user_input') return null
+    return parseCodexAskUserToolRequest(item.arguments)
+  }
+
+  return null
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function toolSucceeded(item: ThreadItem): boolean {
@@ -274,14 +309,20 @@ export function shouldUseCodexWebSockets(setting: CodexWebSocketsSetting, model:
   return setting === 'auto' && isCodexWebSocketsEligibleModel(model)
 }
 
-export function codexConfigForWebSockets(webSocketsEnabled: boolean): CodexConfigObject | undefined {
-  if (!webSocketsEnabled) return undefined
+export function codexConfigForWebSockets(webSocketsEnabled: boolean): CodexConfigObject {
   return {
-    model_providers: {
-      openai: {
-        supports_websockets: true,
-      },
+    features: {
+      default_mode_request_user_input: true,
     },
+    ...(webSocketsEnabled
+      ? {
+          model_providers: {
+            openai: {
+              supports_websockets: true,
+            },
+          },
+        }
+      : {}),
   }
 }
 
@@ -329,7 +370,7 @@ export class CodexDriver implements AgentDriver {
         ...(getOpenaiApiKey() ? { apiKey: getOpenaiApiKey() } : {}),
         env: codexSdkEnv(),
         ...(codexPathOverride ? { codexPathOverride } : {}),
-        ...(config ? { config } : {}),
+        config,
       })
       this.codex = { client, webSocketsEnabled }
     }
@@ -419,6 +460,7 @@ export class CodexDriver implements AgentDriver {
       // SDK primary path: same Thread instance, repeated runStreamed (see sdk/typescript/README.md).
       state = existing
       existing.emittedByItem.clear()
+      existing.pendingAskUserRequest = null
       clearCodexCollabSessionState(existing.collab)
     } else if (!forceTranscriptFallback && !configChanged && recovery?.codexThreadId && !recovery.preferTranscriptFallback) {
       // In-memory Thread lost but persisted session may still be resumable (~/.codex/sessions).
@@ -436,6 +478,7 @@ export class CodexDriver implements AgentDriver {
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
         collab: createCodexCollabSessionState(),
+        pendingAskUserRequest: null,
       }
       this.sessions.set(key, state)
     } else if (!forceTranscriptFallback && !configChanged && recovery?.codexThreadId && recovery.preferTranscriptFallback) {
@@ -455,6 +498,7 @@ export class CodexDriver implements AgentDriver {
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
         collab: createCodexCollabSessionState(),
+        pendingAskUserRequest: null,
       }
       this.sessions.set(key, state)
     } else {
@@ -473,6 +517,7 @@ export class CodexDriver implements AgentDriver {
         emittedByItem: new Map(),
         lastToolUpdateByItem: new Map(),
         collab: createCodexCollabSessionState(),
+        pendingAskUserRequest: null,
       }
       this.sessions.set(key, state)
     }
@@ -495,42 +540,34 @@ export class CodexDriver implements AgentDriver {
       state.formatPrimed = true
     }
     const imageInput = await writeCodexImageAttachments(ctx.attachments)
-    const input = buildCodexUserInput(prompt, imageInput.inputPaths)
-    const turnOptions = { signal: ctx.signal }
+    let input = buildCodexUserInput(prompt, imageInput.inputPaths)
 
     try {
-      const runStreamedStartedAt = performance.now()
-      const { events } = await thread.runStreamed(input, turnOptions)
-      logMainPerfEvent('codex.runStreamed_ready', performance.now() - runStreamedStartedAt, {
-        model: baseModel,
-        effort,
-        seedTranscript,
-        webSocketsEnabled,
-      })
-      try {
-        let firstEventAt: number | undefined
-        let eventCount = 0
-        for await (const event of events) {
-          eventCount += 1
-          if (firstEventAt === undefined) {
-            firstEventAt = performance.now()
-            logMainPerfEvent('codex.runStreamed_first_event', firstEventAt - runStreamedStartedAt, {
-              model: baseModel,
-              effort,
-              eventType: event.type,
-              webSocketsEnabled,
-            })
-          }
-          this.handleEvent(ctx, state, event)
-        }
-        logMainPerfEvent('codex.runStreamed_events_total', performance.now() - runStreamedStartedAt, {
+      let askUserContinuationCount = 0
+      while (true) {
+        state.emittedByItem.clear()
+        state.pendingAskUserRequest = null
+        await this.runCodexStreamedTurn(ctx, state, thread, input, {
           model: baseModel,
           effort,
-          eventCount,
+          seedTranscript,
           webSocketsEnabled,
         })
-      } catch (err) {
-        if (!isBenignCodexInterruptError(err, ctx.signal)) throw err
+
+        const pendingAskUserRequest = state.pendingAskUserRequest
+        if (!pendingAskUserRequest || ctx.signal.aborted) {
+          break
+        }
+        if (askUserContinuationCount >= 3) {
+          throw new Error('Codex requested user input too many times in one turn')
+        }
+
+        const continuation = await this.resolveCodexAskUserRequest(ctx, pendingAskUserRequest)
+        askUserContinuationCount += 1
+        if (!continuation || ctx.signal.aborted) {
+          break
+        }
+        input = continuation
       }
     } catch (err) {
       if (!isBenignCodexInterruptError(err, ctx.signal) && isStaleCodexThreadError(err)) {
@@ -547,6 +584,89 @@ export class CodexDriver implements AgentDriver {
     }
   }
 
+  private async runCodexStreamedTurn(
+    ctx: AgentTurnContext,
+    state: CodexSessionState,
+    thread: Thread,
+    input: Input,
+    logContext: {
+      readonly model: string
+      readonly effort: ModelReasoningEffort
+      readonly seedTranscript: boolean
+      readonly webSocketsEnabled: boolean
+    },
+  ): Promise<void> {
+    const runStreamedStartedAt = performance.now()
+    const { events } = await thread.runStreamed(input, { signal: ctx.signal })
+    logMainPerfEvent('codex.runStreamed_ready', performance.now() - runStreamedStartedAt, logContext)
+    try {
+      let firstEventAt: number | undefined
+      let eventCount = 0
+      for await (const event of events) {
+        eventCount += 1
+        if (firstEventAt === undefined) {
+          firstEventAt = performance.now()
+          logMainPerfEvent('codex.runStreamed_first_event', firstEventAt - runStreamedStartedAt, {
+            model: logContext.model,
+            effort: logContext.effort,
+            eventType: event.type,
+            webSocketsEnabled: logContext.webSocketsEnabled,
+          })
+        }
+        this.handleEvent(ctx, state, event)
+        if (state.pendingAskUserRequest) {
+          logMainPerfEvent('codex.request_user_input_suspended', performance.now() - runStreamedStartedAt, {
+            model: logContext.model,
+            effort: logContext.effort,
+            eventCount,
+            webSocketsEnabled: logContext.webSocketsEnabled,
+          })
+          break
+        }
+      }
+      logMainPerfEvent('codex.runStreamed_events_total', performance.now() - runStreamedStartedAt, {
+        model: logContext.model,
+        effort: logContext.effort,
+        eventCount,
+        webSocketsEnabled: logContext.webSocketsEnabled,
+      })
+    } catch (err) {
+      if (!isBenignCodexInterruptError(err, ctx.signal)) throw err
+    }
+  }
+
+  private async resolveCodexAskUserRequest(
+    ctx: AgentTurnContext,
+    pending: CodexPendingAskUserRequest,
+  ): Promise<string | null> {
+    const callId = `codex-ask-user:${pending.itemId}`
+    ctx.emit(evToolStarted(ctx.sessionRef, callId, 'AskQuestion', { questions: pending.request.questions }))
+    try {
+      const details = await getConductorQuestionBridge().registerPending({
+        sessionId: ctx.sessionRef.sessionId,
+        callId,
+        provider: 'codex',
+        source: 'askQuestion',
+        questions: pending.request.questions,
+      })
+      if (details.cancelled) {
+        ctx.emit(evToolFinished(ctx.sessionRef, callId, false, details))
+        return null
+      }
+      const continuation = formatCodexAskUserContinuation(details)
+      if (!continuation) {
+        ctx.emit(evToolFinished(ctx.sessionRef, callId, false, details))
+        return null
+      }
+      ctx.emit(evToolFinished(ctx.sessionRef, callId, true, details))
+      return continuation
+    } catch (err) {
+      ctx.emit(evToolFinished(ctx.sessionRef, callId, false, undefined))
+      if (isBenignCodexInterruptError(err, ctx.signal)) return null
+      throw err
+    }
+  }
+
   private emitAgentMessageText(
     ctx: AgentTurnContext,
     state: CodexSessionState,
@@ -559,6 +679,15 @@ export class CodexDriver implements AgentDriver {
       state.emittedByItem.set(itemId, emitted)
       ctx.emit(evAssistantDelta(ctx.sessionRef, delta))
     }
+  }
+
+  private captureRequestUserInputTool(state: CodexSessionState, item: ThreadItem): boolean {
+    const request = requestUserInputRequestFromItem(item)
+    if (!request) return false
+    if (!state.pendingAskUserRequest) {
+      state.pendingAskUserRequest = { itemId: item.id, request }
+    }
+    return true
   }
 
   private emitToolStarted(
@@ -664,6 +793,9 @@ export class CodexDriver implements AgentDriver {
         } else if (item.type === 'reasoning') {
           this.emitAgentMessageText(ctx, state, item.id, item.text ?? '')
         }
+        if (this.captureRequestUserInputTool(state, item)) {
+          break
+        }
         const descriptor = toolDescriptor(item)
         if (descriptor) {
           this.emitToolStarted(ctx, item, descriptor.toolName, descriptor.input)
@@ -679,6 +811,9 @@ export class CodexDriver implements AgentDriver {
         }
         if (item.type === 'agent_message' || item.type === 'reasoning') {
           this.emitAgentMessageText(ctx, state, item.id, item.text ?? '')
+          break
+        }
+        if (this.captureRequestUserInputTool(state, item)) {
           break
         }
         if (item.type === 'todo_list') {

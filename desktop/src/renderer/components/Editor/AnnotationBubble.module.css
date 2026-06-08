@@ -20,10 +20,12 @@
 /* ── Comment Bubble (Pierre Diffs-inspired thread style) ── */
 
 .commentBubble {
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 12px 14px 14px;
+  border-radius: var(--review-card-radius);
+  border: 1px solid var(--review-card-border);
+  background: var(--review-card-bg);
+  box-shadow: var(--review-card-shadow);
+  color: var(--review-text-body);
+  padding: 12px;
   font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
   white-space: normal;
   opacity: 1;
@@ -42,10 +44,7 @@
   }
 }
 
-.commentBubble:hover {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.045);
-}
+/* rudu keeps the card completely flat on hover — no border/background highlight. */
 
 .commentLocationRow {
   display: flex;
@@ -59,9 +58,9 @@
   font-family: var(--font-mono, ui-monospace, monospace);
   font-weight: 500;
   letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.82);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--review-text-strong);
+  background: var(--review-badge-bg);
+  border: 1px solid var(--review-badge-border);
   border-radius: 999px;
   padding: 3px 10px;
   line-height: 1.3;
@@ -72,9 +71,10 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 6px;
+  color: var(--review-text-muted);
+  background: var(--review-badge-bg);
+  border: 1px solid var(--review-badge-border);
+  border-radius: var(--review-badge-radius);
   padding: 3px 8px;
   line-height: 1.2;
 }
@@ -106,13 +106,6 @@
   font-weight: 600;
   flex-shrink: 0;
   letter-spacing: 0.02em;
-  transition: transform var(--motion-slow);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .commentBubble:hover .avatar {
-    transform: scale(1.05);
-  }
 }
 
 .commentContent {
@@ -129,13 +122,14 @@
 
 .authorName {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
+  color: var(--review-text-author);
   line-height: 1.2;
 }
 
 .timestamp {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--review-text-muted);
   line-height: 1;
 }
 
@@ -171,7 +165,7 @@
 .commentBody {
   margin: 8px 0 0;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--review-text-body);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -180,7 +174,7 @@
 .commentRationale {
   margin: 8px 0 0;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--review-text-muted);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -375,15 +369,13 @@
 /* ── Comment Composer ── */
 
 .composerBubble {
-  border-radius: 12px;
-  border: 1px solid rgba(59, 130, 246, 0.32);
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.09) 0%, rgba(8, 12, 22, 0.5) 100%);
-  padding: 14px 14px 12px;
+  border-radius: var(--review-card-radius);
+  border: 1px solid var(--review-card-border);
+  background: var(--review-card-bg);
+  padding: 12px;
   font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
   white-space: normal;
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 8px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--review-card-shadow);
   opacity: 1;
   transform: translateY(0);
   transition:
@@ -409,8 +401,8 @@
 
 .composerTitle {
   font-size: 12px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.88);
+  font-weight: 500;
+  color: var(--review-text-muted);
   letter-spacing: 0.01em;
 }
 
@@ -421,17 +413,18 @@
   flex-wrap: wrap;
 }
 
+/* rudu textarea: bg-surface, no border, font-mono, min-h 96px (review-comment-markdown-textarea) */
 .composerTextarea {
   width: 100%;
-  min-height: 72px;
+  min-height: 96px;
   resize: vertical;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.3);
-  padding: 8px 10px;
+  border-radius: var(--radius-lg);
+  border: 1px solid transparent;
+  background: var(--review-input-bg);
+  padding: 8px 12px;
   font-size: 13px;
-  font-family: var(--font-sans, system-ui, sans-serif);
-  color: rgba(255, 255, 255, 0.85);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--review-input-text);
   line-height: 1.5;
   outline: none;
   transition:
@@ -440,12 +433,11 @@
 }
 
 .composerTextarea:focus {
-  border-color: rgba(59, 130, 246, 0.5);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+  border-color: var(--rudu-ink-400);
 }
 
 .composerTextarea::placeholder {
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--review-input-placeholder);
 }
 
 .composerActions {
@@ -455,12 +447,13 @@
   margin-top: 10px;
 }
 
+/* rudu submit: rounded-md bg-ink-900 text-white  /  dark:bg-ink-200 text-ink-900 */
 .composerSubmit {
   padding: 4px 12px;
   border: none;
-  border-radius: 6px;
-  background: rgb(59, 130, 246);
-  color: white;
+  border-radius: var(--radius-md);
+  background: var(--review-submit-bg);
+  color: var(--review-submit-text);
   font-size: 12px;
   font-weight: 500;
   font-family: var(--font-sans, system-ui, sans-serif);
@@ -471,7 +464,7 @@
 }
 
 .composerSubmit:hover:not(:disabled) {
-  background: rgb(37, 99, 235);
+  background: var(--review-submit-bg-hover);
 }
 
 .composerSubmit:active:not(:disabled) {
@@ -483,17 +476,19 @@
   cursor: default;
 }
 
+/* rudu cancel: text-ink-600 hover:bg-canvasDark hover:text-ink-900 */
 .composerCancel {
   padding: 4px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: none;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--review-text-author);
   font-size: 12px;
   font-family: var(--font-sans, system-ui, sans-serif);
   cursor: pointer;
   transition:
     color var(--motion-fast),
+    background-color var(--motion-fast),
     transform var(--duration-micro) var(--ease-press);
 }
 
@@ -502,13 +497,14 @@
 }
 
 .composerCancel:hover {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--review-text-strong);
+  background: var(--rudu-canvas-hover);
 }
 
 .composerHint {
   margin-left: auto;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.28);
+  color: var(--review-text-muted);
   font-family: var(--font-sans, system-ui, sans-serif);
   letter-spacing: 0.02em;
 }
@@ -516,9 +512,9 @@
 /* ── Highlight flash (triggered from AnnotationsSummary navigation) ── */
 
 @keyframes bubbleHighlight {
-  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); border-color: rgba(255, 255, 255, 0.07); }
-  15% { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35); border-color: rgba(59, 130, 246, 0.4); }
-  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); border-color: rgba(255, 255, 255, 0.07); }
+  0% { box-shadow: 0 0 0 0 transparent; border-color: var(--review-card-border); }
+  15% { box-shadow: 0 0 0 2px var(--review-accent-soft); border-color: var(--review-accent); }
+  100% { box-shadow: 0 0 0 0 transparent; border-color: var(--review-card-border); }
 }
 
 :global(.highlightFlash) {
@@ -533,7 +529,6 @@
   }
   .commentBubble,
   .composerBubble,
-  .commentBubble:hover .avatar,
   .hunkActionUndo,
   .hunkActionKeep,
   .commentActionBtn {

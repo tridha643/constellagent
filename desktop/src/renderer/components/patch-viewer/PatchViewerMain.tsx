@@ -367,6 +367,7 @@ export function PatchViewerMain({
       draftTarget={composer.draftTarget}
       composerBody={composer.composerBody}
       onComposerBodyChange={composer.setComposerBody}
+      onComposerSeedPristine={composer.markComposerPristine}
       onSelectionChange={composer.onSelectionChange}
       onApplyAnnotation={review.applyAnnotationPatch}
       onOpenFile={openFileFromDiff}

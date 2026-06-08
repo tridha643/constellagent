@@ -37,6 +37,19 @@ interface GraphqlPullRequestNode {
   author?: {
     login?: string | null
   } | null
+  assignees?: {
+    nodes?: Array<{
+      login?: string | null
+    }>
+  } | null
+  reviewRequests?: {
+    nodes?: Array<{
+      requestedReviewer?: {
+        __typename?: string | null
+        login?: string | null
+      } | null
+    }>
+  } | null
   reviewDecision?: string | null
   mergeStateStatus?: string | null
   commits?: {
@@ -70,6 +83,14 @@ interface GraphqlPrNumberResponse {
 
 interface GraphqlOpenPrListResponse {
   data?: {
+    viewer?: {
+      login?: string | null
+    } | null
+    reviewRequested?: {
+      nodes?: Array<{
+        number?: number | null
+      } | null>
+    } | null
     repository?: {
       pullRequests?: {
         nodes?: GraphqlPullRequestNode[]
@@ -631,6 +652,41 @@ export class GithubService {
     }
   }
 
+  private static mapOpenPullRequest(
+    repoInfo: GithubRepoInfo,
+    node: GraphqlPullRequestNode,
+    viewerLogin: string,
+    reviewRequestedNumbers: ReadonlySet<number> = new Set(),
+  ): OpenPrInfo {
+    const normalizedViewerLogin = viewerLogin.trim().toLowerCase()
+    const assigneeLogins = (node.assignees?.nodes ?? [])
+      .map((assignee) => assignee.login?.trim())
+      .filter((login): login is string => !!login)
+    const normalizedAssigneeLogins = assigneeLogins.map((login) => login.toLowerCase())
+    const reviewRequestLogins = (node.reviewRequests?.nodes ?? [])
+      .map((request) => {
+        const reviewer = request.requestedReviewer
+        return reviewer?.__typename === 'User' ? reviewer.login?.trim() : undefined
+      })
+      .filter((login): login is string => !!login)
+    const normalizedReviewRequestLogins = reviewRequestLogins.map((login) => login.toLowerCase())
+
+    return {
+      ...this.mapPullRequest(node),
+      state: 'open' as const,
+      ...this.mapGraphqlHeadMetadata(repoInfo, node),
+      authorLogin: node.author?.login || undefined,
+      assigneeLogins,
+      isAssignedToViewer: normalizedViewerLogin.length > 0 &&
+        normalizedAssigneeLogins.includes(normalizedViewerLogin),
+      reviewRequestLogins,
+      isReviewRequestedFromViewer: reviewRequestedNumbers.has(node.number) || (
+        normalizedViewerLogin.length > 0 &&
+        normalizedReviewRequestLogins.includes(normalizedViewerLogin)
+      ),
+    }
+  }
+
   private static cacheKey(repoPath: string, branches: string[]): string {
     return `${repoPath}::${branches.join('\u0000')}`
   }
@@ -667,6 +723,8 @@ export class GithubService {
     return data.map((pr) => ({
       ...pr,
       headRepository: pr.headRepository ? { ...pr.headRepository } : undefined,
+      assigneeLogins: pr.assigneeLogins ? [...pr.assigneeLogins] : undefined,
+      reviewRequestLogins: pr.reviewRequestLogins ? [...pr.reviewRequestLogins] : undefined,
     }))
   }
 
@@ -756,13 +814,16 @@ export class GithubService {
   ): Promise<OpenPrInfo[]> {
     const { query, variables } = this.buildOpenPrListQuery(repoInfo, this.OPEN_PR_LIST_LIMIT)
     const payload = await this.fetchGraphqlJson<GraphqlOpenPrListResponse>(query, variables, token)
+    const viewerLogin = payload.data?.viewer?.login || ''
     const nodes = payload.data?.repository?.pullRequests?.nodes ?? []
-    const data = nodes.map((node) => ({
-      ...this.mapPullRequest(node),
-      state: 'open' as const,
-      ...this.mapGraphqlHeadMetadata(repoInfo, node),
-      authorLogin: node.author?.login || undefined,
-    }))
+    const reviewRequestedNumbers = new Set(
+      (payload.data?.reviewRequested?.nodes ?? [])
+        .map((node) => node?.number)
+        .filter((number): number is number => typeof number === 'number')
+    )
+    const data = nodes.map((node) => (
+      this.mapOpenPullRequest(repoInfo, node, viewerLogin, reviewRequestedNumbers)
+    ))
 
     const unresolvedLookups: Promise<void>[] = []
     for (let i = 0; i < nodes.length; i++) {
@@ -920,7 +981,17 @@ export class GithubService {
     first: number
   ): { query: string; variables: Record<string, string | number> } {
     const query = `
-      query OpenPullRequests($owner: String!, $name: String!, $first: Int!) {
+      query OpenPullRequests($owner: String!, $name: String!, $first: Int!, $reviewRequestedQuery: String!) {
+        viewer {
+          login
+        }
+        reviewRequested: search(query: $reviewRequestedQuery, type: ISSUE, first: 100) {
+          nodes {
+            ... on PullRequest {
+              number
+            }
+          }
+        }
         repository(owner: $owner, name: $name) {
           pullRequests(states: OPEN, first: $first, orderBy: { field: UPDATED_AT, direction: DESC }) {
             nodes {
@@ -945,6 +1016,21 @@ export class GithubService {
               author {
                 login
               }
+              assignees(first: 20) {
+                nodes {
+                  login
+                }
+              }
+              reviewRequests(first: 20) {
+                nodes {
+                  requestedReviewer {
+                    __typename
+                    ... on User {
+                      login
+                    }
+                  }
+                }
+              }
               commits(last: 1) {
                 nodes {
                   commit {
@@ -966,6 +1052,7 @@ export class GithubService {
         owner: repoInfo.owner,
         name: repoInfo.name,
         first,
+        reviewRequestedQuery: `repo:${repoInfo.owner}/${repoInfo.name} is:open is:pr review-requested:@me`,
       },
     }
   }
