@@ -3,6 +3,7 @@ import { execFileSync } from 'child_process'
 import { createRequire } from 'module'
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
+import { performance } from 'perf_hooks'
 import { WebContents } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import { GEMINI_TAB_LABEL, isGeminiIdleOscTitle } from '../shared/gemini-tab-title'
@@ -46,6 +47,20 @@ interface ProcessEntry {
 
 const requireForNodePty = createRequire(import.meta.url)
 let nodePtySpawnHelperChecked = false
+const TERMINAL_TIMING_ENABLED = process.env.CONSTELLAGENT_TERMINAL_TIMING === '1'
+
+function terminalTimingNow(): number {
+  return performance.now()
+}
+
+function terminalTimingMs(start: number, end = terminalTimingNow()): number {
+  return Math.round((end - start) * 10) / 10
+}
+
+function logTerminalTiming(message: string, data: Record<string, unknown>): void {
+  if (!TERMINAL_TIMING_ENABLED) return
+  console.info('[terminal:timing]', message, data)
+}
 
 function ensureNodePtySpawnHelperExecutable(): void {
   if (process.platform === 'win32' || nodePtySpawnHelperChecked) return
@@ -287,11 +302,18 @@ export class PtyManager {
   /** Service tabs subscribe to flip status (running → exited/crashed); also used by ipc.ts to broadcast PTY_EXIT. */
   onPtyExit?: (ptyId: string, exitCode: number, workspaceId: string | undefined) => void
 
+  prewarm(): void {
+    const start = terminalTimingNow()
+    ensureNodePtySpawnHelperExecutable()
+    logTerminalTiming('prewarm', { helperMs: terminalTimingMs(start) })
+  }
+
   private appendOutputRing(instance: PtyInstance, data: string): void {
     instance.outputRing.append(data)
   }
 
   create(workingDir: string, webContents: WebContents, shell?: string, command?: string[], initialWrite?: string, extraEnv?: Record<string, string>): string {
+    const createStart = terminalTimingNow()
     const id = `pty-${++this.nextId}`
 
     let file: string
@@ -304,8 +326,11 @@ export class PtyManager {
       args = []
     }
 
+    const helperStart = terminalTimingNow()
     ensureNodePtySpawnHelperExecutable()
+    const helperMs = terminalTimingMs(helperStart)
 
+    const spawnStart = terminalTimingNow()
     const proc = pty.spawn(file, args, {
       name: 'xterm-256color',
       cols: 80,
@@ -323,8 +348,8 @@ export class PtyManager {
         ...extraEnv,
       } as Record<string, string>,
     })
-
-    let pendingWrite = initialWrite
+    const spawnMs = terminalTimingMs(spawnStart)
+    let sawFirstData = false
 
     const instance: PtyInstance = {
       process: proc,
@@ -345,6 +370,16 @@ export class PtyManager {
     }
 
     proc.onData((data) => {
+      if (!sawFirstData) {
+        sawFirstData = true
+        logTerminalTiming('first-data', {
+          id,
+          pid: proc.pid,
+          helperMs,
+          spawnMs,
+          createToFirstDataMs: terminalTimingMs(createStart),
+        })
+      }
       this.appendOutputRing(instance, data)
       if (!instance.webContents.isDestroyed()) {
         instance.webContents.send(`${IPC.PTY_DATA}:${id}`, data)
@@ -352,12 +387,6 @@ export class PtyManager {
       this.onPtyData?.(id, data)
       this.handleCodexQuestionPrompt(instance, data)
       this.handleOscTitle(id, instance, data)
-      // Write initial command on first output (shell is ready)
-      if (pendingWrite) {
-        const toWrite = pendingWrite
-        pendingWrite = undefined
-        proc.write(toWrite)
-      }
     })
 
     proc.onExit(({ exitCode }) => {
@@ -375,6 +404,21 @@ export class PtyManager {
       if (instance.workspaceId) this.writeAgentActivityMarker(instance.workspaceId, presetAgent, instance.process.pid)
       this.notifyAgentDetected(id, instance, presetAgent)
     }
+    if (initialWrite) {
+      queueMicrotask(() => {
+        if (this.ptys.get(id) !== instance) return
+        proc.write(initialWrite)
+        logTerminalTiming('initial-write', { id, pid: proc.pid, createToWriteMs: terminalTimingMs(createStart) })
+      })
+    }
+    logTerminalTiming('create', {
+      id,
+      pid: proc.pid,
+      file,
+      helperMs,
+      spawnMs,
+      createMs: terminalTimingMs(createStart),
+    })
     return id
   }
 

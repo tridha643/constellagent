@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useAppStore } from '../../store/app-store'
 import { getAppearanceTerminalTheme } from '../../theme/appearance'
 import { CONSTELLAGENT_PATH_MIME, wrapBracketedPaste } from '../../utils/add-to-chat'
+import { logTerminalTiming, terminalTimingMs } from '../../utils/terminal-timing'
 import styles from './TerminalPanel.module.css'
 
 const TAB_TITLE_LOG = '[constellagent:tab-title]'
@@ -118,6 +119,8 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
     let disposed = false
     let cleanup: (() => void) | null = null
     let retryTimer: ReturnType<typeof setTimeout> | null = null
+    const attachStart = performance.now()
+    let loggedFirstData = false
 
     const scheduleRetry = (attempt: number, reason: string, err?: unknown) => {
       if (disposed || attempt >= TERMINAL_ATTACH_MAX_ATTEMPTS) {
@@ -216,6 +219,12 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
               } catch {
                 /* refresh is best-effort — xterm versions vary */
               }
+              logTerminalTiming('first-fit', {
+                ptyId,
+                cols: term.cols,
+                rows: term.rows,
+                attachToFitMs: terminalTimingMs(attachStart),
+              })
             }
             return
           }
@@ -270,6 +279,13 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
 
         const unsubData = window.api.pty.onData(ptyId, (data: string) => {
           if (disposed) return
+          if (!loggedFirstData) {
+            loggedFirstData = true
+            logTerminalTiming('renderer-first-data', {
+              ptyId,
+              attachToFirstDataMs: terminalTimingMs(attachStart),
+            })
+          }
           term.write(data)
           // Track 6: keep an in-memory ring of PTY output so the scrollback
           // can be re-written into a fresh xterm on the next session.

@@ -86,8 +86,8 @@ export class AutomationScheduler {
       // non-fatal
     }
 
-    // Spawn a shell with initialWrite — writes the claude command as soon as
-    // the shell emits its first output (ready), no manual timeout needed.
+    // Spawn a shell with initialWrite — writes the claude command immediately
+    // after PTY registration, without waiting for a slow interactive prompt.
     const shell = process.env.SHELL || '/bin/zsh'
     const escapedPrompt = config.prompt.replace(/'/g, "'\\''")
     const ptyId = this.ptyManager.create(

@@ -149,6 +149,7 @@ import {
   type ComposioWebhookSettings,
 } from '../../shared/composio-types'
 import { normalizeWorktreeCredentialRules } from '../../shared/worktree-credentials'
+import { logTerminalTiming, terminalTimingEnabled, terminalTimingMs } from '../utils/terminal-timing'
 
 const DEFAULT_PR_LINK_PROVIDER = 'github' as const
 
@@ -1372,6 +1373,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   createTerminalForActiveWorkspace: async () => {
+    const createStart = performance.now()
     const s = get()
     if (!s.activeWorkspaceId) return
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
@@ -1384,16 +1386,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       worktreePath: ws.worktreePath,
       tabId,
     })
+    const ipcStart = performance.now()
     const ptyId = await window.api.pty.create(ws.worktreePath, shell, { AGENT_ORCH_WS_ID: ws.id })
-    const livePtys = new Set(await window.api.pty.list().catch(() => [] as string[]))
-    if (!livePtys.has(ptyId)) {
-      console.warn('[terminal:create]', 'created PTY was not present in live list', {
-        workspaceId: ws.id,
-        ptyId,
-        tabId,
-        livePtyCount: livePtys.size,
-      })
-    }
     const latest = get()
     const workspaceId = ws.id
     const wsTabs = latest.tabs.filter((t) => t.workspaceId === workspaceId)
@@ -1406,6 +1400,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       title: `Terminal ${termCount + 1}`,
       ptyId,
     })
+    logTerminalTiming('tab-added', {
+      workspaceId,
+      tabId,
+      ptyId,
+      ipcMs: terminalTimingMs(ipcStart),
+      totalMs: terminalTimingMs(createStart),
+    })
+    if (terminalTimingEnabled()) {
+      void window.api.pty.list().then((ids) => {
+        if (ids.includes(ptyId)) return
+        console.warn('[terminal:create]', 'created PTY was not present in live list', {
+          workspaceId,
+          ptyId,
+          tabId,
+          livePtyCount: ids.length,
+        })
+      }).catch(() => {})
+    }
   },
 
   createPiThreadForActiveWorkspace: async () => {
