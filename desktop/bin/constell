@@ -56,7 +56,21 @@ else
     printf ''
   }
 
+  renderer_url_healthy() {
+    url="$1"
+    body="$(curl -fsS --max-time 2 "$url" 2>/dev/null)" || return 1
+    case "$body" in
+      *'<div id="root">'*) return 0 ;;
+      *) return 1 ;;
+    esac
+  }
+
   RENDERER_URL="$(pick_renderer_url)"
+  if [ -n "$RENDERER_URL" ] && ! renderer_url_healthy "$RENDERER_URL"; then
+    echo "constell: dev server at $RENDERER_URL is not serving index.html (EPERM or stale process)." >&2
+    echo "constell: quit the old dev server and run 'bun run dev' from the repo root." >&2
+    exit 1
+  fi
   if [ -n "$RENDERER_URL" ]; then
     # Dev server running — launch electron pointing at that renderer URL
     echo "constell: dev server at $RENDERER_URL, opening app..."
