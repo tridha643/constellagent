@@ -86,6 +86,7 @@ export const IPC = {
   // File operations
   FS_GET_TREE: 'fs:get-tree',
   FS_GET_TREE_WITH_STATUS: 'fs:get-tree-with-status',
+  FS_LIST_DIRECTORY: 'fs:list-directory',
   FS_QUICK_OPEN_SEARCH: 'fs:quick-open-search',
   FS_CODE_SEARCH: 'fs:code-search',
   FS_SEARCH_AGENT_PLANS: 'fs:search-agent-plans',

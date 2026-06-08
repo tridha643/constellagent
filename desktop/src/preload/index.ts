@@ -273,6 +273,16 @@ const api = {
           gitStatus?: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
         }>
       }>,
+    listDirectory: (rootPath: string, dirPath: string) =>
+      ipcRenderer.invoke(IPC.FS_LIST_DIRECTORY, rootPath, dirPath) as Promise<{
+        rootPath: string
+        entries: Array<{
+          name: string
+          path: string
+          type: 'file' | 'directory'
+          gitStatus?: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
+        }>
+      }>,
     quickOpenSearch: (worktreePath: string, request: QuickOpenSearchRequest) =>
       ipcRenderer.invoke(IPC.FS_QUICK_OPEN_SEARCH, worktreePath, request) as Promise<QuickOpenSearchResult>,
     codeSearch: (worktreePath: string, request: CodeSearchRequest) =>

@@ -969,6 +969,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }))
   },
 
+  setFolderColor: (id, color) => {
+    set((s) => ({
+      folders: s.folders.map((f) => (f.id === id ? { ...f, color } : f)),
+    }))
+  },
+
   removeFolder: (id, reassignTo) => {
     set((s) => {
       const folder = s.folders.find((f) => f.id === id)

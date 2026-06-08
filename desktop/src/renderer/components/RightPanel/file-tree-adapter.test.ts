@@ -47,4 +47,23 @@ describe('buildFileTreeSnapshot', () => {
     expect(snapshot.paths).toEqual(['docs/'])
     expect(snapshot.gitStatus).toEqual([])
   })
+
+  it('stays linear on a large flat tree (regression: dedup was O(n²))', () => {
+    const N = 20_000
+    const children = Array.from({ length: N }, (_v, i) => ({
+      name: `f${i}.ts`,
+      path: `/repo/src/f${i}.ts`,
+      type: 'file' as const,
+    }))
+    const t0 = performance.now()
+    const snapshot = buildFileTreeSnapshot('/repo', [
+      { name: 'src', path: '/repo/src', type: 'directory', children },
+    ])
+    const ms = performance.now() - t0
+
+    expect(snapshot.paths.length).toBe(N + 1) // files + the src/ dir
+    // O(n) finishes in a few ms; the old Array.includes/some dedup took ~2s at
+    // this size. Generous ceiling guards the regression without CI flakiness.
+    expect(ms).toBeLessThan(250)
+  })
 })

@@ -1,7 +1,7 @@
 import { readdir, readFile as fsReadFile, writeFile as fsWriteFile, stat, rm, copyFile, mkdir, realpath } from 'fs/promises'
 import { homedir } from 'os'
 import { join, basename, relative, dirname } from 'path'
-import { execFile } from 'child_process'
+import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import type { FileFinder as FileFinderType, GrepCursor } from '@ff-labs/fff-node'
 import {
@@ -129,6 +129,47 @@ export class FileService {
     }
   }
 
+  /**
+   * Short-lived cache of pure tree *structure* (no git status) keyed by
+   * normalized root. The expensive part of a tree fetch is the structure walk
+   * (git ls-files + ignored-files + build); git *status* is cheap (~20ms) and
+   * always recomputed fresh, so cached structure never makes status dots stale.
+   *
+   * Rapidly re-showing the panel (switching workspaces, watcher-driven refetches
+   * during an agent run) coalesces onto the cached structure instead of
+   * re-walking every time. In-app structural mutations (writeFile/deleteFile)
+   * invalidate it immediately; external changes self-heal within the TTL.
+   */
+  private static treeStructureCache = new Map<string, { tree: FileNode[]; expiresAt: number }>()
+  private static readonly TREE_CACHE_TTL_MS = 3000
+
+  /** Cached structure clone (callers may mutate, e.g. to annotate git status). */
+  static async getTreeStructureCached(dirPath: string): Promise<FileNode[]> {
+    const root = await this.normalizeFsRoot(dirPath)
+    const now = Date.now()
+    const hit = this.treeStructureCache.get(root)
+    if (hit && hit.expiresAt > now) {
+      return structuredClone(hit.tree)
+    }
+    const tree = await this.getTree(root)
+    this.treeStructureCache.set(root, { tree, expiresAt: now + this.TREE_CACHE_TTL_MS })
+    return structuredClone(tree)
+  }
+
+  /** Drop cached structure overlapping `affectedPath` (or everything if omitted). */
+  static invalidateTreeCache(affectedPath?: string): void {
+    if (!affectedPath) {
+      this.treeStructureCache.clear()
+      return
+    }
+    const p = normalizeRootPath(affectedPath)
+    for (const key of [...this.treeStructureCache.keys()]) {
+      if (p === key || p.startsWith(`${key}/`) || key.startsWith(`${p}/`)) {
+        this.treeStructureCache.delete(key)
+      }
+    }
+  }
+
   static async getTree(dirPath: string, depth = 0): Promise<FileNode[]> {
     if (depth > 8) return [] // prevent infinite recursion
 
@@ -176,6 +217,70 @@ export class FileService {
     }
 
     return nodes
+  }
+
+  /** Names git would hide via .gitignore / excludes, checked relative to `cwd`. */
+  private static async namesIgnoredByGit(cwd: string, names: readonly string[]): Promise<Set<string>> {
+    if (names.length === 0) return new Set()
+    return new Promise((resolvePromise) => {
+      let stdout = ''
+      try {
+        const child = spawn('git', ['check-ignore', '-z', '--stdin'], {
+          cwd,
+          stdio: ['pipe', 'pipe', 'ignore'],
+          windowsHide: true,
+        })
+        child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8') })
+        // Not a git repo / git missing → treat nothing as ignored (show all).
+        child.on('error', () => resolvePromise(new Set()))
+        child.on('close', () => resolvePromise(new Set(stdout.split('\0').filter(Boolean))))
+        child.stdin?.write(`${names.join('\0')}\0`)
+        child.stdin?.end()
+      } catch {
+        resolvePromise(new Set())
+      }
+    })
+  }
+
+  /**
+   * Immediate children of one directory, for lazy/on-expand tree loading (the
+   * VS Code model: `getChildren` runs only when a folder opens). Applies the
+   * same visibility rules as the eager walk — SKIP_DIRS, dotfile hiding except
+   * always-visible names, and .gitignore — but reads only this one level, so it
+   * is O(children) instead of O(repo). Directories come back without `children`
+   * (the caller marks them expandable and loads them on demand).
+   */
+  static async listDirectory(dirPath: string, depth = 0): Promise<FileNode[]> {
+    const effectiveDir = depth === 0 ? await this.normalizeFsRoot(dirPath) : normalizeRootPath(dirPath)
+    let entries: import('fs').Dirent[]
+    try {
+      entries = await readdir(effectiveDir, { withFileTypes: true }) as import('fs').Dirent[]
+    } catch {
+      return []
+    }
+
+    const visiblePrefilter = entries
+      .filter((e) => !e.name.startsWith('.') || isAlwaysVisibleFileName(e.name))
+      .filter((e) => !SKIP_DIRS.has(e.name))
+
+    // .gitignore pass (names relative to this dir). Always-visible names stay.
+    const ignored = await this.namesIgnoredByGit(
+      effectiveDir,
+      visiblePrefilter.map((e) => e.name),
+    )
+
+    return visiblePrefilter
+      .filter((e) => isAlwaysVisibleFileName(e.name) || !ignored.has(e.name))
+      .sort((a, b) => {
+        if (a.isDirectory() && !b.isDirectory()) return -1
+        if (!a.isDirectory() && b.isDirectory()) return 1
+        return a.name.localeCompare(b.name)
+      })
+      .map((e) => ({
+        name: e.name,
+        path: join(effectiveDir, e.name),
+        type: e.isDirectory() ? ('directory' as const) : ('file' as const),
+      }))
   }
 
   private static async getGitTree(dirPath: string): Promise<FileNode[]> {
@@ -235,38 +340,49 @@ export class FileService {
     return this.buildTreeFromPaths(cwd, [...relForTree, ...alwaysVisibleFiles])
   }
 
-  private static async collectAlwaysVisibleFiles(
-    basePath: string,
-    relativeDir = '',
-    depth = 0,
-  ): Promise<string[]> {
-    if (depth > 8) return []
-
-    const absoluteDir = relativeDir ? join(basePath, relativeDir) : basePath
-    let entries: import('fs').Dirent[]
+  /**
+   * Gitignored `.gitignore` / `.env*` files that `ls-files --exclude-standard`
+   * deliberately drops but we still want surfaced in the tree.
+   *
+   * Previously a full recursive `fs.readdir` walk of the entire worktree — a
+   * second whole-tree traversal on every fetch that scaled with repo size. Git
+   * already has this index in memory, so we ask it directly with name-scoped
+   * pathspecs (one cheap process, no filesystem walk). Results are filtered to
+   * the same visibility rules the manual walk applied (skip SKIP_DIRS and any
+   * dot-directory segment).
+   */
+  private static async collectAlwaysVisibleFiles(basePath: string): Promise<string[]> {
+    const cwd = normalizeRootPath(basePath)
+    let stdout: string
     try {
-      entries = await readdir(absoluteDir, { withFileTypes: true }) as import('fs').Dirent[]
+      ;({ stdout } = await execFileAsync(
+        'git',
+        [
+          'ls-files', '--others', '--ignored', '--exclude-standard',
+          '--',
+          ':(glob).env*', ':(glob)**/.env*',
+          ':(glob).gitignore', ':(glob)**/.gitignore',
+        ],
+        { cwd, maxBuffer: 16 * 1024 * 1024 },
+      ))
     } catch {
       return []
     }
 
-    const files: string[] = []
-    for (const entry of entries) {
-      if (SKIP_DIRS.has(entry.name)) continue
-
-      const nextRelativePath = relativeDir ? join(relativeDir, entry.name) : entry.name
-      if (entry.isDirectory()) {
-        if (entry.name.startsWith('.')) continue
-        files.push(...await this.collectAlwaysVisibleFiles(basePath, nextRelativePath, depth + 1))
-        continue
-      }
-
-      if (entry.isFile() && isAlwaysVisibleFileName(entry.name)) {
-        files.push(toPosixPath(nextRelativePath))
-      }
-    }
-
-    return files
+    return stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => toPosixPath(line))
+      .filter((line) => {
+        const segments = line.split('/')
+        const name = segments[segments.length - 1]
+        if (!isAlwaysVisibleFileName(name)) return false
+        // Skip files nested under a skipped or dot-prefixed directory.
+        return segments
+          .slice(0, -1)
+          .every((dir) => !SKIP_DIRS.has(dir) && !dir.startsWith('.'))
+      })
   }
 
   private static buildTreeFromPaths(basePath: string, paths: string[]): FileNode[] {
@@ -323,12 +439,14 @@ export class FileService {
     }
     await fsWriteFile(filePath, content, 'utf-8')
     this.invalidateQuickOpenCachesForPath(filePath)
+    this.invalidateTreeCache(filePath)
   }
 
   static async deleteFile(filePath: string): Promise<void> {
     const info = await stat(filePath)
     await rm(filePath, { recursive: info.isDirectory(), force: false })
     this.invalidateQuickOpenCachesForPath(filePath)
+    this.invalidateTreeCache(filePath)
   }
 
   private static flattenQuickOpenFiles(nodes: FileNode[], basePath: string): QuickOpenFallbackFile[] {
