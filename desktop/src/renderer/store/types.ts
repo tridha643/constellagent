@@ -129,6 +129,8 @@ export interface Folder {
   name: string
   order: number
   collapsed?: boolean
+  /** User-chosen accent (a PROJECT_ICON_COLORS `var(--accent-*)` value). Drives `--fc`. */
+  color?: string
 }
 
 export type SplitLeaf =
@@ -937,6 +939,8 @@ export interface AppState {
   // Sidebar folder actions
   addFolder: (projectId: string, name: string) => string
   renameFolder: (id: string, name: string) => void
+  /** Set (or clear, when `color` is undefined) a folder's accent color. */
+  setFolderColor: (id: string, color: string | undefined) => void
   removeFolder: (id: string, reassignTo?: string) => void
   reorderFolder: (fromId: string, toId: string) => void
   toggleFolderCollapsed: (id: string) => void

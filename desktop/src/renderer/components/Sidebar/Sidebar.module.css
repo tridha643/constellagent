@@ -123,16 +123,49 @@
 .projectHeader {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) 116px var(--space-3) var(--space-6);
+  /* Mockup .projectHeader: gap:9px; padding:7px 9px. The action buttons now live
+   * in an inline .hdrActions cluster (no longer absolute), so the old 116px
+   * reserved right padding is gone — repoName (flex:1) yields space to the cluster. */
+  gap: 9px;
+  padding: 7px 9px;
   cursor: pointer;
   color: var(--text-secondary);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   transition: color var(--motion-fast), transform var(--duration-micro) var(--ease-press);
   position: relative;
+}
+
+/* Inline action cluster (mockup .hdrActions): ⚙ · PR · ↻ · ✕, hover-revealed
+ * with a staggered fade so they cascade in from the repo name. */
+.hdrActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.hdrActions > button {
+  position: static;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  opacity: 0;
+  transform: none;
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.hdrActions > button:active {
+  transform: scale(0.94);
+}
+
+.projectHeader:focus-within .hdrActions > button {
+  opacity: 1;
 }
 
 .projectHeader:active {
@@ -390,9 +423,13 @@
   align-items: center;
   justify-content: center;
   position: absolute;
-  right: calc(var(--space-2) + 24px);
-  width: 18px;
-  height: 18px;
+  /* Leftmost slot of the centered right-edge cluster, left of ✕ (9px) and
+   * flip (37px). Vertically centered like the others so the persistent branch
+   * nudge never collides with the hover-revealed ✕ (the Image #2 bug). */
+  right: 65px;
+  top: 50%;
+  width: 22px;
+  height: 22px;
   border: none;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
@@ -402,6 +439,7 @@
   padding: 0;
   line-height: 1;
   z-index: 1;
+  transform: translateY(-50%);
   transition:
     background-color var(--motion-fast),
     color var(--motion-fast),
@@ -416,7 +454,7 @@
 }
 
 .branchPrBtn:active {
-  transform: scale(0.92);
+  transform: translateY(-50%) scale(0.92);
 }
 
 .branchPrBtn[data-open='true'] {
@@ -1109,11 +1147,13 @@
 
 .workspaceItem {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-2);
   /* Concrete row: no left accent gutter — content sits at the normal inset and
-   * selection/hover read as a filled background rather than a left bar. */
-  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-3);
+   * selection/hover read as a filled background rather than a left bar.
+   * Rectangle proportions ported from the mockup `.wsBar` (8px 10px 9px) minus
+   * the accent gutter: wide + short, not a chunky square card. */
+  padding: 5px 10px 6px 10px;
   margin: 0;
   border-radius: var(--radius-md);
   will-change: transform, opacity;
@@ -1406,12 +1446,29 @@
     color: var(--accent-red);
   }
 
-  .projectHeader:hover .settingsBtn,
-  .projectHeader:hover .prListBtn,
-  .projectHeader:hover .syncBtn,
-  .projectHeader:hover .deleteBtn,
   .workspaceItem:hover .deleteBtn {
     display: flex;
+  }
+
+  /* Staggered cascade reveal of the project action cluster (mockup L85–88). */
+  .projectHeader:hover .hdrActions > button {
+    opacity: 1;
+  }
+
+  .projectHeader:hover .hdrActions > button:nth-child(1) {
+    transition-delay: 0ms;
+  }
+
+  .projectHeader:hover .hdrActions > button:nth-child(2) {
+    transition-delay: 22ms;
+  }
+
+  .projectHeader:hover .hdrActions > button:nth-child(3) {
+    transition-delay: 44ms;
+  }
+
+  .projectHeader:hover .hdrActions > button:nth-child(4) {
+    transition-delay: 66ms;
   }
 
   .workspaceItem:hover {
@@ -2151,17 +2208,22 @@
   color: var(--text-secondary);
 }
 
+/* Folder glyph carries the per-folder accent (mockup .fglyph{color:var(--fc)}).
+ * --fc is set inline on .folderHeader when the user picks a color; otherwise it
+ * falls back to the default blue so existing folders look unchanged. */
 .folderIconClosed {
+  color: color-mix(in srgb, var(--fc, var(--accent-blue)) 24%, var(--text-tertiary));
   opacity: 0.92;
 }
 
 .folderIconOpen {
-  color: color-mix(in srgb, var(--accent-blue) 35%, var(--text-tertiary));
+  color: color-mix(in srgb, var(--fc, var(--accent-blue)) 38%, var(--text-tertiary));
   opacity: 1;
 }
 
+.folderHeader:hover .folderIconClosed,
 .folderHeader:hover .folderIconOpen {
-  color: color-mix(in srgb, var(--accent-blue) 45%, var(--text-secondary));
+  color: color-mix(in srgb, var(--fc, var(--accent-blue)) 50%, var(--text-secondary));
 }
 
 .folderName {
@@ -2275,6 +2337,42 @@
 
 .folderMenuItemDanger {
   color: var(--accent-red, #f87171);
+}
+
+/* Folder color picker — a swatch row at the top of the actions menu. */
+.folderColorRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+}
+
+.folderColorSwatch {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  padding: 0;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-full);
+  background: var(--swatch, var(--accent-blue));
+  cursor: pointer;
+  transition: transform var(--duration-micro) var(--ease-out), border-color var(--motion-fast) ease;
+}
+
+.folderColorSwatch:hover {
+  transform: scale(1.15);
+}
+
+/* "Default / none" swatch — neutral, with a hairline ring so it reads as a chip. */
+.folderColorSwatchNone {
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.folderColorSwatchActive {
+  border-color: var(--text-primary);
 }
 
 /* Per-project compact “Add” — disclosure with smooth expand (grid 0fr→1fr) */
@@ -2420,7 +2518,7 @@
   grid-area: 1 / 1;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 3px; /* mockup .face gap */
   min-width: 0;
   transition:
     opacity var(--duration-flip, 240ms) ease,
@@ -2557,13 +2655,22 @@
  * keeps its own display toggle. */
 .workspaceItem .deleteBtn {
   display: flex;
+  /* Rightmost slot of the centered hover cluster (mockup .del{right:9px}). */
+  top: 50%;
+  right: 9px;
+  width: 22px;
+  height: 22px;
   opacity: 0;
-  transform: scale(0.9);
+  transform: translateY(-50%) scale(0.9);
   transition:
     opacity var(--duration-default) var(--ease-out),
     transform var(--duration-default) var(--ease-out),
     background-color var(--duration-exit-fast) ease,
     color var(--duration-exit-fast) ease;
+}
+
+.workspaceItem .deleteBtn:active {
+  transform: translateY(-50%) scale(0.94);
 }
 
 /* Local⇄PR flip — part of the same hover cluster as delete (rudu .flip). Sits
@@ -2573,10 +2680,11 @@
   align-items: center;
   justify-content: center;
   position: absolute;
-  right: calc(var(--space-2) + 46px);
+  /* Middle slot of the centered hover cluster (mockup .flip{right:37px}). */
+  right: 37px;
   top: 50%;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
   border-radius: var(--radius-sm);
@@ -2604,7 +2712,7 @@
 
   .workspaceItem:hover .deleteBtn {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(-50%) scale(1);
   }
 
   .workspaceItem:hover .wsFlip {

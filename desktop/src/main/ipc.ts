@@ -827,7 +827,8 @@ export function registerIpcHandlers(): void {
     return measureMainAsync('fs:get-tree-with-status', async () => {
       const basePath = await FileService.normalizeFsRoot(dirPath)
       const [tree, statuses, prefixFromGit] = await Promise.all([
-        FileService.getTree(basePath),
+        // Cached structure (clone); annotate() below mutates this clone, not the cache.
+        FileService.getTreeStructureCached(basePath),
         GitService.getStatus(basePath).catch(() => []),
         GitService.getPathPrefixFromRepoRoot(basePath).catch(() => ''),
       ])
@@ -879,6 +880,48 @@ export function registerIpcHandlers(): void {
     }, {
       dirPath,
     })
+  })
+
+  ipcMain.handle(IPC.FS_LIST_DIRECTORY, async (_e, rootPath: string, dirPath: string) => {
+    return measureMainAsync('fs:list-directory', async () => {
+      const basePath = await FileService.normalizeFsRoot(rootPath)
+      const [entries, statuses, prefixFromGit] = await Promise.all([
+        FileService.listDirectory(dirPath),
+        GitService.getStatus(basePath).catch(() => []),
+        GitService.getPathPrefixFromRepoRoot(basePath).catch(() => ''),
+      ])
+
+      let prefix = prefixFromGit
+      if (prefix === '.') prefix = ''
+
+      const statusMap = new Map<string, string>()
+      for (const s of statuses) {
+        let p = s.path
+        if (p.includes(' -> ')) p = p.split(' -> ')[1]
+        if (prefix && p.startsWith(`${prefix}/`)) p = p.slice(prefix.length + 1)
+        statusMap.set(p, s.status)
+      }
+
+      for (const node of entries) {
+        const rel = relative(basePath, node.path).replace(/\\/g, '/')
+        if (node.type === 'file') {
+          const st = statusMap.get(rel)
+          if (st) node.gitStatus = st as FileNode['gitStatus']
+        } else {
+          // Directory rollup: 'modified' if any changed path lives under it —
+          // derivable from the flat status list without loading the subtree.
+          const dirPrefix = `${rel}/`
+          for (const key of statusMap.keys()) {
+            if (key.startsWith(dirPrefix)) {
+              node.gitStatus = 'modified'
+              break
+            }
+          }
+        }
+      }
+
+      return { rootPath: basePath, entries }
+    }, { dirPath })
   })
 
   ipcMain.handle(IPC.FS_QUICK_OPEN_SEARCH, async (_e, worktreePath: string, request: import('../shared/quick-open-types').QuickOpenSearchRequest) => {

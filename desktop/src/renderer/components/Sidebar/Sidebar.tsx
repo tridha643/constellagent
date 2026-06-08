@@ -50,6 +50,7 @@ import {
   getOwnerAvatarUrl,
 } from "../../../shared/github-url";
 import type { SpotlightState, SpotlightStatus } from "../../../shared/spotlight-types";
+import { PROJECT_ICON_COLORS } from "../../../shared/project-icon-templates";
 
 const PR_ICON_SIZE = 10;
 const START_TERMINAL_MESSAGE = "Starting terminal...";
@@ -696,6 +697,7 @@ function FolderActionsMenu({
   onRename,
   onSetPriority,
   onSetDefault,
+  onSetColor,
   onDelete,
   onClose,
 }: {
@@ -706,6 +708,7 @@ function FolderActionsMenu({
   onRename: () => void;
   onSetPriority: () => void;
   onSetDefault: () => void;
+  onSetColor: (color: string | undefined) => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
@@ -730,6 +733,26 @@ function FolderActionsMenu({
   const canDelete = projectFolderCount > 1;
   return (
     <div ref={rootRef} className={styles.folderMenu} role="menu" aria-label={`${folder.name} actions`}>
+      <div className={styles.folderColorRow} role="group" aria-label="Folder color">
+        <button
+          type="button"
+          className={`${styles.folderColorSwatch} ${styles.folderColorSwatchNone} ${!folder.color ? styles.folderColorSwatchActive : ""}`}
+          aria-label="Default color"
+          aria-pressed={!folder.color}
+          onClick={() => onSetColor(undefined)}
+        />
+        {PROJECT_ICON_COLORS.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className={`${styles.folderColorSwatch} ${folder.color === c.var ? styles.folderColorSwatchActive : ""}`}
+            style={{ "--swatch": c.var } as React.CSSProperties}
+            aria-label={c.label}
+            aria-pressed={folder.color === c.var}
+            onClick={() => onSetColor(c.var)}
+          />
+        ))}
+      </div>
       <button className={styles.folderMenuItem} role="menuitem" onClick={onRename}>
         Rename
       </button>
@@ -802,6 +825,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const folders = useAppStore((s) => s.folders);
   const addFolder = useAppStore((s) => s.addFolder);
   const renameFolder = useAppStore((s) => s.renameFolder);
+  const setFolderColor = useAppStore((s) => s.setFolderColor);
   const removeFolder = useAppStore((s) => s.removeFolder);
   const reorderFolder = useAppStore((s) => s.reorderFolder);
   const toggleFolderCollapsed = useAppStore((s) => s.toggleFolderCollapsed);
@@ -1727,52 +1751,57 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                     project.name
                   )}
                 </span>
-                <Tooltip label="Project settings">
-                  <button
-                    className={styles.settingsBtn}
-                    aria-label="Project settings"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingProject(project);
-                    }}
-                  >
-                    ⚙
-                  </button>
-                </Tooltip>
-                <Tooltip label="Open pull requests">
-                  <button
-                    className={styles.prListBtn}
-                    aria-expanded={openProjectPrPopoverId === project.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleProjectPrPopover(project);
-                    }}
-                  >
-                    PR
-                  </button>
-                </Tooltip>
-                    <Tooltip label="Sync all worktrees">
-                  <button
-                    type="button"
-                    className={styles.syncBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void window.api.git.syncAllWorktrees(project.id).then(() => {
-                        useAppStore.getState().refreshGitWorktrees();
-                      });
-                    }}
-                  >
-                    ↻
-                  </button>
-                </Tooltip>
-                <Tooltip label="Delete project">
-                  <button
-                    className={styles.deleteBtn}
-                    onClick={(e) => handleDeleteProject(e, project)}
-                  >
-                    ✕
-                  </button>
-                </Tooltip>
+                <span
+                  className={styles.hdrActions}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Tooltip label="Project settings">
+                    <button
+                      className={styles.settingsBtn}
+                      aria-label="Project settings"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingProject(project);
+                      }}
+                    >
+                      ⚙
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Open pull requests">
+                    <button
+                      className={styles.prListBtn}
+                      aria-expanded={openProjectPrPopoverId === project.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleProjectPrPopover(project);
+                      }}
+                    >
+                      PR
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Sync all worktrees">
+                    <button
+                      type="button"
+                      className={styles.syncBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void window.api.git.syncAllWorktrees(project.id).then(() => {
+                          useAppStore.getState().refreshGitWorktrees();
+                        });
+                      }}
+                    >
+                      ↻
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Delete project">
+                    <button
+                      className={styles.deleteBtn}
+                      onClick={(e) => handleDeleteProject(e, project)}
+                    >
+                      ✕
+                    </button>
+                  </Tooltip>
+                </span>
               </div>
 
               {isExpanded && (
@@ -1789,6 +1818,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                       <div
                         key={folder.id}
                         className={`${styles.folderSection} ${draggedFolderId === folder.id ? styles.folderSectionDragging : ""}`}
+                        style={folder.color ? ({ "--fc": folder.color } as React.CSSProperties) : undefined}
                       >
                         <div
                           className={`${styles.folderHeader} ${isFolderDropTarget ? styles.folderHeaderDropTarget : ""} ${isFolderReorderDropTarget && draggedFolderId !== folder.id ? styles.folderHeaderReorderTarget : ""}`}
@@ -1948,6 +1978,9 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                 onSetDefault={() => {
                                   setProjectDefaultFolder(folder.projectId, folder.id);
                                   setFolderMenuId(null);
+                                }}
+                                onSetColor={(color) => {
+                                  setFolderColor(folder.id, color);
                                 }}
                                 onDelete={() => {
                                   setFolderMenuId(null);

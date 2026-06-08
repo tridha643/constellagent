@@ -5,7 +5,7 @@ import { useFileWatcher } from '../../hooks/useFileWatcher'
 import { CONSTELLAGENT_PATH_MIME } from '../../utils/add-to-chat'
 import { isMarkdownDocumentPath } from '../../utils/markdown-path'
 import { getFileTreeIconsForAppearance } from '../../utils/file-presentation'
-import { buildFileTreeSnapshot, readExpandedDirectoryPaths, type FileNode, type FileTreeSnapshot } from './file-tree-adapter'
+import { buildFileTreeSnapshot, findDirectoryNode, readExpandedDirectoryPaths, type FileNode, type FileTreeSnapshot } from './file-tree-adapter'
 import { fileTreeActions } from './file-tree-actions'
 import { ensureLetterBadgeSheet, findTreeShadowRoot } from './file-tree-shadow-css'
 import styles from './RightPanel.module.css'
@@ -197,6 +197,17 @@ export function FileTree({ worktreePath, isActive }: Props) {
   const requestIdRef = useRef(0)
   const expandedPathsRef = useRef<string[]>([])
   const treeContainerRef = useRef<HTMLDivElement | null>(null)
+  /**
+   * Lazy tree state (VS Code's getChildren-on-expand model). `treeNodesRef` holds
+   * only the directory levels loaded so far; `loadedDirsRef` tracks which dirs
+   * have had their children fetched so re-expansion is instant and we never walk
+   * the whole repo up front. Pierre renders a directory with no children as a
+   * (non-chevron) folder row; clicking it triggers `loadDir`, which fills in the
+   * children and re-renders it expanded.
+   */
+  const treeNodesRef = useRef<FileNode[]>([])
+  const loadedDirsRef = useRef<Set<string>>(new Set())
+  const loadingDirsRef = useRef<Set<string>>(new Set())
   const [snapshot, setSnapshot] = useState<FileTreeSnapshot>(EMPTY_SNAPSHOT)
   const [isLoaded, setIsLoaded] = useState(false)
   const [namePrompt, setNamePrompt] = useState<null | { kind: 'file' | 'folder' }>(null)
@@ -234,24 +245,99 @@ export function FileTree({ worktreePath, isActive }: Props) {
     }, 500)
   }, [model, workspaceId, setFileTreeExpandedPaths])
 
-  const fetchTree = useCallback(async () => {
-    syncExpandedPaths()
+  // Resolved (realpath'd) root, mirrored into a ref so the lazy loaders below
+  // can build absolute child paths without re-rendering on every state read.
+  const treeRootRef = useRef(worktreePath)
+
+  const rebuildSnapshot = useCallback(() => {
+    setSnapshot(buildFileTreeSnapshot(treeRootRef.current, treeNodesRef.current))
+  }, [])
+
+  /** Fetch + attach one directory's immediate children (no-op if already loaded). */
+  const loadDir = useCallback(async (absDir: string, expandRelPath?: string) => {
+    if (loadedDirsRef.current.has(absDir) || loadingDirsRef.current.has(absDir)) return
+    loadingDirsRef.current.add(absDir)
+    try {
+      const { entries } = await window.api.fs.listDirectory(treeRootRef.current, absDir)
+      const node = findDirectoryNode(treeNodesRef.current, absDir)
+      if (node) node.children = entries as FileNode[]
+      loadedDirsRef.current.add(absDir)
+      // Capture Pierre's current expansion, then force the just-opened dir open
+      // so the resetPaths layout effect re-renders it expanded with its children.
+      syncExpandedPaths()
+      if (expandRelPath && !expandedPathsRef.current.includes(expandRelPath)) {
+        expandedPathsRef.current = [...expandedPathsRef.current, expandRelPath]
+      }
+      rebuildSnapshot()
+    } finally {
+      loadingDirsRef.current.delete(absDir)
+    }
+  }, [rebuildSnapshot, syncExpandedPaths])
+
+  /** Initial (root-level) load. Restores previously-expanded folders by loading
+   * their child levels, so reopened worktrees come back to the same shape. */
+  const loadRoot = useCallback(async () => {
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
-
     try {
-      const { rootPath, tree: nodes } = await window.api.fs.getTreeWithStatus(worktreePath)
+      const { rootPath, entries } = await window.api.fs.listDirectory(worktreePath, worktreePath)
       if (requestId !== requestIdRef.current) return
+      treeRootRef.current = rootPath
       setTreeRoot(rootPath)
-      setSnapshot(buildFileTreeSnapshot(rootPath, nodes as FileNode[]))
+      treeNodesRef.current = entries as FileNode[]
+      loadedDirsRef.current = new Set([rootPath])
+      loadingDirsRef.current = new Set()
+
+      // Re-open persisted folders shallow→deep so each parent is loaded first.
+      const seed = [...expandedPathsRef.current].sort((a, b) => a.split('/').length - b.split('/').length)
+      for (const rel of seed) {
+        if (requestId !== requestIdRef.current) return
+        await loadDir(toAbsolutePath(rootPath, rel))
+      }
+      if (requestId !== requestIdRef.current) return
+      expandedPathsRef.current = seed
+      rebuildSnapshot()
       setIsLoaded(true)
     } catch {
       if (requestId !== requestIdRef.current) return
+      treeRootRef.current = worktreePath
       setTreeRoot(worktreePath)
+      treeNodesRef.current = []
       setSnapshot(EMPTY_SNAPSHOT)
       setIsLoaded(true)
     }
-  }, [syncExpandedPaths, worktreePath])
+  }, [loadDir, rebuildSnapshot, worktreePath])
+
+  /** Re-list every currently-loaded directory (for watcher / mutation refreshes)
+   * — bounded by what the user actually opened, never the whole repo. */
+  const refreshLoaded = useCallback(async () => {
+    const root = treeRootRef.current
+    if (!loadedDirsRef.current.has(root)) {
+      void loadRoot()
+      return
+    }
+    syncExpandedPaths()
+    const dirs = [...loadedDirsRef.current].sort((a, b) => a.split('/').length - b.split('/').length)
+    for (const absDir of dirs) {
+      try {
+        const { entries } = await window.api.fs.listDirectory(root, absDir)
+        if (absDir === root) {
+          treeNodesRef.current = entries as FileNode[]
+        } else {
+          const node = findDirectoryNode(treeNodesRef.current, absDir)
+          if (node) node.children = entries as FileNode[]
+        }
+      } catch {
+        // Directory vanished (deleted/renamed) — drop it; parent refresh reconciles.
+        loadedDirsRef.current.delete(absDir)
+      }
+    }
+    rebuildSnapshot()
+  }, [loadRoot, rebuildSnapshot, syncExpandedPaths])
+
+  // Back-compat alias: existing call sites (create/delete/reveal) expect a single
+  // "refresh the tree" entry point; lazily that means re-listing loaded dirs.
+  const fetchTree = refreshLoaded
 
   const handleDelete = useCallback((absolutePath: string, kind: 'file' | 'directory') => {
     const name = absolutePath.split('/').pop() || absolutePath
@@ -326,6 +412,11 @@ export function FileTree({ worktreePath, isActive }: Props) {
     setSnapshot(EMPTY_SNAPSHOT)
     setTreeRoot(worktreePath)
     setNamePrompt(null)
+    // Drop the lazily-loaded tree so the new worktree re-loads from its root.
+    treeRootRef.current = worktreePath
+    treeNodesRef.current = []
+    loadedDirsRef.current = new Set()
+    loadingDirsRef.current = new Set()
     // Seed expansion from the persisted per-workspace map so reopened
     // worktrees come back with their previously open folders intact. Read
     // through getState() so persistence writes don't re-trigger this effect
@@ -438,39 +529,51 @@ export function FileTree({ worktreePath, isActive }: Props) {
 
   useEffect(() => {
     if (!activeRelativePath) return
-    try {
-      // Expand every ancestor directory so a deeply-nested file (opened via
-      // quick-open / Cmd-P, a tab click, etc.) is actually visible in the tree
-      // — otherwise focusPath targets a collapsed, unrendered row.
+    let cancelled = false
+
+    const reveal = async () => {
+      // Lazy reveal: load + expand every ancestor directory so a deeply-nested
+      // file (opened via quick-open / Cmd-P, a tab click, etc.) becomes visible.
       // Directory paths in this tree carry a trailing slash; file paths do not.
       const segments = activeRelativePath.split('/')
-      let didExpand = false
       for (let i = 1; i < segments.length; i++) {
+        if (cancelled) return
         const ancestorPath = `${segments.slice(0, i).join('/')}/`
+        const absAncestor = toAbsolutePath(treeRootRef.current, ancestorPath)
+        if (!loadedDirsRef.current.has(absAncestor)) {
+          await loadDir(absAncestor, ancestorPath)
+          continue
+        }
         const ancestor = model.getItem(ancestorPath)
         if (!ancestor || !ancestor.isDirectory()) continue
-        const directory = ancestor as typeof ancestor & {
-          isExpanded(): boolean
-          expand(): void
-        }
+        const directory = ancestor as typeof ancestor & { isExpanded(): boolean; expand(): void }
         if (!directory.isExpanded()) {
           directory.expand()
-          didExpand = true
+          if (!expandedPathsRef.current.includes(ancestorPath)) {
+            expandedPathsRef.current = [...expandedPathsRef.current, ancestorPath]
+          }
         }
       }
-
-      const item = model.getItem(activeRelativePath)
-      if (!item) return
-      model.focusPath(activeRelativePath)
-      item.select()
-
-      // Persist the programmatic expansion so the next fs-watcher-driven
-      // `resetPaths` doesn't collapse the freshly-opened path back down.
-      if (didExpand) requestAnimationFrame(syncExpandedPaths)
-    } catch (err) {
-      console.error('[FileTree] focus selection failed:', err)
+      if (cancelled) return
+      // Defer focus one frame so any pending resetPaths (from chain loads) has
+      // committed and the target row exists; best-effort if timing still races.
+      requestAnimationFrame(() => {
+        if (cancelled) return
+        try {
+          const item = model.getItem(activeRelativePath)
+          if (!item) return
+          model.focusPath(activeRelativePath)
+          item.select()
+          syncExpandedPaths()
+        } catch (err) {
+          console.error('[FileTree] focus selection failed:', err)
+        }
+      })
     }
-  }, [activeRelativePath, model, snapshot.paths, syncExpandedPaths])
+
+    void reveal()
+    return () => { cancelled = true }
+  }, [activeRelativePath, model, loadDir, snapshot.paths, syncExpandedPaths])
 
   const handleTreeClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement | null)?.closest?.('[data-file-tree-context-menu-root="true"]')) return
@@ -483,6 +586,12 @@ export function FileTree({ worktreePath, isActive }: Props) {
     if (!relativePath || !itemType) return
 
     if (itemType === 'folder') {
+      // Lazy load: first time a folder is opened, fetch its children and render
+      // it expanded. Already-loaded folders just let Pierre toggle normally.
+      const absDir = toAbsolutePath(treeRoot, relativePath)
+      if (!loadedDirsRef.current.has(absDir)) {
+        void loadDir(absDir, relativePath)
+      }
       requestAnimationFrame(syncExpandedPaths)
       return
     }
@@ -506,7 +615,7 @@ export function FileTree({ worktreePath, isActive }: Props) {
     }
 
     openFileTab(absolutePath)
-  }, [model, openFileInSplit, openFileTab, openMarkdownPreview, syncExpandedPaths, treeRoot])
+  }, [loadDir, model, openFileInSplit, openFileTab, openMarkdownPreview, syncExpandedPaths, treeRoot])
 
   const handleTreeDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     const target = getTreeItemElement(event.nativeEvent)

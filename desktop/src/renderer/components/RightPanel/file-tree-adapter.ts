@@ -28,19 +28,15 @@ function toDirectoryPath(path: string): string {
   return path.endsWith('/') ? path : `${path}/`
 }
 
-function pushUnique(list: string[], value: string) {
-  if (!value || list.includes(value)) return
-  list.push(value)
-}
-
-function pushUniqueStatus(list: GitStatusEntry[], entry: GitStatusEntry) {
-  if (list.some((candidate) => candidate.path === entry.path && candidate.status === entry.status)) return
-  list.push(entry)
-}
-
 export function buildFileTreeSnapshot(rootPath: string, nodes: FileNode[]): FileTreeSnapshot {
   const paths: string[] = []
   const gitStatus: GitStatusEntry[] = []
+  // The tree from main is already unique by construction (one node per path), so
+  // dedup only guards against accidental dupes. Use O(1) Set membership instead
+  // of Array.includes / Array.some — the latter made this walk O(n²), which on
+  // large repos (10k+ files) cost seconds per tree load (the real load-time bug).
+  const seenPaths = new Set<string>()
+  const seenStatus = new Set<string>()
 
   const walk = (entries: FileNode[]) => {
     for (const entry of entries) {
@@ -51,13 +47,17 @@ export function buildFileTreeSnapshot(rootPath: string, nodes: FileNode[]): File
         ? toDirectoryPath(relativePath)
         : relativePath
 
-      pushUnique(paths, canonicalPath)
+      if (!seenPaths.has(canonicalPath)) {
+        seenPaths.add(canonicalPath)
+        paths.push(canonicalPath)
+      }
 
       if (entry.gitStatus) {
-        pushUniqueStatus(gitStatus, {
-          path: canonicalPath,
-          status: entry.gitStatus,
-        })
+        const statusKey = `${canonicalPath} ${entry.gitStatus}`
+        if (!seenStatus.has(statusKey)) {
+          seenStatus.add(statusKey)
+          gitStatus.push({ path: canonicalPath, status: entry.gitStatus })
+        }
       }
 
       if (entry.type === 'directory' && entry.children?.length) {
@@ -68,6 +68,23 @@ export function buildFileTreeSnapshot(rootPath: string, nodes: FileNode[]): File
 
   walk(nodes)
   return { gitStatus, paths }
+}
+
+/**
+ * Find the directory node with the given absolute path in a (possibly partial,
+ * lazily-loaded) tree, so the caller can attach its freshly-listed children.
+ */
+export function findDirectoryNode(nodes: FileNode[], absPath: string): FileNode | null {
+  for (const node of nodes) {
+    if (node.type !== 'directory') continue
+    if (node.path === absPath) return node
+    // Only descend into subtrees that could contain the target.
+    if (node.children?.length && absPath.startsWith(`${node.path}/`)) {
+      const found = findDirectoryNode(node.children, absPath)
+      if (found) return found
+    }
+  }
+  return null
 }
 
 export function readExpandedDirectoryPaths(container: HTMLElement | null): string[] {
