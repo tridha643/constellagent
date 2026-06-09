@@ -2,7 +2,6 @@ import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from '
 import {
   CheckCircle2,
   XCircle,
-  Clock,
   MinusCircle,
   Circle,
   ChevronDown,
@@ -12,6 +11,7 @@ import {
 import type { CheckRowStatus, GithubLookupError, PrChecksDetail } from '@shared/github-types'
 import type { UsePrChecksResult } from '../../hooks/usePrChecks'
 import { MarkdownBody } from '../Markdown/MarkdownBody'
+import { MuloadGlyph } from '../Conductor/chat/MuloadLoader'
 import styles from './Checks.module.css'
 
 /** Collapsed height (px) of the PR description before "Show more" appears. */
@@ -24,7 +24,13 @@ function StatusIcon({ status, size = 15 }: { status: CheckRowStatus; size?: numb
     case 'failing':
       return <XCircle size={size} className={styles.iconFailing} aria-label="failing" />
     case 'pending':
-      return <Clock size={size} className={styles.iconPending} aria-label="pending" />
+      return (
+        <MuloadGlyph
+          dotSize={size <= 14 ? 1.5 : 2}
+          color="var(--accent-yellow)"
+          className={styles.iconPending}
+        />
+      )
     case 'skipped':
       return <MinusCircle size={size} className={styles.iconSkipped} aria-label="skipped" />
     case 'neutral':
