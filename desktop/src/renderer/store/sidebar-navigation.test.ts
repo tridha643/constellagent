@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
   deriveBucket,
+  ensureDefaultCustomSections,
   getRenderableProjectWorkspaces,
   getWorkspaceSections,
   resolveProjectTargetWorkspace,
@@ -107,86 +108,68 @@ describe('deriveBucket', () => {
 
 describe('getWorkspaceSections', () => {
   const noSignals = (): WorkspaceSignals => ({})
+  const folders = () => [
+    { id: 'non-priority', projectId: 'project-1', name: 'Non-priority', order: 1, isDefault: true },
+    { id: 'priority', projectId: 'project-1', name: 'Priority', order: 0 },
+  ]
 
-  it('always renders pinned, custom sections (in order), then all buckets', () => {
-    const workspaces = [
-      workspace('needs', {}),
-      workspace('review', {}),
-    ]
-    const signals: Record<string, WorkspaceSignals> = {
-      needs: { unread: true },
-      review: { pr: pr({ state: 'open' }) },
-    }
-    const customSections = [
-      { id: 'c2', projectId: 'project-1', name: 'Second', order: 1 },
-      { id: 'c1', projectId: 'project-1', name: 'First', order: 0 },
-    ]
-    const sections = getWorkspaceSections(workspaces, (w) => signals[w.id] ?? {}, NOW, customSections)
-    // Even empty sections render; customs follow Pinned in `order`.
-    expect(sections.map((s) => s.id)).toEqual([
-      'pinned', 'c1', 'c2', 'needs-you', 'in-review', 'active', 'idle',
-    ])
-    expect(sections.map((s) => s.kind)).toEqual([
-      'pinned', 'custom', 'custom', 'auto', 'auto', 'auto', 'auto',
-    ])
+  it('renders only the folders, in order, all custom — no pinned/auto buckets', () => {
+    const sections = getWorkspaceSections([], noSignals, NOW, folders())
+    expect(sections.map((s) => s.id)).toEqual(['priority', 'non-priority'])
+    expect(sections.map((s) => s.kind)).toEqual(['custom', 'custom'])
+    expect(sections.find((s) => s.id === 'non-priority')?.isDefault).toBe(true)
   })
 
-  it('places a workspace in its custom section instead of an auto bucket', () => {
-    const customSections = [{ id: 'c1', projectId: 'project-1', name: 'Mine', order: 0 }]
+  it('routes unassigned workspaces into the default (Non-priority) folder, ignoring status signals', () => {
     const workspaces = [
-      workspace('assigned', { sectionId: 'c1' }),
-      workspace('auto', {}),
+      workspace('assigned', { sectionId: 'priority' }),
+      workspace('loose', {}),
     ]
+    // `loose` would have been needs-you under the old buckets; now it just lands in the default.
     const signals: Record<string, WorkspaceSignals> = {
-      // Would be needs-you, but the section assignment wins.
       assigned: { unread: true },
-      auto: { unread: true },
+      loose: { unread: true },
     }
-    const sections = getWorkspaceSections(workspaces, (w) => signals[w.id] ?? {}, NOW, customSections)
-    expect(sections.find((s) => s.id === 'c1')?.workspaces.map((w) => w.id)).toEqual(['assigned'])
-    expect(sections.find((s) => s.id === 'needs-you')?.workspaces.map((w) => w.id)).toEqual(['auto'])
+    const sections = getWorkspaceSections(workspaces, (w) => signals[w.id] ?? {}, NOW, folders())
+    expect(sections.find((s) => s.id === 'priority')?.workspaces.map((w) => w.id)).toEqual(['assigned'])
+    expect(sections.find((s) => s.id === 'non-priority')?.workspaces.map((w) => w.id)).toEqual(['loose'])
   })
 
-  it('ignores a custom sectionId that no longer exists (falls back to auto)', () => {
+  it('falls back to the default folder when a sectionId no longer exists', () => {
     const workspaces = [workspace('orphan', { sectionId: 'gone' })]
-    const sections = getWorkspaceSections(workspaces, () => ({}), NOW, [])
-    expect(sections.find((s) => s.id === 'idle')?.workspaces.map((w) => w.id)).toEqual(['orphan'])
+    const sections = getWorkspaceSections(workspaces, () => ({}), NOW, folders())
+    expect(sections.find((s) => s.id === 'non-priority')?.workspaces.map((w) => w.id)).toEqual(['orphan'])
   })
 
-  it('bucketOverride forces a workspace into the named bucket regardless of status', () => {
-    const workspaces = [workspace('forced', { bucketOverride: 'idle' })]
-    // Signals say needs-you, but the override pins it to idle.
-    const sections = getWorkspaceSections(workspaces, () => ({ unread: true }), NOW)
-    expect(sections.find((s) => s.id === 'idle')?.workspaces.map((w) => w.id)).toEqual(['forced'])
-    expect(sections.find((s) => s.id === 'needs-you')?.workspaces).toEqual([])
-  })
-
-  it('excludes pinned workspaces from auto buckets and orders them by pinOrder', () => {
-    const workspaces = [
-      workspace('p2', { pinned: true, pinOrder: 1 }),
-      workspace('p1', { pinned: true, pinOrder: 0 }),
-      workspace('auto'),
-    ]
-    const signals: Record<string, WorkspaceSignals> = { auto: { unread: true } }
-    const sections = getWorkspaceSections(workspaces, (w) => signals[w.id] ?? {}, NOW)
-    expect(sections[0]!.id).toBe('pinned')
-    expect(sections[0]!.workspaces.map((w) => w.id)).toEqual(['p1', 'p2'])
-    // The pinned workspaces are not duplicated into needs-you.
-    const needsYou = sections.find((s) => s.id === 'needs-you')
-    expect(needsYou?.workspaces.map((w) => w.id)).toEqual(['auto'])
-  })
-
-  it('orders within a status section by lastActiveAt desc, then name', () => {
+  it('orders within a folder by lastActiveAt desc, then name', () => {
     const workspaces = [
       workspace('older', { name: 'older', lastActiveAt: NOW - 5000 }),
       workspace('newer', { name: 'newer', lastActiveAt: NOW - 1000 }),
       workspace('zeb', { name: 'zeb' }),
       workspace('abe', { name: 'abe' }),
     ]
-    const sections = getWorkspaceSections(workspaces, noSignals, NOW)
-    const idle = sections.find((s) => s.id === 'idle')!
-    // newer (most recent) → older, then the two with no activity by name.
-    expect(idle.workspaces.map((w) => w.id)).toEqual(['newer', 'older', 'abe', 'zeb'])
+    const sections = getWorkspaceSections(workspaces, noSignals, NOW, folders())
+    const def = sections.find((s) => s.id === 'non-priority')!
+    expect(def.workspaces.map((w) => w.id)).toEqual(['newer', 'older', 'abe', 'zeb'])
+  })
+
+  it('synthesizes a Non-priority folder when a project has no folders yet', () => {
+    const sections = getWorkspaceSections([workspace('a')], noSignals, NOW, [])
+    expect(sections).toHaveLength(1)
+    expect(sections[0]!.label).toBe('Non-priority')
+    expect(sections[0]!.isDefault).toBe(true)
+    expect(sections[0]!.workspaces.map((w) => w.id)).toEqual(['a'])
+  })
+})
+
+describe('ensureDefaultCustomSections', () => {
+  it('seeds Priority + Non-priority for projects with no folders, and leaves seeded ones alone', () => {
+    const existing = [{ id: 's1', projectId: 'p-has', name: 'Mine', order: 0 }]
+    const out = ensureDefaultCustomSections([{ id: 'p-has' }, { id: 'p-new' }], existing)
+    expect(out.filter((s) => s.projectId === 'p-has')).toEqual(existing)
+    const seeded = out.filter((s) => s.projectId === 'p-new')
+    expect(seeded.map((s) => s.name)).toEqual(['Priority', 'Non-priority'])
+    expect(seeded.find((s) => s.name === 'Non-priority')?.isDefault).toBe(true)
   })
 })
 

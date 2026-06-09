@@ -1,0 +1,129 @@
+.root {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.board {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-4);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: var(--space-3) var(--space-1) var(--space-6);
+  scrollbar-gutter: stable;
+}
+
+.column {
+  flex: 0 0 300px;
+  width: 300px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  transition: background-color var(--duration-default) ease;
+}
+
+/* Subtle lane highlight while a card is dragged over it. */
+.column[data-drop-active='true'] {
+  background: color-mix(in srgb, var(--accent-blue) 6%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 24%, transparent);
+}
+
+.columnHeader {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 8px 8px;
+  font-family: var(--font-ui);
+}
+
+.columnLabel {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.columnBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 4px 4px;
+}
+
+.empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+/* --- drag-and-drop --------------------------------------------------------- */
+
+.dragGhost {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 12px;
+  min-height: 34px;
+  max-width: 280px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  border: 1px solid var(--panel-border-inner, var(--border-subtle));
+  box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.45);
+  transform: scale(1.02) rotate(1.5deg);
+  pointer-events: none;
+}
+
+.dragGhostTitle {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-3);
+  transform: translateX(-50%);
+  max-width: 480px;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-2) 96%, transparent);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  border: 1px solid var(--panel-border-inner, var(--border-subtle));
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.35);
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dragGhost {
+    transform: none;
+    box-shadow: none;
+  }
+}

@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, memo } from 'react'
 import { Columns2 } from 'lucide-react'
 import { useAppStore } from '../../store/app-store'
 import { STATUS_LABELS } from '../../../shared/status-labels'
@@ -7,7 +7,7 @@ import { Tooltip } from '../Tooltip/Tooltip'
 import { PiIcon } from '../Icons/PiIcon'
 import styles from './RightPanel.module.css'
 import { registerChangesFindSource } from '../../utils/changes-file-find-bridge'
-import { buildWorkingTreeStatusSignature, type WorkingTreeFileStatus } from '../../types/working-tree-diff'
+import { buildWorkingTreeStatusSignature } from '../../types/working-tree-diff'
 import {
   normalizeWorkspaceBranch,
   preserveWorkspaceBranch,
@@ -21,10 +21,12 @@ import { buildAdHocAgentCommand } from '../../../shared/plan-build-command'
 import { formatRebaseConflictAgentPrompt } from '../../agents/conflict-prompt'
 
 const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
-const STATUS_SNAPSHOT_TTL_MS = 5_000
-const PANEL_METADATA_DELAY_MS = 80
 
-type FileStatus = WorkingTreeFileStatus
+interface FileStatus {
+  path: string
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
+  staged: boolean
+}
 
 interface Props {
   worktreePath: string
@@ -37,32 +39,15 @@ function errorMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
-function warmSnapshotFor(worktreePath: string) {
-  return useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath)
-}
-
-function isFreshStatusSnapshot(updatedAt: number): boolean {
-  return Date.now() - updatedAt < STATUS_SNAPSHOT_TTL_MS
-}
-
-function hasLineStats(status: FileStatus): boolean {
-  return status.additions != null || status.deletions != null
-}
-
-function deferPanelMetadata(work: () => void): () => void {
-  const id = window.setTimeout(work, PANEL_METADATA_DELAY_MS)
-  return () => window.clearTimeout(id)
-}
-
 export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   // Local-first seed: render the last-known working-tree statuses from the
   // in-memory snapshot synchronously on first paint instead of waiting on a git
   // round-trip. Mirrors the diff viewer's warm-snapshot reuse (DiffEditor.loadFiles).
   const [files, setFiles] = useState<FileStatus[]>(
-    () => warmSnapshotFor(worktreePath)?.statuses ?? [],
+    () => useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath)?.statuses ?? [],
   )
   const [loading, setLoading] = useState(
-    () => !warmSnapshotFor(worktreePath),
+    () => !useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath),
   )
   const [busy, setBusy] = useState(false)
   const [busyAction, setBusyAction] = useState<'commit' | 'pr' | 'graphite' | 'generate-commit-message' | null>(null)
@@ -74,55 +59,46 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   const [commitInputFlash, setCommitInputFlash] = useState(false)
   const commitInputRef = useRef<HTMLTextAreaElement | null>(null)
   const commitFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const refreshInFlightRef = useRef<Promise<void> | null>(null)
   const openDiffTab = useAppStore((s) => s.openDiffTab)
   const openFullFileDiffTab = useAppStore((s) => s.openFullFileDiffTab)
   const setGitFileStatuses = useAppStore((s) => s.setGitFileStatuses)
   const updateGitStatusSnapshot = useAppStore((s) => s.updateGitStatusSnapshot)
   const addToast = useAppStore((s) => s.addToast)
-  const workspaces = useAppStore((s) => s.workspaces)
-  const projects = useAppStore((s) => s.projects)
-  const prStatusMap = useAppStore((s) => s.prStatusMap)
   const setPrStatuses = useAppStore((s) => s.setPrStatuses)
   const setGhAvailability = useAppStore((s) => s.setGhAvailability)
   const updateWorkspaceBranch = useAppStore((s) => s.updateWorkspaceBranch)
   const setProjectDefaultBranch = useAppStore((s) => s.setProjectDefaultBranch)
-  const settings = useAppStore((s) => s.settings)
   const launchAgentTerminalWithCommand = useAppStore((s) => s.launchAgentTerminalWithCommand)
   const [isAheadOfRemote, setIsAheadOfRemote] = useState(false)
 
-  const workspace = workspaces.find((ws) => ws.id === workspaceId)
-  const project = workspace ? projects.find((p) => p.id === workspace.projectId) : undefined
+  // Granular store reads: select only this workspace / project / PR entry (the
+  // store preserves object identity for untouched entries) so PR polls, settings
+  // changes, and unrelated workspace updates don't re-render the whole panel.
+  const workspace = useAppStore((s) => s.workspaces.find((ws) => ws.id === workspaceId))
+  const project = useAppStore((s) => (workspace ? s.projects.find((p) => p.id === workspace.projectId) : undefined))
   const branch = normalizeWorkspaceBranch(currentBranch || workspace?.branch || '')
-  const prInfo = project && branch ? prStatusMap.get(`${project.id}:${branch}`) ?? null : null
+  const prInfo = useAppStore((s) => (project && branch ? s.prStatusMap.get(`${project.id}:${branch}`) ?? null : null))
+  const conflictResolverAgent = useAppStore((s) => s.settings.conflictResolverAgent)
+  const conflictResolverModel = useAppStore((s) => s.settings.conflictResolverModel)
 
-  const refresh = useCallback(() => {
-    if (refreshInFlightRef.current) return refreshInFlightRef.current
-    const promise = (async () => {
-      try {
-        const [statuses, headHash] = await Promise.all([
-          window.api.git.getStatus(worktreePath),
-          window.api.git.getHeadHash(worktreePath),
-        ])
-        setFiles(statuses)
-        updateGitStatusSnapshot(worktreePath, {
-          statuses,
-          headHash,
-          signature: buildWorkingTreeStatusSignature(statuses, headHash),
-          updatedAt: Date.now(),
-        })
-      } catch {
-        // Best effort — empty state already communicates enough.
-      } finally {
-        setLoading(false)
-      }
-    })()
-    refreshInFlightRef.current = promise
-    return promise.finally(() => {
-      if (refreshInFlightRef.current === promise) {
-        refreshInFlightRef.current = null
-      }
-    })
+  const refresh = useCallback(async () => {
+    try {
+      const [statuses, headHash] = await Promise.all([
+        window.api.git.getStatus(worktreePath),
+        window.api.git.getHeadHash(worktreePath),
+      ])
+      setFiles(statuses)
+      updateGitStatusSnapshot(worktreePath, {
+        statuses,
+        headHash,
+        signature: buildWorkingTreeStatusSignature(statuses, headHash),
+        updatedAt: Date.now(),
+      })
+    } catch {
+      // Best effort — empty state already communicates enough.
+    } finally {
+      setLoading(false)
+    }
   }, [worktreePath, updateGitStatusSnapshot])
 
   useEffect(() => {
@@ -132,23 +108,18 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
       return
     }
 
-    const cancelDeferred = deferPanelMetadata(() => {
-      window.api.git.getCurrentBranch(worktreePath).then((actual) => {
-        if (cancelled) return
-        const resolvedBranch = preserveWorkspaceBranch(workspace.branch, actual)
-        setCurrentBranch(resolvedBranch || workspace.branch)
-        if (resolvedBranch && resolvedBranch !== workspace.branch) {
-          updateWorkspaceBranch(workspace.id, resolvedBranch)
-        }
-      }).catch(() => {
-        if (!cancelled) setCurrentBranch(workspace.branch)
-      })
+    window.api.git.getCurrentBranch(worktreePath).then((actual) => {
+      if (cancelled) return
+      const resolvedBranch = preserveWorkspaceBranch(workspace.branch, actual)
+      setCurrentBranch(resolvedBranch || workspace.branch)
+      if (resolvedBranch && resolvedBranch !== workspace.branch) {
+        updateWorkspaceBranch(workspace.id, resolvedBranch)
+      }
+    }).catch(() => {
+      if (!cancelled) setCurrentBranch(workspace.branch)
     })
 
-    return () => {
-      cancelled = true
-      cancelDeferred()
-    }
+    return () => { cancelled = true }
   }, [workspace, worktreePath, updateWorkspaceBranch])
 
   useEffect(() => {
@@ -160,28 +131,23 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     }
 
     setDefaultBranchLoading(true)
-    const cancelDeferred = deferPanelMetadata(() => {
-      window.api.git.getDefaultBranch(project.repoPath)
-        .then((resolved) => {
-          if (cancelled) return
-          const normalized = normalizeWorkspaceBranch(resolved)
-          setDefaultBranch(normalized)
-          setDefaultBranchLoading(false)
-          if (normalized) {
-            setProjectDefaultBranch(project.id, normalized)
-          }
-        })
-        .catch(() => {
-          if (cancelled) return
-          setDefaultBranch('')
-          setDefaultBranchLoading(false)
-        })
+    window.api.git.getDefaultBranch(project.repoPath)
+      .then((resolved) => {
+        if (cancelled) return
+        const normalized = normalizeWorkspaceBranch(resolved)
+        setDefaultBranch(normalized)
+        setDefaultBranchLoading(false)
+        if (normalized) {
+          setProjectDefaultBranch(project.id, normalized)
+        }
+      })
+      .catch(() => {
+        if (cancelled) return
+        setDefaultBranch('')
+        setDefaultBranchLoading(false)
       })
 
-    return () => {
-      cancelled = true
-      cancelDeferred()
-    }
+    return () => { cancelled = true }
   }, [project, setProjectDefaultBranch])
 
   const refreshPrStatus = useCallback(async (targetBranch?: string) => {
@@ -207,7 +173,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
   useEffect(() => {
     if (!isActive || !project || !branch) return
-    return deferPanelMetadata(() => { void refreshPrStatus() })
+    void refreshPrStatus()
   }, [isActive, project, branch, refreshPrStatus])
 
   useEffect(() => () => {
@@ -230,15 +196,8 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
   // Re-fetch when tab becomes visible (git ops only touch .git/ which the watcher ignores)
   useEffect(() => {
-    if (!isActive) return
-    const warm = warmSnapshotFor(worktreePath)
-    if (warm) {
-      setLoading(false)
-      if (isFreshStatusSnapshot(warm.updatedAt) && warm.statuses.every(hasLineStats)) return
-      return deferPanelMetadata(() => { void refresh() })
-    }
-    void refresh()
-  }, [isActive, refresh, worktreePath])
+    if (isActive) void refresh()
+  }, [isActive, refresh])
 
   // Push git file statuses to Zustand store for tab badges
   useEffect(() => {
@@ -249,8 +208,8 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     setGitFileStatuses(worktreePath, statusMap)
   }, [files, worktreePath, setGitFileStatuses])
 
-  const staged = files.filter((f) => f.staged)
-  const unstaged = files.filter((f) => !f.staged)
+  const staged = useMemo(() => files.filter((f) => f.staged), [files])
+  const unstaged = useMemo(() => files.filter((f) => !f.staged), [files])
   const commitMessage = commitMsg.trim()
   const hasOpenPr = prInfo?.state === 'open'
   const linkedPushRemote = workspace?.linkedPullRequest?.pushRemote || 'origin'
@@ -275,6 +234,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     : needsCommitForPr
       ? 'Commit staged changes, push the branch, and create a pull request'
       : 'Push the branch and create a pull request'
+
   const isGraphiteDefaultBranch =
     !!project
     && !defaultBranchLoading
@@ -297,19 +257,16 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
       setIsAheadOfRemote(false)
       return
     }
-    const cancelDeferred = deferPanelMetadata(() => {
-      window.api.git
-        .isAheadOfRemote(worktreePath, resolvedPushRemote, resolvedPushRef)
-        .then((ahead) => {
-          if (!cancelled) setIsAheadOfRemote(ahead)
-        })
-        .catch(() => {
-          if (!cancelled) setIsAheadOfRemote(false)
-        })
+    window.api.git
+      .isAheadOfRemote(worktreePath, resolvedPushRemote, resolvedPushRef)
+      .then((ahead) => {
+        if (!cancelled) setIsAheadOfRemote(ahead)
+      })
+      .catch(() => {
+        if (!cancelled) setIsAheadOfRemote(false)
       })
     return () => {
       cancelled = true
-      cancelDeferred()
     }
   }, [worktreePath, hasOpenPr, resolvedPushRemote, resolvedPushRef, files])
 
@@ -385,6 +342,16 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
       }))
     }, `Failed to discard ${file.path}`)
   }, [worktreePath, runGitOp])
+
+  // Stable per-file handlers (FileRow passes its own file back) so memoized rows
+  // don't re-render from fresh closures created on every parent render.
+  const stageFile = useCallback((file: FileStatus) => {
+    stageFiles([file.path])
+  }, [stageFiles])
+
+  const unstageFile = useCallback((file: FileStatus) => {
+    unstageFiles([file.path])
+  }, [unstageFiles])
 
   const handleGenerateCommitMessage = useCallback(async () => {
     if (files.length === 0) return
@@ -488,8 +455,8 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
             // Conflicted rebase — hand off to the configured agent. The local commit stays;
             // the rebase is left mid-flight; the user re-clicks Commit after the agent finishes.
             setBusyLabel('Launching agent…')
-            const agent = normalizeConflictResolverAgent(settings.conflictResolverAgent)
-            const model = normalizeConflictResolverModel(settings.conflictResolverModel).trim() || null
+            const agent = normalizeConflictResolverAgent(conflictResolverAgent)
+            const model = normalizeConflictResolverModel(conflictResolverModel).trim() || null
             const prompt = formatRebaseConflictAgentPrompt({
               branch,
               pushRemote: remote,
@@ -533,12 +500,12 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     addToast,
     branch,
     commitMessage,
+    conflictResolverAgent,
+    conflictResolverModel,
     hasOpenPr,
     isAheadOfRemote,
     launchAgentTerminalWithCommand,
     refresh,
-    settings.conflictResolverAgent,
-    settings.conflictResolverModel,
     staged,
     workspace,
     workspaceId,
@@ -687,11 +654,8 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
 
   const openDiff = useCallback((path: string) => {
     openDiffTab(workspaceId)
-    // Wait for the Changes tab to mount/activate before scrolling (layout-first navigation).
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.dispatchEvent(new CustomEvent('diff:scrollToFile', { detail: path }))
-      })
+      window.dispatchEvent(new CustomEvent('diff:scrollToFile', { detail: path }))
     })
   }, [openDiffTab, workspaceId])
 
@@ -844,7 +808,7 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
               key={`staged-${file.path}`}
               file={file}
               busy={busy}
-              onAction={() => unstageFiles([file.path])}
+              onAction={unstageFile}
               actionLabel="−"
               actionTitle="Unstage"
               onOpenDiff={openDiff}
@@ -895,10 +859,10 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
               key={`unstaged-${file.path}`}
               file={file}
               busy={busy}
-              onAction={() => stageFiles([file.path])}
+              onAction={stageFile}
               actionLabel="+"
               actionTitle="Stage"
-              onDiscard={() => discardFiles(file)}
+              onDiscard={discardFiles}
               onOpenDiff={openDiff}
               onOpenFullDiff={openFullDiff}
             />
@@ -916,6 +880,10 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
   )
 }
 
+// Memoized so commit-message keystrokes / busy toggles in the parent don't
+// re-render every row (each row carries multiple stateful Tooltip portals).
+// All callback props receive the row's own file, so the parent can pass the
+// same stable handler to every row.
 const FileRow = memo(function FileRow({
   file,
   busy,
@@ -928,10 +896,10 @@ const FileRow = memo(function FileRow({
 }: {
   file: FileStatus
   busy: boolean
-  onAction: () => void
+  onAction: (file: FileStatus) => void
   actionLabel: string
   actionTitle: string
-  onDiscard?: () => void
+  onDiscard?: (file: FileStatus) => void
   onOpenDiff: (path: string) => void
   onOpenFullDiff: (file: FileStatus) => void
 }) {
@@ -940,25 +908,16 @@ const FileRow = memo(function FileRow({
   const dir = parts.length > 0 ? parts.join('/') + '/' : ''
 
   return (
-    <div
-      className={styles.changedFile}
-      role="button"
-      tabIndex={0}
-      onClick={() => onOpenDiff(file.path)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault()
-          onOpenDiff(file.path)
-        }
-      }}
-    >
+    <div className={styles.changedFile}>
       <span className={`${styles.statusBadge} ${styles[file.status]}`}>
         {STATUS_LABELS[file.status]}
       </span>
-      <span className={styles.changePath}>
-        <span className={styles.changeFileName}>{fileName}</span>
+      <span
+        className={styles.changePath}
+        onClick={() => onOpenDiff(file.path)}
+      >
         {dir && <span className={styles.changeDir}>{dir}</span>}
-        <span className={styles.changeFullPathForFind}>{file.path}</span>
+        {fileName}
       </span>
       <span className={styles.fileActions}>
         <Tooltip label="Open side-by-side diff">
@@ -974,25 +933,19 @@ const FileRow = memo(function FileRow({
         {onDiscard && (
           <Tooltip label="Discard Changes">
             <button
-            className={styles.fileActionBtn}
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation()
-              onDiscard()
-            }}
-          >
-            ↩
-          </button>
+              className={styles.fileActionBtn}
+              disabled={busy}
+              onClick={() => onDiscard(file)}
+            >
+              ↩
+            </button>
           </Tooltip>
         )}
         <Tooltip label={actionTitle}>
           <button
             className={styles.fileActionBtn}
             disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation()
-              onAction()
-            }}
+            onClick={() => onAction(file)}
           >
             {actionLabel}
           </button>

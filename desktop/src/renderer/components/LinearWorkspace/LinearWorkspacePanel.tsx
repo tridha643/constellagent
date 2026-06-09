@@ -3,6 +3,7 @@ import {
   Kanban,
   ListBullets,
   PaperPlaneTilt,
+  SquaresFour,
   Ticket,
 } from "@phosphor-icons/react";
 import {
@@ -52,6 +53,7 @@ import {
 } from "../../linear/linear-jump-index";
 import { ChevronLeft } from "lucide-react";
 import { FloatingPanel } from "../FloatingPanel/FloatingPanel";
+import { DashboardView } from "./DashboardView";
 import { IssuesView } from "./IssuesView";
 import { LinearQuickOpen } from "./LinearQuickOpen";
 import { ProjectsView } from "./ProjectsView";
@@ -776,6 +778,13 @@ export function LinearWorkspacePanel() {
   const workspacePillTabs = useMemo(
     () =>
       linearTabOrder.map((id) => {
+        if (id === "dashboard") {
+          return {
+            id,
+            label: "Dashboard",
+            icon: <SquaresFour weight="duotone" aria-hidden />,
+          };
+        }
         if (id === "issues") {
           return {
             id,
@@ -1007,6 +1016,19 @@ export function LinearWorkspacePanel() {
               selectedProjectName={scopedProjectLabel}
               onActivateIssue={activateIssueWorkspaceOrOpenUrl}
               onLaunchAgent={(issue) => void startLinearIssueAgentSession(issue)}
+            />
+          ) : null}
+          {workspaceView === "dashboard" ? (
+            <DashboardView
+              issues={issues}
+              workspaces={workspaces}
+              activeWorkspaceId={activeWorkspaceId}
+              apiKey={apiKey}
+              onActivateIssue={activateIssueWorkspaceOrOpenUrl}
+              onLaunchAgent={(issue) =>
+                void startLinearIssueAgentSession(issue)
+              }
+              onLocalIssueUpdate={patchLocalIssue}
             />
           ) : null}
           {workspaceView === "issues" ? (

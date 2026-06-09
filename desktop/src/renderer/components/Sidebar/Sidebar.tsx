@@ -1869,15 +1869,17 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                   <Pencil size={11} strokeWidth={2} aria-hidden />
                                 </button>
                               </Tooltip>
-                              <Tooltip label="Delete section">
-                                <button
-                                  className={styles.sectionActionBtn}
-                                  aria-label="Delete section"
-                                  onClick={(e) => { e.stopPropagation(); deleteCustomSection(section.id); }}
-                                >
-                                  ✕
-                                </button>
-                              </Tooltip>
+                              {!section.isDefault && (
+                                <Tooltip label="Delete section">
+                                  <button
+                                    className={styles.sectionActionBtn}
+                                    aria-label="Delete section"
+                                    onClick={(e) => { e.stopPropagation(); deleteCustomSection(section.id); }}
+                                  >
+                                    ✕
+                                  </button>
+                                </Tooltip>
+                              )}
                             </span>
                           )}
                         </div>
