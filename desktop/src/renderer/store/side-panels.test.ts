@@ -33,7 +33,7 @@ describe('normalizeSidePanelLayout', () => {
     expect(layout.left.open).toBe(false)
     expect(layout.left.panelOrder).toEqual(['project', 'files'])
     expect(layout.left.activePanel).toBe('project')
-    expect(layout.right.panelOrder).toEqual(['changes', 'graph', 'browser', 'sideChat'])
+    expect(layout.right.panelOrder).toEqual(['changes', 'browser', 'sideChat'])
     expect(layout.right.activePanel).toBe('changes')
   })
 
@@ -52,14 +52,14 @@ describe('normalizeSidePanelLayout', () => {
     expect(layout.right).toEqual({
       open: false,
       activePanel: 'changes',
-      panelOrder: ['files', 'changes', 'graph', 'browser', 'sideChat'],
+      panelOrder: ['files', 'changes', 'browser', 'sideChat'],
     })
   })
 
   it('fills partially persisted sidePanels from the legacy fallback before normalizing', () => {
     const layout = normalizePersistedSidePanelLayout({
       rightPanelOpen: false,
-      rightPanelMode: 'graph',
+      rightPanelMode: 'browser',
       sidePanels: {
         left: {
           panelOrder: ['project', 'files'],
@@ -74,9 +74,38 @@ describe('normalizeSidePanelLayout', () => {
     })
     expect(layout.right).toEqual({
       open: false,
-      activePanel: 'graph',
-      panelOrder: ['changes', 'graph', 'browser', 'sideChat'],
+      activePanel: 'browser',
+      panelOrder: ['changes', 'browser', 'sideChat'],
     })
+  })
+
+  it('drops removed graph panel tokens and repairs graph activePanel', () => {
+    const layout = normalizeSidePanelLayout({
+      right: {
+        open: true,
+        activePanel: 'graph',
+        panelOrder: ['files', 'graph', 'changes'],
+      },
+    })
+
+    expect(layout.right.panelOrder).toEqual(['files', 'changes', 'browser', 'sideChat'])
+    expect(layout.right.activePanel).toBe('files')
+  })
+
+  it('ignores legacy rightPanelMode graph when hydrating persisted state', () => {
+    const layout = normalizePersistedSidePanelLayout({
+      rightPanelMode: 'graph',
+      sidePanels: {
+        right: {
+          open: true,
+          activePanel: 'graph',
+          panelOrder: ['files', 'changes', 'graph', 'browser', 'sideChat'],
+        },
+      },
+    })
+
+    expect(layout.right.panelOrder).toEqual(['files', 'changes', 'browser', 'sideChat'])
+    expect(layout.right.activePanel).toBe('files')
   })
 })
 
@@ -84,7 +113,7 @@ describe('side panel ownership helpers', () => {
   it('swaps project and navigation groups cleanly', () => {
     const swapped = setProjectPanelSide(DEFAULT_SIDE_PANEL_LAYOUT, 'right')
 
-    expect(swapped.left.panelOrder).toEqual(['files', 'changes', 'graph', 'browser'])
+    expect(swapped.left.panelOrder).toEqual(['files', 'changes', 'browser'])
     expect(swapped.right.panelOrder).toEqual(['sideChat', 'project'])
     expect(findSideForPanel(swapped, 'project')).toBe('right')
     expect(findSideForPanel(swapped, 'files')).toBe('left')
@@ -109,12 +138,12 @@ describe('side panel ownership helpers', () => {
   it('preserves per-side active panels when swapping hosts', () => {
     const custom = normalizeSidePanelLayout({
       left: { open: true, activePanel: 'project', panelOrder: ['project'] },
-      right: { open: false, activePanel: 'graph', panelOrder: ['files', 'changes', 'graph', 'browser', 'sideChat'] },
+      right: { open: false, activePanel: 'browser', panelOrder: ['files', 'changes', 'browser', 'sideChat'] },
     })
 
     const swapped = swapSidebarRoles(custom)
-    expect(swapped.left.panelOrder).toEqual(['files', 'changes', 'graph', 'browser', 'sideChat'])
-    expect(swapped.left.activePanel).toBe('graph')
+    expect(swapped.left.panelOrder).toEqual(['files', 'changes', 'browser', 'sideChat'])
+    expect(swapped.left.activePanel).toBe('browser')
     expect(swapped.left.open).toBe(false)
     expect(swapped.right.panelOrder).toEqual(['project'])
     expect(swapped.right.activePanel).toBe('project')

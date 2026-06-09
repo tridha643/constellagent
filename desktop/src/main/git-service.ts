@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'os'
 import { promisify } from 'util'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import type { CreateWorktreeProgress } from '../shared/workspace-creation'
-import type { GitLogEntry, WorkspaceBarStats, WorktreeInfo } from '../shared/git-types'
+import type { WorkspaceBarStats, WorktreeInfo } from '../shared/git-types'
 import type { SyncProgress, SyncResult } from '../shared/sync-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
@@ -1965,34 +1965,6 @@ export class GitService {
     }
   }
 
-  static async getLog(worktreePath: string, maxCount = 80): Promise<GitLogEntry[]> {
-    // Use git's %x00 escape so no literal null bytes appear in the argument string
-    // (Node.js execFile rejects strings containing \x00)
-    const format = '%H%x00%P%x00%s%x00%D%x00%an%x00%ar'
-    const output = await git(
-      ['log', '--all', '--topo-order', `--format=${format}`, '-n', String(maxCount)],
-      worktreePath,
-    )
-    if (!output) return []
-
-    const SEP = '\x00' // git outputs actual null bytes
-    const entries: GitLogEntry[] = []
-    for (const line of output.split('\n')) {
-      if (!line) continue
-      const parts = line.split(SEP)
-      if (parts.length < 6) continue
-      entries.push({
-        hash: parts[0],
-        parents: parts[1] ? parts[1].split(' ') : [],
-        message: parts[2],
-        refs: parts[3] ? parts[3].split(', ').map((r) => r.trim()).filter(Boolean) : [],
-        author: parts[4],
-        relativeDate: parts[5],
-      })
-    }
-    return entries
-  }
-
   static async getRemoteHeadHash(repoPath: string, branch: string): Promise<string> {
     const output = await git(['ls-remote', '--heads', 'origin', branch], repoPath)
     if (!output) return ''
@@ -2085,21 +2057,6 @@ export class GitService {
       results.push(result)
     }
     return results
-  }
-
-  static async getCommitDiff(worktreePath: string, hash: string): Promise<string> {
-    try {
-      return await git(['show', '--format=', '--patch', hash], worktreePath)
-    } catch {
-      // Object may not be available locally (e.g. remote-only ref in a worktree).
-      // Try fetching the object first, then retry.
-      try {
-        await git(['fetch', '--depth=1', 'origin', hash], worktreePath)
-        return await git(['show', '--format=', '--patch', hash], worktreePath)
-      } catch {
-        return '' // Object is unreachable — return empty diff
-      }
-    }
   }
 
   /** Remote hash pointed to by origin HEAD (default branch tip). No fetch. */

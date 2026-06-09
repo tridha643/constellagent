@@ -7,7 +7,7 @@ export interface PanelDockDrag {
   side: Side
 }
 
-const PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'graph']
+const PANEL_TYPES: PanelType[] = ['project', 'files', 'changes']
 const SIDES: Side[] = ['left', 'right']
 
 function isPanelType(value: unknown): value is PanelType {

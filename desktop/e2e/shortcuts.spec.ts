@@ -570,7 +570,7 @@ test.describe('Keyboard shortcuts', () => {
     }
   })
 
-  test('Files / Changes / Git shortcuts target the swapped sidebar host', async () => {
+  test('Files / Changes shortcuts target the swapped sidebar host', async () => {
     const repoPath = createTestRepo('shortcut-swapped-panels')
     const { app, window } = await launchApp()
 
@@ -588,7 +588,7 @@ test.describe('Keyboard shortcuts', () => {
         const { sidePanels } = (window as any).__store.getState()
         return sidePanels
       })
-      expect(swapped.left.panelOrder).toEqual(['files', 'changes', 'graph', 'browser'])
+      expect(swapped.left.panelOrder).toEqual(['files', 'changes', 'browser'])
       expect(swapped.right.panelOrder).toEqual(['sideChat', 'project'])
 
       await window.keyboard.press('Meta+Shift+g')
@@ -607,16 +607,6 @@ test.describe('Keyboard shortcuts', () => {
       })
       await window.waitForTimeout(250)
 
-      await window.keyboard.press('Meta+Alt+g')
-      await window.waitForTimeout(250)
-
-      state = await window.evaluate(() => {
-        const { sidePanels } = (window as any).__store.getState()
-        return sidePanels
-      })
-      expect(state.left.open).toBe(true)
-      expect(state.left.activePanel).toBe('graph')
-
       await window.keyboard.press('Meta+Shift+e')
       await window.waitForTimeout(250)
 
@@ -624,6 +614,7 @@ test.describe('Keyboard shortcuts', () => {
         const { sidePanels } = (window as any).__store.getState()
         return sidePanels
       })
+      expect(state.left.open).toBe(true)
       expect(state.left.activePanel).toBe('files')
     } finally {
       await app.close()
@@ -777,28 +768,6 @@ test.describe('Keyboard shortcuts', () => {
       await window.waitForTimeout(2000)
 
       expect(await window.locator('[class*="tabTitle"]').count()).toBe(1)
-    } finally {
-      await app.close()
-    }
-  })
-
-  test('Cmd+Option+G opens the Git panel without opening a diff tab', async () => {
-    const repoPath = createTestRepo('shortcut-alt-g')
-    const { app, window } = await launchApp()
-
-    try {
-      await setupWorkspaceWithTerminal(window, repoPath)
-      await window.waitForTimeout(2000)
-
-      expect(await window.locator('[class*="tabTitle"]').count()).toBe(1)
-
-      await window.keyboard.press('Meta+Alt+g')
-      await window.waitForTimeout(1000)
-
-      const gitBtn = window.locator('button', { hasText: 'Git' })
-      await expect(gitBtn).toHaveClass(/active/)
-      expect(await window.locator('[class*="tabTitle"]').count()).toBe(1)
-      await expect(window.locator('[class*="diffToolbar"]')).toHaveCount(0)
     } finally {
       await app.close()
     }

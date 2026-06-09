@@ -604,14 +604,6 @@ export function registerIpcHandlers(): void {
     })
   })
 
-  ipcMain.handle(IPC.GIT_GET_LOG, async (_e, worktreePath: string, maxCount?: number) => {
-    return GitService.getLog(worktreePath, maxCount)
-  })
-
-  ipcMain.handle(IPC.GIT_GET_COMMIT_DIFF, async (_e, worktreePath: string, hash: string) => {
-    return GitService.getCommitDiff(worktreePath, hash)
-  })
-
   ipcMain.handle(IPC.GIT_GET_REMOTE_HEAD, async (_e, repoPath: string) => {
     return GitService.getRemoteHead(repoPath)
   })

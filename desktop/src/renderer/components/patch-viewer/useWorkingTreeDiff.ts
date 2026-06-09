@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
 import type { DiffFileData, GitStatusSnapshot } from '../../types/working-tree-diff'
-import { extractFilePathFromGitPatchSegment, splitGitPatchIntoFiles } from '../../utils/git-patch'
 import { loadWorkingTreeDiffFiles } from '../Editor/loadWorkingTreeDiffFiles'
 import { loadWorkingTreeExpandableDiffMetadata } from '../Editor/buildWorkingTreeDiffFileData'
 
@@ -20,7 +19,7 @@ export interface WorkingTreeDiffState {
 }
 
 /**
- * Working-tree (and commit) diff loader — the data layer that feeds CodeView.
+ * Working-tree diff loader — the data layer that feeds CodeView.
  * Wraps the KEPT `loadWorkingTreeDiffFiles` / `loadWorkingTreeExpandableDiffMetadata`
  * backends: warm-snapshot reuse, progressive per-file streaming, the lazy
  * expandable-metadata fetch queue (for "show full file"), and the FS watcher.
@@ -30,9 +29,8 @@ export interface WorkingTreeDiffState {
 export function useWorkingTreeDiff(opts: {
   worktreePath: string
   active: boolean
-  commitHash?: string
 }): WorkingTreeDiffState {
-  const { worktreePath, active, commitHash } = opts
+  const { worktreePath, active } = opts
 
   const [files, setFiles] = useState<DiffFileData[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,7 +62,7 @@ export function useWorkingTreeDiff(opts: {
       fileDiffLoadedRef.current.clear()
       fileDiffInFlightRef.current = 0
     }
-  }, [worktreePath, commitHash])
+  }, [worktreePath])
 
   const persistWorkingTreeSnapshot = useCallback(
     (snapshot: GitStatusSnapshot | null, nextFiles: DiffFileData[], complete: boolean) => {
@@ -74,29 +72,7 @@ export function useWorkingTreeDiff(opts: {
     [setWorkingTreeDiffSnapshot, worktreePath],
   )
 
-  const loadCommitDiff = useCallback(async () => {
-    if (!commitHash) return
-    try {
-      const patchOutput = await window.api.git.getCommitDiff(worktreePath, commitHash)
-      if (!patchOutput) {
-        setFiles([])
-        return
-      }
-      const parts = splitGitPatchIntoFiles(patchOutput)
-      setFiles(parts.map((part) => ({
-        filePath: extractFilePathFromGitPatchSegment(part),
-        patch: part,
-        status: 'modified',
-      })))
-    } catch (err) {
-      console.error('Failed to load commit diff:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [worktreePath, commitHash])
-
   const loadFiles = useCallback(async () => {
-    if (commitHash) return
     const generation = ++loadGenerationRef.current
     const warmSnapshot = useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath)
     const warmFiles = warmSnapshot?.files ?? []
@@ -142,7 +118,7 @@ export function useWorkingTreeDiff(opts: {
     } finally {
       if (loadGenerationRef.current === generation) setLoading(false)
     }
-  }, [worktreePath, commitHash, updateGitStatusSnapshot, persistWorkingTreeSnapshot])
+  }, [worktreePath, updateGitStatusSnapshot, persistWorkingTreeSnapshot])
 
   const pumpFileDiffQueue = useCallback(() => {
     while (fileDiffInFlightRef.current < FILE_DIFF_LOAD_CONCURRENCY && fileDiffQueueRef.current.length > 0) {
@@ -206,15 +182,14 @@ export function useWorkingTreeDiff(opts: {
   useEffect(() => {
     if (!active) return
     const alreadyLoaded = filesRef.current.length > 0
-    if (!alreadyLoaded && !commitHash) {
+    if (!alreadyLoaded) {
       setExpectedFileCount(0)
       setLoading(true)
     }
-    if (commitHash) void loadCommitDiff()
-    else void loadFiles()
-  }, [active, commitHash, loadCommitDiff, loadFiles, worktreePath])
+    void loadFiles()
+  }, [active, loadFiles, worktreePath])
 
-  useFileWatcher(worktreePath, handleWatchedDirChange, active && !commitHash)
+  useFileWatcher(worktreePath, handleWatchedDirChange, active)
 
   return {
     files,

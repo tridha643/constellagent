@@ -363,12 +363,10 @@ test.describe('Git & Sidebar functionality', () => {
       const toggle = window.getByTestId('right-panel-mode-toggle')
       const filesBtn = window.getByTestId('right-panel-mode-files')
       const changesBtn = window.getByTestId('right-panel-mode-changes')
-      const graphBtn = window.getByTestId('right-panel-mode-graph')
 
       await expect(toggle).toBeVisible()
       await expect(filesBtn).toBeVisible()
       await expect(changesBtn).toBeVisible()
-      await expect(graphBtn).toBeVisible()
 
       const filesBtnClass = await filesBtn.getAttribute('class')
       expect(filesBtnClass).toContain('active')
@@ -381,26 +379,23 @@ test.describe('Git & Sidebar functionality', () => {
       const toggleBox = await toggle.boundingBox()
       const filesBox = await filesBtn.boundingBox()
       const changesBox = await changesBtn.boundingBox()
-      const graphBox = await graphBtn.boundingBox()
 
       expect(toggleBox).toBeTruthy()
       expect(filesBox).toBeTruthy()
       expect(changesBox).toBeTruthy()
-      expect(graphBox).toBeTruthy()
 
-      if (!toggleBox || !filesBox || !changesBox || !graphBox) throw new Error('Missing right panel toggle bounds')
+      if (!toggleBox || !filesBox || !changesBox) throw new Error('Missing right panel toggle bounds')
 
-      const widths = [filesBox.width, changesBox.width, graphBox.width]
+      const widths = [filesBox.width, changesBox.width]
       expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(2)
       expect(filesBox.x).toBeGreaterThanOrEqual(toggleBox.x - 1)
-      expect(graphBox.x + graphBox.width).toBeLessThanOrEqual(toggleBox.x + toggleBox.width + 1)
+      expect(changesBox.x + changesBox.width).toBeLessThanOrEqual(toggleBox.x + toggleBox.width + 1)
 
       const hasOverflow = await window.evaluate(() => {
         const ids = [
           'right-panel-mode-toggle',
           'right-panel-mode-files',
           'right-panel-mode-changes',
-          'right-panel-mode-graph',
         ]
         return ids.some((id) => {
           const el = document.querySelector(`[data-testid="${id}"]`) as HTMLElement | null

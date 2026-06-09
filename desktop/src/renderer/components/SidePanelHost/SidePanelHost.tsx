@@ -4,8 +4,8 @@ import {
   FileDiff,
   FilePlus,
   FolderTree,
-  GitBranch,
   Globe,
+  GripVertical,
   LayoutList,
   MessageSquareMore,
   Plus,
@@ -19,11 +19,9 @@ import { panelLabel } from '../../store/side-panels'
 import { Sidebar } from '../Sidebar/Sidebar'
 import { FileTree } from '../RightPanel/FileTree'
 import { ChangedFiles } from '../RightPanel/ChangedFiles'
-import { GitGraph } from '../RightPanel/GitGraph'
 import { SideChatPanel } from '../SideChatPanel/SideChatPanel'
 import { SideTerminalPanel } from '../SideTerminalPanel/SideTerminalPanel'
 import { SetupPanel } from './SetupPanel'
-import { SpotlightIcon } from '../Icons/SpotlightIcon'
 import { fileTreeActions } from '../RightPanel/file-tree-actions'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
@@ -33,13 +31,11 @@ import styles from './SidePanelHost.module.css'
 const PANEL_SHORTCUTS: Partial<Record<PanelType, string>> = {
   files: '⇧⌘E',
   changes: '⇧⌘G',
-  graph: '⌥⌘G',
 }
 
 const PANEL_ICONS: Record<PanelType, ComponentType<{ size?: number; strokeWidth?: number }>> = {
   files: FolderTree,
   changes: FileDiff,
-  graph: GitBranch,
   project: LayoutList,
   browser: Globe,
   sideChat: MessageSquareMore,
@@ -72,7 +68,7 @@ function renderPanel(panel: PanelType, workspace: { id: string; worktreePath: st
       <SidePanelEmptyState
         icon="📁"
         title="No workspace selected"
-        text="Pick a workspace to browse files, inspect changes, and move through git history."
+        text="Pick a workspace to browse files and inspect changes."
       />
     )
   }
@@ -88,54 +84,21 @@ function renderPanel(panel: PanelType, workspace: { id: string; worktreePath: st
   if (panel === 'sideChat') {
     return <SideChatPanel workspaceId={workspace.id} worktreePath={workspace.worktreePath} />
   }
-  return <GitGraph worktreePath={workspace.worktreePath} workspaceId={workspace.id} isActive />
+  return null
 }
 
 function RightSidebarBottomDock({ workspace }: { workspace: { id: string; projectId?: string; worktreePath: string } | undefined }) {
   const activeBottomPanel = useAppStore((s) => s.rightSidebarBottomPanel)
   const setActiveBottomPanel = useAppStore((s) => s.setRightSidebarBottomPanel)
   const createSideTerminal = useAppStore((s) => s.createSideTerminalForActiveWorkspace)
-  const projects = useAppStore((s) => s.projects)
-  const spotlightWorkspaceIdByProject = useAppStore((s) => s.spotlightWorkspaceIdByProject)
-  const setSpotlightWorkspace = useAppStore((s) => s.setSpotlightWorkspace)
-  const addToast = useAppStore((s) => s.addToast)
 
   const [collapsed, setCollapsed] = useState(false)
 
-  const project = workspace ? projects.find((entry) => entry.id === workspace.projectId) : undefined
-  const isSpotlightActiveHere = Boolean(
-    workspace && project && spotlightWorkspaceIdByProject[project.id] === workspace.id,
-  )
-
   // Selecting a tab while collapsed should reveal the dock body, not silently
   // switch a hidden panel.
-  const selectBottomPanel = (panel: 'setup' | 'spotlight' | 'terminal') => {
+  const selectBottomPanel = (panel: 'setup' | 'terminal') => {
     setActiveBottomPanel(panel)
     setCollapsed(false)
-  }
-
-  const toggleSpotlight = async () => {
-    if (!workspace || !project) return
-    try {
-      if (isSpotlightActiveHere) {
-        await window.api.spotlight.disable(project.id)
-        setSpotlightWorkspace(project.id, null)
-      } else {
-        await window.api.spotlight.enable({
-          projectId: project.id,
-          workspaceId: workspace.id,
-          worktreePath: workspace.worktreePath,
-          rootPath: project.repoPath,
-        })
-        setSpotlightWorkspace(project.id, workspace.id)
-      }
-    } catch (error) {
-      addToast({
-        id: crypto.randomUUID(),
-        message: error instanceof Error ? error.message : 'Spotlight toggle failed',
-        type: 'error',
-      })
-    }
   }
 
   return (
@@ -155,7 +118,7 @@ function RightSidebarBottomDock({ workspace }: { workspace: { id: string; projec
         >
           <ChevronDown size={15} strokeWidth={2} className={styles.bottomDockChevronIcon} />
         </button>
-        {(['setup', 'spotlight', 'terminal'] as const).map((panel) => (
+        {(['setup', 'terminal'] as const).map((panel) => (
           <button
             key={panel}
             type="button"
@@ -163,12 +126,12 @@ function RightSidebarBottomDock({ workspace }: { workspace: { id: string; projec
             aria-pressed={!collapsed && activeBottomPanel === panel}
             onClick={() => selectBottomPanel(panel)}
           >
-            {panel === 'setup' ? 'Setup' : panel === 'spotlight' ? 'Spotlight' : 'Terminal'}
+            {panel === 'setup' ? 'Setup' : 'Terminal'}
           </button>
         ))}
         <button
           type="button"
-          className={styles.bottomDockIconButton}
+          className={`${styles.bottomDockIconButton} ${styles.bottomDockIconButtonTrailing}`}
           aria-label="New terminal"
           disabled={!workspace}
           onClick={() => {
@@ -178,34 +141,11 @@ function RightSidebarBottomDock({ workspace }: { workspace: { id: string; projec
         >
           <Plus size={15} strokeWidth={2} />
         </button>
-        <button
-          type="button"
-          className={`${styles.bottomDockSpotlightButton} ${isSpotlightActiveHere ? styles.bottomDockSpotlightActive : ''}`}
-          aria-pressed={isSpotlightActiveHere}
-          onClick={() => void toggleSpotlight()}
-        >
-          <SpotlightIcon className={styles.bottomDockSpotlightIcon} />
-          <span>Spotlight</span>
-        </button>
       </div>
       {!collapsed && (
       <div className={styles.bottomDockBody}>
         {activeBottomPanel === 'terminal' && workspace ? (
           <SideTerminalPanel workspaceId={workspace.id} />
-        ) : activeBottomPanel === 'spotlight' ? (
-          <div className={styles.bottomDockEmpty}>
-            <SpotlightIcon className={styles.bottomDockEmptyIcon} />
-            <button
-              type="button"
-              className={styles.bottomDockPrimaryButton}
-              disabled={!workspace || !project}
-              onClick={() => void toggleSpotlight()}
-            >
-              {isSpotlightActiveHere ? 'Stop spotlight' : 'Start spotlight'}
-              <span className={styles.bottomDockShortcut}>⌘R</span>
-            </button>
-            <span className={styles.bottomDockMuted}>Sync your changes to the repository root.</span>
-          </div>
         ) : (
           <SetupPanel workspace={workspace} />
         )}
@@ -269,6 +209,39 @@ export function SidePanelHost({ side }: { side: Side }) {
     setDraggingPanel(null)
   }, [movePanelToSide, resolveDragPayload, setPanelDockDrag, side])
 
+  const beginPanelDrag = useCallback((panel: PanelType) => (event: DragEvent) => {
+    setDraggingPanel(panel)
+    const payload = { panel, side }
+    setPanelDockDrag(payload)
+    writePanelDockDrag(event.dataTransfer, payload)
+  }, [setPanelDockDrag, side])
+
+  const endPanelDrag = useCallback(() => {
+    setDraggingPanel(null)
+    setDockHovered(false)
+    setPanelDockDrag(null)
+  }, [setPanelDockDrag])
+
+  const renderPanelDragHandle = (panel: PanelType) => (
+    <Tooltip label={`Drag to dock ${panelLabel(panel)} to the other sidebar`}>
+      <span
+        className={[
+          styles.panelDragHandle,
+          draggingPanel === panel ? styles.modeButtonDragging : '',
+        ].filter(Boolean).join(' ')}
+        draggable
+        role="button"
+        tabIndex={0}
+        aria-label={`Drag to dock ${panelLabel(panel)} to the other sidebar`}
+        data-panel-type={panel}
+        onDragStart={beginPanelDrag(panel)}
+        onDragEnd={endPanelDrag}
+      >
+        <GripVertical size={10} strokeWidth={2} aria-hidden="true" />
+      </span>
+    </Tooltip>
+  )
+
   return (
     <div
       className={[
@@ -288,35 +261,7 @@ export function SidePanelHost({ side }: { side: Side }) {
       onDragLeave={handleDockDragLeave}
       onDrop={handleDockDrop}
     >
-      <div
-        className={[
-          styles.explorerRow,
-          solePanel && draggingPanel === solePanel ? styles.modeButtonDragging : '',
-        ].filter(Boolean).join(' ')}
-        {...(solePanel
-          ? {
-              draggable: true,
-              'data-panel-type': solePanel,
-              'data-testid':
-                solePanel === 'project'
-                  ? 'side-panel-tab-project'
-                  : `right-panel-mode-${solePanel === 'graph' ? 'graph' : solePanel}`,
-              'aria-label': `Drag to dock ${panelLabel(solePanel)}`,
-              title: `Drag to dock ${panelLabel(solePanel)} to the other sidebar`,
-              onDragStart: (event: DragEvent) => {
-                setDraggingPanel(solePanel)
-                const payload = { panel: solePanel, side }
-                setPanelDockDrag(payload)
-                writePanelDockDrag(event.dataTransfer, payload)
-              },
-              onDragEnd: () => {
-                setDraggingPanel(null)
-                setDockHovered(false)
-                setPanelDockDrag(null)
-              },
-            }
-          : {})}
-      >
+      <div className={styles.explorerRow}>
         <div className={styles.explorerSpacer} aria-hidden="true" />
         <div className={styles.explorerToolbar}>
           {showFilesTools && (
@@ -362,33 +307,19 @@ export function SidePanelHost({ side }: { side: Side }) {
               {panelState.panelOrder.map((panel) => {
                 const Icon = PANEL_ICONS[panel]
                 const isActive = activePanel === panel
+                const testId = panel === 'project' ? 'side-panel-tab-project' : `right-panel-mode-${panel}`
                 const button = (
                   <button
-                    key={panel}
                     type="button"
-                    draggable
                     aria-label={panelLabel(panel)}
                     aria-pressed={isActive}
-                    data-panel-type={panel}
-                    data-testid={panel === 'project' ? 'side-panel-tab-project' : `right-panel-mode-${panel === 'graph' ? 'graph' : panel}`}
+                    data-testid={testId}
                     className={[
                       styles.iconButton,
                       styles.panelIconButton,
                       isActive ? styles.active : '',
-                      draggingPanel === panel ? styles.modeButtonDragging : '',
                     ].filter(Boolean).join(' ')}
                     onClick={() => setSidePanelActive(side, panel)}
-                    onDragStart={(event) => {
-                      setDraggingPanel(panel)
-                      const payload = { panel, side }
-                      setPanelDockDrag(payload)
-                      writePanelDockDrag(event.dataTransfer, payload)
-                    }}
-                    onDragEnd={() => {
-                      setDraggingPanel(null)
-                      setDockHovered(false)
-                      setPanelDockDrag(null)
-                    }}
                   >
                     <Icon size={14} strokeWidth={2} />
                     <span className={styles.visuallyHidden}>{panelLabel(panel)}</span>
@@ -396,22 +327,43 @@ export function SidePanelHost({ side }: { side: Side }) {
                 )
 
                 const shortcut = PANEL_SHORTCUTS[panel]
-                const tooltipLabel = `Drag to dock ${panelLabel(panel)} to the other sidebar`
-                if (!shortcut) {
-                  return (
-                    <Tooltip key={panel} label={tooltipLabel}>
-                      {button}
-                    </Tooltip>
-                  )
-                }
                 return (
-                  <Tooltip key={panel} label={tooltipLabel} shortcut={shortcut}>
-                    {button}
-                  </Tooltip>
+                  <div key={panel} className={styles.panelSwitcherItem}>
+                    {shortcut ? (
+                      <Tooltip label={panelLabel(panel)} shortcut={shortcut}>
+                        {button}
+                      </Tooltip>
+                    ) : (
+                      <Tooltip label={panelLabel(panel)}>
+                        {button}
+                      </Tooltip>
+                    )}
+                    {renderPanelDragHandle(panel)}
+                  </div>
                 )
               })}
             </div>
           )}
+
+          {solePanel && !showSwitchers && (() => {
+            const Icon = PANEL_ICONS[solePanel]
+            const testId = solePanel === 'project' ? 'side-panel-tab-project' : `right-panel-mode-${solePanel}`
+            return (
+              <div className={styles.explorerActions}>
+                <div className={styles.panelSwitcherItem}>
+                  <span
+                    className={[styles.iconButton, styles.panelIconButton, styles.active].join(' ')}
+                    data-testid={testId}
+                    aria-label={panelLabel(solePanel)}
+                  >
+                    <Icon size={14} strokeWidth={2} />
+                    <span className={styles.visuallyHidden}>{panelLabel(solePanel)}</span>
+                  </span>
+                  {renderPanelDragHandle(solePanel)}
+                </div>
+              </div>
+            )
+          })()}
         </div>
       </div>
 
@@ -420,7 +372,7 @@ export function SidePanelHost({ side }: { side: Side }) {
           <SidePanelEmptyState
             icon="🧩"
             title="No panels assigned"
-            text="Use Settings to choose which sidebar should host project navigation versus files, changes, and git history."
+            text="Use Settings to choose which sidebar should host project navigation versus files and changes."
           />
         ) : (
           <ErrorBoundary

@@ -497,7 +497,7 @@ export function App() {
                     if (!ws) return null
                     return (
                       <ErrorBoundary
-                        key={t.commitHash || t.id}
+                        key={t.id}
                         fallback={
                           <div className={styles.diffViewerError}>
                             Couldn&apos;t load changes. Reload the window (⌘R) or switch tabs and try again.
@@ -508,8 +508,6 @@ export function App() {
                           variant="tab"
                           worktreePath={ws.worktreePath}
                           active={t.id === activeTabId}
-                          commitHash={t.commitHash}
-                          commitMessage={t.commitMessage}
                         />
                       </ErrorBoundary>
                     )
