@@ -30,9 +30,6 @@ export const CONSTELLAGENT_ACTION_MIME = 'application/x-constellagent-action'
 /** Drag-and-drop MIME for project section reorder */
 export const CONSTELLAGENT_PROJECT_MIME = 'application/x-constellagent-project'
 
-/** Drag-and-drop MIME for sidebar folder reorder */
-export const CONSTELLAGENT_FOLDER_MIME = 'application/x-constellagent-folder'
-
 const PLAN_PATH_SEGMENTS = AGENT_PLAN_RELATIVE_DIRS.map((dir) => `/${dir}/`)
 const PI_BOOT_DELAY_MS = 1200
 

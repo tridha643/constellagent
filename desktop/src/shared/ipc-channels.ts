@@ -165,6 +165,7 @@ export const IPC = {
   GITHUB_CREATE_PR: 'github:create-pr',
   GITHUB_REOPEN_PR: 'github:reopen-pr',
   GITHUB_GET_PR_REVIEW_COMMENTS: 'github:get-pr-review-comments',
+  GITHUB_GET_PR_CHECKS: 'github:get-pr-checks',
   GITHUB_CLONE_SUGGESTIONS: 'github:clone-suggestions',
   /** Resolve `origin` to GitHub `{ owner, name }` for the sidebar avatar + header (cached). */
   GITHUB_GET_REPO_INFO: 'github:get-repo-info',

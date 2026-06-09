@@ -517,6 +517,13 @@ export function useShortcuts() {
         return
       }
 
+      // Cmd+Shift+H — Checks & Todos panel (routes to the side that owns it)
+      if (shift && !alt && e.code === 'KeyH') {
+        consume()
+        store.activatePanel('checks')
+        return
+      }
+
       // ── Add to Chat: Cmd+L ──
       if (!shift && !alt && e.key === 'l') {
         consume()
@@ -603,16 +610,6 @@ export function useShortcuts() {
         return
       }
 
-      // Cmd+Shift+N — new sidebar folder modal for the active project.
-      if (shift && !alt && (e.key === 'n' || e.key === 'N')) {
-        consume()
-        const project = store.activeProject() ?? store.projects[0]
-        if (!project) return
-        window.dispatchEvent(
-          new CustomEvent('constellagent:new-sidebar-folder', { detail: { projectId: project.id } }),
-        )
-        return
-      }
     }
 
     // Capture phase: runs before terminal handlers on the focused textarea.

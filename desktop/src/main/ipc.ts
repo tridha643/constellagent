@@ -355,14 +355,11 @@ function sanitizeLoadedState(data: unknown): StateSanitizeResult {
 function isAllowedShellOpenUrl(url: string): boolean {
   try {
     const u = new URL(url)
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false
-    const host = u.hostname.toLowerCase()
-    return (
-      host === 'linear.app' ||
-      host === 'www.linear.app' ||
-      host === 'linear.new' ||
-      host === 'www.linear.new'
-    )
+    // Only web protocols may reach `shell.openExternal` — this blocks `file:`,
+    // `javascript:`, custom-scheme handlers, etc. Any http(s) host is permitted:
+    // PR / check / deployment links come from trusted GitHub GraphQL data and point
+    // at arbitrary CI / hosting providers, so a host allow-list can't enumerate them.
+    return u.protocol === 'https:' || u.protocol === 'http:'
   } catch {
     return false
   }
@@ -700,6 +697,13 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.GITHUB_GET_PR_REVIEW_COMMENTS, async (_e, repoPath: string, prNumber: number) => {
     return GithubService.fetchPrReviewComments(repoPath, prNumber)
+  })
+
+  ipcMain.handle(IPC.GITHUB_GET_PR_CHECKS, async (_e, repoPath: string, prNumber: number) => {
+    return measureMainAsync('github:get-pr-checks', () => GithubService.getPrChecks(repoPath, prNumber), {
+      repoPath,
+      prNumber,
+    })
   })
 
   ipcMain.handle(IPC.GITHUB_CLONE_SUGGESTIONS, async (_e, query: string) => {

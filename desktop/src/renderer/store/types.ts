@@ -62,6 +62,14 @@ export interface Automation {
   composio?: ComposioAutomationLink
 }
 
+/** A single per-workspace todo in the Checks & Todos tab. Ordering = array order. */
+export interface TodoItem {
+  id: string
+  text: string
+  done: boolean
+  createdAt: number
+}
+
 export interface SkillEntry {
   id: string
   name: string
@@ -99,10 +107,6 @@ export interface Project {
   icon?: ProjectIcon
   graphiteNewBranchSource?: GraphiteNewBranchSource
   graphitePreferredTrunk?: string | null
-  /** Folder the star toggle maps to (one per project). Migration seeds this. */
-  priorityFolderId?: string | null
-  /** Folder new workspaces land in (one per project). Migration seeds this. */
-  defaultFolderId?: string | null
 }
 
 export interface Workspace {
@@ -120,19 +124,38 @@ export interface Workspace {
    */
   graphiteUiTrunkBranch?: string | null
   linkedPullRequest?: LinkedPullRequest
-  /** Sidebar folder this workspace belongs to. Unset rows fall back to project's defaultFolderId. */
-  folderId?: string
+  /** Sticky manual override: when true this workspace holds its place in the Pinned section. */
+  pinned?: boolean
+  /** Hand-sort order within the Pinned section (ascending). Only meaningful when `pinned`. */
+  pinOrder?: number
+  /**
+   * Manual override placing this workspace in a user-created {@link CustomSection}
+   * (by id) instead of an auto status bucket. Mutually exclusive with `pinned`.
+   * Ignored if no section with this id exists for the workspace's project.
+   */
+  sectionId?: string
+  /**
+   * Manual override forcing this workspace into a specific auto status bucket
+   * regardless of its derived status (e.g. dropped into an empty "Active").
+   * Mutually exclusive with `pinned` / `sectionId`. Mirrors the `WorkspaceBucket`
+   * union in `sidebar-navigation.ts`.
+   */
+  bucketOverride?: 'needs-you' | 'in-review' | 'active' | 'idle'
+  /** Wall-clock ms of the last selection/activity. Powers the Active/Idle split and intra-section ordering. */
+  lastActiveAt?: number
 }
 
-/** Sidebar grouping under a project. Seeded with "Priority" + "Non-Priority" per project. */
-export interface Folder {
+/**
+ * A user-created sidebar section ("manual section"). Workspaces opt in via
+ * {@link Workspace.sectionId}; the section renders between Pinned and the auto
+ * status buckets. Scoped to one project.
+ */
+export interface CustomSection {
   id: string
   projectId: string
   name: string
+  /** Sort order among a project's custom sections (ascending). */
   order: number
-  collapsed?: boolean
-  /** User-chosen accent (a PROJECT_ICON_COLORS `var(--accent-*)` value). Drives `--fc`. */
-  color?: string
 }
 
 export type SplitLeaf =
@@ -164,7 +187,7 @@ export type Tab = {
 
 export type Side = 'left' | 'right'
 
-export type PanelType = 'project' | 'files' | 'changes' | 'sideChat'
+export type PanelType = 'project' | 'files' | 'changes' | 'checks' | 'sideChat'
 
 export type RightSidebarBottomPanel = 'setup' | 'terminal'
 
@@ -179,7 +202,7 @@ export interface SidePanelLayout {
   right: SidePanelState
 }
 
-export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'sideChat']
+export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'checks', 'sideChat']
 
 export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes']
 
@@ -192,7 +215,7 @@ export const DEFAULT_SIDE_PANEL_LAYOUT: SidePanelLayout = {
   right: {
     open: true,
     activePanel: 'files',
-    panelOrder: ['files', 'changes', 'sideChat'],
+    panelOrder: ['files', 'changes', 'checks', 'sideChat'],
   },
 }
 
@@ -737,7 +760,8 @@ export interface AppState {
   // Data
   projects: Project[]
   workspaces: Workspace[]
-  folders: Folder[]
+  /** User-created manual sidebar sections (per project). */
+  customSections: CustomSection[]
   tabs: Tab[]
   automations: Automation[]
   activeWorkspaceId: string | null
@@ -755,12 +779,16 @@ export interface AppState {
   reviewPanelStateByWorkspace: Record<string, ReviewPanelPersistedState>
   /** Per-workspace staged-file selection in the right-panel Changes view. */
   stagedSelectionByWorkspace: Record<string, string[]>
+  /** Per-workspace user todo lists (Checks & Todos tab). Persisted. */
+  workspaceTodos: Record<string, TodoItem[]>
   /** Per-workspace tmux-backed side terminal sessions. Client PTY ids are ephemeral. */
   sideTerminalsByWorkspace: Record<string, SideTerminalSession[]>
   /** Bottom dock inside the right sidebar, separate from the top panel mode switcher. */
   rightSidebarBottomPanel: RightSidebarBottomPanel
   /** Ephemeral: manually collapsed project sections in the project navigation panel. */
   collapsedProjectIds: Set<string>
+  /** Persisted: collapsed sidebar status sections, keyed `${projectId}:${sectionId}`. Absent = expanded. */
+  collapsedSidebarSections: Record<string, boolean>
   /** Ephemeral: most recently active workspace per project for project hotkeys. */
   lastActiveWorkspaceByProjectId: Record<string, string>
   lastSavedTabId: string | null
@@ -923,6 +951,14 @@ export interface AppState {
   /** Open newest .md/.mdx across agent plan dirs (.cursor/plans, etc.) in the active workspace */
   openLatestAgentPlan: () => Promise<void>
   openDiffTab: (workspaceId: string) => void
+  /** Todo actions, all keyed by workspaceId. */
+  addTodo: (workspaceId: string, text: string) => void
+  renameTodo: (workspaceId: string, todoId: string, text: string) => void
+  toggleTodo: (workspaceId: string, todoId: string) => void
+  removeTodo: (workspaceId: string, todoId: string) => void
+  /** Rewrite the todo array order for a workspace (drag-reorder). */
+  reorderTodos: (workspaceId: string, orderedIds: string[]) => void
+  clearCompletedTodos: (workspaceId: string) => void
   /** Open a VS Code-style full-file diff tab for a single file (HEAD vs working tree). */
   openFullFileDiffTab: (filePath: string, opts?: { status?: WorkingTreeFileStatus['status']; originalRef?: string }) => void
   nextWorkspace: () => void
@@ -956,19 +992,37 @@ export interface AppState {
   reorderProject: (fromId: string, toId: string) => void
   reorderSidebarAction: (fromId: SidebarActionId, toId: SidebarActionId) => void
 
-  // Sidebar folder actions
-  addFolder: (projectId: string, name: string) => string
-  renameFolder: (id: string, name: string) => void
-  /** Set (or clear, when `color` is undefined) a folder's accent color. */
-  setFolderColor: (id: string, color: string | undefined) => void
-  removeFolder: (id: string, reassignTo?: string) => void
-  reorderFolder: (fromId: string, toId: string) => void
-  toggleFolderCollapsed: (id: string) => void
-  setProjectPriorityFolder: (projectId: string, folderId: string) => void
-  setProjectDefaultFolder: (projectId: string, folderId: string) => void
-  moveWorkspaceToFolder: (workspaceId: string, folderId: string) => void
-  moveWorkspaceToFolderBefore: (workspaceId: string, folderId: string, beforeWorkspaceId: string) => void
-  togglePriorityForWorkspace: (workspaceId: string) => void
+  // Sidebar pin actions (manual override of the auto-by-status sections)
+  /** Pin a workspace into the Pinned section; assigns `pinOrder = max(existing)+1`. */
+  pinWorkspace: (workspaceId: string) => void
+  /** Return a workspace to auto placement (clears `pinned`/`pinOrder`). */
+  unpinWorkspace: (workspaceId: string) => void
+  togglePinWorkspace: (workspaceId: string) => void
+  /** Reorder within the Pinned section; `beforeWorkspaceId` undefined = move to end. Pins the workspace if unpinned. */
+  movePinnedWorkspaceBefore: (workspaceId: string, beforeWorkspaceId?: string) => void
+  /** Stamp `lastActiveAt = Date.now()` on a workspace (powers Active/Idle + ordering). */
+  touchWorkspaceActivity: (workspaceId: string) => void
+  /** Collapse/expand a sidebar status section, keyed by `${projectId}:${sectionId}`. */
+  toggleSidebarSectionCollapsed: (projectId: string, sectionId: string) => void
+
+  // Manual (custom) sidebar sections
+  /** Create a manual section in a project; returns its new id. `order` appends to the end. */
+  createCustomSection: (projectId: string, name: string) => string
+  /** Rename a manual section. Blank names are ignored. */
+  renameCustomSection: (sectionId: string, name: string) => void
+  /** Delete a manual section; its members revert to auto placement (`sectionId` cleared). */
+  deleteCustomSection: (sectionId: string) => void
+  /** Reorder a project's manual sections (move `fromId` to `toId`'s slot). */
+  reorderCustomSection: (fromId: string, toId: string) => void
+  /** Place a workspace in a manual section (clears `pinned`/bucket override), or `null` to return it to auto. */
+  assignWorkspaceToSection: (workspaceId: string, sectionId: string | null) => void
+  /** Force a workspace into a specific auto bucket (clears `pinned`/`sectionId`), or `null` to return it to derived status. */
+  setWorkspaceBucketOverride: (
+    workspaceId: string,
+    bucket: 'needs-you' | 'in-review' | 'active' | 'idle' | null,
+  ) => void
+  /** Clear every manual placement override (pin, custom section, bucket) — return a workspace to pure auto. */
+  resetWorkspacePlacement: (workspaceId: string) => void
   updateWorkspaceBranch: (id: string, branch: string) => void
   /** Re-scan `git worktree list` and merge missing linked worktrees into the sidebar. */
   refreshGitWorktrees: () => void
@@ -1117,7 +1171,10 @@ export const DEFAULT_SIDEBAR_ACTION_ORDER: SidebarActionId[] = [
 export interface PersistedState {
   projects: Project[]
   workspaces: Workspace[]
-  folders?: Folder[]
+  /** User-created manual sidebar sections (per project). */
+  customSections?: CustomSection[]
+  /** Legacy: removed Folder entity. Read only by the one-time pin migration in hydrateState. */
+  folders?: unknown[]
   tabs?: Tab[]
   automations?: Automation[]
   activeWorkspaceId?: string | null
@@ -1130,7 +1187,9 @@ export interface PersistedState {
   fileTreeExpandedPathsByWorkspace?: Record<string, string[]>
   reviewPanelStateByWorkspace?: Record<string, ReviewPanelPersistedState>
   stagedSelectionByWorkspace?: Record<string, string[]>
+  workspaceTodos?: Record<string, TodoItem[]>
   sidebarActionOrder?: SidebarActionId[]
+  collapsedSidebarSections?: Record<string, boolean>
   composioWebhook?: ComposioWebhookSettings
   spotlightWorkspaceIdByProject?: Record<string, string | null>
   /**

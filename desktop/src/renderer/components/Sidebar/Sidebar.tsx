@@ -3,7 +3,6 @@ import { useAppStore } from "../../store/app-store";
 import {
   DEFAULT_SIDEBAR_ACTION_ORDER,
   type AgentType,
-  type Folder,
   type Project,
   type ProjectIcon,
   type PrLinkProvider,
@@ -11,11 +10,16 @@ import {
   type StartupCommand,
   type Workspace,
 } from "../../store/types";
-import { getRenderableFolderGroups } from "../../store/sidebar-navigation";
+import {
+  getRenderableProjectWorkspaces,
+  getWorkspaceSections,
+  type WorkspaceSignals,
+} from "../../store/sidebar-navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import { usePrefersReducedMotion } from "../../hooks/use-prefers-reduced-motion";
 import type { CreateWorktreeProgressEvent } from "../../../shared/workspace-creation";
 import type { GithubLookupError, LinkedPullRequest, OpenPrInfo, PrInfo, ResolvedPrInfo } from "../../../shared/github-types";
 import { WorkspaceDialog } from "./WorkspaceDialog";
-import { FolderDialog } from "./FolderDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { GraphiteStack } from "./GraphiteStack";
 import { BranchAndPrLauncher } from "./BranchAndPrLauncher";
@@ -29,10 +33,10 @@ import {
 import {
   AlertCircle,
   ChevronDown,
-  Folder as FolderIcon,
-  FolderOpen,
   GitBranch,
   Loader2,
+  Pencil,
+  Pin,
   Timer,
 } from "lucide-react";
 import { getProjectIconComponent } from "./project-icon-glyphs";
@@ -42,7 +46,6 @@ import {
   CONSTELLAGENT_WORKSPACE_MIME,
   CONSTELLAGENT_ACTION_MIME,
   CONSTELLAGENT_PROJECT_MIME,
-  CONSTELLAGENT_FOLDER_MIME,
 } from "../../utils/add-to-chat";
 import { ContextWindowIndicator } from "./ContextWindowIndicator";
 import { SpotlightStatusDot } from "../Spotlight/SpotlightStatusDot";
@@ -55,7 +58,6 @@ import {
   getOwnerAvatarUrl,
 } from "../../../shared/github-url";
 import type { SpotlightState, SpotlightStatus } from "../../../shared/spotlight-types";
-import { PROJECT_ICON_COLORS } from "../../../shared/project-icon-templates";
 
 const PR_ICON_SIZE = 10;
 const START_TERMINAL_MESSAGE = "Starting terminal...";
@@ -707,101 +709,6 @@ function ProjectHeaderGlyph({
   );
 }
 
-function FolderActionsMenu({
-  folder,
-  projectFolderCount,
-  isPriority,
-  isDefault,
-  onRename,
-  onSetPriority,
-  onSetDefault,
-  onSetColor,
-  onDelete,
-  onClose,
-}: {
-  folder: Folder;
-  projectFolderCount: number;
-  isPriority: boolean;
-  isDefault: boolean;
-  onRename: () => void;
-  onSetPriority: () => void;
-  onSetDefault: () => void;
-  onSetColor: (color: string | undefined) => void;
-  onDelete: () => void;
-  onClose: () => void;
-}) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onDoc = (event: MouseEvent) => {
-      if (!rootRef.current) return;
-      if (rootRef.current.contains(event.target as Node)) return;
-      onClose();
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("mousedown", onDoc, true);
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("mousedown", onDoc, true);
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [onClose]);
-
-  const canDelete = projectFolderCount > 1;
-  return (
-    <div ref={rootRef} className={styles.folderMenu} role="menu" aria-label={`${folder.name} actions`}>
-      <div className={styles.folderColorRow} role="group" aria-label="Folder color">
-        <button
-          type="button"
-          className={`${styles.folderColorSwatch} ${styles.folderColorSwatchNone} ${!folder.color ? styles.folderColorSwatchActive : ""}`}
-          aria-label="Default color"
-          aria-pressed={!folder.color}
-          onClick={() => onSetColor(undefined)}
-        />
-        {PROJECT_ICON_COLORS.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            className={`${styles.folderColorSwatch} ${folder.color === c.var ? styles.folderColorSwatchActive : ""}`}
-            style={{ "--swatch": c.var } as React.CSSProperties}
-            aria-label={c.label}
-            aria-pressed={folder.color === c.var}
-            onClick={() => onSetColor(c.var)}
-          />
-        ))}
-      </div>
-      <button className={styles.folderMenuItem} role="menuitem" onClick={onRename}>
-        Rename
-      </button>
-      <button
-        className={styles.folderMenuItem}
-        role="menuitem"
-        disabled={isPriority}
-        onClick={onSetPriority}
-      >
-        Set as priority target
-      </button>
-      <button
-        className={styles.folderMenuItem}
-        role="menuitem"
-        disabled={isDefault}
-        onClick={onSetDefault}
-      >
-        Set as default
-      </button>
-      <button
-        className={`${styles.folderMenuItem} ${styles.folderMenuItemDanger}`}
-        role="menuitem"
-        disabled={!canDelete}
-        onClick={onDelete}
-      >
-        Delete
-      </button>
-    </div>
-  );
-}
-
 export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?: boolean; showTitleArea?: boolean }) {
   const projects = useAppStore((s) => s.projects);
   const workspaces = useAppStore((s) => s.workspaces);
@@ -840,18 +747,20 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const repoInfoByProjectId = useAppStore((s) => s.repoInfoByProjectId);
   const collapsedProjectIds = useAppStore((s) => s.collapsedProjectIds);
   const toggleProjectCollapsed = useAppStore((s) => s.toggleProjectCollapsed);
-  const lastActiveWorkspaceByProjectId = useAppStore((s) => s.lastActiveWorkspaceByProjectId);
-  const folders = useAppStore((s) => s.folders);
-  const addFolder = useAppStore((s) => s.addFolder);
-  const renameFolder = useAppStore((s) => s.renameFolder);
-  const setFolderColor = useAppStore((s) => s.setFolderColor);
-  const removeFolder = useAppStore((s) => s.removeFolder);
-  const reorderFolder = useAppStore((s) => s.reorderFolder);
-  const toggleFolderCollapsed = useAppStore((s) => s.toggleFolderCollapsed);
-  const moveWorkspaceToFolder = useAppStore((s) => s.moveWorkspaceToFolder);
-  const moveWorkspaceToFolderBefore = useAppStore((s) => s.moveWorkspaceToFolderBefore);
-  const setProjectPriorityFolder = useAppStore((s) => s.setProjectPriorityFolder);
-  const setProjectDefaultFolder = useAppStore((s) => s.setProjectDefaultFolder);
+  const prStatusMap = useAppStore((s) => s.prStatusMap);
+  const workspaceBarStatsMap = useAppStore((s) => s.workspaceBarStatsMap);
+  const collapsedSidebarSections = useAppStore((s) => s.collapsedSidebarSections);
+  const togglePinWorkspace = useAppStore((s) => s.togglePinWorkspace);
+  const movePinnedWorkspaceBefore = useAppStore((s) => s.movePinnedWorkspaceBefore);
+  const toggleSidebarSectionCollapsed = useAppStore((s) => s.toggleSidebarSectionCollapsed);
+  const customSections = useAppStore((s) => s.customSections);
+  const createCustomSection = useAppStore((s) => s.createCustomSection);
+  const renameCustomSection = useAppStore((s) => s.renameCustomSection);
+  const deleteCustomSection = useAppStore((s) => s.deleteCustomSection);
+  const assignWorkspaceToSection = useAppStore((s) => s.assignWorkspaceToSection);
+  const setWorkspaceBucketOverride = useAppStore((s) => s.setWorkspaceBucketOverride);
+  const resetWorkspacePlacement = useAppStore((s) => s.resetWorkspacePlacement);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   const [contextMenu, setContextMenu] = useState<{ wsId: string; x: number; y: number } | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -887,21 +796,44 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const [dropTargetActionId, setDropTargetActionId] = useState<SidebarActionId | null>(null);
   const draggingActionIdRef = useRef<SidebarActionId | null>(null);
   const editRef = useRef<string>("");
-  const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
-  const [dropTargetFolderReorderId, setDropTargetFolderReorderId] = useState<string | null>(null);
-  const draggingFolderIdRef = useRef<string | null>(null);
-  const [dropTargetFolderId, setDropTargetFolderId] = useState<string | null>(null);
-  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
-  const [folderDialogProjectId, setFolderDialogProjectId] = useState<string | null>(null);
-  const [folderMenuId, setFolderMenuId] = useState<string | null>(null);
-  const folderAutoExpandTimerRef = useRef<{ id: string; timer: number } | null>(null);
+  // Highlighted section drop target, keyed `${projectId}:${sectionId}`, while
+  // dragging a bar over any section header (pin / assign / bucket override).
+  const [dropTargetSectionKey, setDropTargetSectionKey] = useState<string | null>(null);
+  // Custom section currently being renamed inline (its id), else null.
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const sectionEditRef = useRef<string>("");
   const dialogProject = workspaceDialogProjectId
     ? (projects.find((p) => p.id === workspaceDialogProjectId) ?? null)
     : null;
-  const folderDialogProject = folderDialogProjectId
-    ? (projects.find((p) => p.id === folderDialogProjectId) ?? null)
-    : null;
   const isCreatingWorkspace = workspaceCreation !== null;
+
+  // Resolve a workspace's per-bucket signals from the maps the component already subscribes to.
+  const resolveSignals = useCallback(
+    (ws: Workspace): WorkspaceSignals => {
+      const spotlight = spotlightStatusByProject.get(ws.projectId);
+      return {
+        pr: prStatusMap.get(`${ws.projectId}:${ws.branch}`) ?? undefined,
+        sync: worktreeSyncMap.get(ws.id),
+        spotlight: spotlight && spotlight.workspaceId === ws.id ? spotlight : undefined,
+        agentActive: activeClaudeWorkspaceIds.has(ws.id),
+        unread: unreadWorkspaceIds.has(ws.id),
+        barStats: workspaceBarStatsMap.get(ws.id),
+        lastActiveAt: ws.lastActiveAt,
+      };
+    },
+    [
+      prStatusMap,
+      worktreeSyncMap,
+      spotlightStatusByProject,
+      activeClaudeWorkspaceIds,
+      unreadWorkspaceIds,
+      workspaceBarStatsMap,
+    ],
+  );
+
+  // Recomputed each render; drives the Active/Idle (<24h) split. Re-renders fire
+  // on every relevant store change, so this stays fresh without a timer.
+  const now = Date.now();
 
   useEffect(() => {
     const unsub = window.api.git.onCreateWorktreeProgress(
@@ -952,18 +884,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       setProjectPrScope("all");
     }
   }, [openProjectPrPopoverId, projects]);
-
-  // ⌘⇧N from useShortcuts opens the new-folder modal for the active project.
-  useEffect(() => {
-    const onNewFolder = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectId?: string }>).detail;
-      const projectId = detail?.projectId;
-      if (!projectId) return;
-      setFolderDialogProjectId(projectId);
-    };
-    window.addEventListener("constellagent:new-sidebar-folder", onNewFolder);
-    return () => window.removeEventListener("constellagent:new-sidebar-folder", onNewFolder);
-  }, []);
 
   const closeProjectPrModal = useCallback(() => {
     setOpenProjectPrPopoverId(null);
@@ -1723,11 +1643,11 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
         {projects.map((project) => {
           const isExpanded = isProjectExpanded(project.id);
           const repoInfo = repoInfoByProjectId.get(project.id) ?? null;
-          const folderGroups = getRenderableFolderGroups(
-            project.id,
-            folders,
-            workspaces,
-            project.defaultFolderId ?? null,
+          const sections = getWorkspaceSections(
+            getRenderableProjectWorkspaces(workspaces, project.id),
+            resolveSignals,
+            now,
+            customSections.filter((sec) => sec.projectId === project.id),
           );
 
           return (
@@ -1843,209 +1763,129 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
 
               {isExpanded && (
                 <div className={styles.workspaceList}>
-                  {folderGroups.map(({ folder, workspaces: folderWorkspaces }) => {
-                    const isFolderCollapsed = !!folder.collapsed;
-                    const isPriorityFolder = project.priorityFolderId === folder.id;
-                    const isDefaultFolder = project.defaultFolderId === folder.id;
-                    const isFolderEditing = editingFolderId === folder.id;
-                    const isFolderDropTarget = dropTargetFolderId === folder.id;
-                    const isFolderReorderDropTarget = dropTargetFolderReorderId === folder.id;
-                    const projectFolderCount = folderGroups.length;
+                  {sections.map((section) => {
+                    const isPinnedSection = section.kind === "pinned";
+                    const isCustomSection = section.kind === "custom";
+                    const isSectionEditing = editingSectionId === section.id;
+                    const sectionKey = `${project.id}:${section.id}`;
+                    const isSectionCollapsed = !!collapsedSidebarSections[sectionKey];
+                    const isSectionDropTarget = dropTargetSectionKey === sectionKey;
+                    // Apply a dragged bar's placement override for this section's kind.
+                    const applyDropToSection = (wsId: string) => {
+                      if (isPinnedSection) movePinnedWorkspaceBefore(wsId, undefined);
+                      else if (isCustomSection) assignWorkspaceToSection(wsId, section.id);
+                      else setWorkspaceBucketOverride(wsId, section.id as "needs-you" | "in-review" | "active" | "idle");
+                    };
+                    const beginRenameSection = () => {
+                      sectionEditRef.current = section.label;
+                      setEditingSectionId(section.id);
+                    };
                     return (
                       <div
-                        key={folder.id}
-                        className={`${styles.folderSection} ${draggedFolderId === folder.id ? styles.folderSectionDragging : ""}`}
-                        style={folder.color ? ({ "--fc": folder.color } as React.CSSProperties) : undefined}
+                        key={section.id}
+                        className={`${styles.sectionGroup} ${isPinnedSection ? styles.pinnedSection : ""} ${isCustomSection ? styles.customSection : ""}`}
                       >
                         <div
-                          className={`${styles.folderHeader} ${isFolderDropTarget ? styles.folderHeaderDropTarget : ""} ${isFolderReorderDropTarget && draggedFolderId !== folder.id ? styles.folderHeaderReorderTarget : ""}`}
-                          data-folder-id={folder.id}
+                          className={`${styles.sectionHeader} ${isSectionDropTarget ? styles.sectionHeaderDropTarget : ""}`}
                           role="button"
-                          tabIndex={isFolderEditing ? -1 : 0}
-                          draggable={!isFolderEditing}
-                          aria-expanded={!isFolderCollapsed}
-                          aria-label={`${folder.name} folder, ${isFolderCollapsed ? "collapsed" : "expanded"}`}
+                          tabIndex={0}
+                          aria-expanded={!isSectionCollapsed}
+                          aria-label={`${section.label} section, ${isSectionCollapsed ? "collapsed" : "expanded"}`}
                           onKeyDown={(e) => {
-                            if (isFolderEditing) return;
+                            if (isSectionEditing) return;
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              toggleFolderCollapsed(folder.id);
+                              toggleSidebarSectionCollapsed(project.id, section.id);
                             }
                           }}
                           onClick={() => {
-                            if (isFolderEditing) return;
-                            toggleFolderCollapsed(folder.id);
+                            if (isSectionEditing) return;
+                            toggleSidebarSectionCollapsed(project.id, section.id);
                           }}
-                          onDragStart={(e) => {
-                            if (isFolderEditing) return;
-                            draggingFolderIdRef.current = folder.id;
-                            setDraggedFolderId(folder.id);
-                            e.dataTransfer.setData(CONSTELLAGENT_FOLDER_MIME, folder.id);
-                            e.dataTransfer.setData("text/plain", folder.id);
-                            e.dataTransfer.effectAllowed = "move";
-                          }}
-                          onDragEnd={() => {
-                            draggingFolderIdRef.current = null;
-                            setDraggedFolderId(null);
-                            setDropTargetFolderReorderId(null);
-                          }}
+                          // Every section accepts a dragged bar → pin / assign / bucket-override it.
                           onDragOver={(e) => {
-                            if (draggingFolderIdRef.current) {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              e.dataTransfer.dropEffect = "move";
-                              setDropTargetFolderReorderId(folder.id);
-                              return;
-                            }
                             if (!draggingWorkspaceIdRef.current) return;
-                            e.stopPropagation();
                             e.preventDefault();
                             e.dataTransfer.dropEffect = "move";
-                            setDropTargetFolderId(folder.id);
-                            const existing = folderAutoExpandTimerRef.current;
-                            if (folder.collapsed && existing?.id !== folder.id) {
-                              if (existing) window.clearTimeout(existing.timer);
-                              const timer = window.setTimeout(() => {
-                                toggleFolderCollapsed(folder.id);
-                                folderAutoExpandTimerRef.current = null;
-                              }, 350);
-                              folderAutoExpandTimerRef.current = { id: folder.id, timer };
-                            }
+                            setDropTargetSectionKey(sectionKey);
                           }}
                           onDragLeave={(e) => {
                             if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                            setDropTargetFolderReorderId((prev) => (prev === folder.id ? null : prev));
-                            setDropTargetFolderId((prev) => (prev === folder.id ? null : prev));
-                            const existing = folderAutoExpandTimerRef.current;
-                            if (existing?.id === folder.id) {
-                              window.clearTimeout(existing.timer);
-                              folderAutoExpandTimerRef.current = null;
-                            }
+                            setDropTargetSectionKey((prev) => (prev === sectionKey ? null : prev));
                           }}
                           onDrop={(e) => {
-                            e.stopPropagation();
                             e.preventDefault();
-                            const fromFolderId =
-                              e.dataTransfer.getData(CONSTELLAGENT_FOLDER_MIME)
-                              || (draggingFolderIdRef.current ?? "");
-                            if (fromFolderId) {
-                              reorderFolder(fromFolderId, folder.id);
-                              draggingFolderIdRef.current = null;
-                              setDraggedFolderId(null);
-                              setDropTargetFolderReorderId(null);
-                              setDropTargetFolderId(null);
-                              return;
-                            }
                             const wsId =
                               e.dataTransfer.getData(CONSTELLAGENT_WORKSPACE_MIME)
                               || e.dataTransfer.getData("text/plain");
-                            if (wsId) moveWorkspaceToFolder(wsId, folder.id);
-                            setDropTargetFolderId(null);
-                            const existing = folderAutoExpandTimerRef.current;
-                            if (existing) {
-                              window.clearTimeout(existing.timer);
-                              folderAutoExpandTimerRef.current = null;
-                            }
+                            if (wsId) applyDropToSection(wsId);
+                            setDropTargetSectionKey(null);
                             draggingWorkspaceIdRef.current = null;
                             setDraggedWsId(null);
                             setDropTargetWsId(null);
-                            setDropTargetFolderReorderId(null);
                           }}
                         >
-                          {isFolderCollapsed ? (
-                            <FolderIcon
-                              size={15}
-                              strokeWidth={1.65}
-                              className={`${styles.folderIcon} ${styles.folderIconClosed}`}
-                              aria-hidden
-                            />
-                          ) : (
-                            <FolderOpen
-                              size={15}
-                              strokeWidth={1.65}
-                              className={`${styles.folderIcon} ${styles.folderIconOpen}`}
-                              aria-hidden
-                            />
+                          <svg
+                            className={`${styles.sectionChevron} ${isSectionCollapsed ? "" : styles.sectionChevronOpen}`}
+                            viewBox="0 0 12 12"
+                            fill="currentColor"
+                            aria-hidden="true"
+                          >
+                            <path d="M4.22 2.47a.75.75 0 0 1 1.06 0L8.53 5.72a.75.75 0 0 1 0 1.06L5.28 10.03a.75.75 0 0 1-1.06-1.06L6.97 6.25 4.22 3.53a.75.75 0 0 1 0-1.06Z" />
+                          </svg>
+                          {isPinnedSection && (
+                            <Pin size={11} strokeWidth={2} className={styles.sectionPinIcon} aria-hidden />
                           )}
-                          {isFolderEditing ? (
+                          {isSectionEditing ? (
                             <input
-                              className={styles.folderNameInput}
-                              defaultValue={folder.name}
+                              className={styles.sectionNameInput}
+                              defaultValue={section.label}
                               autoFocus
+                              ref={(el) => { if (el) el.select(); }}
                               onClick={(e) => e.stopPropagation()}
                               onKeyDown={(e) => {
+                                e.stopPropagation();
                                 if (e.key === "Enter") e.currentTarget.blur();
-                                else if (e.key === "Escape") setEditingFolderId(null);
+                                else if (e.key === "Escape") { sectionEditRef.current = ""; setEditingSectionId(null); }
                               }}
                               onBlur={(e) => {
                                 const val = e.currentTarget.value.trim();
-                                if (val && val !== folder.name) renameFolder(folder.id, val);
-                                setEditingFolderId(null);
+                                if (val && val !== section.label) renameCustomSection(section.id, val);
+                                setEditingSectionId(null);
                               }}
                             />
                           ) : (
-                            <span className={styles.folderName}>{folder.name}</span>
+                            <span className={styles.sectionLabel}>{section.label}</span>
                           )}
-                          <div className={styles.folderMenuWrap} onClick={(e) => e.stopPropagation()}>
-                            <button
-                              className={styles.folderMenuBtn}
-                              aria-label="Folder actions"
-                              aria-expanded={folderMenuId === folder.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setFolderMenuId((prev) => (prev === folder.id ? null : folder.id));
-                              }}
-                            >
-                              …
-                            </button>
-                            {folderMenuId === folder.id && (
-                              <FolderActionsMenu
-                                folder={folder}
-                                projectFolderCount={projectFolderCount}
-                                isPriority={isPriorityFolder}
-                                isDefault={isDefaultFolder}
-                                onRename={() => {
-                                  setEditingFolderId(folder.id);
-                                  setFolderMenuId(null);
-                                }}
-                                onSetPriority={() => {
-                                  setProjectPriorityFolder(folder.projectId, folder.id);
-                                  setFolderMenuId(null);
-                                }}
-                                onSetDefault={() => {
-                                  setProjectDefaultFolder(folder.projectId, folder.id);
-                                  setFolderMenuId(null);
-                                }}
-                                onSetColor={(color) => {
-                                  setFolderColor(folder.id, color);
-                                }}
-                                onDelete={() => {
-                                  setFolderMenuId(null);
-                                  if (projectFolderCount <= 1) return;
-                                  if (folderWorkspaces.length === 0) {
-                                    removeFolder(folder.id);
-                                    return;
-                                  }
-                                  showConfirmDialog({
-                                    title: "Delete folder",
-                                    message: `Move ${folderWorkspaces.length} workspace${folderWorkspaces.length === 1 ? "" : "s"} out of "${folder.name}" and delete the folder?`,
-                                    confirmLabel: "Delete",
-                                    destructive: true,
-                                    onConfirm: () => {
-                                      removeFolder(folder.id);
-                                      dismissConfirmDialog();
-                                    },
-                                  });
-                                }}
-                                onClose={() => setFolderMenuId(null)}
-                              />
-                            )}
-                          </div>
+                          <span className={styles.sectionCount}>{section.workspaces.length}</span>
+                          {isCustomSection && !isSectionEditing && (
+                            <span className={styles.sectionActions} onClick={(e) => e.stopPropagation()}>
+                              <Tooltip label="Rename section">
+                                <button
+                                  className={styles.sectionActionBtn}
+                                  aria-label="Rename section"
+                                  onClick={(e) => { e.stopPropagation(); beginRenameSection(); }}
+                                >
+                                  <Pencil size={11} strokeWidth={2} aria-hidden />
+                                </button>
+                              </Tooltip>
+                              <Tooltip label="Delete section">
+                                <button
+                                  className={styles.sectionActionBtn}
+                                  aria-label="Delete section"
+                                  onClick={(e) => { e.stopPropagation(); deleteCustomSection(section.id); }}
+                                >
+                                  ✕
+                                </button>
+                              </Tooltip>
+                            </span>
+                          )}
                         </div>
 
-                        {!isFolderCollapsed && (
-                        <div className={styles.folderChildren}>
-                        {folderWorkspaces.map((ws) => {
+                        {!isSectionCollapsed && (
+                          <div className={styles.sectionChildren}>
+                            <AnimatePresence mode="popLayout" initial={false}>
+                              {section.workspaces.map((ws) => {
                           const isEditing = editingWorkspaceId === ws.id;
                           const isAutoName = /^ws-[a-z0-9]+$/.test(ws.name);
                           const displayName = isAutoName ? ws.branch : ws.name;
@@ -2054,10 +1894,19 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                             !!spotlightStatus &&
                             spotlightStatus.workspaceId === ws.id &&
                             spotlightStatus.state !== "idle";
+                          const isPinned = !!ws.pinned;
 
                           return (
-                            <div
+                            <motion.div
                               key={ws.id}
+                              layout={prefersReducedMotion ? false : "position"}
+                              initial={prefersReducedMotion ? false : { opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: prefersReducedMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
+                              className={styles.workspaceRow}
+                            >
+                            <div
                               className={`${styles.workspaceItem} ${
                                 ws.id === activeWorkspaceId ? styles.active : ""
                               } ${unreadWorkspaceIds.has(ws.id) ? styles.unread : ""} ${activeClaudeWorkspaceIds.has(ws.id) ? styles.claudeActive : ""} ${draggedWsId === ws.id ? styles.workspaceItemDragging : ""} ${dropTargetWsId === ws.id && draggedWsId !== ws.id ? styles.workspaceItemDropTarget : ""} ${graphiteStacks.has(ws.id) && (graphiteStacks.get(ws.id)?.branches.length ?? 0) > 1 ? styles.graphiteWorkspace : ""} ${isSpotlightWorkspace ? styles.spotlightWorkspace : ""}`}
@@ -2085,12 +1934,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                 draggingWorkspaceIdRef.current = null;
                                 setDraggedWsId(null);
                                 setDropTargetWsId(null);
-                                setDropTargetFolderId(null);
-                                const existing = folderAutoExpandTimerRef.current;
-                                if (existing) {
-                                  window.clearTimeout(existing.timer);
-                                  folderAutoExpandTimerRef.current = null;
-                                }
+                                setDropTargetSectionKey(null);
                               }}
                               onDragOver={(e) => {
                                 if (!draggingWorkspaceIdRef.current) return;
@@ -2108,11 +1952,15 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                   e.dataTransfer.getData(CONSTELLAGENT_WORKSPACE_MIME)
                                   || e.dataTransfer.getData("text/plain");
                                 if (fromId && fromId !== ws.id) {
-                                  moveWorkspaceToFolderBefore(fromId, folder.id, ws.id);
+                                  // In Pinned, dropping onto a row inserts before it (hand order).
+                                  // Elsewhere a row drop just joins the section, like its header.
+                                  if (isPinnedSection) movePinnedWorkspaceBefore(fromId, ws.id);
+                                  else applyDropToSection(fromId);
                                 }
                                 draggingWorkspaceIdRef.current = null;
                                 setDraggedWsId(null);
                                 setDropTargetWsId(null);
+                                setDropTargetSectionKey(null);
                               }}
                             >
                               {isEditing ? (
@@ -2159,6 +2007,19 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                 worktreePath={ws.worktreePath}
                                 workspaceBranch={ws.branch}
                               />
+                              <Tooltip label={isPinned ? "Unpin" : "Pin"}>
+                                <button
+                                  className={`${styles.pinToggle} ${isPinned ? styles.pinToggleActive : ""}`}
+                                  aria-label={isPinned ? "Unpin workspace" : "Pin workspace"}
+                                  aria-pressed={isPinned}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    togglePinWorkspace(ws.id);
+                                  }}
+                                >
+                                  <Pin size={13} strokeWidth={2} className={styles.pinIcon} aria-hidden />
+                                </button>
+                              </Tooltip>
                               <Tooltip label="Delete workspace">
                                 <button
                                   className={styles.deleteBtn}
@@ -2168,9 +2029,11 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                                 </button>
                               </Tooltip>
                             </div>
+                            </motion.div>
                           );
-                        })}
-                        </div>
+                              })}
+                            </AnimatePresence>
+                          </div>
                         )}
                       </div>
                     );
@@ -2183,18 +2046,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                     </summary>
                     <div className={styles.projectAddExpand}>
                       <div className={styles.projectAddMenu}>
-                        <Tooltip label="New folder" shortcut="⇧⌘N">
-                          <button
-                            type="button"
-                            className={styles.projectAddMenuItem}
-                            onClick={(e) => {
-                              (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
-                              setFolderDialogProjectId(project.id);
-                            }}
-                          >
-                            New folder
-                          </button>
-                        </Tooltip>
                         <Tooltip label="New workspace" shortcut="⌘N">
                           <button
                             type="button"
@@ -2205,6 +2056,19 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
                             }}
                           >
                             New workspace
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="New manual section">
+                          <button
+                            type="button"
+                            className={styles.projectAddMenuItem}
+                            onClick={(e) => {
+                              (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
+                              const id = createCustomSection(project.id, "New section");
+                              setEditingSectionId(id);
+                            }}
+                          >
+                            New section
                           </button>
                         </Tooltip>
                       </div>
@@ -2512,17 +2376,6 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
         <AddProjectDialog onClose={() => setAddProjectDialogOpen(false)} />
       )}
 
-      {folderDialogProject && (
-        <FolderDialog
-          project={folderDialogProject}
-          onConfirm={(name) => {
-            addFolder(folderDialogProject.id, name);
-            setFolderDialogProjectId(null);
-          }}
-          onCancel={() => setFolderDialogProjectId(null)}
-        />
-      )}
-
       {dialogProject && (
         <WorkspaceDialog
           project={dialogProject}
@@ -2563,7 +2416,16 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
         />
       )}
 
-      {contextMenu && (
+      {contextMenu && (() => {
+        const menuWs = workspaces.find((w) => w.id === contextMenu.wsId);
+        const projectSections = menuWs
+          ? customSections
+              .filter((sec) => sec.projectId === menuWs.projectId)
+              .slice()
+              .sort((a, b) => a.order - b.order)
+          : [];
+        const hasOverride = !!menuWs && (!!menuWs.pinned || menuWs.sectionId !== undefined || menuWs.bucketOverride !== undefined);
+        return (
         <div
           className={styles.projectPrModalOverlay}
           onClick={() => setContextMenu(null)}
@@ -2584,6 +2446,54 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            {menuWs && (
+              <>
+                <div style={{ padding: '4px 12px', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+                  Placement
+                </div>
+                <button
+                  className={styles.actionButton}
+                  style={{ width: '100%', textAlign: 'left', borderRadius: 0 }}
+                  onClick={() => { togglePinWorkspace(menuWs.id); setContextMenu(null); }}
+                >
+                  {menuWs.pinned ? 'Unpin' : 'Pin'}
+                </button>
+                {projectSections
+                  .filter((sec) => sec.id !== menuWs.sectionId)
+                  .map((sec) => (
+                    <button
+                      key={sec.id}
+                      className={styles.actionButton}
+                      style={{ width: '100%', textAlign: 'left', borderRadius: 0 }}
+                      onClick={() => { assignWorkspaceToSection(menuWs.id, sec.id); setContextMenu(null); }}
+                    >
+                      {`Move to “${sec.name}”`}
+                    </button>
+                  ))}
+                <button
+                  className={styles.actionButton}
+                  style={{ width: '100%', textAlign: 'left', borderRadius: 0 }}
+                  onClick={() => {
+                    const id = createCustomSection(menuWs.projectId, 'New section');
+                    assignWorkspaceToSection(menuWs.id, id);
+                    setEditingSectionId(id);
+                    setContextMenu(null);
+                  }}
+                >
+                  New section…
+                </button>
+                {hasOverride && (
+                  <button
+                    className={styles.actionButton}
+                    style={{ width: '100%', textAlign: 'left', borderRadius: 0 }}
+                    onClick={() => { resetWorkspacePlacement(menuWs.id); setContextMenu(null); }}
+                  >
+                    Reset to auto
+                  </button>
+                )}
+                <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+              </>
+            )}
             <div style={{ padding: '4px 12px', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontWeight: 600 }}>
               Resume last session
             </div>
@@ -2617,7 +2527,8 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
 
     </div>
   );

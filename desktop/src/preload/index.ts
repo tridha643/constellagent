@@ -590,6 +590,8 @@ const api = {
       ipcRenderer.invoke(IPC.GITHUB_REOPEN_PR, repoPath, prNumber) as Promise<{ number: number; url: string }>,
     getPrReviewComments: (repoPath: string, prNumber: number) =>
       ipcRenderer.invoke(IPC.GITHUB_GET_PR_REVIEW_COMMENTS, repoPath, prNumber) as Promise<import('../main/github-service').PrReviewComment[]>,
+    getPrChecks: (repoPath: string, prNumber: number) =>
+      ipcRenderer.invoke(IPC.GITHUB_GET_PR_CHECKS, repoPath, prNumber) as Promise<import('../shared/github-types').PrChecksResult>,
     listCloneRepoSuggestions: (query: string) =>
       ipcRenderer.invoke(IPC.GITHUB_CLONE_SUGGESTIONS, query) as Promise<GithubCloneRepoSuggestion[]>,
     getRepoInfo: (repoPath: string) =>
