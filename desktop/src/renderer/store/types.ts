@@ -176,11 +176,6 @@ export interface SidePanelLayout {
   right: SidePanelState
 }
 
-export interface PanelDockDrag {
-  panel: PanelType
-  side: Side
-}
-
 export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'browser', 'sideChat']
 
 export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes', 'browser']
@@ -771,8 +766,6 @@ export interface AppState {
   sideTerminalsByWorkspace: Record<string, SideTerminalSession[]>
   /** Bottom dock inside the right sidebar, separate from the top panel mode switcher. */
   rightSidebarBottomPanel: RightSidebarBottomPanel
-  /** Ephemeral: active drag payload while a side-panel tab is being docked. */
-  panelDockDrag: PanelDockDrag | null
   /** Ephemeral: manually collapsed project sections in the project navigation panel. */
   collapsedProjectIds: Set<string>
   /** Ephemeral: most recently active workspace per project for project hotkeys. */
@@ -873,7 +866,6 @@ export interface AppState {
   setProjectPanelSide: (side: Side) => void
   setNavigationPanelSide: (side: Side) => void
   swapSidebarRoles: () => void
-  setPanelDockDrag: (drag: PanelDockDrag | null) => void
   toggleSidePanel: (side: Side) => void
   /** Open or close a physical sidebar host (used by Allotment snap + shortcuts). */
   setSidePanelOpen: (side: Side, open: boolean) => void
