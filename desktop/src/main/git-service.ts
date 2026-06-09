@@ -61,8 +61,76 @@ export interface CreatePrWorktreeOptions {
   headRemoteUrl?: string
 }
 
-async function git(args: string[], cwd: string): Promise<string> {
+async function gitOnce(args: string[], cwd: string): Promise<string> {
   return spawnAndCapture('git', args, cwd, 10 * 1024 * 1024)
+}
+
+const INDEX_LOCK_RETRY_ATTEMPTS = 4
+const INDEX_LOCK_RETRY_DELAY_MS = 150
+// A healthy git operation releases index.lock in well under a second. A lock
+// older than this almost certainly belongs to a git process that crashed.
+const STALE_INDEX_LOCK_AGE_MS = 10_000
+
+const delayMs = (ms: number) => new Promise<void>((res) => setTimeout(res, ms))
+
+function isIndexLockError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null || !('stderr' in err)) return false
+  const stderr = String((err as { stderr?: unknown }).stderr ?? '')
+  return stderr.includes('index.lock') && stderr.includes('File exists')
+}
+
+/** Resolve this worktree's index.lock path (handles linked worktrees), or null. */
+async function resolveIndexLockPath(cwd: string): Promise<string | null> {
+  try {
+    const out = (await gitOnce(['rev-parse', '--git-path', 'index.lock'], cwd)).trim()
+    if (!out) return null
+    return isAbsolute(out) ? out : resolve(cwd, out)
+  } catch {
+    return null
+  }
+}
+
+/** Remove index.lock only if it's stale (likely left by a crashed git process). */
+async function removeStaleIndexLock(cwd: string): Promise<boolean> {
+  const lockPath = await resolveIndexLockPath(cwd)
+  if (!lockPath || !existsSync(lockPath)) return false
+  try {
+    const stats = await lstat(lockPath)
+    const ageMs = Date.now() - stats.mtimeMs
+    if (ageMs < STALE_INDEX_LOCK_AGE_MS) return false
+    await rm(lockPath, { force: true })
+    console.warn('[git] removed stale index.lock', { lockPath, ageMs: Math.round(ageMs) })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function git(args: string[], cwd: string): Promise<string> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt < INDEX_LOCK_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await gitOnce(args, cwd)
+    } catch (err) {
+      // Only the index.lock-contention case is retryable; git acquires the lock
+      // before mutating, so a failure to acquire means no work was done.
+      if (!isIndexLockError(err)) throw err
+      lastErr = err
+      if (attempt < INDEX_LOCK_RETRY_ATTEMPTS - 1) {
+        await delayMs(INDEX_LOCK_RETRY_DELAY_MS * (attempt + 1))
+        continue
+      }
+      // Last attempt: if the lock is stale, clear it and try one final time.
+      if (await removeStaleIndexLock(cwd)) {
+        try {
+          return await gitOnce(args, cwd)
+        } catch (finalErr) {
+          lastErr = finalErr
+        }
+      }
+    }
+  }
+  throw lastErr
 }
 
 export function parseGitNumstat(output: string): Map<string, DiffLineStats> {
@@ -1701,8 +1769,7 @@ export class GitService {
           .then(() => true)
           .catch(() => false)
         if (ignored) continue
-        out.push({ path, status: 'untracked', staged: false })
-        if (!tracked) candidates.push({ path, status: 'untracked', staged: false })
+        candidates.push({ path, status: 'untracked', staged: false })
       }
     }
 

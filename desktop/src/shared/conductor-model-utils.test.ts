@@ -166,6 +166,14 @@ describe('Conductor defaults', () => {
     expect(conductorModelPresets('pi')).toEqual([{ label: 'Pi default', cliModel: '' }])
   })
 
+  test('Cursor Conductor presets only expose Composer 2.5 models', () => {
+    expect(conductorModelPresets('cursor')).toEqual([
+      { label: 'Composer 2.5', cliModel: 'composer-2.5' },
+      { label: 'Composer 2.5 Fast', cliModel: 'composer-2.5-fast' },
+    ])
+    expect(defaultConductorModel('cursor')).toBe('composer-2.5')
+  })
+
   test('converts stored model ids into draft model + thinking level', () => {
     expect(toConductorDraftSelection('gpt-5.3-codex-high-fast')).toEqual({
       model: 'gpt-5.3-codex-fast',
