@@ -10,7 +10,6 @@ import type {
   Project,
   SkillEntry,
   SidebarActionId,
-  PanelDockDrag,
   StartupCommand,
   SubagentEntry,
   Tab,
@@ -716,7 +715,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   stagedSelectionByWorkspace: {},
   sideTerminalsByWorkspace: {},
   rightSidebarBottomPanel: 'terminal',
-  panelDockDrag: null,
   collapsedProjectIds: new Set<string>(),
   lastActiveWorkspaceByProjectId: {},
   lastSavedTabId: null,
@@ -1344,8 +1342,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   swapSidebarRoles: () => set((s) => ({
     sidePanels: swapSidebarRolesLayout(s.sidePanels),
   })),
-
-  setPanelDockDrag: (panelDockDrag: PanelDockDrag | null) => set({ panelDockDrag }),
 
   toggleSidePanel: (side) => set((s) => ({
     sidePanels: toggleSidePanelLayout(s.sidePanels, side),

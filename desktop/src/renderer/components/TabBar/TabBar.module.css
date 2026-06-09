@@ -30,19 +30,6 @@
   -webkit-app-region: drag;
 }
 
-.tabBarPanelDocking.tabBarCollapsed::before {
-  -webkit-app-region: no-drag;
-}
-
-/*
- * Electron: `-webkit-app-region: drag` (window dragging) captures the mouse and
- * aborts HTML5 drag-and-drop. While docking a side panel, disable drag on the
- * tab-bar spacer so the panel can cross the center strip.
- */
-.tabBarPanelDocking .dragSpacer {
-  -webkit-app-region: no-drag;
-}
-
 /* Scrollbar hidden but functional */
 .tabBar::-webkit-scrollbar {
   height: 0;

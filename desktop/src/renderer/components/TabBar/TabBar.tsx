@@ -96,7 +96,6 @@ export function TabBar() {
   /** Same pattern as Sidebar `draggingWorkspaceIdRef` — Electron needs sync ref for dragOver. */
   const draggingTabIdRef = useRef<string | null>(null)
   const leftSidePanelOpen = useAppStore((s) => s.sidePanels.left.open)
-  const panelDockDrag = useAppStore((s) => s.panelDockDrag)
   const activeTabId = useAppStore((s) => s.activeTabId)
   const setActiveTab = useAppStore((s) => s.setActiveTab)
   const removeTab = useAppStore((s) => s.removeTab)
@@ -297,7 +296,7 @@ export function TabBar() {
 
   return (
     <div
-      className={`${styles.tabBar} ${!leftSidePanelOpen ? styles.tabBarCollapsed : ''} ${panelDockDrag ? styles.tabBarPanelDocking : ''}`}
+      className={`${styles.tabBar} ${!leftSidePanelOpen ? styles.tabBarCollapsed : ''}`}
     >
       <SharedFileIconDefs appearanceThemeId={settings.appearanceThemeId} />
       <div className={styles.tabList} role="tablist">

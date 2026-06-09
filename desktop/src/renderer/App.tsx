@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MotionConfig } from 'framer-motion'
 import { Allotment } from 'allotment'
 import 'allotment/dist/style.css'
@@ -44,9 +44,6 @@ import { useGraphiteStackPoller } from './hooks/useGraphiteStackPoller'
 import { ErrorBoundary } from './components/ErrorBoundary/ErrorBoundary'
 import { applyAppearanceTheme } from './theme/appearance'
 import { markPaint } from './utils/perf'
-import { panelLabel } from './store/side-panels'
-import type { Side } from './store/types'
-import { readPanelDockDrag } from './utils/panel-dnd'
 import { playAgentDoneChime } from './lib/play-chime'
 import styles from './App.module.css'
 
@@ -55,39 +52,6 @@ function sidePanelMaxSizePx(projectOnly: boolean, viewportWidth: number): number
   const absCap = projectOnly ? 1200 : 2400
   const viewportCap = Math.max(320, viewportWidth - 280)
   return Math.min(absCap, viewportCap)
-}
-
-function DockEdgeTarget({
-  side,
-  active,
-  label,
-  onDragEnter,
-  onDragLeave,
-  onDragOver,
-  onDrop,
-}: {
-  side: Side
-  active: boolean
-  label: string
-  onDragEnter: (event: DragEvent<HTMLDivElement>) => void
-  onDragLeave: (event: DragEvent<HTMLDivElement>) => void
-  onDragOver: (event: DragEvent<HTMLDivElement>) => void
-  onDrop: (event: DragEvent<HTMLDivElement>) => void
-}) {
-  return (
-    <div
-      className={`${styles.dockEdgeTarget} ${side === 'left' ? styles.dockEdgeLeft : styles.dockEdgeRight} ${active ? styles.dockEdgeTargetActive : ''}`}
-      data-testid={`panel-dock-edge-${side}`}
-      data-panel-dock-edge-side={side}
-      onDragEnter={onDragEnter}
-      onDragLeave={onDragLeave}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-    >
-      <div className={styles.dockEdgeRail} />
-      <div className={styles.dockEdgeLabel}>{label}</div>
-    </div>
-  )
 }
 
 export function App() {
@@ -230,10 +194,7 @@ export function App() {
   const activeTabId = useAppStore((s) => s.activeTabId)
   const sidePanels = useAppStore((s) => s.sidePanels)
   const rightSidebarBottomPanel = useAppStore((s) => s.rightSidebarBottomPanel)
-  const panelDockDrag = useAppStore((s) => s.panelDockDrag)
-  const movePanelToSide = useAppStore((s) => s.movePanelToSide)
   const setSidePanelOpen = useAppStore((s) => s.setSidePanelOpen)
-  const setPanelDockDrag = useAppStore((s) => s.setPanelDockDrag)
   const activeWorkspaceTabs = useAppStore((s) => s.activeWorkspaceTabs)
   const workspaces = useAppStore((s) => s.workspaces)
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
@@ -250,7 +211,6 @@ export function App() {
   const appearanceThemeId = useAppStore((s) => s.settings.appearanceThemeId)
   const switchStartedAtRef = useRef<number | null>(null)
   const prevWorkspaceIdRef = useRef<string | null>(null)
-  const [dockEdgeHover, setDockEdgeHover] = useState<Side | null>(null)
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth)
 
   useEffect(() => {
@@ -296,36 +256,6 @@ export function App() {
     })
     switchStartedAtRef.current = null
   }, [activeWorkspaceId, activeTabId, activeTab?.type, sidePanels])
-
-  useEffect(() => {
-    if (!panelDockDrag) setDockEdgeHover(null)
-  }, [panelDockDrag])
-
-  const resolvePanelDockPayload = useCallback((event: DragEvent<HTMLDivElement>) => {
-    return readPanelDockDrag(event.dataTransfer) ?? panelDockDrag
-  }, [panelDockDrag])
-
-  const handleDockEdgeDragOver = useCallback((side: Side, event: DragEvent<HTMLDivElement>) => {
-    const payload = resolvePanelDockPayload(event)
-    if (!payload || payload.side === side) return
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
-    if (dockEdgeHover !== side) setDockEdgeHover(side)
-  }, [dockEdgeHover, resolvePanelDockPayload])
-
-  const handleDockEdgeDragLeave = useCallback((side: Side, event: DragEvent<HTMLDivElement>) => {
-    if (event.currentTarget.contains(event.relatedTarget as Node)) return
-    setDockEdgeHover((current) => (current === side ? null : current))
-  }, [])
-
-  const handleDockEdgeDrop = useCallback((side: Side, event: DragEvent<HTMLDivElement>) => {
-    const payload = resolvePanelDockPayload(event)
-    if (!payload || payload.side === side) return
-    event.preventDefault()
-    movePanelToSide(payload.panel, side)
-    setDockEdgeHover(null)
-    setPanelDockDrag(null)
-  }, [movePanelToSide, resolvePanelDockPayload, setPanelDockDrag])
 
   const leftSplitPaneSizes = useMemo(() => {
     const projectOnly = sidePanels.left.panelOrder.includes('project') && sidePanels.left.panelOrder.length === 1
@@ -566,24 +496,6 @@ export function App() {
               </div>
             </Allotment.Pane>
           </Allotment>
-          {panelDockDrag && (
-            <>
-              {(['left', 'right'] as Side[]).map((side) => (
-                panelDockDrag.side === side ? null : (
-                  <DockEdgeTarget
-                    key={side}
-                    side={side}
-                    active={dockEdgeHover === side}
-                    label={`Dock ${panelLabel(panelDockDrag.panel)} ${side}`}
-                    onDragEnter={(event) => handleDockEdgeDragOver(side, event)}
-                    onDragLeave={(event) => handleDockEdgeDragLeave(side, event)}
-                    onDragOver={(event) => handleDockEdgeDragOver(side, event)}
-                    onDrop={(event) => handleDockEdgeDrop(side, event)}
-                  />
-                )
-              ))}
-            </>
-          )}
           </ErrorBoundary>
         )}
       </div>

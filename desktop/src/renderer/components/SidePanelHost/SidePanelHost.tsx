@@ -5,14 +5,13 @@ import {
   FilePlus,
   FolderTree,
   Globe,
-  GripVertical,
   LayoutList,
   MessageSquareMore,
   Plus,
   Search,
 } from 'lucide-react'
 import { BrowserPanel } from '../BrowserPanel/BrowserPanel'
-import { useCallback, useMemo, useState, type ComponentType, type DragEvent } from 'react'
+import { useMemo, useState, type ComponentType } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type { PanelType, Side } from '../../store/types'
 import { panelLabel } from '../../store/side-panels'
@@ -25,7 +24,6 @@ import { SetupPanel } from './SetupPanel'
 import { fileTreeActions } from '../RightPanel/file-tree-actions'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
-import { readPanelDockDrag, writePanelDockDrag } from '../../utils/panel-dnd'
 import styles from './SidePanelHost.module.css'
 
 const PANEL_SHORTCUTS: Partial<Record<PanelType, string>> = {
@@ -157,14 +155,9 @@ function RightSidebarBottomDock({ workspace }: { workspace: { id: string; projec
 
 export function SidePanelHost({ side }: { side: Side }) {
   const panelState = useAppStore((s) => s.sidePanels[side])
-  const panelDockDrag = useAppStore((s) => s.panelDockDrag)
   const setSidePanelActive = useAppStore((s) => s.setSidePanelActive)
-  const movePanelToSide = useAppStore((s) => s.movePanelToSide)
-  const setPanelDockDrag = useAppStore((s) => s.setPanelDockDrag)
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
   const workspaces = useAppStore((s) => s.workspaces)
-  const [dockHovered, setDockHovered] = useState(false)
-  const [draggingPanel, setDraggingPanel] = useState<PanelType | null>(null)
 
   const workspace = useMemo(
     () => workspaces.find((entry) => entry.id === activeWorkspaceId),
@@ -177,89 +170,17 @@ export function SidePanelHost({ side }: { side: Side }) {
 
   const solePanel = panelState.panelOrder.length === 1 ? panelState.panelOrder[0] : null
   const showSwitchers = panelState.panelOrder.length > 1
-  const canAcceptDock = Boolean(panelDockDrag && panelDockDrag.side !== side)
-  const dockPanelName = panelDockDrag ? panelLabel(panelDockDrag.panel) : 'panel'
-
   const showFilesTools = activePanel === 'files'
-
-  const resolveDragPayload = useCallback((event: DragEvent) => {
-    return readPanelDockDrag(event.dataTransfer) ?? panelDockDrag
-  }, [panelDockDrag])
-
-  const handleDockDragOver = useCallback((event: DragEvent) => {
-    const payload = resolveDragPayload(event)
-    if (!payload || payload.side === side) return
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
-    if (!dockHovered) setDockHovered(true)
-  }, [dockHovered, resolveDragPayload, side])
-
-  const handleDockDragLeave = useCallback((event: DragEvent) => {
-    if (event.currentTarget.contains(event.relatedTarget as Node)) return
-    setDockHovered(false)
-  }, [])
-
-  const handleDockDrop = useCallback((event: DragEvent) => {
-    const payload = resolveDragPayload(event)
-    if (!payload || payload.side === side) return
-    event.preventDefault()
-    movePanelToSide(payload.panel, side)
-    setDockHovered(false)
-    setPanelDockDrag(null)
-    setDraggingPanel(null)
-  }, [movePanelToSide, resolveDragPayload, setPanelDockDrag, side])
-
-  const beginPanelDrag = useCallback((panel: PanelType) => (event: DragEvent) => {
-    setDraggingPanel(panel)
-    const payload = { panel, side }
-    setPanelDockDrag(payload)
-    writePanelDockDrag(event.dataTransfer, payload)
-  }, [setPanelDockDrag, side])
-
-  const endPanelDrag = useCallback(() => {
-    setDraggingPanel(null)
-    setDockHovered(false)
-    setPanelDockDrag(null)
-  }, [setPanelDockDrag])
-
-  const renderPanelDragHandle = (panel: PanelType) => (
-    <Tooltip label={`Drag to dock ${panelLabel(panel)} to the other sidebar`}>
-      <span
-        className={[
-          styles.panelDragHandle,
-          draggingPanel === panel ? styles.modeButtonDragging : '',
-        ].filter(Boolean).join(' ')}
-        draggable
-        role="button"
-        tabIndex={0}
-        aria-label={`Drag to dock ${panelLabel(panel)} to the other sidebar`}
-        data-panel-type={panel}
-        onDragStart={beginPanelDrag(panel)}
-        onDragEnd={endPanelDrag}
-      >
-        <GripVertical size={10} strokeWidth={2} aria-hidden="true" />
-      </span>
-    </Tooltip>
-  )
 
   return (
     <div
       className={[
         styles.host,
         side === 'left' ? styles.left : styles.right,
-        canAcceptDock ? styles.hostDockReady : '',
-        dockHovered ? styles.hostDockHovered : '',
       ].filter(Boolean).join(' ')}
-      data-panel-dock-drag-active={panelDockDrag ? 'true' : 'false'}
       data-panel-side={side}
       data-active-panel={activePanel ?? ''}
-      data-panel-drop-target-side={side}
-      data-panel-dock-state={dockHovered ? 'hovered' : canAcceptDock ? 'ready' : 'idle'}
       data-testid={side === 'right' ? 'right-panel' : `side-panel-${side}`}
-      onDragEnter={handleDockDragOver}
-      onDragOver={handleDockDragOver}
-      onDragLeave={handleDockDragLeave}
-      onDrop={handleDockDrop}
     >
       <div className={styles.explorerRow}>
         <div className={styles.explorerSpacer} aria-hidden="true" />
@@ -316,7 +237,6 @@ export function SidePanelHost({ side }: { side: Side }) {
                     data-testid={testId}
                     className={[
                       styles.iconButton,
-                      styles.panelIconButton,
                       isActive ? styles.active : '',
                     ].filter(Boolean).join(' ')}
                     onClick={() => setSidePanelActive(side, panel)}
@@ -327,19 +247,14 @@ export function SidePanelHost({ side }: { side: Side }) {
                 )
 
                 const shortcut = PANEL_SHORTCUTS[panel]
-                return (
-                  <div key={panel} className={styles.panelSwitcherItem}>
-                    {shortcut ? (
-                      <Tooltip label={panelLabel(panel)} shortcut={shortcut}>
-                        {button}
-                      </Tooltip>
-                    ) : (
-                      <Tooltip label={panelLabel(panel)}>
-                        {button}
-                      </Tooltip>
-                    )}
-                    {renderPanelDragHandle(panel)}
-                  </div>
+                return shortcut ? (
+                  <Tooltip key={panel} label={panelLabel(panel)} shortcut={shortcut}>
+                    {button}
+                  </Tooltip>
+                ) : (
+                  <Tooltip key={panel} label={panelLabel(panel)}>
+                    {button}
+                  </Tooltip>
                 )
               })}
             </div>
@@ -350,17 +265,14 @@ export function SidePanelHost({ side }: { side: Side }) {
             const testId = solePanel === 'project' ? 'side-panel-tab-project' : `right-panel-mode-${solePanel}`
             return (
               <div className={styles.explorerActions}>
-                <div className={styles.panelSwitcherItem}>
-                  <span
-                    className={[styles.iconButton, styles.panelIconButton, styles.active].join(' ')}
-                    data-testid={testId}
-                    aria-label={panelLabel(solePanel)}
-                  >
-                    <Icon size={14} strokeWidth={2} />
-                    <span className={styles.visuallyHidden}>{panelLabel(solePanel)}</span>
-                  </span>
-                  {renderPanelDragHandle(solePanel)}
-                </div>
+                <span
+                  className={[styles.iconButton, styles.active].join(' ')}
+                  data-testid={testId}
+                  aria-label={panelLabel(solePanel)}
+                >
+                  <Icon size={14} strokeWidth={2} />
+                  <span className={styles.visuallyHidden}>{panelLabel(solePanel)}</span>
+                </span>
               </div>
             )
           })()}
@@ -396,16 +308,6 @@ export function SidePanelHost({ side }: { side: Side }) {
         <RightSidebarBottomDock
           workspace={workspace ? { id: workspace.id, projectId: workspace.projectId, worktreePath: workspace.worktreePath } : undefined}
         />
-      )}
-
-      {canAcceptDock && (
-        <div className={styles.dockOverlay} aria-hidden="true">
-          <div className={styles.dockOverlayInner}>
-            <span className={styles.dockOverlayBadge}>{side === 'left' ? '⟵' : '⟶'}</span>
-            <span className={styles.dockOverlayTitle}>Dock {dockPanelName}</span>
-            <span className={styles.dockOverlayText}>Drop anywhere to slam it into the {side} sidebar.</span>
-          </div>
-        </div>
       )}
     </div>
   )
