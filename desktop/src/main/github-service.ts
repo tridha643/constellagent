@@ -174,7 +174,7 @@ interface UnresolvedThreadCacheEntry {
 
 class GithubAuthError extends Error {}
 
-function ghErrorMessage(err: unknown, fallback: string): string {
+function ghErrorText(err: unknown): string {
   const stderr =
     typeof err === 'object' && err !== null && 'stderr' in err
       ? String((err as { stderr?: unknown }).stderr ?? '')
@@ -184,7 +184,15 @@ function ghErrorMessage(err: unknown, fallback: string): string {
       ? String((err as { stdout?: unknown }).stdout ?? '')
       : ''
   const combined = `${stderr}\n${stdout}`.trim()
-  const message = combined || (err instanceof Error ? err.message : String(err || ''))
+  return combined || (err instanceof Error ? err.message : String(err || ''))
+}
+
+function isPrAlreadyExistsError(err: unknown): boolean {
+  return ghErrorText(err).includes('already exists')
+}
+
+function ghErrorMessage(err: unknown, fallback: string): string {
+  const message = ghErrorText(err)
 
   if (!message) return fallback
   if (message.includes('not logged into any GitHub hosts')) return 'GitHub CLI is not authenticated.'
@@ -548,6 +556,33 @@ export class GithubService {
 
       throw new Error('Pull request created, but the URL could not be determined.')
     } catch (err) {
+      // A PR may already exist for this branch (e.g. created earlier or by another
+      // tool). Rather than surfacing an error, look it up and return it so callers
+      // open the existing PR.
+      if (isPrAlreadyExistsError(err)) {
+        try {
+          const { stdout: viewStdout } = await execFileAsync(
+            'gh',
+            ['pr', 'view', headBranch, '--repo', repoSlug, '--json', 'url,number'],
+            { cwd: repoPath, timeout: 15_000 },
+          )
+          const view = JSON.parse(viewStdout.trim()) as { url?: string; number?: number }
+          if (view.url && typeof view.number === 'number') {
+            console.info('[github:create-pr] reused existing PR', {
+              ...prCreateLogContext,
+              number: view.number,
+            })
+            this.invalidatePrCaches()
+            return { number: view.number, url: view.url }
+          }
+        } catch (lookupErr) {
+          console.warn('[github:create-pr] existing PR lookup failed', {
+            ...prCreateLogContext,
+            message: lookupErr instanceof Error ? lookupErr.message : String(lookupErr),
+          })
+        }
+      }
+
       const message = ghErrorMessage(err, 'Failed to create pull request.')
       console.warn('[github:create-pr] failed', { ...prCreateLogContext, message })
       throw new Error(message)
