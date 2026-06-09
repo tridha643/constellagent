@@ -371,6 +371,8 @@ const api = {
     relaunch: () => ipcRenderer.invoke(IPC.APP_RELAUNCH) as Promise<void>,
     openExternal: (url: string) => ipcRenderer.invoke(IPC.SHELL_OPEN_EXTERNAL, url) as Promise<void>,
     linearGraphql,
+    getBrowserWebviewPreloadPath: () =>
+      ipcRenderer.invoke(IPC.APP_BROWSER_WEBVIEW_PRELOAD) as Promise<string>,
   },
 
   skills: {

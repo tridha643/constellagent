@@ -1,70 +1,100 @@
 /**
  * Shared types for the Agentation integration.
  *
- * Agentation is a dev-time annotation toolbar the developer embeds in their own
- * app (`<Agentation endpoint="http://localhost:4747"/>`). Its `agentation-mcp`
- * companion runs a local HTTP/SSE server on :4747 that the toolbar POSTs
- * annotations to. constellagent's Agentation panel is a *reader* of that server:
- * it consumes the SSE event stream and lets the user send/resolve/dismiss
- * annotations.
- *
- * This is the typed replacement for the deleted `BrowserDomContext`.
+ * Agentation is a dev-time annotation toolbar embedded in Browser tabs via
+ * `<Agentation endpoint="…"/>`. constellagent embeds the HTTP/SSE server
+ * (agentation-mcp `startHttpServer`) in main and mirrors events to the renderer.
  */
 
-/** One element an Agentation toolbar user annotated in their own browser. */
+/**
+ * Electron session partition for the Agentation Browser webview. Scoped to its
+ * own partition so the main process can relax CSP for the injected annotation
+ * guest (which fetches the embedded server cross-origin) without affecting the
+ * app window's own strict CSP.
+ */
+export const AGENTATION_WEBVIEW_PARTITION = 'persist:agentation-browser'
+
+export type AgentationAnnotationKind = 'feedback' | 'placement' | 'rearrange'
+export type AgentationAnnotationStatus = 'pending' | 'acknowledged' | 'resolved' | 'dismissed'
+export type AgentationThreadRole = 'human' | 'agent'
+
+export interface AgentationThreadMessage {
+  id: string
+  role: AgentationThreadRole
+  content: string
+  timestamp: number
+}
+
+/** One element an Agentation toolbar user annotated in the Browser webview. */
 export interface AgentationAnnotation {
   id: string
-  /** The user's note about the element. */
   comment: string
-  /** DOM path / selector for the annotated element. */
   elementPath?: string
-  /** Epoch millis when the annotation was created. */
   timestamp?: number
   x?: number
   y?: number
-  /** Short description of the element (tag/text preview). */
   element?: string
-  /** Page URL the annotation was captured on. */
   url?: string
-  /** React component display names in the element's ancestry (dev builds). */
-  reactComponents?: string[]
+  reactComponents?: string[] | string
+  cssClasses?: string
+  computedStyles?: string
+  accessibility?: string
+  nearbyText?: string
+  selectedText?: string
   boundingBox?: { x: number; y: number; width: number; height: number }
-  /** Toolbar interaction kind; defaults to feedback when absent. */
-  kind?: 'feedback' | 'placement' | 'rearrange'
-  /** Session this annotation belongs to (when grouped server-side). */
+  kind?: AgentationAnnotationKind
   sessionId?: string
-  /** Set once resolved/dismissed back to Agentation. */
+  status?: AgentationAnnotationStatus
+  thread?: AgentationThreadMessage[]
   resolved?: boolean
+  placement?: {
+    componentType: string
+    width: number
+    height: number
+    scrollY: number
+    text?: string
+  }
+  rearrange?: {
+    selector: string
+    label: string
+    tagName: string
+    originalRect: { x: number; y: number; width: number; height: number }
+    currentRect: { x: number; y: number; width: number; height: number }
+  }
 }
+
+export type AgentationSessionStatus = 'active' | 'approved' | 'closed'
 
 /** A grouping of annotations the server reports under one session. */
 export interface AgentationSession {
   id: string
-  /** Human label (often the page URL or a title). */
   title?: string
   url?: string
-  createdAt?: number
+  createdAt?: number | string
+  updatedAt?: string
+  status?: AgentationSessionStatus
   annotations: AgentationAnnotation[]
 }
 
-/** Connection state of the local agentation-mcp server. */
+/** Connection state of the embedded / configured Agentation HTTP server. */
 export interface AgentationStatus {
-  /** True when :4747 responded to the probe. */
   connected: boolean
-  /** Live SSE stream attached. */
   streaming: boolean
-  /** The endpoint currently targeted. */
   endpoint: string
-  /** Set when reconnecting after a dropped stream. */
+  embedded?: boolean
   reconnecting?: boolean
-  /** Last error message, if any (e.g. ECONNREFUSED). */
   error?: string
 }
 
+export interface AgentationActionRequested {
+  sessionId: string
+  output: string
+  annotations: AgentationAnnotation[]
+  timestamp?: string
+}
+
 /**
- * Event forwarded from main → renderer over `AGENTATION_EVENT`. Mirrors the
- * agentation-mcp SSE event names plus a synthetic `status` event the service
- * emits on connect/disconnect/endpoint-change.
+ * Event forwarded from main → renderer over `AGENTATION_EVENT`.
  */
 export type AgentationEvent =
   | { type: 'status'; status: AgentationStatus }
@@ -72,10 +102,13 @@ export type AgentationEvent =
   | { type: 'annotation.updated'; annotation: AgentationAnnotation }
   | { type: 'annotation.deleted'; annotationId: string }
   | { type: 'session.created'; session: AgentationSession }
+  | { type: 'session.updated'; session: AgentationSession }
+  | { type: 'session.closed'; sessionId: string }
+  | { type: 'thread.message'; annotationId: string; message: AgentationThreadMessage }
+  | { type: 'action.requested'; action: AgentationActionRequested }
 
 /**
- * Render an annotation as markdown to paste to an agent. Degrades gracefully
- * when optional fields (url, reactComponents, elementPath) are absent.
+ * Render an annotation as markdown to paste to an agent.
  */
 export function annotationToMarkdown(annotation: AgentationAnnotation): string {
   const lines: string[] = []
@@ -92,8 +125,11 @@ export function annotationToMarkdown(annotation: AgentationAnnotation): string {
   const details: string[] = []
   if (annotation.element) details.push(`Element: ${annotation.element}`)
   if (annotation.elementPath) details.push(`Path: \`${annotation.elementPath}\``)
-  if (annotation.reactComponents?.length) {
-    details.push(`Components: ${annotation.reactComponents.join(' › ')}`)
+  const components = annotation.reactComponents
+  if (Array.isArray(components) && components.length) {
+    details.push(`Components: ${components.join(' › ')}`)
+  } else if (typeof components === 'string' && components.trim()) {
+    details.push(`Components: ${components}`)
   }
   if (annotation.url) details.push(`URL: ${annotation.url}`)
   if (details.length) {

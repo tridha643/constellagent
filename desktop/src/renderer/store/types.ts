@@ -154,6 +154,8 @@ export type Tab = {
   | { type: 'markdownPreview'; filePath: string; title: string }
   /** Conductor agent chat (Cursor / Codex SDK); session lives in conductor-chat.db. */
   | { type: 'conductor'; title: string; agentSessionId?: string }
+  /** Embedded webview with Agentation toolbar for localhost UI feedback. */
+  | { type: 'browser'; title: string; url: string; sessionId?: string }
   // First-class long-running service (e.g. `bun dev`, `npm test`). Hosts a PTY just like
   // a terminal tab, but the user gets status + Restart/Stop controls instead of agent chrome.
   | { type: 'service'; title: string; ptyId: string; scriptName: string;
@@ -619,7 +621,7 @@ export interface Settings {
   piCommitMessageModel: string
   /** Last-used parent directory in the Add Project → Clone from GitHub flow. Pre-fills the picker on next use. */
   lastClonedParentDir?: string
-  /** Endpoint of the local agentation-mcp HTTP/SSE server the Agentation panel reads. */
+  /** Optional override for the Agentation HTTP/SSE endpoint (empty = embedded server). */
   agentationEndpoint: string
 }
 
@@ -677,7 +679,7 @@ export const DEFAULT_SETTINGS: Settings = {
   conflictResolverAgent: 'claude-code',
   conflictResolverModel: '',
   piCommitMessageModel: '',
-  agentationEndpoint: 'http://localhost:4747',
+  agentationEndpoint: '',
 }
 
 export interface Toast {
@@ -770,9 +772,7 @@ export interface AppState {
   settingsSection: SettingsSectionId
   automationsOpen: boolean
   linearPanelOpen: boolean
-  /** Browser overlay panel visibility (embedded webview + Agentation rail). */
-  browserPanelOpen: boolean
-  /** Latest connection status of the local agentation-mcp server. Null until first probe. */
+  /** Latest connection status of the embedded Agentation HTTP server. Null until first probe. */
   agentationStatus: AgentationStatus | null
   /** Live annotation sessions streamed from agentation-mcp (newest activity first). */
   agentationSessions: AgentationSession[]
@@ -886,6 +886,9 @@ export interface AppState {
   stopService: (tabId: string) => void
   /** New draft Conductor tab in the active worktree (sidebar button / ⇧⌘C). */
   createConductorTabForActiveWorkspace: () => void
+  createBrowserTabForActiveWorkspace: () => void
+  setBrowserTabUrl: (tabId: string, url: string) => void
+  setBrowserTabSessionId: (tabId: string, sessionId: string | undefined) => void
   /** Bind a Conductor tab to an agent-chat session after first submit or fork. */
   setConductorTabSessionBinding: (tabId: string, agentSessionId: string, title?: string) => void
   /** Open a Conductor tab for an existing session (e.g. fork). */
@@ -979,7 +982,6 @@ export interface AppState {
   openSettingsSection: (section: SettingsSectionId) => void
   toggleAutomations: () => void
   toggleLinear: () => void
-  toggleBrowser: () => void
   showConfirmDialog: (dialog: ConfirmDialogState) => void
   updateConfirmDialog: (partial: Partial<ConfirmDialogState>) => void
   dismissConfirmDialog: () => void

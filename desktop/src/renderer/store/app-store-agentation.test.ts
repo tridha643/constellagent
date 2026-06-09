@@ -113,18 +113,37 @@ describe('pending composer draft', () => {
   })
 })
 
-describe('toggleBrowser', () => {
-  it('opens the panel and closes settings / automations / linear', async () => {
+describe('createBrowserTabForActiveWorkspace', () => {
+  it('creates a browser tab and closes overlay panels', async () => {
     const { useAppStore } = await loadStore()
+    useAppStore.getState().hydrateState({
+      projects: [{ id: 'p1', name: 'P', repoPath: '/tmp/p' }],
+      workspaces: [{ id: 'w1', name: 'W', branch: 'main', worktreePath: '/tmp/p', projectId: 'p1' }],
+      activeWorkspaceId: 'w1',
+    })
     useAppStore.setState({ settingsOpen: true, automationsOpen: true, linearPanelOpen: true })
-    useAppStore.getState().toggleBrowser()
+    useAppStore.getState().createBrowserTabForActiveWorkspace()
     const s = useAppStore.getState()
-    expect(s.browserPanelOpen).toBe(true)
+    expect(s.tabs.some((t) => t.type === 'browser')).toBe(true)
     expect(s.settingsOpen).toBe(false)
     expect(s.automationsOpen).toBe(false)
     expect(s.linearPanelOpen).toBe(false)
-    useAppStore.getState().toggleBrowser()
-    expect(useAppStore.getState().browserPanelOpen).toBe(false)
+  })
+
+  it('creates incrementing browser tab titles', async () => {
+    const { useAppStore } = await loadStore()
+    useAppStore.getState().hydrateState({
+      projects: [{ id: 'p1', name: 'P', repoPath: '/tmp/p' }],
+      workspaces: [{ id: 'w1', name: 'W', branch: 'main', worktreePath: '/tmp/p', projectId: 'p1' }],
+      activeWorkspaceId: 'w1',
+    })
+    useAppStore.getState().createBrowserTabForActiveWorkspace()
+    useAppStore.getState().createBrowserTabForActiveWorkspace()
+    const titles = useAppStore
+      .getState()
+      .tabs.filter((t) => t.type === 'browser')
+      .map((t) => t.title)
+    expect(titles).toEqual(['Browser', 'Browser 2'])
   })
 })
 

@@ -1,34 +1,48 @@
 import { useEffect } from 'react'
 import { useAppStore } from '../store/app-store'
 
+const EMBEDDED_ENDPOINT = 'http://127.0.0.1:4747'
+
+function agentationApi(): Window['api']['agentation'] | undefined {
+  // Vite HMR can re-run renderer modules before the Electron preload exposes window.api.
+  return typeof window !== 'undefined' ? window.api?.agentation : undefined
+}
+
 /**
- * Wires the renderer to the main-process Agentation service:
- *   - subscribes to forwarded SSE/status events (`AGENTATION_EVENT`) for the
- *     lifetime of the app and applies them to the store,
- *   - reconciles the service endpoint with the persisted setting (D7) and does
- *     the initial status + sessions load.
- *
- * Mount once near the app root (App.tsx). The main process owns the connection;
- * the renderer never talks to :4747 directly.
+ * Wires the renderer to the main-process Agentation service (embedded HTTP/SSE).
  */
 export function useAgentationEvents(): void {
   const applyAgentationEvent = useAppStore((s) => s.applyAgentationEvent)
   const refreshAgentation = useAppStore((s) => s.refreshAgentation)
-  const endpoint = useAppStore((s) => s.settings.agentationEndpoint)
+  const endpointOverride = useAppStore((s) => s.settings.agentationEndpoint)
 
-  // Forwarded SSE/status events → store, for the app's lifetime.
   useEffect(() => {
-    return window.api.agentation.onEvent(applyAgentationEvent)
+    const api = agentationApi()
+    if (!api) return
+    return api.onEvent(applyAgentationEvent)
   }, [applyAgentationEvent])
 
-  // Apply endpoint changes to the service, debounced so typing in Settings
-  // doesn't churn the SSE connection. setEndpoint is a no-op when unchanged, so
-  // the mount run simply reconciles the service with the persisted value and
-  // then refreshes status + sessions.
   useEffect(() => {
     const timer = setTimeout(() => {
-      void window.api.agentation.setEndpoint(endpoint).then(() => refreshAgentation())
+      const api = agentationApi()
+      if (!api) return
+      const endpoint = endpointOverride.trim() || EMBEDDED_ENDPOINT
+      void api.setEndpoint(endpoint).then(() => refreshAgentation())
     }, 400)
     return () => clearTimeout(timer)
-  }, [endpoint, refreshAgentation])
+  }, [endpointOverride, refreshAgentation])
+
+  useEffect(() => {
+    void refreshAgentation()
+  }, [refreshAgentation])
+}
+
+export function resolveAgentationEndpoint(
+  statusEndpoint: string | undefined,
+  settingsEndpoint: string,
+): string {
+  const override = settingsEndpoint.trim()
+  if (override) return override.replace(/\/+$/, '')
+  if (statusEndpoint) return statusEndpoint
+  return EMBEDDED_ENDPOINT
 }

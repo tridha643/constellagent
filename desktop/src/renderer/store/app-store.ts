@@ -728,7 +728,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   settingsSection: 'appearance',
   automationsOpen: false,
   linearPanelOpen: false,
-  browserPanelOpen: false,
   agentationStatus: null,
   agentationSessions: [],
   pendingComposerDraftByTab: {},
@@ -1532,10 +1531,45 @@ export const useAppStore = create<AppState>((set, get) => ({
       settingsOpen: false,
       automationsOpen: false,
       linearPanelOpen: false,
-      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     })
   },
+
+  createBrowserTabForActiveWorkspace: () => {
+    const s = get()
+    if (!s.activeWorkspaceId) return
+    const browserCount = s.tabs.filter(
+      (t) => t.workspaceId === s.activeWorkspaceId && t.type === 'browser',
+    ).length
+    const title = browserCount === 0 ? 'Browser' : `Browser ${browserCount + 1}`
+    get().addTab({
+      id: crypto.randomUUID(),
+      workspaceId: s.activeWorkspaceId,
+      type: 'browser',
+      title,
+      url: 'http://localhost:5173',
+    })
+    set({
+      settingsOpen: false,
+      automationsOpen: false,
+      linearPanelOpen: false,
+      linearQuickOpenVisible: false,
+    })
+  },
+
+  setBrowserTabUrl: (tabId, url) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId && t.type === 'browser' ? { ...t, url } : t,
+      ),
+    })),
+
+  setBrowserTabSessionId: (tabId, sessionId) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId && t.type === 'browser' ? { ...t, sessionId } : t,
+      ),
+    })),
 
   setConductorTabSessionBinding: (tabId, agentSessionId, title) =>
     set((state) => ({
@@ -1564,7 +1598,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       settingsOpen: false,
       automationsOpen: false,
       linearPanelOpen: false,
-      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     })
   },
@@ -1687,7 +1720,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           settingsOpen: false,
           automationsOpen: false,
           linearPanelOpen: false,
-          browserPanelOpen: false,
           linearQuickOpenVisible: false,
         })
       }
@@ -2895,7 +2927,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       settingsOpen: !s.settingsOpen,
       automationsOpen: false,
       linearPanelOpen: false,
-      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     })),
 
@@ -2907,7 +2938,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       settingsSection: section,
       automationsOpen: false,
       linearPanelOpen: false,
-      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     }),
   toggleAutomations: () =>
@@ -2915,7 +2945,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       automationsOpen: !s.automationsOpen,
       settingsOpen: false,
       linearPanelOpen: false,
-      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     })),
   toggleLinear: () =>
@@ -2925,18 +2954,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         linearPanelOpen: nextOpen,
         settingsOpen: false,
         automationsOpen: false,
-        browserPanelOpen: false,
         linearQuickOpenVisible: nextOpen ? s.linearQuickOpenVisible : false,
       }
     }),
-  toggleBrowser: () =>
-    set((s) => ({
-      browserPanelOpen: !s.browserPanelOpen,
-      settingsOpen: false,
-      automationsOpen: false,
-      linearPanelOpen: false,
-      linearQuickOpenVisible: false,
-    })),
 
   showConfirmDialog: (dialog) => set({ confirmDialog: dialog }),
 
@@ -3200,12 +3220,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   refreshAgentation: async () => {
+    const agentation = typeof window !== 'undefined' ? window.api?.agentation : undefined
+    if (!agentation) return
     // status() and listSessions() never throw in main (they degrade to a
     // disconnected status / empty list), but guard anyway.
     try {
       const [status, sessions] = await Promise.all([
-        window.api.agentation.status(),
-        window.api.agentation.listSessions(),
+        agentation.status(),
+        agentation.listSessions(),
       ])
       set({ agentationStatus: status, agentationSessions: sessions })
     } catch {
@@ -3258,6 +3280,29 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (sessions.some((session) => session.id === event.session.id)) return {}
           return { agentationSessions: [...sessions, event.session] }
         }
+        case 'session.updated':
+          return {
+            agentationSessions: sessions.map((session) =>
+              session.id === event.session.id ? { ...session, ...event.session } : session,
+            ),
+          }
+        case 'session.closed':
+          return {
+            agentationSessions: sessions.filter((session) => session.id !== event.sessionId),
+          }
+        case 'thread.message':
+          return {
+            agentationSessions: sessions.map((session) => ({
+              ...session,
+              annotations: session.annotations.map((a) =>
+                a.id === event.annotationId
+                  ? { ...a, thread: [...(a.thread ?? []), event.message] }
+                  : a,
+              ),
+            })),
+          }
+        case 'action.requested':
+          return {}
         default:
           return {}
       }
@@ -3274,7 +3319,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const tab = s.tabs.find((t) =>
         t.type === 'terminal' && (t.ptyId === ptyId || (t.splitRoot && findLeafByPtyId(t.splitRoot, ptyId) != null))
       )
-      set({ browserPanelOpen: false, ...(tab ? { activeTabId: tab.id } : {}) })
+      set(tab ? { activeTabId: tab.id } : {})
       return
     }
 
@@ -3294,7 +3339,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       wsTabs.find((t) => t.type === 'conductor')
     if (convo) {
       s.setPendingComposerDraft(convo.id, markdown)
-      set({ browserPanelOpen: false, activeTabId: convo.id })
+      set({ activeTabId: convo.id })
       return
     }
 
@@ -3302,7 +3347,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     s.createConductorTabForActiveWorkspace()
     const newTabId = get().activeTabId
     if (newTabId) get().setPendingComposerDraft(newTabId, markdown)
-    set({ browserPanelOpen: false })
   },
 
   resolveAgentationAnnotation: async (annotationId: string) => {
@@ -4067,9 +4111,10 @@ function getPersistedSlice(state: AppState): PersistedState {
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
 function debouncedSave(state: AppState) {
+  if (!window.api?.state) return
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
-    window.api.state.save(getPersistedSlice(state))
+    window.api?.state?.save(getPersistedSlice(state))
   }, 500)
 }
 
@@ -4119,6 +4164,7 @@ useAppStore.subscribe((state, prevState) => {
 
 useAppStore.subscribe((state, prevState) => {
   if (activeAgentSetsEqual(state.activeClaudeWorkspaceIds, prevState.activeClaudeWorkspaceIds)) return
+  if (!window.api?.git) return
   const paths = [...state.activeClaudeWorkspaceIds]
     .map((wsId) => state.workspaces.find((w) => w.id === wsId)?.worktreePath)
     .filter((p): p is string => Boolean(p))
@@ -4128,12 +4174,18 @@ useAppStore.subscribe((state, prevState) => {
 // Flush state to disk synchronously when the window is closing.
 // Uses sendSync + writeFileSync so the write completes before the renderer is destroyed.
 window.addEventListener('beforeunload', () => {
+  if (!window.api?.state) return
   if (saveTimer) clearTimeout(saveTimer)
   window.api.state.saveSync(getPersistedSlice(useAppStore.getState()))
 })
 
 // Load persisted state on startup
 export async function hydrateFromDisk(): Promise<void> {
+  if (typeof window === 'undefined' || !window.api?.state) {
+    // Vite HMR can re-run this module outside Electron (no preload / window.api).
+    return
+  }
+
   try {
     const data = await window.api.state.load()
     if (data) {
@@ -4259,7 +4311,6 @@ export async function hydrateFromDisk(): Promise<void> {
       automationsOpen: false,
       settingsOpen: false,
       linearPanelOpen: false,
-      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     })
 

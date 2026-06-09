@@ -1,5 +1,6 @@
 import { ipcMain, dialog, app, BrowserWindow, clipboard, shell, type WebContents } from 'electron'
 import { join, relative } from 'path'
+import { pathToFileURL } from 'url'
 import { mkdir, writeFile } from 'fs/promises'
 import { existsSync, mkdirSync, writeFileSync, realpathSync } from 'fs'
 import { tmpdir, homedir } from 'os'
@@ -79,6 +80,7 @@ import type { CodexWebSocketsSetting } from '../shared/codex-websockets'
 import { type ComposioWebhookSettings, isComposioAutomationAgent } from '../shared/composio-types'
 import { composioWebhookService } from './composio-webhook-service'
 import { agentationService } from './agentation-service'
+import { startEmbeddedAgentationServer, configureAgentationWebviewSession } from './agentation-http-server'
 import { composioNgrokService } from './composio-ngrok-service'
 import { composioSubscribeTriggerWebhookWithKeyFallback } from './composio-webhook-subscriptions'
 import { composioTriggerUpsertWithCliFallback, composioSuggestGithubConnectedAccountId } from './composio-trigger-client'
@@ -1755,8 +1757,15 @@ export function registerIpcHandlers(): void {
     await AnnotationService.setResolved(worktreePath, commentId, resolved)
   })
 
-  // ── Agentation (annotation bridge to a local agentation-mcp server) ──
-  // Forward SSE → renderer; constellagent spawns nothing (D2: connect + status only).
+  // ── Agentation (embedded HTTP/SSE server + IPC bridge) ──
+  const embeddedEndpoint = startEmbeddedAgentationServer()
+  if (embeddedEndpoint) {
+    agentationService.useEmbeddedEndpoint()
+  }
+  // Relax CSP on the dedicated Browser webview partition so the injected guest
+  // can reach the embedded server cross-origin even on CSP-restricted pages.
+  configureAgentationWebviewSession()
+
   agentationService.setEventSink((event) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send(IPC.AGENTATION_EVENT, event)
@@ -1774,6 +1783,10 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle(IPC.AGENTATION_SET_ENDPOINT, (_e, endpoint: string) =>
     agentationService.setEndpoint(endpoint),
+  )
+  ipcMain.handle(IPC.APP_BROWSER_WEBVIEW_PRELOAD, () =>
+    // `<webview preload>` only accepts a `file:` URL, not a bare filesystem path.
+    pathToFileURL(join(__dirname, '../preload/browser-guest-preload.js')).href,
   )
 
   // ── State persistence handlers ──

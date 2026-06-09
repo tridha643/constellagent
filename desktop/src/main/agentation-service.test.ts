@@ -80,9 +80,43 @@ describe('mapSseToAgentationEvent', () => {
       annotationId: 'a9',
     })
   })
-  test('drops unknown events (action.requested / thread.message)', () => {
-    expect(mapSseToAgentationEvent({ event: 'action.requested', data: '{}' })).toBeNull()
-    expect(mapSseToAgentationEvent({ event: 'thread.message', data: '{}' })).toBeNull()
+  test('maps session.updated and session.closed', () => {
+    expect(
+      mapSseToAgentationEvent({
+        event: 'session.updated',
+        data: JSON.stringify({ id: 's1', url: 'http://localhost' }),
+      }),
+    ).toEqual({
+      type: 'session.updated',
+      session: expect.objectContaining({ id: 's1' }),
+    })
+    expect(
+      mapSseToAgentationEvent({ event: 'session.closed', data: '{"sessionId":"s1"}' }),
+    ).toEqual({ type: 'session.closed', sessionId: 's1' })
+  })
+  test('maps thread.message and action.requested', () => {
+    expect(
+      mapSseToAgentationEvent({
+        event: 'thread.message',
+        data: JSON.stringify({
+          annotationId: 'a1',
+          message: { id: 'm1', role: 'human', content: 'hi', timestamp: 1 },
+        }),
+      }),
+    ).toEqual({
+      type: 'thread.message',
+      annotationId: 'a1',
+      message: { id: 'm1', role: 'human', content: 'hi', timestamp: 1 },
+    })
+    expect(
+      mapSseToAgentationEvent({
+        event: 'action.requested',
+        data: JSON.stringify({ sessionId: 's1', output: 'markdown', annotations: [] }),
+      }),
+    ).toEqual({
+      type: 'action.requested',
+      action: { sessionId: 's1', output: 'markdown', annotations: [] },
+    })
   })
   test('coerces unknown kind to undefined', () => {
     const ev = mapSseToAgentationEvent({ event: 'annotation.created', data: '{"id":"a1","kind":"weird"}' })
@@ -151,7 +185,7 @@ describe('AgentationService HTTP', () => {
     expect(res.ok).toBe(true)
     expect(captured!.url).toBe(`${DEFAULT_AGENTATION_ENDPOINT}/annotations/a1`)
     expect(captured!.init?.method).toBe('PATCH')
-    expect(JSON.parse(String(captured!.init?.body))).toEqual({ resolved: true })
+    expect(JSON.parse(String(captured!.init?.body))).toEqual({ resolved: true, status: 'resolved' })
   })
 
   test('dismiss issues a PATCH with {dismissed:true}', async () => {
@@ -163,7 +197,7 @@ describe('AgentationService HTTP', () => {
       },
     })
     await svc.dismiss('a2')
-    expect(body).toEqual({ dismissed: true })
+    expect(body).toEqual({ dismissed: true, status: 'dismissed' })
   })
 
   test('PATCH 404 (already resolved by another reader) is treated as success', async () => {
