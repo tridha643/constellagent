@@ -1,7 +1,6 @@
 /**
  * In-process Pi SDK host (pi-gui–style): PiSdkDriver + JsonCatalogStore under userData only.
  */
-import { BrowserWindow } from 'electron'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app } from 'electron'
@@ -21,7 +20,6 @@ import type {
   SessionRef,
 } from '@pi-gui/session-driver'
 import type { RuntimeSnapshot } from '@pi-gui/session-driver/runtime-types'
-import { IPC } from '../shared/ipc-channels'
 import {
   createEmptyDesktopAppState,
   type ComposerAttachment,
@@ -142,11 +140,6 @@ export class ConstellPiHost {
 
   private emit(): void {
     const snapshot = structuredClone(this.state)
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) {
-        win.webContents.send(IPC.PI_STATE_CHANGED, snapshot)
-      }
-    }
     for (const l of this.stateListeners) {
       l(snapshot)
     }
@@ -154,11 +147,6 @@ export class ConstellPiHost {
 
   private publishSelectedTranscript(): void {
     const payload = this.buildSelectedTranscriptRecord()
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) {
-        win.webContents.send(IPC.PI_SELECTED_TRANSCRIPT_CHANGED, payload)
-      }
-    }
     for (const l of this.transcriptListeners) {
       l(payload)
     }

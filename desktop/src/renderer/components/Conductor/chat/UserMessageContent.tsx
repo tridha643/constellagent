@@ -14,7 +14,7 @@ import styles from '../Conductor.module.css'
 
 const REMARK_PLUGINS = [remarkGfm]
 
-/** Paragraphs as spans so chips + markdown share one inline text flow (see pi-gui/message-markdown). */
+/** Paragraphs as spans so chips + markdown share one inline text flow. */
 const INLINE_MARKDOWN_COMPONENTS = {
   p: ({ children }: { children?: ReactNode }) => (
     <span className={styles.userMessageMdInline}>{children}</span>

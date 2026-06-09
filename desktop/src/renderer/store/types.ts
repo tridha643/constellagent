@@ -151,7 +151,6 @@ export type Tab = {
   | { type: 'diff'; commitHash?: string; commitMessage?: string }
   | { type: 'fileDiff'; filePath: string; status?: WorkingTreeFileStatus['status']; originalRef?: string }
   | { type: 'markdownPreview'; filePath: string; title: string }
-  | { type: 'pi-thread'; title: string; piSessionId?: string; piSessionTitle?: string }
   /** Conductor agent chat (Cursor / Codex SDK); session lives in conductor-chat.db. */
   | { type: 'conductor'; title: string; agentSessionId?: string }
   // First-class long-running service (e.g. `bun dev`, `npm test`). Hosts a PTY just like
@@ -890,10 +889,6 @@ export interface AppState {
   restartService: (tabId: string) => Promise<void>
   /** Send SIGTERM via pty.destroy; PTY_EXIT broadcast flips status to exited. */
   stopService: (tabId: string) => void
-  /** Pi SDK agent thread (non-PTY); catalog under app userData. */
-  createPiThreadForActiveWorkspace: () => Promise<void>
-  /** Update bound Pi session for a PI Chat tab (multi-chat per worktree). */
-  setPiThreadSessionBinding: (tabId: string, piSessionId: string, title?: string) => void
   /** New draft Conductor tab in the active worktree (sidebar button / ⇧⌘C). */
   createConductorTabForActiveWorkspace: () => void
   /** Bind a Conductor tab to an agent-chat session after first submit or fork. */

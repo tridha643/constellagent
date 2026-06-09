@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type {
   AutomationConfig,
@@ -15,7 +15,7 @@ import type { PiModelOption } from '../shared/plan-build-command'
 import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
 import type { GraphiteCreateOptions, GraphiteStackAction, GraphiteStackActionResult, GraphiteStackInfo } from '../shared/graphite-types'
 import type { ReviewComment } from '../shared/review-types'
-import type { HostUiResponse, PiContextUsageSnapshot } from '@pi-gui/session-driver'
+import type { HostUiResponse } from '@pi-gui/session-driver'
 import type {
   AgentChatContextPayload,
   AgentChatDeltaPayload,
@@ -34,7 +34,6 @@ import type { LinearFffQuickOpenRequest, LinearFffQuickOpenResult } from '../sha
 import type { CodeSearchRequest, CodeSearchResult } from '../shared/code-search-types'
 import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
-import type { ComposerAttachment } from '../shared/pi/pi-desktop-state'
 import type { GithubCloneRepoSuggestion } from '../shared/github-clone-suggestions'
 import type { ComposioAutomationDefinition, ComposioAutomationAgent, ComposioNgrokStatus, ComposioWebhookSettings } from '../shared/composio-types'
 import type {
@@ -699,53 +698,6 @@ const api = {
       ipcRenderer.invoke(IPC.PROJECT_ICON_CLEAR, projectId) as Promise<void>,
   },
 
-  /** Pi SDK agent thread (main-process PiSdkDriver + JsonCatalogStore under userData/pi-gui-data). */
-  pi: {
-    getState: () => ipcRenderer.invoke(IPC.PI_GET_STATE),
-    getSelectedTranscript: () => ipcRenderer.invoke(IPC.PI_GET_SELECTED_TRANSCRIPT),
-    onStateChanged: (listener: (state: unknown) => void) => {
-      const handle = (_event: Electron.IpcRendererEvent, state: unknown) => listener(state)
-      ipcRenderer.on(IPC.PI_STATE_CHANGED, handle)
-      return () => {
-        ipcRenderer.removeListener(IPC.PI_STATE_CHANGED, handle)
-      }
-    },
-    onSelectedTranscriptChanged: (listener: (payload: unknown) => void) => {
-      const handle = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload)
-      ipcRenderer.on(IPC.PI_SELECTED_TRANSCRIPT_CHANGED, handle)
-      return () => {
-        ipcRenderer.removeListener(IPC.PI_SELECTED_TRANSCRIPT_CHANGED, handle)
-      }
-    },
-    syncWorkspace: (workspacePath: string, displayName?: string) =>
-      ipcRenderer.invoke(IPC.PI_SYNC_WORKSPACE, workspacePath, displayName),
-    selectSession: (target: { workspaceId: string; sessionId: string }) =>
-      ipcRenderer.invoke(IPC.PI_SELECT_SESSION, target),
-    createSession: (input: { workspaceId: string; title?: string }) =>
-      ipcRenderer.invoke(IPC.PI_CREATE_SESSION, input),
-    submitComposer: (text: string) => ipcRenderer.invoke(IPC.PI_SUBMIT_COMPOSER, text),
-    updateComposerDraft: (draft: string) => ipcRenderer.invoke(IPC.PI_UPDATE_COMPOSER_DRAFT, draft),
-    cancelCurrentRun: () => ipcRenderer.invoke(IPC.PI_CANCEL_CURRENT_RUN),
-    setComposerAttachments: (attachments: readonly ComposerAttachment[]) =>
-      ipcRenderer.invoke(IPC.PI_SET_COMPOSER_ATTACHMENTS, attachments),
-    removeComposerAttachment: (attachmentId: string) =>
-      ipcRenderer.invoke(IPC.PI_REMOVE_COMPOSER_ATTACHMENT, attachmentId),
-    setSessionModel: (selection: { provider: string; modelId: string }) =>
-      ipcRenderer.invoke(IPC.PI_SET_SESSION_MODEL, selection),
-    setSessionThinkingLevel: (level: string) => ipcRenderer.invoke(IPC.PI_SET_SESSION_THINKING_LEVEL, level),
-    getContextUsageSnapshot: (target: { workspaceId: string; sessionId: string }) =>
-      ipcRenderer.invoke(IPC.PI_CONTEXT_USAGE, target) as Promise<PiContextUsageSnapshot | null>,
-    respondHostUi: (response: HostUiResponse) => ipcRenderer.invoke(IPC.PI_RESPOND_HOST_UI, response),
-    sendExtensionTuiInput: (data: string) => ipcRenderer.invoke(IPC.PI_EXTENSION_TUI_INPUT, data),
-    /** Electron `webUtils.getPathForFile` — resolves dropped/selected `File` to an absolute path in the renderer. */
-    getPathForFile: (file: File) => {
-      try {
-        return webUtils.getPathForFile(file)
-      } catch {
-        return undefined
-      }
-    },
-  },
   agentChat: {
     createSession: (input: CreateAgentChatSessionInput) =>
       ipcRenderer.invoke(IPC.AGENT_CHAT_CREATE_SESSION, input) as Promise<AgentChatSessionState>,

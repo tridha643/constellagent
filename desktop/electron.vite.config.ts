@@ -1,31 +1,72 @@
-import { defineConfig } from 'electron-vite'
+import { defineConfig, type Plugin } from 'electron-vite'
 import { resolve } from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import { indexHtmlCachePlugin } from './scripts/vite-index-html-cache-plugin'
 
+/**
+ * Rolldown's CJS main bundle replaces bare `import.meta` with `{}`, which breaks
+ * `import.meta.resolve()` in @mariozechner/pi-coding-agent's extension loader.
+ * Rewrite to `createRequire(import.meta.url).resolve()` before bundling; Rolldown
+ * already lowers `import.meta.url` to `pathToFileURL(__filename)`.
+ */
+function piCodingAgentImportMetaResolve(): Plugin {
+  return {
+    name: 'pi-coding-agent-import-meta-resolve',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!id.includes('pi-coding-agent') || !code.includes('import.meta.resolve')) {
+        return undefined
+      }
+      const next = code.replace(
+        /fileURLToPath\(\s*import\.meta\.resolve\(([^)]+)\)\s*\)/g,
+        'createRequire(import.meta.url).resolve($1)',
+      )
+      if (next === code) return undefined
+      return { code: next, map: null }
+    },
+  }
+}
+
 const rendererRoot = resolve(__dirname, 'src/renderer')
 const rendererIndexHtml = resolve(rendererRoot, 'index.html')
 const repoRoot = resolve(__dirname, '..')
+const piGuiRoot = resolve(__dirname, 'src/lib/pi-gui')
+
+const piGuiAliases = {
+  '@pi-gui/session-driver': resolve(piGuiRoot, 'session-driver/index.ts'),
+  '@pi-gui/session-driver/types': resolve(piGuiRoot, 'session-driver/types.ts'),
+  '@pi-gui/session-driver/runtime-types': resolve(piGuiRoot, 'session-driver/runtime-types.ts'),
+  '@pi-gui/catalogs': resolve(piGuiRoot, 'catalogs/index.ts'),
+  '@pi-gui/pi-sdk-driver': resolve(piGuiRoot, 'pi-sdk-driver/index.ts'),
+}
 
 export default defineConfig({
   main: {
-    // @openai/codex-sdk is ESM-only (exports.import, no require). Bundle it so the
-    // CJS main output does not call require("@openai/codex-sdk") at runtime.
+    plugins: [piCodingAgentImportMetaResolve()],
+    // ESM-only deps (exports.import, no require). Bundle them so the CJS main
+    // output does not call require() on them at runtime.
     build: {
       externalizeDeps: {
-        exclude: ['@openai/codex-sdk', '@constellagent/mobile-protocol'],
+        exclude: [
+          '@openai/codex-sdk',
+          '@constellagent/mobile-protocol',
+          '@mariozechner/pi-coding-agent',
+          '@mariozechner/pi-tui',
+        ],
       },
     },
     resolve: {
       alias: {
-        '@shared': resolve(__dirname, 'src/shared')
+        '@shared': resolve(__dirname, 'src/shared'),
+        ...piGuiAliases,
       }
     }
   },
   preload: {
     resolve: {
       alias: {
-        '@shared': resolve(__dirname, 'src/shared')
+        '@shared': resolve(__dirname, 'src/shared'),
+        ...piGuiAliases,
       }
     }
   },
@@ -38,7 +79,8 @@ export default defineConfig({
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src/renderer'),
-        '@shared': resolve(__dirname, 'src/shared')
+        '@shared': resolve(__dirname, 'src/shared'),
+        ...piGuiAliases,
       }
     },
     build: {

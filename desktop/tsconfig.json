@@ -15,7 +15,12 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/renderer/*"],
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["src/shared/*"],
+      "@pi-gui/session-driver": ["src/lib/pi-gui/session-driver/index.ts"],
+      "@pi-gui/session-driver/types": ["src/lib/pi-gui/session-driver/types.ts"],
+      "@pi-gui/session-driver/runtime-types": ["src/lib/pi-gui/session-driver/runtime-types.ts"],
+      "@pi-gui/catalogs": ["src/lib/pi-gui/catalogs/index.ts"],
+      "@pi-gui/pi-sdk-driver": ["src/lib/pi-gui/pi-sdk-driver/index.ts"]
     }
   },
   "include": ["src/**/*"],

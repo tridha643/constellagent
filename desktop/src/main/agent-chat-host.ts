@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BrowserWindow } from 'electron'
-import { sessionKey } from '@pi-gui/pi-sdk-driver'
+import { sessionKey } from '@pi-gui/session-driver'
 import type {
   HostUiResponse,
   SessionDriverEvent,
@@ -21,7 +21,6 @@ import { GitService } from './git-service'
 import { evToolFinished, type AgentDriver } from './agents/agent-driver'
 import { CodexDriver } from './agents/codex-driver'
 import { CursorDriver } from './agents/cursor-driver'
-import { PiConductorDriver } from './agents/pi-conductor-driver'
 import type { AgentSdkHooks } from './agents/agent-sdk-hooks'
 import {
   cloneTranscriptWithNewIds,
@@ -119,7 +118,9 @@ export class AgentChatHost {
     userRequestedGeneratedImagesBySession: new Map(),
   }
   private readonly store = new AgentChatStore()
-  private readonly drivers: Record<AgentProvider, AgentDriver>
+  private readonly drivers: Pick<Record<AgentProvider, AgentDriver>, 'codex' | 'cursor'>
+  private piDriver: AgentDriver | undefined
+  private piDriverPromise: Promise<AgentDriver> | undefined
   /** Coalesces high-frequency transcript broadcasts during streaming (~25fps). */
   private readonly pendingTranscriptFlush = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly turnTelemetry = new Map<string, TurnTelemetry>()
@@ -133,7 +134,6 @@ export class AgentChatHost {
     this.drivers = {
       codex: new CodexDriver(options.sdkHooks),
       cursor: new CursorDriver(options.sdkHooks),
-      pi: new PiConductorDriver(),
     }
     this.questionBridge.setHostNotifier((question) => {
       this.setBlockingQuestion(question.sessionId, question)
@@ -241,7 +241,7 @@ export class AgentChatHost {
     transcript: readonly TranscriptMessage[],
   ): ContextWindowData {
     const estimated = estimateTokensFromTranscript(transcript)
-    const sdkUsed = this.drivers[state.provider]?.getContextUsage?.(state.sessionId) ?? null
+    const sdkUsed = this.driverIfLoaded(state.provider)?.getContextUsage?.(state.sessionId) ?? null
     const usedTokens = sdkUsed != null ? Math.max(sdkUsed, estimated) : estimated
     return buildContextWindowData({
       usedTokens,
@@ -296,7 +296,7 @@ export class AgentChatHost {
       throw new Error('Cannot compact while a run is in progress.')
     }
 
-    const driver = this.drivers[state.provider]
+    const driver = await this.driverFor(state.provider)
     if (!driver) {
       throw new Error(`Unsupported agent provider: ${String(state.provider)}`)
     }
@@ -414,7 +414,7 @@ export class AgentChatHost {
     )
     this.flushTranscript(state)
 
-    const driver = this.drivers[state.provider]
+    const driver = await this.driverFor(state.provider)
     if (!driver) {
       this.failRun(state, ref, `Unsupported agent provider: ${String(state.provider)}`)
       return
@@ -523,19 +523,22 @@ export class AgentChatHost {
   async respondPiHostUi(sessionId: string, response: HostUiResponse): Promise<void> {
     const state = await this.resolveState(sessionId)
     if (!state || state.provider !== 'pi') return
-    await this.drivers.pi.respondHostUi?.(sessionId, response)
-    this.update(sessionId, { piExtensionUi: this.drivers.pi.getPiExtensionUi?.(sessionId) ?? null })
+    const pi = await this.ensurePiDriver()
+    await pi.respondHostUi?.(sessionId, response)
+    this.update(sessionId, { piExtensionUi: pi.getPiExtensionUi?.(sessionId) ?? null })
   }
 
   async sendPiExtensionTuiInput(sessionId: string, data: string): Promise<void> {
     const state = await this.resolveState(sessionId)
     if (!state || state.provider !== 'pi') return
-    this.drivers.pi.sendExtensionTuiInput?.(sessionId, data)
-    this.update(sessionId, { piExtensionUi: this.drivers.pi.getPiExtensionUi?.(sessionId) ?? null })
+    const pi = await this.ensurePiDriver()
+    pi.sendExtensionTuiInput?.(sessionId, data)
+    this.update(sessionId, { piExtensionUi: pi.getPiExtensionUi?.(sessionId) ?? null })
   }
 
   async listPiModels(workspacePath: string): Promise<readonly ModelPreset[]> {
-    return this.drivers.pi.listModelsForWorkspace?.(workspacePath) ?? []
+    const pi = await this.ensurePiDriver()
+    return pi.listModelsForWorkspace?.(workspacePath) ?? []
   }
 
   async cancel(sessionId: string): Promise<void> {
@@ -586,13 +589,13 @@ export class AgentChatHost {
     const session = this.sessions.get(sessionId)
     if (session) {
       session.abort?.abort()
-      this.drivers[session.state.provider]?.closeSession(sessionId)
+      this.closeDriverSession(session.state.provider, sessionId)
       this.dropSessionRuntime(sessionId, this.refOf(session.state))
       this.sessions.delete(sessionId)
     } else {
       const stored = await this.store.getSession(sessionId)
       if (stored) {
-        this.drivers[stored.provider]?.closeSession(sessionId)
+        this.closeDriverSession(stored.provider, sessionId)
         this.dropSessionRuntime(sessionId, {
           workspaceId: stored.workspaceId,
           sessionId: stored.sessionId,
@@ -605,13 +608,38 @@ export class AgentChatHost {
   dispose(): void {
     for (const [sessionId, session] of this.sessions) {
       session.abort?.abort()
-      this.drivers[session.state.provider]?.closeSession(sessionId)
+      this.closeDriverSession(session.state.provider, sessionId)
     }
     this.sessions.clear()
     this.turnTelemetry.clear()
   }
 
   // ── internals ──────────────────────────────────────────────────────────
+
+  private async ensurePiDriver(): Promise<AgentDriver> {
+    if (this.piDriver) return this.piDriver
+    if (!this.piDriverPromise) {
+      this.piDriverPromise = import('./agents/pi-conductor-driver.js').then(({ PiConductorDriver }) => {
+        this.piDriver = new PiConductorDriver()
+        return this.piDriver
+      })
+    }
+    return this.piDriverPromise
+  }
+
+  private driverIfLoaded(provider: AgentProvider): AgentDriver | undefined {
+    if (provider === 'pi') return this.piDriver
+    return this.drivers[provider]
+  }
+
+  private async driverFor(provider: AgentProvider): Promise<AgentDriver | undefined> {
+    if (provider === 'pi') return this.ensurePiDriver()
+    return this.drivers[provider]
+  }
+
+  private closeDriverSession(provider: AgentProvider, sessionId: string): void {
+    this.driverIfLoaded(provider)?.closeSession(sessionId)
+  }
 
   private onDriverEvent(sessionId: string, event: SessionDriverEvent): void {
     const state = this.currentState(sessionId)

@@ -1,3 +1,4 @@
+export { sessionKey } from "./session-key.js";
 export type {
   AssistantDeltaEvent,
   CreateSessionOptions,

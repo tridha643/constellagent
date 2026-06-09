@@ -257,27 +257,6 @@ export const IPC = {
   PROJECT_ICON_GET: 'project-icon:get',
   PROJECT_ICON_CLEAR: 'project-icon:clear',
 
-  // Pi SDK (in-process agent UI; catalog + session data under app userData only)
-  PI_GET_STATE: 'pi:get-state',
-  PI_GET_SELECTED_TRANSCRIPT: 'pi:get-selected-transcript',
-  PI_SYNC_WORKSPACE: 'pi:sync-workspace',
-  PI_SELECT_SESSION: 'pi:select-session',
-  PI_CREATE_SESSION: 'pi:create-session',
-  PI_SUBMIT_COMPOSER: 'pi:submit-composer',
-  PI_UPDATE_COMPOSER_DRAFT: 'pi:update-composer-draft',
-  PI_CANCEL_CURRENT_RUN: 'pi:cancel-current-run',
-  PI_SET_COMPOSER_ATTACHMENTS: 'pi:set-composer-attachments',
-  PI_REMOVE_COMPOSER_ATTACHMENT: 'pi:remove-composer-attachment',
-  PI_SET_SESSION_MODEL: 'pi:set-session-model',
-  PI_SET_SESSION_THINKING_LEVEL: 'pi:set-session-thinking-level',
-  /** Live Pi session context usage for the composer ring (`AgentSession.getContextUsage`). */
-  PI_CONTEXT_USAGE: 'pi:context-usage',
-  PI_RESPOND_HOST_UI: 'pi:respond-host-ui',
-  PI_EXTENSION_TUI_INPUT: 'pi:extension-tui-input',
-  /** Main → renderer */
-  PI_STATE_CHANGED: 'pi:state-changed',
-  PI_SELECTED_TRANSCRIPT_CHANGED: 'pi:selected-transcript-changed',
-
   // Conductor agent chat (Codex + Cursor drivers) — renderer → main
   AGENT_CHAT_CREATE_SESSION: 'agent-chat:create-session',
   AGENT_CHAT_FORK_SESSION: 'agent-chat:fork-session',

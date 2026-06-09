@@ -11,7 +11,6 @@ import { PatchViewerMain } from './components/patch-viewer/PatchViewerMain'
 import { FullFileDiffEditor } from './components/Editor/FullFileDiffEditor'
 import { MarkdownPreview } from './components/MarkdownPreview/MarkdownPreview'
 import { ServicePanel } from './components/Service/ServicePanel'
-import { PiThreadPanel } from './components/PiThread/PiThreadPanel'
 import { ConductorChatView } from './components/Conductor/ConductorChatView'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
 import { ChangesFileFind } from './components/QuickOpen/ChangesFileFind'
@@ -551,16 +550,6 @@ export function App() {
                         />
                       )}
 
-                      {activeTab?.type === 'pi-thread' && tabWorkspace && (
-                        <PiThreadPanel
-                          key={activeTab.id}
-                          worktreePath={tabWorkspace.worktreePath}
-                          workspaceLabel={tabWorkspace.name}
-                          active={true}
-                          boundSessionId={activeTab.piSessionId}
-                          piThreadTabId={activeTab.id}
-                        />
-                      )}
                     </>
                   )}
                 </div>
