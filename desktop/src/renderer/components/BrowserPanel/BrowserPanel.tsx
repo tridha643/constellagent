@@ -1,106 +1,119 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-
-const IS_MAC_LIKE =
-  typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent)
+import { AnimatePresence, motion } from 'framer-motion'
+import { Check, ChevronLeft, Copy, Globe, MousePointerClick, RotateCw, Send, X } from 'lucide-react'
 import { useAppStore } from '../../store/app-store'
-import type { BrowserDomContext, ChatSnippet } from '../../store/types'
-import { SPIDEY_CLIENT_SOURCE } from './spidey-client'
-import type { BrowserCapturedItem, BrowserPickEvent } from './types'
+import { annotationToMarkdown } from '../../../shared/agentation-types'
+import type { AgentationAnnotation, AgentationSession } from '../../../shared/agentation-types'
+import { FloatingPanel } from '../FloatingPanel/FloatingPanel'
+import { Tooltip } from '../Tooltip/Tooltip'
+import { buildAgentationInjectScript } from './agentation-inject'
+import { getBrowserGuestScriptUrl } from './browser-guest-url'
 import styles from './BrowserPanel.module.css'
 
-type WorkspaceState = {
+const SERVER_COMMAND = 'npx agentation-mcp server'
+
+type WorkspaceBrowserState = {
   url: string
   pendingUrl: string
-  picking: boolean
-  items: BrowserCapturedItem[]
 }
 
-const workspaceCache = new Map<string, WorkspaceState>()
+const workspaceCache = new Map<string, WorkspaceBrowserState>()
 
-function defaultState(): WorkspaceState {
-  return { url: '', pendingUrl: 'http://localhost:5173', picking: false, items: [] }
+function defaultBrowserState(): WorkspaceBrowserState {
+  return { url: '', pendingUrl: 'http://localhost:5173' }
 }
 
-function snippetForItem(item: BrowserCapturedItem): ChatSnippet {
-  const note = item.userNote?.trim()
-  const ctx: BrowserDomContext = {
-    tagName: item.tagName,
-    classes: item.classes,
-    textPreview: item.textPreview,
-    displayName: item.displayName,
-    source: item.source,
-    url: item.url,
-    ...(note ? { userNote: note } : {}),
-  }
-  return { text: item.textPreview, browser: ctx }
+function kindLabel(kind: AgentationAnnotation['kind']): string {
+  if (kind === 'placement') return 'Placement'
+  if (kind === 'rearrange') return 'Rearrange'
+  return 'Feedback'
 }
 
-export function BrowserPanel({ workspaceId }: { workspaceId: string }) {
-  const initial = workspaceCache.get(workspaceId) ?? defaultState()
-  const [url, setUrl] = useState(initial.url)
-  const [pendingUrl, setPendingUrl] = useState(initial.pendingUrl)
-  const [picking, setPicking] = useState(initial.picking)
-  const [items, setItems] = useState<BrowserCapturedItem[]>(initial.items)
+function sessionTitle(session: AgentationSession): string {
+  if (session.id === '__ungrouped__') return 'Annotations'
+  return session.title?.trim() || session.url || session.id
+}
 
-  const webviewRef = useRef<Electron.WebviewTag | null>(null)
-  const sendContextToAgent = useAppStore((s) => s.sendContextToAgent)
+export function BrowserPanel() {
+  const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
+  const toggleBrowser = useAppStore((s) => s.toggleBrowser)
+  const status = useAppStore((s) => s.agentationStatus)
+  const sessions = useAppStore((s) => s.agentationSessions)
+  const agentationEndpoint = useAppStore((s) => s.settings.agentationEndpoint)
+  const refreshAgentation = useAppStore((s) => s.refreshAgentation)
+  const sendAgentationAnnotation = useAppStore((s) => s.sendAgentationAnnotation)
+  const resolveAgentationAnnotation = useAppStore((s) => s.resolveAgentationAnnotation)
+  const dismissAgentationAnnotation = useAppStore((s) => s.dismissAgentationAnnotation)
   const addToast = useAppStore((s) => s.addToast)
 
-  // Persist to in-memory cache so panel re-mounts (workspace switch / panel hide) restore.
-  useEffect(() => {
-    workspaceCache.set(workspaceId, { url, pendingUrl, picking, items })
-  }, [workspaceId, url, pendingUrl, picking, items])
+  const initial = activeWorkspaceId
+    ? (workspaceCache.get(activeWorkspaceId) ?? defaultBrowserState())
+    : defaultBrowserState()
+  const [url, setUrl] = useState(initial.url)
+  const [pendingUrl, setPendingUrl] = useState(initial.pendingUrl)
+  const [retrying, setRetrying] = useState(false)
+  const [busyById, setBusyById] = useState<Record<string, boolean>>({})
 
-  const handleConsoleMessage = useCallback((event: Electron.ConsoleMessageEvent) => {
-    const msg = event.message ?? ''
-    const idx = msg.indexOf('__SPIDEY__:')
-    if (idx === -1) return
-    try {
-      const json = msg.slice(idx + '__SPIDEY__:'.length)
-      const parsed = JSON.parse(json) as BrowserPickEvent
-      if (parsed.__spideySense === 'pick' && parsed.payload) {
-        const item: BrowserCapturedItem = {
-          ...parsed.payload,
-          id: crypto.randomUUID(),
-          capturedAt: Date.now(),
+  const webviewRef = useRef<Electron.WebviewTag | null>(null)
+  const webviewCleanupRef = useRef<(() => void) | null>(null)
+  const guestScriptUrl = useMemo(() => getBrowserGuestScriptUrl(), [])
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return
+    workspaceCache.set(activeWorkspaceId, { url, pendingUrl })
+  }, [activeWorkspaceId, url, pendingUrl])
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return
+    const cached = workspaceCache.get(activeWorkspaceId) ?? defaultBrowserState()
+    setUrl(cached.url)
+    setPendingUrl(cached.pendingUrl)
+  }, [activeWorkspaceId])
+
+  const injectAgentation = useCallback(
+    (opts?: { quiet?: boolean }) => {
+      const wv = webviewRef.current
+      if (!wv || !url) {
+        if (!opts?.quiet) {
+          addToast({
+            id: `browser-annotate-no-page-${Date.now()}`,
+            message: 'Load a URL first',
+            type: 'warning',
+          })
         }
-        setItems((prev) => [...prev, item])
         return
       }
-      if (parsed.__spideySense === 'cancel') {
-        setPicking(false)
+      const script = buildAgentationInjectScript(agentationEndpoint, guestScriptUrl)
+      wv.executeJavaScript(script).catch(() => {
+        addToast({
+          id: `browser-annotate-inject-${Date.now()}`,
+          message: 'Could not inject the annotation toolbar into this page',
+          type: 'error',
+        })
+      })
+    },
+    [url, agentationEndpoint, guestScriptUrl, addToast],
+  )
+
+  const bindWebview = useCallback(
+    (node: Electron.WebviewTag | null) => {
+      if (webviewCleanupRef.current) {
+        webviewCleanupRef.current()
+        webviewCleanupRef.current = null
       }
-    } catch {
-      // ignore malformed sentinel payloads
-    }
-  }, [])
+      webviewRef.current = node
+      if (!node || !url) return
+      const onDomReady = () => injectAgentation({ quiet: true })
+      node.addEventListener('dom-ready', onDomReady)
+      webviewCleanupRef.current = () => node.removeEventListener('dom-ready', onDomReady)
+    },
+    [url, injectAgentation],
+  )
 
   useEffect(() => {
-    const wv = webviewRef.current
-    if (!wv) return
-    wv.addEventListener('console-message', handleConsoleMessage)
     return () => {
-      wv.removeEventListener('console-message', handleConsoleMessage)
+      if (webviewCleanupRef.current) webviewCleanupRef.current()
     }
-  }, [url, handleConsoleMessage])
-
-  const startPick = useCallback(() => {
-    const wv = webviewRef.current
-    if (!wv || !url) {
-      addToast({ id: crypto.randomUUID(), message: 'Load a URL first', type: 'warning' })
-      return
-    }
-    setPicking(true)
-    wv.executeJavaScript(SPIDEY_CLIENT_SOURCE).catch(() => {
-      setPicking(false)
-      addToast({ id: crypto.randomUUID(), message: 'Failed to start picker', type: 'error' })
-    })
-  }, [url, addToast])
-
-  const stopPick = useCallback(() => {
-    const wv = webviewRef.current
-    setPicking(false)
-    wv?.executeJavaScript('window.__spideySenseStop && window.__spideySenseStop();').catch(() => {})
   }, [])
 
   const submitUrl = useCallback(() => {
@@ -111,167 +124,282 @@ export function BrowserPanel({ workspaceId }: { workspaceId: string }) {
     setPendingUrl(normalized)
   }, [pendingUrl])
 
-  const removeItem = useCallback((id: string) => {
-    setItems((prev) => prev.filter((it) => it.id !== id))
-  }, [])
+  const connected = status?.connected ?? false
+  const reconnecting = status?.reconnecting ?? false
+  const endpoint = status?.endpoint ?? agentationEndpoint
 
-  const clearItems = useCallback(() => setItems([]), [])
+  const visibleSessions = useMemo(
+    () => sessions.filter((s) => s.annotations.length > 0),
+    [sessions],
+  )
+  const totalAnnotations = useMemo(
+    () => visibleSessions.reduce((n, s) => n + s.annotations.length, 0),
+    [visibleSessions],
+  )
 
-  const setItemNote = useCallback((id: string, userNote: string) => {
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, userNote } : it)))
-  }, [])
-
-  const sendAll = useCallback(() => {
-    if (items.length === 0) return
-    sendContextToAgent(items.map(snippetForItem))
-    setItems([])
-  }, [items, sendContextToAgent])
-
-  const status = useMemo(() => {
-    if (!url) {
-      return { lead: 'Load a URL to open the embedded browser.', picking: false as const }
+  const handleRetry = useCallback(async () => {
+    setRetrying(true)
+    try {
+      await refreshAgentation()
+    } finally {
+      setRetrying(false)
     }
-    if (picking) {
-      return {
-        lead: 'Click elements to capture; highlight clears after each pick.',
-        picking: true as const,
+  }, [refreshAgentation])
+
+  const handleCopyCommand = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(SERVER_COMMAND)
+      addToast({ id: `browser-copy-${Date.now()}`, message: 'Copied command', type: 'info' })
+    } catch {
+      addToast({ id: `browser-copy-err-${Date.now()}`, message: 'Could not copy', type: 'error' })
+    }
+  }, [addToast])
+
+  const handleSend = useCallback(
+    (annotation: AgentationAnnotation) => {
+      sendAgentationAnnotation(annotationToMarkdown(annotation))
+    },
+    [sendAgentationAnnotation],
+  )
+
+  const withBusy = useCallback(
+    async (id: string, fn: () => Promise<{ ok: boolean; error?: string }>, verb: string) => {
+      setBusyById((m) => ({ ...m, [id]: true }))
+      try {
+        const result = await fn()
+        if (!result.ok) {
+          addToast({
+            id: `browser-${verb}-err-${Date.now()}`,
+            message: `Could not ${verb}: ${result.error ?? 'unknown error'}`,
+            type: 'error',
+          })
+        }
+      } finally {
+        setBusyById((m) => {
+          const next = { ...m }
+          delete next[id]
+          return next
+        })
       }
-    }
-    return {
-      lead: items.length === 0 ? 'No elements captured yet.' : `${items.length} in queue`,
-      picking: false as const,
-    }
-  }, [url, picking, items.length])
+    },
+    [addToast],
+  )
+
+  const statusTone = connected ? 'ok' : reconnecting ? 'warn' : 'down'
+  const statusText = connected ? 'Connected' : reconnecting ? 'Reconnecting…' : 'Not running'
 
   return (
-    <div className={styles.wrap}>
-      <div className={styles.urlBar}>
-        <input
-          className={styles.urlInput}
-          value={pendingUrl}
-          onChange={(e) => setPendingUrl(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') submitUrl() }}
-          placeholder="https://localhost:5173"
-          spellCheck={false}
-          aria-label="Page URL"
-        />
-        <button type="button" className={styles.btn} onClick={submitUrl}>
-          Go
-        </button>
-      </div>
+    <FloatingPanel variant="fullscreen" testId="browser-panel">
+      <FloatingPanel.Titlebar trafficLightPad>
+        <div className={styles.header}>
+          <Tooltip label="Back">
+            <button
+              type="button"
+              className={styles.backBtn}
+              onClick={toggleBrowser}
+              aria-label="Close Browser"
+            >
+              <ChevronLeft size={16} strokeWidth={2} aria-hidden />
+            </button>
+          </Tooltip>
+          <Globe size={16} className={styles.brandIcon} aria-hidden />
+          <span className={styles.brandTitle}>Browser</span>
+          <Tooltip label={endpoint || 'Annotation server endpoint'}>
+            <span className={styles.statusPill} data-tone={statusTone} data-testid="browser-status">
+              <span className={styles.statusDot} aria-hidden />
+              {statusText}
+            </span>
+          </Tooltip>
+        </div>
+      </FloatingPanel.Titlebar>
 
-      <div className={styles.toolbar}>
-        <button
-          type="button"
-          className={`${styles.btn} ${picking ? styles.btnActive : ''}`}
-          onClick={picking ? stopPick : startPick}
-          disabled={!url}
-          title={picking ? 'Stop picking (Esc in page)' : 'Pick a DOM element'}
-        >
-          {picking ? 'Stop picking' : 'Pick element'}
-        </button>
-        <span className={styles.meta}>
-          {status.picking && <span className={styles.pickingPulse} aria-hidden />}
-          <span className={styles.metaStrong}>{status.lead}</span>
-          {status.picking && (
-            <>
-              <kbd className={styles.kbd}>Esc</kbd>
-              <span className={styles.noteHint}>in page</span>
-            </>
-          )}
-        </span>
-      </div>
-
-      <div className={styles.frameWrap}>
-        {url ? (
-          <webview
-            key={url}
-            ref={webviewRef as React.Ref<HTMLElement>}
-            className={styles.webview}
-            src={url}
-            allowpopups
-          />
-        ) : (
-          <div className={styles.empty}>
-            Enter a URL above (for example your local dev server), then press Go to load it here.
+      <div className={styles.split} data-testid="browser-body">
+        <div className={styles.browserColumn}>
+          <div className={styles.urlBar}>
+            <input
+              className={styles.urlInput}
+              value={pendingUrl}
+              onChange={(e) => setPendingUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitUrl()
+              }}
+              placeholder="http://localhost:5173"
+              spellCheck={false}
+              aria-label="Page URL"
+            />
+            <button type="button" className={styles.goBtn} onClick={submitUrl}>
+              Go
+            </button>
           </div>
-        )}
-      </div>
-
-      {items.length > 0 && (
-        <>
-          <div className={styles.listHeader}>
-            <span className={styles.listTitle}>Captured</span>
-            <span className={styles.listCount}>{items.length}</span>
+          <div className={styles.annotateBar}>
+            <button
+              type="button"
+              className={styles.annotateBtn}
+              disabled={!url}
+              onClick={() => injectAgentation()}
+            >
+              <MousePointerClick size={15} aria-hidden />
+              Annotate
+            </button>
+            <span className={styles.annotateHint}>
+              {url
+                ? 'Click Annotate, then use the ◎ control in the bottom-right of the page.'
+                : 'Load a page to enable element annotations.'}
+            </span>
           </div>
-          <div className={styles.list}>
-            {items.map((it) => (
-              <div key={it.id} className={styles.item}>
-                <div className={styles.itemHead}>
-                  {it.displayName && <span className={styles.name}>{`<${it.displayName}>`}</span>}
-                  <code>{it.tagName.toLowerCase()}{it.classes.length ? '.' + it.classes.slice(0, 2).join('.') : ''}</code>
-                  <button
-                    type="button"
-                    className={styles.remove}
-                    onClick={() => removeItem(it.id)}
-                    aria-label={`Remove ${it.tagName.toLowerCase()} capture`}
-                  >
-                    ×
-                  </button>
+          <div className={styles.frameWrap}>
+            {url ? (
+              <webview
+                key={url}
+                ref={bindWebview as React.Ref<HTMLElement>}
+                className={styles.webview}
+                src={url}
+                allowpopups
+              />
+            ) : (
+              <div className={styles.frameEmpty}>Enter a URL and press Go to load a page with the Agentation toolbar.</div>
+            )}
+          </div>
+        </div>
+
+        <aside className={styles.rail}>
+          <div className={styles.railHeader}>Annotations</div>
+          <div className={styles.railBody}>
+            {!connected ? (
+              <div className={styles.cta}>
+                <div className={styles.ctaTitle}>Annotation server isn’t running</div>
+                <p className={styles.ctaText}>
+                  Start the local server so annotations from this browser sync here. Pages load the
+                  Agentation toolbar automatically at <span className={styles.endpoint}>{endpoint}</span>.
+                </p>
+                <div className={styles.command}>
+                  <code>{SERVER_COMMAND}</code>
+                  <Tooltip label="Copy">
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      onClick={() => void handleCopyCommand()}
+                      aria-label="Copy command"
+                    >
+                      <Copy size={14} aria-hidden />
+                    </button>
+                  </Tooltip>
                 </div>
-                {it.textPreview && <div className={styles.itemSub}>“{it.textPreview}”</div>}
-                {it.source && (
-                  <div className={styles.itemSub}>
-                    {it.source.file}:{it.source.line}
-                  </div>
-                )}
-                <div className={styles.noteBlock}>
-                  <label className={styles.noteLabel}>
-                    <span className={styles.noteLabelText}>
-                      Context note
-                      <span className={styles.noteHint}>
-                        <kbd className={styles.kbd}>{IS_MAC_LIKE ? '⌘' : 'Ctrl'}</kbd>
-                        {' + '}
-                        <kbd className={styles.kbd}>↵</kbd>
-                        {' done'}
-                      </span>
-                    </span>
-                    <input
-                      type="text"
-                      className={styles.noteInput}
-                      value={it.userNote ?? ''}
-                      onChange={(e) => setItemNote(it.id, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                          e.preventDefault()
-                          ;(e.target as HTMLInputElement).blur()
-                        }
-                      }}
-                      placeholder="Optional hint for the agent…"
-                      spellCheck
-                      aria-label={`Context note for ${it.tagName.toLowerCase()}`}
-                    />
-                  </label>
-                </div>
+                <button
+                  type="button"
+                  className={styles.retryBtn}
+                  onClick={() => void handleRetry()}
+                  disabled={retrying}
+                >
+                  <RotateCw size={14} className={retrying ? styles.spin : undefined} aria-hidden />
+                  {retrying ? 'Retrying…' : 'Retry'}
+                </button>
               </div>
-            ))}
+            ) : totalAnnotations === 0 ? (
+              <div className={styles.empty}>
+                <Globe size={24} aria-hidden />
+                <div className={styles.emptyTitle}>No annotations yet</div>
+                <p className={styles.emptyText}>
+                  Use the Agentation toolbar on the loaded page to annotate elements. They appear here
+                  for review and sending to your agent.
+                </p>
+              </div>
+            ) : (
+              <div className={styles.sessions}>
+                {visibleSessions.map((session) => (
+                  <section key={session.id} className={styles.session}>
+                    <header className={styles.sessionHeader}>
+                      <span className={styles.sessionTitle}>{sessionTitle(session)}</span>
+                      {session.url ? <span className={styles.sessionUrl}>{session.url}</span> : null}
+                    </header>
+                    <ul className={styles.rows}>
+                      <AnimatePresence initial={false}>
+                        {session.annotations.map((annotation) => {
+                          const busy = !!busyById[annotation.id]
+                          return (
+                            <motion.li
+                              key={annotation.id}
+                              className={styles.row}
+                              layout
+                              initial={{ opacity: 0, y: 4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                            >
+                              <div className={styles.rowMain}>
+                                <span className={styles.kind} data-kind={annotation.kind ?? 'feedback'}>
+                                  {kindLabel(annotation.kind)}
+                                </span>
+                                <div className={styles.rowText}>
+                                  {annotation.comment ? (
+                                    <div className={styles.comment}>{annotation.comment}</div>
+                                  ) : (
+                                    <div className={styles.commentMuted}>(no comment)</div>
+                                  )}
+                                  {annotation.element ? (
+                                    <div className={styles.element}>{annotation.element}</div>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className={styles.actions}>
+                                <Tooltip label="Send to agent">
+                                  <button
+                                    type="button"
+                                    className={styles.sendBtn}
+                                    onClick={() => handleSend(annotation)}
+                                    aria-label="Send to agent"
+                                  >
+                                    <Send size={13} aria-hidden />
+                                    Send
+                                  </button>
+                                </Tooltip>
+                                <Tooltip label="Resolve">
+                                  <button
+                                    type="button"
+                                    className={styles.iconBtn}
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void withBusy(
+                                        annotation.id,
+                                        () => resolveAgentationAnnotation(annotation.id),
+                                        'resolve',
+                                      )
+                                    }
+                                    aria-label="Resolve"
+                                  >
+                                    <Check size={14} aria-hidden />
+                                  </button>
+                                </Tooltip>
+                                <Tooltip label="Dismiss">
+                                  <button
+                                    type="button"
+                                    className={styles.iconBtn}
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void withBusy(
+                                        annotation.id,
+                                        () => dismissAgentationAnnotation(annotation.id),
+                                        'dismiss',
+                                      )
+                                    }
+                                    aria-label="Dismiss"
+                                  >
+                                    <X size={14} aria-hidden />
+                                  </button>
+                                </Tooltip>
+                              </div>
+                            </motion.li>
+                          )
+                        })}
+                      </AnimatePresence>
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            )}
           </div>
-        </>
-      )}
-
-      <div className={styles.sendRow}>
-        <button
-          type="button"
-          className={`${styles.btn} ${styles.primary}`}
-          onClick={sendAll}
-          disabled={items.length === 0}
-        >
-          Send {items.length || ''} to agent
-        </button>
-        {items.length > 0 && (
-          <button type="button" className={styles.btn} onClick={clearItems}>Clear</button>
-        )}
+        </aside>
       </div>
-    </div>
+    </FloatingPanel>
   )
 }

@@ -125,7 +125,8 @@ describe('hydrateState git graph removal migration', () => {
     })
 
     const { sidePanels } = useAppStore.getState()
-    expect(sidePanels.right.panelOrder).toEqual(['files', 'changes', 'browser', 'sideChat'])
+    // Both the removed 'graph' and the removed 'browser' panels are stripped.
+    expect(sidePanels.right.panelOrder).toEqual(['files', 'changes', 'sideChat'])
     expect(sidePanels.right.activePanel).toBe('files')
   })
 

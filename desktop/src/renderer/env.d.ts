@@ -1,6 +1,5 @@
 /// <reference types="vite/client" />
 
-import type { DetailedHTMLProps, HTMLAttributes } from 'react'
 import type { ElectronAPI } from '../preload/index'
 
 declare global {
@@ -8,12 +7,10 @@ declare global {
     api: ElectronAPI
   }
 
-  namespace JSX {
-    interface IntrinsicElements {
-      webview: DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement> & {
-        src?: string
-        allowpopups?: string | boolean
-        partition?: string
+  namespace React {
+    namespace JSX {
+      interface IntrinsicElements {
+        webview: React.DetailedHTMLProps<Electron.WebviewHTMLAttributes, Electron.WebviewTag>
       }
     }
   }

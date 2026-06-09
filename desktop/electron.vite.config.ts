@@ -88,8 +88,13 @@ export default defineConfig({
       // bundled Electron Chromium, which supports `<link rel=modulepreload>`.
       modulePreload: { polyfill: false },
       rollupOptions: {
-        input: rendererIndexHtml,
+        input: {
+          index: rendererIndexHtml,
+          'browser-guest': resolve(rendererRoot, 'browser-guest/main.tsx'),
+        },
         output: {
+          entryFileNames: (chunkInfo) =>
+            chunkInfo.name === 'browser-guest' ? 'browser-guest.js' : 'assets/[name]-[hash].js',
           // Split node_modules into per-package vendor chunks instead of one
           // ~8.7 MB monolithic `index` chunk. Vendor code rarely changes, so
           // each library lands in its own stable, separately-cacheable chunk:

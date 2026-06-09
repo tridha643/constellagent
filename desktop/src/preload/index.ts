@@ -15,6 +15,7 @@ import type { PiModelOption } from '../shared/plan-build-command'
 import type { WorktreeSyncEvent } from '../shared/worktree-sync-types'
 import type { GraphiteCreateOptions, GraphiteStackAction, GraphiteStackActionResult, GraphiteStackInfo } from '../shared/graphite-types'
 import type { ReviewComment } from '../shared/review-types'
+import type { AgentationEvent, AgentationSession, AgentationStatus } from '../shared/agentation-types'
 import type { HostUiResponse } from '@pi-gui/session-driver'
 import type {
   AgentChatContextPayload,
@@ -644,20 +645,21 @@ const api = {
     },
   },
 
-  webview: {
-    registerTabSwitch: (guestWebContentsId: number) =>
-      ipcRenderer.invoke(IPC.WEBVIEW_REGISTER_TAB_SWITCH, guestWebContentsId),
-    unregisterTabSwitch: (guestWebContentsId: number) =>
-      ipcRenderer.invoke(IPC.WEBVIEW_UNREGISTER_TAB_SWITCH, guestWebContentsId),
-    onTabPrev: (callback: () => void) => {
-      const listener = () => callback()
-      ipcRenderer.on(IPC.WEBVIEW_TAB_PREV, listener)
-      return () => { ipcRenderer.removeListener(IPC.WEBVIEW_TAB_PREV, listener) }
-    },
-    onTabNext: (callback: () => void) => {
-      const listener = () => callback()
-      ipcRenderer.on(IPC.WEBVIEW_TAB_NEXT, listener)
-      return () => { ipcRenderer.removeListener(IPC.WEBVIEW_TAB_NEXT, listener) }
+  agentation: {
+    status: () =>
+      ipcRenderer.invoke(IPC.AGENTATION_STATUS) as Promise<AgentationStatus>,
+    listSessions: () =>
+      ipcRenderer.invoke(IPC.AGENTATION_LIST_SESSIONS) as Promise<AgentationSession[]>,
+    resolve: (annotationId: string) =>
+      ipcRenderer.invoke(IPC.AGENTATION_RESOLVE, annotationId) as Promise<{ ok: boolean; error?: string }>,
+    dismiss: (annotationId: string) =>
+      ipcRenderer.invoke(IPC.AGENTATION_DISMISS, annotationId) as Promise<{ ok: boolean; error?: string }>,
+    setEndpoint: (endpoint: string) =>
+      ipcRenderer.invoke(IPC.AGENTATION_SET_ENDPOINT, endpoint) as Promise<AgentationStatus>,
+    onEvent: (callback: (event: AgentationEvent) => void) => {
+      const listener = (_e: unknown, event: AgentationEvent) => callback(event)
+      ipcRenderer.on(IPC.AGENTATION_EVENT, listener)
+      return () => { ipcRenderer.removeListener(IPC.AGENTATION_EVENT, listener) }
     },
   },
 

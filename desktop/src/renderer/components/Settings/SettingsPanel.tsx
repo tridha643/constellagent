@@ -106,7 +106,7 @@ const SETTINGS_SIDEBAR: readonly {
   {
     id: 'sidebar',
     label: 'Sidebar',
-    blurb: 'Dock Projects against Files / Changes / Browser.',
+    blurb: 'Dock Projects against Files / Changes.',
   },
   {
     id: 'general',
@@ -557,6 +557,8 @@ function SidePanelSettingsSection() {
   const setNavigationPanelSide = useAppStore((s) => s.setNavigationPanelSide)
   const swapSidebarRoles = useAppStore((s) => s.swapSidebarRoles)
   const resetSidePanelLayout = useAppStore((s) => s.resetSidePanelLayout)
+  const agentationEndpoint = useAppStore((s) => s.settings.agentationEndpoint)
+  const updateSettings = useAppStore((s) => s.updateSettings)
 
   const projectSide: Side = sidePanels.left.panelOrder.includes('project') ? 'left' : 'right'
   const navigationSide: Side = sidePanels.left.panelOrder.includes('files') ? 'left' : 'right'
@@ -588,7 +590,7 @@ function SidePanelSettingsSection() {
       />
 
       <SelectRow
-        label="Files / Changes / Browser side"
+        label="Files / Changes side"
         description="Where semantic panel shortcuts route after swapping sidebars."
         value={navigationSide}
         onChange={(value) => setNavigationPanelSide(value as Side)}
@@ -611,13 +613,26 @@ function SidePanelSettingsSection() {
         <div className={styles.rowText}>
           <div className={styles.rowLabel}>Restore default docking</div>
           <div className={styles.rowDescription}>
-            Put Projects back on the left and Files / Changes / Browser back on the right.
+            Put Projects back on the left and Files / Changes back on the right.
           </div>
         </div>
         <button type="button" className={styles.actionBtn} onClick={() => resetSidePanelLayout()}>
           Reset
         </button>
       </div>
+
+      <div className={styles.sectionTitle} style={{ marginTop: 24 }}>Browser</div>
+      <div className={styles.sectionHint}>
+        The Browser panel loads pages with the Agentation toolbar and syncs annotations from a
+        local <code>agentation-mcp</code> server. Changing the endpoint reconnects the live stream.
+      </div>
+      <TextRow
+        label="Annotation server endpoint"
+        description="HTTP/SSE address of the local agentation-mcp server."
+        value={agentationEndpoint}
+        onChange={(v) => updateSettings({ agentationEndpoint: v })}
+        placeholder="http://localhost:4747"
+      />
     </div>
   )
 }

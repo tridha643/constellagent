@@ -54,6 +54,7 @@
         "@xterm/addon-fit": "^0.11.0",
         "@xterm/addon-web-links": "^0.12.0",
         "@xterm/xterm": "^6.0.0",
+        "agentation": "^3.0.2",
         "agentfs-sdk": "^0.6.0",
         "ai": "^6.0.146",
         "allotment": "^1.20.5",
@@ -1178,6 +1179,8 @@
     "accepts": ["accepts@2.0.0", "", { "dependencies": { "mime-types": "^3.0.0", "negotiator": "^1.0.0" } }, "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng=="],
 
     "agent-base": ["agent-base@7.1.4", "", {}, "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="],
+
+    "agentation": ["agentation@3.0.2", "", { "peerDependencies": { "react": ">=18.0.0", "react-dom": ">=18.0.0" }, "optionalPeers": ["react", "react-dom"] }, "sha512-iGzBxFVTuZEIKzLY6AExSLAQH6i6SwxV4pAu7v7m3X6bInZ7qlZXAwrEqyc4+EfP4gM7z2RXBF6SF4DeH0f2lA=="],
 
     "agentfs-sdk": ["agentfs-sdk@0.6.4", "", { "dependencies": { "@tursodatabase/database": "^0.4.0-pre.18", "@tursodatabase/database-common": "^0.4.0-pre.18", "buffer": "^6.0.3" }, "peerDependencies": { "@tursodatabase/serverless": "^0.2.4", "just-bash": ">=2.0.0" }, "optionalPeers": ["@tursodatabase/serverless", "just-bash"] }, "sha512-exhzph6u+jZlh2V24O0Af9j9iweNYQ4Yb7M1SEYKE9ljxB/kKVaiaumK2zsTW/Pmi8kqPSezGvqqpi4+vkZTfQ=="],
 

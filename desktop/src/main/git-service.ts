@@ -106,6 +106,40 @@ export function parseGitNumstat(output: string): Map<string, DiffLineStats> {
   return statsByPath
 }
 
+export interface PorcelainStatusEntry {
+  indexStatus: string
+  workStatus: string
+  path: string
+}
+
+/** Parse `git status --porcelain=v1 -z` output (optionally with `-uall`). */
+export function parsePorcelainStatusV1Z(output: string): PorcelainStatusEntry[] {
+  if (!output) return []
+  const fields = output.split('\0')
+  const results: PorcelainStatusEntry[] = []
+
+  for (let i = 0; i < fields.length; i += 1) {
+    const entry = fields[i]
+    if (!entry || entry.length < 3) continue
+
+    const indexStatus = entry[0]!
+    const workStatus = entry[1]!
+
+    // Rename/copy rows: `XY original` NUL `new` NUL
+    if (indexStatus === 'R' || indexStatus === 'C' || workStatus === 'R' || workStatus === 'C') {
+      const path = fields[i + 1] ?? ''
+      if (!path) continue
+      results.push({ indexStatus, workStatus, path })
+      i += 1
+      continue
+    }
+
+    results.push({ indexStatus, workStatus, path: entry.slice(3) })
+  }
+
+  return results
+}
+
 function countTextLines(content: string): number {
   if (content.length === 0) return 0
   const newlineCount = content.split('\n').length - 1
@@ -1535,25 +1569,14 @@ export class GitService {
   static async getStatus(worktreePath: string): Promise<FileStatus[]> {
     const [output, lineStats] = await Promise.all([
       git(
-        ['status', '--porcelain=v1', '-uall'],
+        ['status', '--porcelain=v1', '-z', '-uall'],
         worktreePath
       ),
       this.getDiffLineStats(worktreePath),
     ])
     const results: FileStatus[] = []
 
-    /** Porcelain rename/copy lines use `ORIG -> DEST`; use worktree destination path. */
-    const porcelainPath = (raw: string): string => {
-      const arrow = ' -> '
-      const i = raw.lastIndexOf(arrow)
-      return i >= 0 ? raw.slice(i + arrow.length).trim() : raw
-    }
-
-    for (const line of output.split('\n').filter(Boolean)) {
-      const indexStatus = line[0]
-      const workStatus = line[1]
-      const path = porcelainPath(line.slice(3))
-
+    for (const { indexStatus, workStatus, path } of parsePorcelainStatusV1Z(output)) {
       if (indexStatus === '?' && workStatus === '?') {
         results.push({ path, status: 'untracked', staged: false })
         continue

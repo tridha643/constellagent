@@ -216,15 +216,19 @@ export const IPC = {
   /** Main → renderer: all annotations cleared after a PR merge */
   REVIEW_ANNOTATIONS_CLEARED: 'review:annotations-cleared',
 
-  // Webview guest keyboard shortcuts (webview focus bypass)
-  /** Renderer → main: register guest webContentsId for tab-switch interception */
-  WEBVIEW_REGISTER_TAB_SWITCH: 'webview:register-tab-switch',
-  /** Renderer → main: unregister guest webContentsId */
-  WEBVIEW_UNREGISTER_TAB_SWITCH: 'webview:unregister-tab-switch',
-  /** Main → renderer: switch to previous tab */
-  WEBVIEW_TAB_PREV: 'webview:tab-prev',
-  /** Main → renderer: switch to next tab */
-  WEBVIEW_TAB_NEXT: 'webview:tab-next',
+  // Agentation (annotation bridge to a locally-running agentation-mcp server)
+  /** Renderer → main: probe :4747 status (running + endpoint). */
+  AGENTATION_STATUS: 'agentation:status',
+  /** Renderer → main: list sessions + their pending annotations. */
+  AGENTATION_LIST_SESSIONS: 'agentation:list-sessions',
+  /** Renderer → main: resolve an annotation (PATCH /annotations/:id). */
+  AGENTATION_RESOLVE: 'agentation:resolve',
+  /** Renderer → main: dismiss an annotation (PATCH /annotations/:id). */
+  AGENTATION_DISMISS: 'agentation:dismiss',
+  /** Renderer → main: change the endpoint; tears down + reconnects SSE. */
+  AGENTATION_SET_ENDPOINT: 'agentation:set-endpoint',
+  /** Main → renderer: forwarded SSE event / status change. */
+  AGENTATION_EVENT: 'agentation:event',
 
   // State persistence
   STATE_SAVE: 'state:save',

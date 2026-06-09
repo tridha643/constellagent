@@ -80,6 +80,7 @@ export function ConductorChatView({
   const openSettingsSection = useAppStore((s) => s.openSettingsSection)
   const removeTab = useAppStore((s) => s.removeTab)
   const createConductorTabForActiveWorkspace = useAppStore((s) => s.createConductorTabForActiveWorkspace)
+  const consumePendingComposerDraft = useAppStore((s) => s.consumePendingComposerDraft)
   const activatePanel = useAppStore((s) => s.activatePanel)
   const conductorCursorApiKey = useAppStore((s) => s.settings.conductorCursorApiKey)
   const conductorOpenaiApiKey = useAppStore((s) => s.settings.conductorOpenaiApiKey)
@@ -202,6 +203,17 @@ export function ConductorChatView({
   useEffect(() => {
     setDismissedError(null)
   }, [agentSessionId])
+
+  // Agentation "Send" (D5b fallback) stages a composer prefill for this tab; inject
+  // it when the tab is active. Does not auto-submit (D5a). composerRef is populated
+  // by the child ChatComposer's effect, which runs before this parent effect.
+  useEffect(() => {
+    if (!active) return
+    const handle = composerRef.current
+    if (!handle) return
+    const draft = consumePendingComposerDraft(tab.id)
+    if (draft) handle.setText(draft)
+  }, [active, tab.id, consumePendingComposerDraft])
 
   useEffect(() => {
     const sessionTitle = controller.state?.title?.trim()

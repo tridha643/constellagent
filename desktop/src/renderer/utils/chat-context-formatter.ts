@@ -7,11 +7,6 @@ export function formatChatContext(snippets: ChatSnippet[]): string {
   const parts: string[] = []
 
   for (const s of snippets) {
-    if (s.browser) {
-      parts.push(formatBrowserContext(s))
-      continue
-    }
-
     let header = ''
     if (s.filePath) {
       header = `@${s.filePath}`
@@ -38,23 +33,4 @@ export function formatChatContext(snippets: ChatSnippet[]): string {
   }
 
   return result
-}
-
-function formatBrowserContext(s: ChatSnippet): string {
-  const b = s.browser!
-  const lines: string[] = []
-  if (b.source) {
-    const tail = b.source.column != null ? `:${b.source.line}:${b.source.column}` : `:${b.source.line}`
-    lines.push(`@${b.source.file}${tail}`)
-  } else {
-    lines.push('Captured from browser panel')
-  }
-  if (b.displayName) lines.push(`Component: <${b.displayName}>`)
-  lines.push(`Tag: <${b.tagName.toLowerCase()}>`)
-  if (b.classes.length > 0) lines.push(`Classes: ${b.classes.join(' ')}`)
-  if (b.textPreview) lines.push(`Text: "${b.textPreview}"`)
-  if (b.url) lines.push(`URL: ${b.url}`)
-  if (b.userNote?.trim()) lines.push(`User note: ${b.userNote.trim()}`)
-  if (s.text && s.text !== b.textPreview) lines.push(s.text)
-  return lines.join('\n')
 }
