@@ -140,8 +140,13 @@ export const baseTheme = EditorView.theme({
     fontSize: "0.875em",
     lineHeight: "inherit",
     verticalAlign: "baseline",
-    boxDecorationBreak: "clone",
-    WebkitBoxDecorationBreak: "clone",
+    // `slice`, not `clone`: CodeMirror renders one inline-code mark as several
+    // adjacent DOM spans (stream-chunk / decoration boundaries). With `clone`
+    // every fragment gets its own horizontal padding, so a word like "Codex"
+    // shows interior gaps ("Cod ex"). `slice` applies padding/rounding only at
+    // the true outer edges and keeps the background continuous across splits.
+    boxDecorationBreak: "slice",
+    WebkitBoxDecorationBreak: "slice",
     color: "inherit",
     backgroundColor: "var(--pm-inline-code-background-color, var(--pm-code-background-color))",
   },

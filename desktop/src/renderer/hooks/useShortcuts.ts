@@ -477,7 +477,12 @@ export function useShortcuts() {
       // Cmd+J — focus terminal (or create one)
       if (!shift && !alt && e.key === 'j') {
         consume()
-        store.focusOrCreateTerminal()
+        const activeTab = store.tabs.find((tab) => tab.id === store.activeTabId)
+        if (activeTab?.type === 'conductor') {
+          store.focusOrCreateSideTerminal()
+        } else {
+          store.focusOrCreateTerminal()
+        }
         return
       }
 

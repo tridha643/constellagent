@@ -5369,26 +5369,8 @@ extension ConstellagentService {
         return appendAssistantDeltaFragment(to: existingText, incoming: incomingDelta)
     }
 
-    func needsAssistantWordBoundarySpace(existing: String, incoming: String) -> Bool {
-        guard !incoming.isEmpty else { return false }
-        guard incoming.first?.isWhitespace != true else { return false }
-        guard let last = existing.unicodeScalars.last,
-              let first = incoming.unicodeScalars.first else {
-            return false
-        }
-        let lastChar = Character(last)
-        let firstChar = Character(first)
-        return (lastChar.isLetter || lastChar.isNumber) && (firstChar.isLetter || firstChar.isNumber)
-    }
-
     func appendAssistantDeltaFragment(to existingText: String, incoming incomingDelta: String) -> String {
         guard !incomingDelta.isEmpty else { return existingText }
-        if needsAssistantWordBoundarySpace(existing: existingText, incoming: incomingDelta) {
-            debugMobileLog(
-                "mergeAssistantDelta wordBoundary existingTail=\(String(existingText.suffix(8))) incomingHead=\(String(incomingDelta.prefix(8)))"
-            )
-            return existingText + " " + incomingDelta
-        }
         return existingText + incomingDelta
     }
 

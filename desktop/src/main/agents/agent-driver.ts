@@ -63,8 +63,10 @@ export function promptEmitsFormatPrefix(
   provider: AgentProvider | undefined,
   canvas: boolean,
   includeFormatPrefix: boolean,
+  isSkillInvocation = false,
 ): boolean {
   if (!includeFormatPrefix) return false
+  if (isSkillInvocation) return false
   if (provider === 'pi' && isSingleLineSlashCommand(text)) return false
   if (isHarnessSlashCommand(text)) return false
   if (canvas && provider && provider !== 'pi') return false
@@ -85,6 +87,7 @@ export function buildAgentPrompt(
   provider?: AgentProvider,
   canvas = false,
   includeFormatPrefix = true,
+  isSkillInvocation = false,
 ): string {
   if (provider === 'pi' && isSingleLineSlashCommand(text)) {
     return text.trim()
@@ -95,7 +98,7 @@ export function buildAgentPrompt(
   const parts: string[] = []
   if (canvas && provider && provider !== 'pi') {
     parts.push(buildJsonCanvasPromptSuffix(provider))
-  } else if (promptEmitsFormatPrefix(text, provider, canvas, includeFormatPrefix)) {
+  } else if (promptEmitsFormatPrefix(text, provider, canvas, includeFormatPrefix, isSkillInvocation)) {
     parts.push(CONDUCTOR_MARKDOWN_FORMAT_PREFIX)
     parts.push(CONDUCTOR_RTK_PROMPT_PREFIX)
   }
@@ -242,8 +245,23 @@ export function needsAssistantWordBoundarySpace(existing: string, delta: string)
 }
 
 /**
- * Normalizes assistant stream chunks for both cumulative snapshots and
- * incremental word tokens before appending to transcript or broadcasting.
+ * Appends a driver-emitted delta fragment without word-boundary normalization.
+ * Cursor/Codex/Pi drivers already run `computeTextDelta` and emit append fragments;
+ * the host must not re-normalize or mid-word tokens become `" ex"` instead of `"ex"`.
+ */
+export function appendAssistantStreamDelta(
+  emitted: string,
+  fragment: string,
+): { delta: string; emitted: string } {
+  if (fragment.length === 0) {
+    return { delta: '', emitted }
+  }
+  return { delta: fragment, emitted: emitted + fragment }
+}
+
+/**
+ * Normalizes **cumulative snapshot** assistant stream chunks (e.g. Pi word tokens)
+ * before appending. Do not use at the chat host for driver-emitted deltas.
  */
 export function normalizeAssistantStreamDelta(
   emitted: string,

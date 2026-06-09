@@ -1,0 +1,308 @@
+.panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--term-bg);
+}
+
+.viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Session rail (top-docked, Conductor-style text tabs) ───────────────── */
+
+.rail {
+  flex: 0 0 34px;
+  min-height: 34px;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 92%, black 8%);
+  box-sizing: border-box;
+}
+
+.sessionList {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sessionList::-webkit-scrollbar {
+  display: none;
+}
+
+.sessionTab {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 92px;
+  max-width: 168px;
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-ui);
+}
+
+.sessionTabMain {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 22px 0 8px; /* right pad leaves room for the close affordance */
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  /* Color is the only animated property here — cheap, and it reads as a smooth
+     "wake up" rather than a hard swap when a tab becomes active. */
+  transition: color var(--duration-default) var(--ease-hover);
+}
+
+.sessionTabIcon {
+  flex: 0 0 auto;
+  opacity: 0.7;
+  transition: opacity var(--duration-default) var(--ease-hover);
+}
+
+.sessionTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* Subtle status dot, shown only when a session is NOT live (detached / missing
+   / error). Live sessions stay clean — absence of chrome is the signal. */
+.sessionDot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--text-ghost);
+}
+
+.sessionDot[data-status='error'] {
+  background: var(--accent-red);
+}
+
+/* Per-tab close — hidden until the tab (or its row) is hovered, like Conductor.
+   Position it over the main button's right padding so it never shifts the
+   title text. */
+.sessionClose {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-50%) scale(0.8);
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+/* Animated underline indicator — scales in from the center on activate. */
+.sessionUnderline {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 0;
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--accent-orange);
+  transform: scaleX(0);
+  transform-origin: center;
+  opacity: 0;
+  transition:
+    transform var(--duration-enter) var(--ease-out),
+    opacity var(--duration-enter) var(--ease-out);
+}
+
+.sessionTabActive .sessionTabMain {
+  color: var(--text-primary);
+}
+
+.sessionTabActive .sessionTabIcon {
+  opacity: 1;
+}
+
+.sessionTabActive .sessionUnderline {
+  transform: scaleX(1);
+  opacity: 1;
+}
+
+/* ── Rail actions ───────────────────────────────────────────────────────── */
+
+.railActions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.iconButton {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.iconButton:active {
+  transform: scale(0.92);
+}
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+
+.emptyState {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  color: var(--text-tertiary);
+  padding: var(--space-6);
+  box-sizing: border-box;
+}
+
+.emptyIcon {
+  color: var(--text-ghost);
+}
+
+.emptyTitle {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.emptyActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.primaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.primaryButton:active {
+  transform: scale(0.97);
+}
+
+/* ── Focus / hover ──────────────────────────────────────────────────────── */
+
+.iconButton:focus-visible,
+.primaryButton:focus-visible,
+.sessionTabMain:focus-visible,
+.sessionClose:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-blue) 60%, transparent);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sessionTab:hover .sessionClose,
+  .sessionClose:focus-visible {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+
+  .sessionClose:hover {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  }
+
+  .sessionTab:not(.sessionTabActive):hover .sessionTabMain {
+    color: var(--text-secondary);
+  }
+
+  .iconButton:hover {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  }
+
+  .dangerButton:hover {
+    color: var(--accent-red);
+    background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+  }
+
+  .primaryButton:hover {
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+    border-color: color-mix(in srgb, var(--text-primary) 22%, var(--panel-border));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sessionUnderline,
+  .sessionClose,
+  .sessionTabMain,
+  .sessionTabIcon,
+  .iconButton,
+  .primaryButton {
+    transition-duration: 0ms;
+  }
+
+  .sessionUnderline {
+    transform: scaleX(1);
+  }
+
+  .iconButton:active,
+  .primaryButton:active {
+    transform: none;
+  }
+}

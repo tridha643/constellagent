@@ -47,6 +47,12 @@ import type {
 } from '../shared/mobile-settings-types'
 import type { CodexWebSocketsSetting } from '../shared/codex-websockets'
 import type { SpotlightStatus } from '../shared/spotlight-types'
+import type {
+  TerminalSessionAttachRequest,
+  TerminalSessionAttachResult,
+  TerminalSessionAvailability,
+  TerminalSessionSummary,
+} from '../shared/terminal-session-types'
 
 /** Linear GraphQL via main process (renderer fetch hits CORS). Exposed on `api` and `api.app`. */
 function linearGraphql(
@@ -252,6 +258,19 @@ const api = {
       ipcRenderer.invoke(IPC.PTY_SCROLLBACK_SAVE, key, text) as Promise<boolean>,
     deleteScrollback: (key: string) =>
       ipcRenderer.invoke(IPC.PTY_SCROLLBACK_DELETE, key) as Promise<boolean>,
+  },
+
+  terminalSession: {
+    availability: () =>
+      ipcRenderer.invoke(IPC.TERMINAL_SESSION_AVAILABILITY) as Promise<TerminalSessionAvailability>,
+    createAttach: (input: TerminalSessionAttachRequest) =>
+      ipcRenderer.invoke(IPC.TERMINAL_SESSION_CREATE_ATTACH, input) as Promise<TerminalSessionAttachResult>,
+    attach: (input: TerminalSessionAttachRequest) =>
+      ipcRenderer.invoke(IPC.TERMINAL_SESSION_ATTACH, input) as Promise<TerminalSessionAttachResult | { status: 'missing' }>,
+    list: (workspaceId?: string) =>
+      ipcRenderer.invoke(IPC.TERMINAL_SESSION_LIST, workspaceId) as Promise<TerminalSessionSummary[]>,
+    kill: (sessionName: string) =>
+      ipcRenderer.invoke(IPC.TERMINAL_SESSION_KILL, sessionName) as Promise<{ ok: boolean }>,
   },
 
   packageScripts: {

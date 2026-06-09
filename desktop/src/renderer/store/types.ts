@@ -18,6 +18,7 @@ import type { GitStatusSnapshot, WorkingTreeDiffSnapshot, WorkingTreeFileStatus 
 import { getDefaultWorktreeCredentialRules } from '../../shared/worktree-credentials'
 import type { AgentProvider } from '../../shared/agent-chat-types'
 import type { ThinkingLevel } from '../../shared/conductor-thinking'
+import type { TerminalSessionBackend, TerminalSessionStatus } from '../../shared/terminal-session-types'
 import {
   DEFAULT_CONDUCTOR_PROVIDER,
   defaultConductorModel,
@@ -162,6 +163,8 @@ export type Tab = {
 export type Side = 'left' | 'right'
 
 export type PanelType = 'project' | 'files' | 'changes' | 'graph' | 'browser' | 'sideChat'
+
+export type RightSidebarBottomPanel = 'setup' | 'spotlight' | 'terminal'
 
 export interface SidePanelState {
   open: boolean
@@ -730,6 +733,19 @@ export interface ReviewPanelPersistedState {
   selectedIds: string[]
 }
 
+export interface SideTerminalSession {
+  id: string
+  workspaceId: string
+  backend: TerminalSessionBackend
+  sessionName?: string
+  clientPtyId?: string
+  title: string
+  status: TerminalSessionStatus
+  createdAt: number
+  lastAttachedAt?: number
+  error?: string
+}
+
 export interface AppState {
   // Data
   projects: Project[]
@@ -752,6 +768,10 @@ export interface AppState {
   reviewPanelStateByWorkspace: Record<string, ReviewPanelPersistedState>
   /** Per-workspace staged-file selection in the right-panel Changes view. */
   stagedSelectionByWorkspace: Record<string, string[]>
+  /** Per-workspace tmux-backed side terminal sessions. Client PTY ids are ephemeral. */
+  sideTerminalsByWorkspace: Record<string, SideTerminalSession[]>
+  /** Bottom dock inside the right sidebar, separate from the top panel mode switcher. */
+  rightSidebarBottomPanel: RightSidebarBottomPanel
   /** Ephemeral: active drag payload while a side-panel tab is being docked. */
   panelDockDrag: PanelDockDrag | null
   /** Ephemeral: manually collapsed project sections in the project navigation panel. */
@@ -923,6 +943,14 @@ export interface AppState {
   switchToTabByIndex: (index: number) => void
   closeAllWorkspaceTabs: () => void
   focusOrCreateTerminal: () => Promise<void>
+  focusOrCreateSideTerminal: () => Promise<void>
+  createSideTerminalForActiveWorkspace: (options?: { title?: string; initialCommand?: string }) => Promise<void>
+  attachSideTerminal: (workspaceId: string, terminalId: string) => Promise<void>
+  detachSideTerminal: (workspaceId: string, terminalId: string) => void
+  killSideTerminalSession: (workspaceId: string, terminalId: string) => Promise<void>
+  reconcileSideTerminalsForWorkspace: (workspaceId: string) => Promise<void>
+  handleSideTerminalClientExit: (ptyId: string) => void
+  setRightSidebarBottomPanel: (panel: RightSidebarBottomPanel) => void
   splitTerminalPaneForTab: (tabId: string, direction: 'horizontal' | 'vertical') => Promise<void>
   splitTerminalPane: (direction: 'horizontal' | 'vertical') => Promise<void>
   openFileInSplit: (filePath: string, direction?: 'horizontal' | 'vertical') => Promise<void>
@@ -1102,4 +1130,5 @@ export interface PersistedState {
    * diff viewer and are regenerated on demand).
    */
   workingTreeStatusByPath?: Record<string, GitStatusSnapshot>
+  sideTerminalsByWorkspace?: Record<string, SideTerminalSession[]>
 }

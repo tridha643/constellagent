@@ -197,6 +197,8 @@ export function ContextUsageHover({
   const showTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const hoveringRef = useRef(false)
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
 
   const pct = Math.min(100, Math.max(0, data.percentage))
 
@@ -209,12 +211,12 @@ export function ContextUsageHover({
     clearTimeout(hideTimer.current)
     hideTimer.current = setTimeout(() => {
       if (!hoveringRef.current) {
-        if (visible) lastPopoverHidden = Date.now()
+        if (visibleRef.current) lastPopoverHidden = Date.now()
         setEntered(false)
         setVisible(false)
       }
     }, HIDE_DELAY)
-  }, [visible])
+  }, [])
 
   const show = useCallback(() => {
     clearTimeout(hideTimer.current)

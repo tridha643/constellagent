@@ -1,4 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import type { SessionRef } from '@pi-gui/session-driver'
 import { AGENT_SDK_HOOK_CAPABILITIES } from './agent-sdk-hooks'
 
@@ -62,6 +64,13 @@ describe('buildCursorUserMessage', () => {
       text: 'look',
       images: [{ data: 'aW1hZ2U=', mimeType: 'image/png' }],
     })
+  })
+})
+
+describe('cursor driver skill settings', () => {
+  it('loads all Cursor setting sources for local agents', () => {
+    const source = readFileSync(join(import.meta.dir, 'cursor-driver.ts'), 'utf-8')
+    expect(source).toContain("settingSources: ['all'")
   })
 })
 

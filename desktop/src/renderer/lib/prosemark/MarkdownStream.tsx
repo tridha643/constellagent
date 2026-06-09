@@ -47,6 +47,8 @@ export interface MarkdownStreamHandle {
   setContent(text: string): void;
   /** Force a full parse + decoration rebuild (call when streaming completes). */
   refreshDecorations(): void;
+  /** End streaming mode and sync the final document from transcript text. */
+  endStreaming(content: string): void;
 }
 
 export interface MarkdownStreamProps {
@@ -260,6 +262,18 @@ const MarkdownStream = forwardRef<MarkdownStreamHandle, MarkdownStreamProps>(fun
         const view = viewRef.current;
         if (!view) return;
         refreshProsemarkDecorations(view);
+      },
+      endStreaming(content: string) {
+        const view = viewRef.current;
+        if (!view) return;
+        streamingRef.current = false;
+        lastPropContentRef.current = content;
+        const current = view.state.doc.toString();
+        if (current === content) return;
+        dispatchDocChange(view, {
+          changes: { from: 0, to: view.state.doc.length, insert: content },
+          selection: selectionAtEnd(content.length),
+        });
       },
     }),
     [],

@@ -34,12 +34,15 @@ Checked, ~now, via `nia` against indexed source + the local drivers:
     (`status_indicator_widget.rs`, self-scheduling 32ms); only the answer streams through the
     line pipeline.
 - **Local drivers** (`cursor-driver.ts`, `codex-driver.ts`, `agent-driver.ts`,
-  `agent-chat-host.ts`): both providers emit **cumulative full-text snapshots**; the host
-  prefix-diffs via `computeTextDelta`/`normalizeAssistantStreamDelta` and broadcasts a small
-  delta over `AGENT_CHAT_ASSISTANT_DELTA` **immediately, un-throttled, per token**. The
-  renderer (`ChatMessage.tsx`) then calls `MarkdownStream.appendDelta` **directly on every
-  delta**. → **render cadence == network cadence == bursty.** This is the core "doesn't feel
-  good" cause.
+  `agent-chat-host.ts`): Cursor/Codex drivers run `computeTextDelta` in the driver and emit
+  **append fragments** (`assistantDelta.text` is only the new suffix). The host must **not**
+  re-normalize those fragments (`appendAssistantStreamDelta` — plain concat); Pi-style
+  cumulative callers may still use `normalizeAssistantStreamDelta`. Deltas broadcast over
+  `AGENT_CHAT_ASSISTANT_DELTA` **immediately, un-throttled, per token**. The renderer
+  (`ChatMessage.tsx`) then calls `MarkdownStream.appendDelta` **directly on every delta**. →
+  **render cadence == network cadence == bursty.** This is the core "doesn't feel good" cause.
+  (A prior bug inserted literal mid-word spaces via host re-normalization — fixed separately;
+  that corruption was transcript-level, not a pacing issue.)
 - **codehike token-transitions** (docs) — confirms the WAAPI `element.animate` approach for
   smooth code-block transitions if we want animated code later (non-goal for v1).
 - **emil-design-eng / web-animation-design**: fade is comprehension-aiding and *allowed* under
