@@ -26,6 +26,8 @@ export interface WorkspaceSection {
   kind: SectionKind
   label: string
   workspaces: Workspace[]
+  /** True for the seeded catch-all (Non-priority) folder — not deletable in the UI. */
+  isDefault?: boolean
 }
 
 /**
@@ -109,58 +111,88 @@ function compareByActivityThenName(a: Workspace, b: Workspace): number {
 }
 
 /**
- * Split a project's workspaces into ordered sections: the hand-ordered Pinned
- * override first, then user-created manual sections (in their `order`), then the
- * auto status buckets. Placement precedence per workspace: custom `sectionId` →
- * `pinned` → `bucketOverride` (force into a bucket) → derived status. Every
- * section is always emitted — even when empty — so any of them can be used as a
- * drop target to override a workspace's placement.
+ * Split a project's workspaces into its folder sections. Every workspace lives in
+ * a folder: an explicit `sectionId` if it still exists, otherwise the default
+ * (Non-priority) catch-all. Folders render in `order`, always emitted — even when
+ * empty — so each stays a valid drop target. There are no auto status buckets or
+ * a Pinned section anymore; placement is purely the user's folders.
+ *
+ * `resolveSignals`/`now` are unused now (folders aren't status-derived) but kept
+ * in the signature for call-site + test compatibility. `deriveBucket` is retained
+ * (and exported) for any status-badge callers.
  */
 export function getWorkspaceSections(
   workspaces: Workspace[],
-  resolveSignals: (workspace: Workspace) => WorkspaceSignals,
-  now: number,
+  _resolveSignals: (workspace: Workspace) => WorkspaceSignals,
+  _now: number,
   customSections: CustomSection[] = [],
 ): WorkspaceSection[] {
   const orderedCustom = customSections.slice().sort((a, b) => a.order - b.order)
   const validSectionIds = new Set(orderedCustom.map((sec) => sec.id))
-  const customMembers = new Map<string, Workspace[]>(orderedCustom.map((sec) => [sec.id, []]))
+  // The catch-all folder absorbs every workspace without an explicit assignment:
+  // the flagged default, else the last folder.
+  const defaultSection =
+    orderedCustom.find((sec) => sec.isDefault) ??
+    orderedCustom[orderedCustom.length - 1]
 
-  const pinned: Workspace[] = []
-  const buckets: Record<WorkspaceBucket, Workspace[]> = {
-    'needs-you': [],
-    'in-review': [],
-    active: [],
-    idle: [],
-  }
+  const members = new Map<string, Workspace[]>(
+    orderedCustom.map((sec) => [sec.id, []]),
+  )
+  const ungrouped: Workspace[] = []
 
   for (const ws of workspaces) {
     if (ws.sectionId && validSectionIds.has(ws.sectionId)) {
-      customMembers.get(ws.sectionId)!.push(ws)
-      continue
+      members.get(ws.sectionId)!.push(ws)
+    } else if (defaultSection) {
+      members.get(defaultSection.id)!.push(ws)
+    } else {
+      ungrouped.push(ws)
     }
-    if (ws.pinned) {
-      pinned.push(ws)
-      continue
-    }
-    const bucket = ws.bucketOverride ?? deriveBucket(resolveSignals(ws), now)
-    buckets[bucket].push(ws)
   }
 
-  pinned.sort((a, b) => (a.pinOrder ?? 0) - (b.pinOrder ?? 0))
-  for (const members of customMembers.values()) members.sort(compareByActivityThenName)
-  for (const bucket of WORKSPACE_BUCKET_ORDER) buckets[bucket].sort(compareByActivityThenName)
+  for (const list of members.values()) list.sort(compareByActivityThenName)
 
-  const sections: WorkspaceSection[] = [
-    { id: 'pinned', kind: 'pinned', label: WORKSPACE_SECTION_LABELS.pinned, workspaces: pinned },
-  ]
-  for (const sec of orderedCustom) {
-    sections.push({ id: sec.id, kind: 'custom', label: sec.name, workspaces: customMembers.get(sec.id)! })
-  }
-  for (const bucket of WORKSPACE_BUCKET_ORDER) {
-    sections.push({ id: bucket, kind: 'auto', label: WORKSPACE_SECTION_LABELS[bucket], workspaces: buckets[bucket] })
+  const sections: WorkspaceSection[] = orderedCustom.map((sec) => ({
+    id: sec.id,
+    kind: 'custom',
+    label: sec.name,
+    workspaces: members.get(sec.id)!,
+    isDefault: sec.isDefault,
+  }))
+
+  // Safety net: a project not yet seeded still shows its workspaces.
+  if (!defaultSection && ungrouped.length > 0) {
+    ungrouped.sort(compareByActivityThenName)
+    sections.push({
+      id: '__ungrouped',
+      kind: 'custom',
+      label: 'Non-priority',
+      workspaces: ungrouped,
+      isDefault: true,
+    })
   }
   return sections
+}
+
+/** Build the two seeded folders for a project: Priority + the default Non-priority catch-all. */
+export function buildDefaultCustomSections(projectId: string): CustomSection[] {
+  return [
+    { id: crypto.randomUUID(), projectId, name: 'Priority', order: 0 },
+    { id: crypto.randomUUID(), projectId, name: 'Non-priority', order: 1, isDefault: true },
+  ]
+}
+
+/** Append the seeded folders for any project that currently has none. Idempotent. */
+export function ensureDefaultCustomSections(
+  projects: { id: string }[],
+  sections: CustomSection[],
+): CustomSection[] {
+  const have = new Set(sections.map((s) => s.projectId))
+  const additions: CustomSection[] = []
+  for (const p of projects) {
+    if (!have.has(p.id)) additions.push(...buildDefaultCustomSections(p.id))
+  }
+  return additions.length ? [...sections, ...additions] : sections
 }
 
 export function getVisibleWorkspaces(

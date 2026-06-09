@@ -156,6 +156,8 @@ export interface CustomSection {
   name: string
   /** Sort order among a project's custom sections (ascending). */
   order: number
+  /** True for the seeded catch-all ("Non-priority"): absorbs unassigned workspaces and can't be deleted. */
+  isDefault?: boolean
 }
 
 export type SplitLeaf =
@@ -282,12 +284,18 @@ export function normalizeLinearWorkspaceToolbarTool(
   return 'search'
 }
 
-/** Linear panel main view: issues list, projects grid, tickets composer, or project updates composer. */
-export type LinearWorkspaceView = 'issues' | 'projects' | 'tickets' | 'updates'
+/** Linear panel main view: kanban dashboard, issues list, projects grid, tickets composer, or project updates composer. */
+export type LinearWorkspaceView =
+  | 'dashboard'
+  | 'issues'
+  | 'projects'
+  | 'tickets'
+  | 'updates'
 
 export type LinearWorkspaceTab = LinearWorkspaceView
 
 const LINEAR_WORKSPACE_TAB_ORDER_DEFAULT: LinearWorkspaceTab[] = [
+  'dashboard',
   'issues',
   'projects',
   'tickets',
@@ -296,13 +304,17 @@ const LINEAR_WORKSPACE_TAB_ORDER_DEFAULT: LinearWorkspaceTab[] = [
 
 function isLinearWorkspaceTab(v: unknown): v is LinearWorkspaceTab {
   return (
-    v === 'issues' || v === 'projects' || v === 'tickets' || v === 'updates'
+    v === 'dashboard' ||
+    v === 'issues' ||
+    v === 'projects' ||
+    v === 'tickets' ||
+    v === 'updates'
   )
 }
 
 export function normalizeLinearWorkspaceView(v: unknown): LinearWorkspaceView {
   if (isLinearWorkspaceTab(v)) return v
-  return 'issues'
+  return 'dashboard'
 }
 
 /** Persisted order of the Linear workspace pill. Drops unknowns; appends any missing tab ids so forward-migrations (new tabs) never disappear. */
@@ -681,8 +693,8 @@ export const DEFAULT_SETTINGS: Settings = {
   linearProjectUpdateBar: [],
   linearFavoriteProjectIds: [],
   linearWorkspaceToolbarTool: 'search',
-  linearWorkspaceView: 'issues',
-  linearWorkspaceTabOrder: ['issues', 'projects', 'tickets', 'updates'],
+  linearWorkspaceView: 'dashboard',
+  linearWorkspaceTabOrder: ['dashboard', 'issues', 'projects', 'tickets', 'updates'],
   linearIssueScope: 'assigned',
   linearIssuesPriorityPreset: 'all',
   linearIssueFilters: { priorities: [], stateTypes: [], teamKeys: [], text: '' },

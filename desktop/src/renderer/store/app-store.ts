@@ -45,6 +45,10 @@ import {
 } from './types'
 import { migrateFoldersToOverrides } from './folder-migration'
 import {
+  buildDefaultCustomSections,
+  ensureDefaultCustomSections,
+} from './sidebar-navigation'
+import {
   formatLinearIssueAgentPrompt,
   linearIssueAgentBranchName,
   linearIssueMoveToInProgress,
@@ -721,7 +725,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addProject: (project) => {
     const normalizedProject = normalizeProject(project)
-    set((s) => ({ projects: [...s.projects, normalizedProject] }))
+    set((s) => ({
+      projects: [...s.projects, normalizedProject],
+      // Seed the default Priority / Non-priority folders for the new project.
+      customSections: [
+        ...s.customSections,
+        ...buildDefaultCustomSections(normalizedProject.id),
+      ],
+    }))
     void syncExternalProjectStartupCommandsForProject(
       normalizedProject.id,
       normalizedProject.repoPath,
@@ -1089,7 +1100,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteCustomSection: (sectionId) => {
     set((s) => {
-      if (!s.customSections.some((sec) => sec.id === sectionId)) return s
+      const target = s.customSections.find((sec) => sec.id === sectionId)
+      if (!target) return s
+      if (target.isDefault) return s // the Non-priority catch-all is permanent
       return {
         customSections: s.customSections.filter((sec) => sec.id !== sectionId),
         // Members revert to auto placement.
@@ -3932,7 +3945,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       projects,
       workspaces: sanitizedWorkspaces,
-      customSections: hydratedCustomSections,
+      // Seed default Priority / Non-priority folders for any project that has none
+      // (covers fresh installs and pre-folders persisted state).
+      customSections: ensureDefaultCustomSections(projects, hydratedCustomSections),
       collapsedSidebarSections: normalizeCollapsedSidebarSections(data.collapsedSidebarSections),
       tabs,
       automations: (data.automations ?? []).map((automation) => normalizeRendererAutomation(automation)),
