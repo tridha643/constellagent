@@ -14,15 +14,13 @@ Bun workspaces: root `package.json` declares `["packages/*", "desktop"]`.
 | `ios/Constellagent/` | SwiftUI iPhone companion app (Xcode; see `ios/Constellagent/README.md`) |
 | `packages/constellagent-mobile-protocol/` | `@constellagent/mobile-protocol` — shared **Zod** schemas / RPC + event types for mobile ↔ desktop |
 | `packages/review-annotations/` | `@tridha643/review-annotations` — review-annotation + memory library; ships the **`constell-annotate`** CLI |
-| `packages/pi-gui-session-driver/` | `@pi-gui/session-driver` — durable session-driver contract (base, no deps) |
-| `packages/pi-gui-catalogs/` | `@pi-gui/catalogs` — catalog data structures for pi-gui sessions |
-| `packages/pi-gui-pi-sdk-driver/` | `@pi-gui/pi-sdk-driver` — thin SDK session driver over the pi runtime (has its own `AGENTS.md`) |
+| `desktop/src/lib/pi-gui/` | Vendored `@pi-gui/*` sources (`session-driver`, `catalogs`, `pi-sdk-driver`) for Pi Conductor; resolved via electron-vite aliases |
 | `packages/pi-constell/` | `pi-constell-plan` — Claude-Code-style plan mode for the `pi` CLI |
 | `packages/pi-inline-skill-autocomplete/` | inline skill autocomplete extension for `pi` |
 | `landing-page/` | static marketing site (vanilla HTML/CSS/JS; `bunx serve landing-page`) |
 | `scripts/` | repo-root shell scripts (skill install, isolated dev, worktree sync) |
 
-**Root scripts** (`package.json`): `bun run setup`, `bun run dev`, `bun run build`, `bun run test`, `bun run dev-isolated`, `bun run dist`, `bun run rebuild`. `dev`/`build` first build `constellagent-mobile-protocol` and the `pi-gui-*` packages; the mobile-protocol + pi-gui packages also build automatically on `bun install` (`postinstall`).
+**Root scripts** (`package.json`): `bun run setup`, `bun run dev`, `bun run build`, `bun run test`, `bun run dev-isolated`, `bun run dist`, `bun run rebuild`. `dev`/`build` first build `constellagent-mobile-protocol`; mobile-protocol also builds automatically on `bun install` (`postinstall`).
 
 **Root scripts directory** (`scripts/`):
 

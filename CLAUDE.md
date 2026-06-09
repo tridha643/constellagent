@@ -14,7 +14,7 @@ Bun workspaces (`["packages/*", "desktop"]`). For a file-by-file service map of 
 | iOS companion | `ios/Constellagent/` | SwiftUI; see `ios/Constellagent/README.md` |
 | Mobile wire protocol | `packages/constellagent-mobile-protocol/` | `@constellagent/mobile-protocol`; Zod schemas; built on `bun install` |
 | Review annotations | `packages/review-annotations/` | `@tridha643/review-annotations`; ships the `constell-annotate` CLI |
-| Pi GUI packages | `packages/pi-gui-{session-driver,catalogs,pi-sdk-driver}/` | `@pi-gui/*` session driver + catalogs |
+| Pi GUI (vendored) | `desktop/src/lib/pi-gui/` | `@pi-gui/*` session driver + catalogs for Pi Conductor (electron-vite aliases) |
 | Pi CLI extensions | `packages/pi-constell/`, `packages/pi-inline-skill-autocomplete/` | plan mode + inline skill autocomplete for `pi` |
 | Landing page | `landing-page/` | static marketing site (`bunx serve landing-page`) |
 | Desktop mobile bridge | `desktop/src/main/mobile-*.ts` | Tailscale-local WS + E2EE; Settings → Mobile |

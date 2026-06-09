@@ -149,7 +149,6 @@ import {
 import { pathsEqualOrAlias } from '../../shared/agent-plan-path'
 import type { GitStatusSnapshot, WorkingTreeDiffSnapshot } from '../types/working-tree-diff'
 import { normalizeEditorLanguageOverrideMap } from '../utils/language-map'
-import type { DesktopAppState } from '../../shared/pi/pi-desktop-state'
 import {
   DEFAULT_AUTOMATION_COOLDOWN_MS,
   type AutomationAction,
@@ -1512,73 +1511,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       }).catch(() => {})
     }
   },
-
-  createPiThreadForActiveWorkspace: async () => {
-    const s = get()
-    if (!s.activeWorkspaceId) return
-    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
-    if (!ws) return
-
-    const wsTabs = s.tabs.filter((t) => t.workspaceId === s.activeWorkspaceId)
-    const piCount = wsTabs.filter((t) => t.type === 'pi-thread').length
-    const fallbackTitle = piCount === 0 ? 'PI Chat' : `PI Chat ${piCount + 1}`
-
-    const tabId = crypto.randomUUID()
-    try {
-      let piState = (await window.api.pi.syncWorkspace(ws.worktreePath, ws.name)) as DesktopAppState
-      const piWs =
-        piState.workspaces.find((w) => pathsEqualOrAlias(w.path, ws.worktreePath)) ??
-        piState.workspaces.find((w) => ws.worktreePath.startsWith(w.path)) ??
-        piState.workspaces.find((w) => w.path.startsWith(ws.worktreePath))
-
-      if (!piWs) {
-        get().addTab({
-          id: tabId,
-          workspaceId: s.activeWorkspaceId,
-          type: 'pi-thread',
-          title: fallbackTitle,
-        })
-        return
-      }
-
-      piState = (await window.api.pi.createSession({ workspaceId: piWs.id })) as DesktopAppState
-      const sessionId = piState.selectedSessionId
-      const updatedWs = piState.workspaces.find((w) => w.id === piWs.id)
-      const sess = updatedWs?.sessions.find((x) => x.id === sessionId)
-      const title = sess?.title?.trim() ? sess.title.trim() : fallbackTitle
-
-      get().addTab({
-        id: tabId,
-        workspaceId: s.activeWorkspaceId,
-        type: 'pi-thread',
-        title,
-        piSessionId: sessionId || undefined,
-        piSessionTitle: sess?.title,
-      })
-    } catch {
-      get().addTab({
-        id: tabId,
-        workspaceId: s.activeWorkspaceId,
-        type: 'pi-thread',
-        title: fallbackTitle,
-      })
-    }
-  },
-
-  setPiThreadSessionBinding: (tabId, piSessionId, title) =>
-    set((state) => ({
-      tabs: state.tabs.map((t) =>
-        t.id === tabId && t.type === 'pi-thread'
-          ? {
-              ...t,
-              piSessionId,
-              ...(title !== undefined
-                ? { title, piSessionTitle: title }
-                : {}),
-            }
-          : t,
-      ),
-    })),
 
   createConductorTabForActiveWorkspace: () => {
     const s = get()
@@ -3669,7 +3601,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       : null
     // Tabs will be reconciled with live PTYs asynchronously after set.
     // Normalize split trees from old persisted state (leaves without contentType).
-    const rawTabs = data.tabs ?? []
+    const rawTabs = (data.tabs ?? []).filter((tab) => tab.type !== 'pi-thread')
     const tabs = rawTabs.map((tab) => {
       if (tab.type === 'terminal' && tab.splitRoot) {
         return { ...tab, splitRoot: normalizeSplitTree(tab.splitRoot) }
@@ -3679,7 +3611,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       return tab
     })
-    const activeTabId = data.activeTabId ?? null
+    let activeTabId = data.activeTabId ?? null
+    if (activeTabId && !tabs.some((tab) => tab.id === activeTabId)) {
+      activeTabId = null
+    }
+    const lastActiveTabByWorkspace = Object.fromEntries(
+      Object.entries(data.lastActiveTabByWorkspace ?? {}).filter(([, tabId]) =>
+        tabs.some((tab) => tab.id === tabId),
+      ),
+    )
     const seeded = seedFoldersForProjects(projects, workspaces, normalizeFolders(data.folders))
     // Seed working-tree snapshots from persisted statuses so the Changes panel
     // can render synchronously at cold boot. Diff bodies aren't persisted —
@@ -3707,7 +3647,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       automations: (data.automations ?? []).map((automation) => normalizeRendererAutomation(automation)),
       activeWorkspaceId,
       activeTabId,
-      lastActiveTabByWorkspace: data.lastActiveTabByWorkspace ?? {},
+      lastActiveTabByWorkspace,
       sidePanels,
       collapsedProjectIds: new Set(),
       lastActiveWorkspaceByProjectId: activeWorkspaceId

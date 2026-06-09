@@ -66,7 +66,7 @@ Conductor is the app's native agent chat. Each Conductor tab is one persistent s
 
 **Side chat panel** — `/side` (or "Open in side chat" actions) opens a second, narrower Conductor chat docked next to the main layout. It forks the current thread's context, inherits the provider/model/thinking settings, and runs independently — useful for side research or follow-ups while the main agent is still working.
 
-**Pi thread panel** — a dedicated multi-session panel for the Pi coding agent, with live tool-execution activity, extension UI dialogs, and session switching, backed by the `@pi-gui/*` workspace packages.
+**Pi Conductor provider** — run Pi as a Conductor agent with extension UI dialogs and streaming transcripts; `@pi-gui/*` sources are vendored under `desktop/src/lib/pi-gui/`.
 
 ---
 
@@ -219,9 +219,7 @@ Bun workspaces monorepo (`["packages/*", "desktop"]`).
 | `ios/Constellagent/` | SwiftUI iPhone companion app (see `ios/Constellagent/README.md`) |
 | `packages/constellagent-mobile-protocol/` | `@constellagent/mobile-protocol` — shared Zod schemas for mobile ↔ desktop RPC, events, and E2EE pairing |
 | `packages/review-annotations/` | `@tridha643/review-annotations` — libSQL-backed review annotations + repo memory; ships the `constell-annotate` CLI |
-| `packages/pi-gui-session-driver/` | `@pi-gui/session-driver` — durable session-driver contract for pi-gui |
-| `packages/pi-gui-catalogs/` | `@pi-gui/catalogs` — catalog data structures for pi-gui sessions |
-| `packages/pi-gui-pi-sdk-driver/` | `@pi-gui/pi-sdk-driver` — session driver over the [pi](https://github.com/badlogic/pi-mono) coding-agent SDK |
+| `desktop/src/lib/pi-gui/` | Vendored `@pi-gui/*` sources for Pi Conductor (`session-driver`, `catalogs`, `pi-sdk-driver`) |
 | `packages/pi-constell/` | `pi-constell-plan` — Claude-Code-style plan mode extension for the `pi` CLI |
 | `packages/pi-inline-skill-autocomplete/` | Inline skill-name autocomplete extension for the `pi` CLI |
 | `landing-page/` | Static marketing site (`bun run landing`) |
@@ -240,7 +238,7 @@ bun run setup   # installs deps, rebuilds native modules, and installs bundled a
 bun run dev
 ```
 
-`dev` and `build` first compile the workspace packages (`@constellagent/mobile-protocol`, `@pi-gui/*`), then start the Electron app.
+`dev` and `build` first compile `@constellagent/mobile-protocol`, then start the Electron app.
 
 For isolated development state per git worktree:
 

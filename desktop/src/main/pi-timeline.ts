@@ -1,4 +1,4 @@
-import { sessionKey } from "@pi-gui/pi-sdk-driver";
+import { sessionKey } from "@pi-gui/session-driver";
 import type { SessionDriverEvent, SessionRef } from "@pi-gui/session-driver";
 import type { TranscriptMessage } from "../shared/pi/pi-desktop-state";
 import {

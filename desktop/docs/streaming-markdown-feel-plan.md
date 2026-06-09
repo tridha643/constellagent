@@ -65,8 +65,7 @@ collapses per-token Shiki/mermaid re-renders into ≤1 dispatch per frame.
    parse + Shiki/mermaid decorations (`MarkdownStream.tsx:164-165`). Fast streams spike CPU.
 3. **Decoration "pop."** Tables/folds/mermaid resolve on a 120ms debounce
    (`PROSEMARK_DECORATION_SYNC_DELAY_MS`), so structure visibly snaps in behind the text.
-4. **Variant remount flicker.** `pi-gui/message-markdown.tsx:97` keys the wrapper on `variant`;
-   a mid-stream plain→prosemark/segmented switch **remounts** and drops the subtree.
+4. **Variant remount flicker.** *(Historical — `pi-gui/message-markdown.tsx` was removed with the Pi Thread rip-out.)* Conductor now renders assistant markdown via `MarkdownStream` / prosemark only; any variant-key remount risk lives in `ChatMessage` wiring, not pi-gui.
 5. **No liveness cue.** Native CM caret is hidden (`prosemark-chat-theme.css:210`); there is no
    streaming caret. Only the empty-state `MuloadLoader` signals activity.
 6. **Motion not preference-aware in JS.** `usePrefersReducedMotion()` exists but neither
@@ -75,7 +74,7 @@ collapses per-token Shiki/mermaid re-renders into ≤1 dispatch per frame.
 ## Non-goals (v1)
 
 - Animated per-token code transitions (codehike) — later.
-- Reworking the Streamdown pi-gui fallback (only the remount-key fix).
+- Pi Thread / `message-markdown` fallback (removed — Conductor-only prosemark path).
 - Changing the main-process delta protocol or driver diffing.
 - Per-character DOM fade (too expensive in CM6 — see Decision 4).
 
@@ -92,7 +91,7 @@ collapses per-token Shiki/mermaid re-renders into ≤1 dispatch per frame.
 | 5 | **Streaming caret** | Custom caret widget (`▍`) at doc end via a CodeMirror decoration, shown only while streaming. Gentle blink (`opacity` step, ~1.06s). Replaces the hidden native caret. |
 | 6 | **Reduced motion** | When `prefers-reduced-motion: reduce`: **bypass the pacer** (instant append), no trailing fade, **static** (non-blinking) caret. Driven by `usePrefersReducedMotion()` in `ChatMessage`. |
 | 7 | **Mermaid during stream** | Skip rendering an **unclosed** ` ```mermaid ` fence; only render once the closing fence arrives. Avoids flashing broken/҂error diagrams mid-stream. |
-| 8 | **Variant stability** | Lock the pi-gui `message-markdown` variant for the lifetime of a streaming message (don't switch plain→prosemark mid-stream) so the `key={variant}` wrapper never remounts. |
+| 8 | **Variant stability** | *(N/A after pi-thread removal.)* Ensure `ChatMessage` does not remount `MarkdownStream` mid-stream (stable React keys / no variant flip on the streaming subtree). |
 | 9 | **Scope of pacer** | Pacer governs the **assistant answer** only. Reasoning/thinking stays in its existing transient channel (ActivityTicker / MuloadLoader) — ephemeral, not paced. |
 | 10 | **Tokens & easing** | Reuse existing `--ease-out: cubic-bezier(0.23,1,0.32,1)`, `--duration-enter: 200ms`. Trailing fade ~200–300ms ease-out. Keep the existing 200ms `messageFadeIn` entrance. |
 
@@ -137,7 +136,7 @@ finalize(): flush remaining → refreshDecorations()  → clean full render
 | `lib/prosemark/MarkdownStream.tsx` | Mod | Add `setStreaming(active)` to the imperative handle (drives caret/trailing decorations); wire the new extension. |
 | `chat/ChatMessage.tsx` | Mod | Replace direct `appendDelta`-on-change with the pacer; call `setStreaming`; consult `usePrefersReducedMotion()` to bypass pacer/fade and freeze the caret. |
 | `lib/prosemark/mermaid/mermaid-decorations.ts` | Mod | Skip unclosed mermaid fences (Decision 7). |
-| `pi-gui/message-markdown.tsx` | Mod | Stabilize streaming `variant` (Decision 8). |
+| `chat/ChatMessage.tsx` | Mod | Stable streaming subtree keys (Decision 8 — no pi-gui `message-markdown`). |
 | `lib/prosemark/prosemark-chat-theme.css` | Mod | Caret styles + blink keyframes, trailing-fade mask, `prefers-reduced-motion` guards. |
 
 ---
@@ -158,7 +157,7 @@ finalize(): flush remaining → refreshDecorations()  → clean full render
 | New turn starts (new streaming message) | Pacer `reset()` for the new message id; previous message frozen as final. |
 | Provider sends identical final `AgentMessage` after deltas | Host already prefix-diffs to empty delta; pacer sees no new target → no-op (no re-render). |
 | Component unmounts mid-stream | rAF cancelled in cleanup; no leaked frame loop. |
-| Variant would switch plain→prosemark mid-stream | Variant locked for the streaming message → no remount (Decision 8). |
+| Streaming subtree would remount mid-stream | `ChatMessage` keeps stable keys → no remount (Decision 8). |
 | Empty assistant message (still thinking) | `MuloadLoader` shows as today; pacer idle until first text. |
 
 ## Test matrix
@@ -170,7 +169,7 @@ finalize(): flush remaining → refreshDecorations()  → clean full render
 | converges & terminates | same | repeated application reaches `targetLen` exactly, then returns 0. |
 | finalize flushes | `use-streaming-text-pacer.test.ts` (jsdom) | on `finalize`, handle receives the full remaining slice + `refreshDecorations`. |
 | reduced-motion bypass | `ChatMessage` test | with reduced motion, append is immediate (no rAF deferral), caret static. |
-| variant stability | `message-markdown` test | streaming message keeps one `variant` across plain→chip transitions. |
+| variant stability | `ChatMessage` test | streaming message does not remount `MarkdownStream` across content transitions. |
 | mermaid holdback | `mermaid-decorations.test.ts` | unclosed mermaid fence yields no widget; closed fence yields one. |
 | caret lifecycle | prosemark decoration test | caret present iff `setStreaming(true)`; gone after finalize. |
 

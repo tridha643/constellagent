@@ -10,7 +10,10 @@ import type {
   WorkspaceRef,
 } from "@pi-gui/session-driver";
 import type { SessionQueuedMessage } from "@pi-gui/session-driver/types";
+import { sessionKey } from "../session-driver/session-key.js";
 import type { SessionTranscriptAttachment, SessionTranscriptMessage } from "./transcript.js";
+
+export { sessionKey };
 
 const FILE_ATTACHMENT_BLOCK_START = "<pi-gui-file-attachments>";
 const FILE_ATTACHMENT_BLOCK_END = "</pi-gui-file-attachments>";
@@ -71,10 +74,6 @@ export function deriveSessionConfig(sessionManager: {
 export function forcePersistSession(sessionManager: object): void {
   const maybeRewrite = (sessionManager as { _rewriteFile?: () => void })._rewriteFile;
   maybeRewrite?.call(sessionManager);
-}
-
-export function sessionKey(sessionRef: SessionRef): string {
-  return `${sessionRef.workspaceId}:${sessionRef.sessionId}`;
 }
 
 export function workspaceToRef(workspace: { workspaceId: string; path: string; displayName: string }): WorkspaceRef {
