@@ -588,7 +588,7 @@ test.describe('Keyboard shortcuts', () => {
         const { sidePanels } = (window as any).__store.getState()
         return sidePanels
       })
-      expect(swapped.left.panelOrder).toEqual(['files', 'changes', 'browser'])
+      expect(swapped.left.panelOrder).toEqual(['files', 'changes'])
       expect(swapped.right.panelOrder).toEqual(['sideChat', 'project'])
 
       await window.keyboard.press('Meta+Shift+g')

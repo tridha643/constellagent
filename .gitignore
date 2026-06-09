@@ -56,3 +56,6 @@ macos/**/build/
 macos/**/DerivedData/
 macos/**/*.xcuserstate
 macos/**/xcuserdata/
+
+# Local agentation-mcp dev server log (started by scripts/dev.sh)
+.agentation-dev.log

@@ -91,6 +91,7 @@ Use this to jump straight to the owning file for a feature. Subdirs: `agents/` (
 | **CLI config** | `claude-config.ts`, `codex-config.ts`, `cursor-model-catalog.ts`, `project-startup-settings.ts`, `cli-env.ts`, `load-env-local.ts` | Read/write external CLI config, `$PATH` extension, per-project startup commands |
 | **Usage** | `codex-usage-service.ts`, `cursor-usage-service.ts`, `context-window-service.ts` | Rate-limit / token-usage tracking |
 | **Linear** | `linear-draft-service.ts`, `linear-fff-service.ts` | Linear issue draft generation; FFF (`@ff-labs/fff-node`) project/workspace pickers |
+| **Agentation** | `agentation-service.ts` | Long-lived HTTP/SSE client to a local `agentation-mcp` server (default `:4747`); forwards annotation/session SSE → `AGENTATION_EVENT`, exposes status/list/resolve/dismiss/set-endpoint IPC. App spawns nothing (connect + status only); `scripts/dev.sh` starts the server in dev. Pattern: `composio-webhook-service.ts` |
 
 ### Renderer map (`src/renderer/`)
 
@@ -98,7 +99,7 @@ Use this to jump straight to the owning file for a feature. Subdirs: `agents/` (
 |------|------|-------|
 | Root layout | `App.tsx` | Allotment split-pane shell; `index.tsx` is the React entry |
 | State | `store/app-store.ts` (~3.7k lines), `store/types.ts`, `store/side-panels.ts`, `store/split-helpers.ts` | Single Zustand store (see **State Management** below) |
-| Components | `components/` (29 subdirs) | `Terminal`, `Editor`, `Sidebar`, `TabBar`, `RightPanel`, `Conductor`, `QuickOpen`, `Spotlight`, `BrowserPanel`, `Markdown`/`MarkdownPreview`/`MarkdownRenderer`, `HunkReview`, `Automations`, `PlanPalette`, `PlanAgentToolbar`, `Settings`, `AddToChat`/`AddToChatButton`, `FloatingPanel`, `SidePanelHost`, `Toast`, `Tooltip`, `Icons`, `Service`, `tool-ui/`, `ui/` (shadcn/base-ui) … |
+| Components | `components/` (29 subdirs) | `Terminal`, `Editor`, `Sidebar`, `TabBar`, `RightPanel`, `Conductor`, `QuickOpen`, `Spotlight`, `Agentation` (full-screen overlay panel reading a local `agentation-mcp` server — see below), `Markdown`/`MarkdownPreview`/`MarkdownRenderer`, `HunkReview`, `Automations`, `PlanPalette`, `PlanAgentToolbar`, `Settings`, `AddToChat`/`AddToChatButton`, `FloatingPanel`, `SidePanelHost`, `Toast`, `Tooltip`, `Icons`, `Service`, `tool-ui/`, `ui/` (shadcn/base-ui) … |
 | Markdown engine | `lib/prosemark/` | **Primary** markdown renderer — CodeMirror 6 ("prosemark"): `MarkdownStream.tsx` + extensions for headings/tables/code-fences (Shiki), mermaid, file/skill chips, link unfurls, fold/hide. `MarkdownRenderer` wraps it via `useMarkdownSurfaceContext`. |
 | Hooks | `hooks/` (16) | `useShortcuts`, `usePrStatusPoller`, `useWorktreeSyncPoller`, `useContextWindowPoller`, `useUsageLimitsPoller`, `useGraphiteStackPoller`, `useConductorContextUsage`, `useFileWatcher`, `useGitGutter`, `useFocusTrap`, `useExitAnimation`, `useMarkdownSurfaceContext`, `useLinearProjectPickerFff`, `useLinearWorkspacePickerFff`, `use-prefers-reduced-motion`, `use-proximity-hover` |
 | Conductor GUI | `pi-gui/`, `components/Conductor/` | Conductor chat + Pi extension UI (`extension-session-ui.tsx`, inline segments, transcript stream); `Conductor/chat/` hosts the **JSON canvas** renderer (`JsonCanvasBlock.tsx`, `json-canvas-registry.tsx` — see *JSON canvas* below) |

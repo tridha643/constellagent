@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app, BrowserWindow, clipboard, webContents, shell, type WebContents } from 'electron'
+import { ipcMain, dialog, app, BrowserWindow, clipboard, shell, type WebContents } from 'electron'
 import { join, relative } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
 import { existsSync, mkdirSync, writeFileSync, realpathSync } from 'fs'
@@ -78,6 +78,7 @@ import {
 import type { CodexWebSocketsSetting } from '../shared/codex-websockets'
 import { type ComposioWebhookSettings, isComposioAutomationAgent } from '../shared/composio-types'
 import { composioWebhookService } from './composio-webhook-service'
+import { agentationService } from './agentation-service'
 import { composioNgrokService } from './composio-ngrok-service'
 import { composioSubscribeTriggerWebhookWithKeyFallback } from './composio-webhook-subscriptions'
 import { composioTriggerUpsertWithCliFallback, composioSuggestGithubConnectedAccountId } from './composio-trigger-client'
@@ -104,7 +105,6 @@ composioWebhookService.setDeliveryHandler((payload) => automationDeliveryRouter.
 const githubPollService = new GithubPollService()
 const lspService = new LspService()
 
-const guestTabSwitchListeners = new Map<number, { inputListener: (...args: unknown[]) => void; destroyListener: () => void }>()
 // Clear all review annotations when a GitHub PR merges
 onAutomationEvent(async (event) => {
   if (event.type !== 'pr:merged' || !event.projectId) return
@@ -1755,50 +1755,26 @@ export function registerIpcHandlers(): void {
     await AnnotationService.setResolved(worktreePath, commentId, resolved)
   })
 
-  // ── Webview guest tab-switch interception ──
-  // Electron <webview> guests swallow keyboard events; register before-input-event
-  // on the guest WebContents so ⌘⌥←/→ still switches tabs.
-
-  function unregisterGuestTabSwitch(guestId: number): void {
-    const entry = guestTabSwitchListeners.get(guestId)
-    if (!entry) return
-    const guest = webContents.fromId(guestId)
-    if (guest && !guest.isDestroyed()) {
-      guest.off('before-input-event', entry.inputListener as never)
-      guest.off('destroyed', entry.destroyListener as never)
+  // ── Agentation (annotation bridge to a local agentation-mcp server) ──
+  // Forward SSE → renderer; constellagent spawns nothing (D2: connect + status only).
+  agentationService.setEventSink((event) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.AGENTATION_EVENT, event)
     }
-    guestTabSwitchListeners.delete(guestId)
-  }
-
-  ipcMain.handle(IPC.WEBVIEW_REGISTER_TAB_SWITCH, (_e, guestId: number) => {
-    unregisterGuestTabSwitch(guestId)
-    const guest = webContents.fromId(guestId)
-    if (!guest || guest.isDestroyed()) return
-
-    const hostSender = _e.sender
-
-    const inputListener = (_ev: Electron.Event, input: Electron.Input) => {
-      if (input.type !== 'keyDown') return
-      if (!(input.meta || input.control) || !input.alt || input.shift) return
-      if (input.key === 'ArrowLeft') {
-        _ev.preventDefault()
-        if (!hostSender.isDestroyed()) hostSender.send(IPC.WEBVIEW_TAB_PREV)
-      } else if (input.key === 'ArrowRight') {
-        _ev.preventDefault()
-        if (!hostSender.isDestroyed()) hostSender.send(IPC.WEBVIEW_TAB_NEXT)
-      }
-    }
-
-    const destroyListener = () => unregisterGuestTabSwitch(guestId)
-
-    guest.on('before-input-event', inputListener)
-    guest.once('destroyed', destroyListener)
-    guestTabSwitchListeners.set(guestId, { inputListener: inputListener as never, destroyListener })
   })
+  agentationService.start()
 
-  ipcMain.handle(IPC.WEBVIEW_UNREGISTER_TAB_SWITCH, (_e, guestId: number) => {
-    unregisterGuestTabSwitch(guestId)
-  })
+  ipcMain.handle(IPC.AGENTATION_STATUS, () => agentationService.probe())
+  ipcMain.handle(IPC.AGENTATION_LIST_SESSIONS, () => agentationService.listSessions())
+  ipcMain.handle(IPC.AGENTATION_RESOLVE, (_e, annotationId: string) =>
+    agentationService.resolve(annotationId),
+  )
+  ipcMain.handle(IPC.AGENTATION_DISMISS, (_e, annotationId: string) =>
+    agentationService.dismiss(annotationId),
+  )
+  ipcMain.handle(IPC.AGENTATION_SET_ENDPOINT, (_e, endpoint: string) =>
+    agentationService.setEndpoint(endpoint),
+  )
 
   // ── State persistence handlers ──
   const stateFilePath = () =>
@@ -2257,13 +2233,13 @@ export function cleanupAll(): void {
   githubPollService.stop()
   composioNgrokService.stop()
   void composioWebhookService.stop()
+  void agentationService.stop()
   lspService.shutdown()
   AnnotationService.cleanupAll()
   FileService.disposeQuickOpenSearch()
   LinearFffService.disposeAll()
   getAgentChatHost().dispose()
   void stopMobileLocalServer()
-  guestTabSwitchListeners.clear()
   closeAllAgentFS().catch(() => {})
 }
 

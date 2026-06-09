@@ -30,12 +30,16 @@ const LinearWorkspacePanel = lazy(() =>
 const PlanPalette = lazy(() =>
   import('./components/PlanPalette/PlanPalette').then((m) => ({ default: m.PlanPalette })),
 )
+const BrowserPanel = lazy(() =>
+  import('./components/BrowserPanel/BrowserPanel').then((m) => ({ default: m.BrowserPanel })),
+)
 import { FloatingPanel } from './components/FloatingPanel/FloatingPanel'
 import { ConfirmDialog } from './components/Sidebar/ConfirmDialog'
 import { ToastContainer } from './components/Toast/Toast'
 import { SpotlightHost } from './components/Spotlight/SpotlightHost'
 import { AddToChatButton } from './components/AddToChatButton/AddToChatButton'
 import { useShortcuts } from './hooks/useShortcuts'
+import { useAgentationEvents } from './hooks/useAgentationEvents'
 import { usePrStatusPoller } from './hooks/usePrStatusPoller'
 import { useWorkspaceBarStats } from './hooks/useWorkspaceBarStats'
 import { useWorktreeSyncPoller } from './hooks/useWorktreeSyncPoller'
@@ -56,6 +60,7 @@ function sidePanelMaxSizePx(projectOnly: boolean, viewportWidth: number): number
 
 export function App() {
   useShortcuts()
+  useAgentationEvents()
   usePrStatusPoller()
   useWorkspaceBarStats()
   useWorktreeSyncPoller()
@@ -201,6 +206,7 @@ export function App() {
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const automationsOpen = useAppStore((s) => s.automationsOpen)
   const linearPanelOpen = useAppStore((s) => s.linearPanelOpen)
+  const browserPanelOpen = useAppStore((s) => s.browserPanelOpen)
   const quickOpenVisible = useAppStore((s) => s.quickOpenVisible)
   const changesFileFind = useAppStore((s) => s.changesFileFind)
   const planPaletteVisible = useAppStore((s) => s.planPaletteVisible)
@@ -320,6 +326,10 @@ export function App() {
         ) : linearPanelOpen ? (
           <Suspense fallback={null}>
             <LinearWorkspacePanel />
+          </Suspense>
+        ) : browserPanelOpen ? (
+          <Suspense fallback={null}>
+            <BrowserPanel />
           </Suspense>
         ) : (
           <ErrorBoundary

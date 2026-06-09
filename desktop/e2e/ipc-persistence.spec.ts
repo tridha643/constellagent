@@ -149,7 +149,7 @@ test.describe('IPC handlers & state persistence', () => {
       expect(sidePanels.right).toEqual({
         open: false,
         activePanel: 'changes',
-        panelOrder: ['files', 'changes', 'browser', 'sideChat'],
+        panelOrder: ['files', 'changes', 'sideChat'],
       })
 
       const loaded = await window.evaluate(async () => {
@@ -197,18 +197,20 @@ test.describe('IPC handlers & state persistence', () => {
         activePanel: 'project',
         panelOrder: ['project', 'files'],
       })
+      // rightPanelMode 'browser' is no longer a valid panel; it coerces to a
+      // real panel and 'browser' is dropped from the order (D8).
       expect(sidePanels.right).toEqual({
         open: false,
-        activePanel: 'browser',
-        panelOrder: ['changes', 'browser', 'sideChat'],
+        activePanel: 'changes',
+        panelOrder: ['changes', 'sideChat'],
       })
 
       const loaded = await window.evaluate(async () => {
         return await (window as any).api.state.load()
       })
       expect(loaded.sidePanels.left.panelOrder).toEqual(['project', 'files'])
-      expect(loaded.sidePanels.right.panelOrder).toEqual(['changes', 'browser', 'sideChat'])
-      expect(loaded.sidePanels.right.activePanel).toBe('browser')
+      expect(loaded.sidePanels.right.panelOrder).toEqual(['changes', 'sideChat'])
+      expect(loaded.sidePanels.right.activePanel).toBe('changes')
       expect(loaded.rightPanelOpen).toBeUndefined()
       expect(loaded.rightPanelMode).toBeUndefined()
     } finally {

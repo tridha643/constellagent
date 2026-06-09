@@ -4,13 +4,11 @@ import {
   FileDiff,
   FilePlus,
   FolderTree,
-  Globe,
   LayoutList,
   MessageSquareMore,
   Plus,
   Search,
 } from 'lucide-react'
-import { BrowserPanel } from '../BrowserPanel/BrowserPanel'
 import { useMemo, useState, type ComponentType } from 'react'
 import { useAppStore } from '../../store/app-store'
 import type { PanelType, Side } from '../../store/types'
@@ -35,7 +33,6 @@ const PANEL_ICONS: Record<PanelType, ComponentType<{ size?: number; strokeWidth?
   files: FolderTree,
   changes: FileDiff,
   project: LayoutList,
-  browser: Globe,
   sideChat: MessageSquareMore,
 }
 
@@ -75,9 +72,6 @@ function renderPanel(panel: PanelType, workspace: { id: string; worktreePath: st
   }
   if (panel === 'changes') {
     return <ChangedFiles worktreePath={workspace.worktreePath} workspaceId={workspace.id} isActive />
-  }
-  if (panel === 'browser') {
-    return <BrowserPanel workspaceId={workspace.id} />
   }
   if (panel === 'sideChat') {
     return <SideChatPanel workspaceId={workspace.id} worktreePath={workspace.worktreePath} />

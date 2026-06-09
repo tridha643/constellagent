@@ -6,7 +6,7 @@
     "build:constellagent-mobile-protocol": "bun run --cwd packages/constellagent-mobile-protocol build",
     "postinstall": "bun run build:constellagent-mobile-protocol",
     "setup": "bun install && bun run --cwd desktop rebuild && sh scripts/install-bundled-skills.sh && sh scripts/install-hunk-skill.sh",
-    "dev": "bun run build:constellagent-mobile-protocol && bun run --cwd desktop dev",
+    "dev": "sh scripts/dev.sh",
     "build": "bun run build:constellagent-mobile-protocol && bun run --cwd desktop build",
     "dev:isolated": "sh scripts/dev-isolated.sh",
     "dev-isolated": "sh scripts/dev-isolated.sh",

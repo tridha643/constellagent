@@ -19,6 +19,7 @@ import { getDefaultWorktreeCredentialRules } from '../../shared/worktree-credent
 import type { AgentProvider } from '../../shared/agent-chat-types'
 import type { ThinkingLevel } from '../../shared/conductor-thinking'
 import type { TerminalSessionBackend, TerminalSessionStatus } from '../../shared/terminal-session-types'
+import type { AgentationEvent, AgentationSession, AgentationStatus } from '../../shared/agentation-types'
 import {
   DEFAULT_CONDUCTOR_PROVIDER,
   defaultConductorModel,
@@ -161,7 +162,7 @@ export type Tab = {
 
 export type Side = 'left' | 'right'
 
-export type PanelType = 'project' | 'files' | 'changes' | 'browser' | 'sideChat'
+export type PanelType = 'project' | 'files' | 'changes' | 'sideChat'
 
 export type RightSidebarBottomPanel = 'setup' | 'terminal'
 
@@ -176,9 +177,9 @@ export interface SidePanelLayout {
   right: SidePanelState
 }
 
-export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'browser', 'sideChat']
+export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'sideChat']
 
-export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes', 'browser']
+export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes']
 
 export const DEFAULT_SIDE_PANEL_LAYOUT: SidePanelLayout = {
   left: {
@@ -189,7 +190,7 @@ export const DEFAULT_SIDE_PANEL_LAYOUT: SidePanelLayout = {
   right: {
     open: true,
     activePanel: 'files',
-    panelOrder: ['files', 'changes', 'browser', 'sideChat'],
+    panelOrder: ['files', 'changes', 'sideChat'],
   },
 }
 
@@ -618,6 +619,8 @@ export interface Settings {
   piCommitMessageModel: string
   /** Last-used parent directory in the Add Project → Clone from GitHub flow. Pre-fills the picker on next use. */
   lastClonedParentDir?: string
+  /** Endpoint of the local agentation-mcp HTTP/SSE server the Agentation panel reads. */
+  agentationEndpoint: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -674,6 +677,7 @@ export const DEFAULT_SETTINGS: Settings = {
   conflictResolverAgent: 'claude-code',
   conflictResolverModel: '',
   piCommitMessageModel: '',
+  agentationEndpoint: 'http://localhost:4747',
 }
 
 export interface Toast {
@@ -696,24 +700,11 @@ export interface ConfirmDialogState {
   onSecondaryConfirm?: () => void
 }
 
-export interface BrowserDomContext {
-  tagName: string
-  classes: string[]
-  textPreview: string
-  displayName: string | null
-  source: { file: string; line: number; column?: number } | null
-  url?: string
-  /** Optional note from the Browser panel; sent to the agent with this capture. */
-  userNote?: string
-}
-
 export interface ChatSnippet {
   text: string
   filePath?: string
   startLine?: number
   endLine?: number
-  /** Set when this snippet was captured via the in-app Browser panel DOM picker. */
-  browser?: BrowserDomContext
 }
 
 export interface ReviewPanelPersistedState {
@@ -779,6 +770,18 @@ export interface AppState {
   settingsSection: SettingsSectionId
   automationsOpen: boolean
   linearPanelOpen: boolean
+  /** Browser overlay panel visibility (embedded webview + Agentation rail). */
+  browserPanelOpen: boolean
+  /** Latest connection status of the local agentation-mcp server. Null until first probe. */
+  agentationStatus: AgentationStatus | null
+  /** Live annotation sessions streamed from agentation-mcp (newest activity first). */
+  agentationSessions: AgentationSession[]
+  /**
+   * Pending composer prefill keyed by Conductor tab id. Consumed (and cleared)
+   * when the Conductor chat view mounts/focuses. Used by the Agentation "Send"
+   * fallback when no agent terminal is available (D5b). Not persisted.
+   */
+  pendingComposerDraftByTab: Record<string, string>
   confirmDialog: ConfirmDialogState | null
   toasts: Toast[]
   quickOpenVisible: boolean
@@ -976,6 +979,7 @@ export interface AppState {
   openSettingsSection: (section: SettingsSectionId) => void
   toggleAutomations: () => void
   toggleLinear: () => void
+  toggleBrowser: () => void
   showConfirmDialog: (dialog: ConfirmDialogState) => void
   updateConfirmDialog: (partial: Partial<ConfirmDialogState>) => void
   dismissConfirmDialog: () => void
@@ -1003,6 +1007,24 @@ export interface AppState {
   setActiveMonacoEditor: (editor: editor.IStandaloneCodeEditor | null) => void
   getFirstAgentTerminalPtyId: () => string | undefined
   sendContextToAgent: (snippets: ChatSnippet[]) => void
+
+  // Agentation actions
+  /** Probe status + reload the full session list from main (initial load + Retry). Never throws. */
+  refreshAgentation: () => Promise<void>
+  /** Replace the full session list (initial load from main). */
+  setAgentationSessions: (sessions: AgentationSession[]) => void
+  /** Apply a forwarded SSE/status event to the store (used by useAgentationEvents). */
+  applyAgentationEvent: (event: AgentationEvent) => void
+  /** Route an annotation's markdown to an agent (terminal PTY first, else Conductor composer). Closes the panel. */
+  sendAgentationAnnotation: (markdown: string) => void
+  /** Resolve an annotation back to Agentation (PATCH via main). */
+  resolveAgentationAnnotation: (annotationId: string) => Promise<{ ok: boolean; error?: string }>
+  /** Dismiss an annotation back to Agentation (PATCH via main). */
+  dismissAgentationAnnotation: (annotationId: string) => Promise<{ ok: boolean; error?: string }>
+  /** Stage a composer prefill for a Conductor tab (consumed on mount/focus). */
+  setPendingComposerDraft: (tabId: string, draft: string) => void
+  /** Read + clear a tab's pending composer prefill (returns '' if none). */
+  consumePendingComposerDraft: (tabId: string) => string
 
   // Unread indicator actions
   markWorkspaceUnread: (workspaceId: string) => void
@@ -1077,13 +1099,14 @@ export interface AppState {
   resolveProjectTargetWorkspace: (projectId: string) => Workspace | undefined
 }
 
-export type SidebarActionId = 'add-project' | 'conductor' | 'automations' | 'linear' | 'plans' | 'settings' | 'review'
+export type SidebarActionId = 'add-project' | 'conductor' | 'automations' | 'linear' | 'browser' | 'plans' | 'settings' | 'review'
 
 export const DEFAULT_SIDEBAR_ACTION_ORDER: SidebarActionId[] = [
   'add-project',
   'conductor',
   'automations',
   'linear',
+  'browser',
   'plans',
   'review',
   'settings',

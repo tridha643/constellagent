@@ -150,7 +150,8 @@ test.describe('Git graph removal regression', () => {
       await window.waitForTimeout(1200)
 
       const sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
-      expect(sidePanels.right.panelOrder).toEqual(['files', 'changes', 'browser', 'sideChat'])
+      // Legacy 'graph' and 'browser' panels are both stripped on hydrate.
+      expect(sidePanels.right.panelOrder).toEqual(['files', 'changes', 'sideChat'])
       expect(sidePanels.right.activePanel).toBe('files')
       await expect(window.getByTestId('right-panel-mode-graph')).toHaveCount(0)
       await expect(window.getByTestId('right-panel')).toBeVisible()

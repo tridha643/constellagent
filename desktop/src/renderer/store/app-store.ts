@@ -73,6 +73,7 @@ import {
 } from './split-helpers'
 import { formatChatContext } from '../utils/chat-context-formatter'
 import { wrapBracketedPaste } from '../utils/bracketed-paste'
+import type { AgentationAnnotation, AgentationEvent, AgentationSession } from '../../shared/agentation-types'
 
 /** Dedupe concurrent “open Linear issue in agent” runs per issue id. */
 const linearIssueAgentLaunchInFlight = new Set<string>()
@@ -451,9 +452,11 @@ function normalizeSidebarActionOrder(raw: SidebarActionId[] | undefined): Sideba
   const result: SidebarActionId[] = []
   if (raw) {
     for (const id of raw) {
-      if (valid.has(id) && !seen.has(id)) {
-        result.push(id)
-        seen.add(id)
+      const migrated =
+        (id as string) === 'agentation' ? 'browser' : (id as SidebarActionId)
+      if (valid.has(migrated) && !seen.has(migrated)) {
+        result.push(migrated)
+        seen.add(migrated)
       }
     }
   }
@@ -725,6 +728,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   settingsSection: 'appearance',
   automationsOpen: false,
   linearPanelOpen: false,
+  browserPanelOpen: false,
+  agentationStatus: null,
+  agentationSessions: [],
+  pendingComposerDraftByTab: {},
   confirmDialog: null,
   toasts: [],
   quickOpenVisible: false,
@@ -1525,6 +1532,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       settingsOpen: false,
       automationsOpen: false,
       linearPanelOpen: false,
+      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     })
   },
@@ -1556,6 +1564,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       settingsOpen: false,
       automationsOpen: false,
       linearPanelOpen: false,
+      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     })
   },
@@ -1678,6 +1687,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           settingsOpen: false,
           automationsOpen: false,
           linearPanelOpen: false,
+          browserPanelOpen: false,
           linearQuickOpenVisible: false,
         })
       }
@@ -2885,6 +2895,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       settingsOpen: !s.settingsOpen,
       automationsOpen: false,
       linearPanelOpen: false,
+      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     })),
 
@@ -2896,6 +2907,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       settingsSection: section,
       automationsOpen: false,
       linearPanelOpen: false,
+      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     }),
   toggleAutomations: () =>
@@ -2903,6 +2915,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       automationsOpen: !s.automationsOpen,
       settingsOpen: false,
       linearPanelOpen: false,
+      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     })),
   toggleLinear: () =>
@@ -2912,9 +2925,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         linearPanelOpen: nextOpen,
         settingsOpen: false,
         automationsOpen: false,
+        browserPanelOpen: false,
         linearQuickOpenVisible: nextOpen ? s.linearQuickOpenVisible : false,
       }
     }),
+  toggleBrowser: () =>
+    set((s) => ({
+      browserPanelOpen: !s.browserPanelOpen,
+      settingsOpen: false,
+      automationsOpen: false,
+      linearPanelOpen: false,
+      linearQuickOpenVisible: false,
+    })),
 
   showConfirmDialog: (dialog) => set({ confirmDialog: dialog }),
 
@@ -3175,6 +3197,154 @@ export const useAppStore = create<AppState>((set, get) => ({
       t.type === 'terminal' && (t.ptyId === ptyId || (t.splitRoot && findLeafByPtyId(t.splitRoot, ptyId) != null))
     )
     if (tab) set({ activeTabId: tab.id })
+  },
+
+  refreshAgentation: async () => {
+    // status() and listSessions() never throw in main (they degrade to a
+    // disconnected status / empty list), but guard anyway.
+    try {
+      const [status, sessions] = await Promise.all([
+        window.api.agentation.status(),
+        window.api.agentation.listSessions(),
+      ])
+      set({ agentationStatus: status, agentationSessions: sessions })
+    } catch {
+      /* leave prior state in place */
+    }
+  },
+
+  setAgentationSessions: (sessions: AgentationSession[]) => set({ agentationSessions: sessions }),
+
+  applyAgentationEvent: (event: AgentationEvent) => {
+    if (event.type === 'status') {
+      set({ agentationStatus: event.status })
+      return
+    }
+    set((s) => {
+      const sessions = s.agentationSessions
+      const upsertAnnotation = (annotation: AgentationAnnotation): AgentationSession[] => {
+        const sessionId = annotation.sessionId ?? '__ungrouped__'
+        let found = false
+        const next = sessions.map((session) => {
+          if (session.id !== sessionId) return session
+          found = true
+          const existing = session.annotations.findIndex((a) => a.id === annotation.id)
+          const annotations =
+            existing === -1
+              ? [...session.annotations, annotation]
+              : session.annotations.map((a) => (a.id === annotation.id ? { ...a, ...annotation } : a))
+          return { ...session, annotations }
+        })
+        if (found) return next
+        // Annotation for a session we haven't seen yet — synthesize a group.
+        return [
+          ...next,
+          { id: sessionId, url: annotation.url, annotations: [annotation] } as AgentationSession,
+        ]
+      }
+
+      switch (event.type) {
+        case 'annotation.created':
+        case 'annotation.updated':
+          return { agentationSessions: upsertAnnotation(event.annotation) }
+        case 'annotation.deleted':
+          return {
+            agentationSessions: sessions.map((session) => ({
+              ...session,
+              annotations: session.annotations.filter((a) => a.id !== event.annotationId),
+            })),
+          }
+        case 'session.created': {
+          if (sessions.some((session) => session.id === event.session.id)) return {}
+          return { agentationSessions: [...sessions, event.session] }
+        }
+        default:
+          return {}
+      }
+    })
+  },
+
+  sendAgentationAnnotation: (markdown: string) => {
+    const s = get()
+
+    // D5b: agent terminal PTY first (reuse the proven path).
+    const ptyId = s.getFirstAgentTerminalPtyId()
+    if (ptyId) {
+      window.api.pty.write(ptyId, wrapBracketedPaste(markdown))
+      const tab = s.tabs.find((t) =>
+        t.type === 'terminal' && (t.ptyId === ptyId || (t.splitRoot && findLeafByPtyId(t.splitRoot, ptyId) != null))
+      )
+      set({ browserPanelOpen: false, ...(tab ? { activeTabId: tab.id } : {}) })
+      return
+    }
+
+    // Fallback: Conductor chat composer (open tab, else create one). No dead-end.
+    if (!s.activeWorkspaceId) {
+      s.addToast({
+        id: `agentation-no-target-${Date.now()}`,
+        message: 'No workspace to send the annotation to',
+        type: 'error',
+      })
+      return
+    }
+
+    const wsTabs = s.tabs.filter((t) => t.workspaceId === s.activeWorkspaceId)
+    const convo =
+      wsTabs.find((t) => t.id === s.activeTabId && t.type === 'conductor') ??
+      wsTabs.find((t) => t.type === 'conductor')
+    if (convo) {
+      s.setPendingComposerDraft(convo.id, markdown)
+      set({ browserPanelOpen: false, activeTabId: convo.id })
+      return
+    }
+
+    // No Conductor tab — create one (it becomes active), then stage the draft.
+    s.createConductorTabForActiveWorkspace()
+    const newTabId = get().activeTabId
+    if (newTabId) get().setPendingComposerDraft(newTabId, markdown)
+    set({ browserPanelOpen: false })
+  },
+
+  resolveAgentationAnnotation: async (annotationId: string) => {
+    const result = await window.api.agentation.resolve(annotationId)
+    if (result.ok) {
+      set((s) => ({
+        agentationSessions: s.agentationSessions.map((session) => ({
+          ...session,
+          annotations: session.annotations.filter((a) => a.id !== annotationId),
+        })),
+      }))
+    }
+    return result
+  },
+
+  dismissAgentationAnnotation: async (annotationId: string) => {
+    const result = await window.api.agentation.dismiss(annotationId)
+    if (result.ok) {
+      set((s) => ({
+        agentationSessions: s.agentationSessions.map((session) => ({
+          ...session,
+          annotations: session.annotations.filter((a) => a.id !== annotationId),
+        })),
+      }))
+    }
+    return result
+  },
+
+  setPendingComposerDraft: (tabId: string, draft: string) =>
+    set((s) => ({
+      pendingComposerDraftByTab: { ...s.pendingComposerDraftByTab, [tabId]: draft },
+    })),
+
+  consumePendingComposerDraft: (tabId: string) => {
+    const draft = get().pendingComposerDraftByTab[tabId]
+    if (draft == null) return ''
+    set((s) => {
+      const next = { ...s.pendingComposerDraftByTab }
+      delete next[tabId]
+      return { pendingComposerDraftByTab: next }
+    })
+    return draft
   },
 
   setGitFileStatuses: (worktreePath, statuses) =>
@@ -4089,6 +4259,7 @@ export async function hydrateFromDisk(): Promise<void> {
       automationsOpen: false,
       settingsOpen: false,
       linearPanelOpen: false,
+      browserPanelOpen: false,
       linearQuickOpenVisible: false,
     })
 
