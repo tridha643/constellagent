@@ -9,7 +9,9 @@ import type {
   ListOpenPrsResult,
   ResolvedPrInfo,
   PullRequestHeadMetadata,
+  PrChecksResult,
 } from '../shared/github-types'
+import { mapPrChecksDetail, type GraphqlPrChecksNode } from './github-checks'
 import { OPEN_PR_LIST_CACHE_MS } from '../shared/open-pr-list-cache'
 import { parseGithubUrl } from '../shared/github-url'
 import type { GithubRepoInfo } from '../shared/github-url'
@@ -418,6 +420,151 @@ export class GithubService {
         return { available: true, data: this.cloneOpenPrs(cached.data) }
       }
       return { available: true, data: [] }
+    }
+  }
+
+  /**
+   * Per-workspace Checks tab: fetch one PR's per-check rows, deployments, and commits-behind.
+   * Uses a dedicated GraphQL query (does NOT touch the aggregate `PrFields` path). Commits-behind
+   * is resolved with a second `Ref.compare` query for same-repo PRs only (cross-repo ⇒ null).
+   */
+  static async getPrChecks(repoPath: string, prNumber: number): Promise<PrChecksResult> {
+    if (!(await this.isGhAvailable())) {
+      return { available: false, error: 'gh_not_installed', data: null }
+    }
+    const repoInfo = await this.getGithubRepoInfo(repoPath)
+    if (!repoInfo) {
+      return { available: false, error: 'not_github_repo', data: null }
+    }
+    const token = await this.getAuthToken()
+    if (!token) {
+      return { available: false, error: 'not_authenticated', data: null }
+    }
+    if (!Number.isInteger(prNumber) || prNumber <= 0) {
+      return { available: true, data: null }
+    }
+
+    try {
+      const query = `
+        query PrChecks($owner: String!, $name: String!, $number: Int!) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              number
+              title
+              body
+              url
+              state
+              baseRefName
+              headRefName
+              isCrossRepository
+              commits(last: 1) {
+                nodes {
+                  commit {
+                    statusCheckRollup {
+                      contexts(first: 100) {
+                        totalCount
+                        nodes {
+                          __typename
+                          ... on CheckRun {
+                            name
+                            status
+                            conclusion
+                            startedAt
+                            completedAt
+                            detailsUrl
+                            checkSuite { app { name } }
+                          }
+                          ... on StatusContext {
+                            context
+                            state
+                            description
+                            targetUrl
+                            createdAt
+                          }
+                        }
+                      }
+                    }
+                    deployments(last: 20) {
+                      nodes {
+                        environment
+                        state
+                        createdAt
+                        latestStatus { state environmentUrl logUrl }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `
+      const payload = await this.fetchGraphqlJson<{
+        data?: { repository?: { pullRequest?: GraphqlPrChecksNode | null } }
+        errors?: Array<{ message?: string }>
+      }>(query, { owner: repoInfo.owner, name: repoInfo.name, number: prNumber }, token)
+
+      const prNode = payload.data?.repository?.pullRequest
+      if (!prNode) {
+        return { available: true, data: null }
+      }
+
+      let commitsBehind: number | null = null
+      if (!prNode.isCrossRepository && prNode.baseRefName && prNode.headRefName) {
+        commitsBehind = await this.fetchCommitsBehind(
+          repoInfo,
+          token,
+          prNode.baseRefName,
+          prNode.headRefName,
+        )
+      }
+
+      return { available: true, data: mapPrChecksDetail(prNode, commitsBehind) }
+    } catch (err) {
+      if (err instanceof GithubAuthError) {
+        this.clearAuthTokenCache()
+        return { available: false, error: 'not_authenticated', data: null }
+      }
+      return { available: true, data: null }
+    }
+  }
+
+  /** How many commits the PR head is behind its base on the remote (same-repo only). null on failure. */
+  private static async fetchCommitsBehind(
+    repoInfo: GithubRepoInfo,
+    token: string,
+    baseRefName: string,
+    headRefName: string,
+  ): Promise<number | null> {
+    try {
+      const query = `
+        query CompareBehind($owner: String!, $name: String!, $base: String!, $head: String!) {
+          repository(owner: $owner, name: $name) {
+            ref(qualifiedName: $base) {
+              compare(headRef: $head) {
+                behindBy
+              }
+            }
+          }
+        }
+      `
+      const payload = await this.fetchGraphqlJson<{
+        data?: { repository?: { ref?: { compare?: { behindBy?: number | null } | null } | null } }
+        errors?: Array<{ message?: string }>
+      }>(
+        query,
+        {
+          owner: repoInfo.owner,
+          name: repoInfo.name,
+          base: `refs/heads/${baseRefName}`,
+          head: headRefName,
+        },
+        token,
+      )
+      const behindBy = payload.data?.repository?.ref?.compare?.behindBy
+      return typeof behindBy === 'number' ? behindBy : null
+    } catch {
+      return null
     }
   }
 

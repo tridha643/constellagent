@@ -1,0 +1,384 @@
+.panel {
+  height: 100%;
+  width: 100%;
+  overflow-y: auto;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+
+.scroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-3) var(--space-3) var(--space-6);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ── Checks section header ── */
+.prHeaderRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.prPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--panel-border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.prPill:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.prPill:active { transform: scale(0.97); }
+
+.statusHeader {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+.statusHeaderFail { color: var(--accent-red); }
+.statusHeaderPass { color: var(--accent-green); }
+
+.headerSpacer { flex: 1 1 auto; }
+
+.viewChecksButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--panel-border);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.viewChecksButton:hover { background: var(--surface-3); }
+.viewChecksButton:active { transform: scale(0.97); }
+
+.prTitle {
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+/* Rendered-markdown PR description. Long bodies collapse behind a fade + "Show more"
+   (no nested scrollbar); the height animates open to its measured value on expand. */
+.prBody {
+  position: relative;
+  margin: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.prBodyClip {
+  overflow: hidden;
+  transition: max-height var(--duration-slow) var(--ease-out);
+}
+
+.prBodyInner {
+  padding: var(--space-4);
+}
+
+/* Readable prose for the sidebar column — was a cramped 10px; give it room to breathe. */
+.prBodyMarkdown {
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--text-primary) 82%, var(--text-secondary));
+  word-break: break-word;
+}
+
+.prBodyToggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: var(--space-2);
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.prBodyToggle:hover { color: var(--text-primary); }
+
+/* Collapsed: float the toggle over a fade so clipped text dissolves into the surface. */
+.prBodyToggleOverlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-top: none;
+  padding-top: 28px;
+  background: linear-gradient(to bottom, transparent, var(--surface-1) 55%);
+}
+
+.prBodyChevron {
+  transition: transform var(--duration-default) var(--ease-out);
+}
+.prBodyChevronUp { transform: rotate(180deg); }
+
+.gitStatusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* ── List blocks (deployments / checks) ── */
+.listLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.row:last-child { border-bottom: none; }
+
+.rowClickable {
+  cursor: pointer;
+  outline: none;
+}
+.rowClickable:hover,
+.rowClickable:focus-visible {
+  background: var(--surface-2);
+}
+
+.rowIcon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.iconPassing { color: var(--accent-green); }
+.iconFailing { color: var(--accent-red); }
+.iconPending { color: var(--accent-yellow); }
+.iconSkipped { color: var(--text-tertiary); }
+.iconNeutral { color: var(--text-tertiary); }
+
+.rowName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.rowApp {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+.rowDuration {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* Affordance that the row opens externally — revealed on hover/focus to keep rows calm. */
+.rowChevron {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.rowClickable:hover .rowChevron,
+.rowClickable:focus-visible .rowChevron {
+  opacity: 1;
+}
+/* Touch / coarse pointers can't hover — keep a faint hint visible. */
+@media (hover: none) {
+  .rowChevron { opacity: 0.5; }
+}
+
+.truncatedNote {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* ── Notices / empty states ── */
+.notice {
+  padding: var(--space-4);
+  border: 1px dashed var(--panel-border);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.spinner {
+  padding: var(--space-4);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+/* ── Todos ── */
+.todosHeaderRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.todosTitle {
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+.todosCount {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+.addButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--panel-border);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.addButton:hover { background: var(--surface-3); }
+
+.clearButton {
+  margin-left: auto;
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.clearButton:hover { color: var(--text-primary); border-color: var(--panel-border); }
+
+.addInput,
+.editInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--accent-blue);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  outline: none;
+}
+
+.todoRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.todoRow:last-child { border-bottom: none; }
+
+.todoCheckbox {
+  flex: 0 0 auto;
+  cursor: pointer;
+  accent-color: var(--accent-blue);
+}
+
+.todoText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  cursor: text;
+}
+.todoTextDone {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.todoDelete {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.todoRow:hover .todoDelete { opacity: 1; }
+.todoDelete:hover { color: var(--accent-red); }
+
+.todoDragHandle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--text-tertiary);
+  cursor: grab;
+}
+.todoRowDragging { opacity: 0.5; }
+
+/* ── Reduced motion: keep state changes instant, drop transitions/morphs ── */
+@media (prefers-reduced-motion: reduce) {
+  .prBodyClip,
+  .prBodyChevron,
+  .prBodyToggle,
+  .prPill,
+  .viewChecksButton,
+  .row,
+  .rowChevron,
+  .todoDelete {
+    transition: none;
+  }
+}

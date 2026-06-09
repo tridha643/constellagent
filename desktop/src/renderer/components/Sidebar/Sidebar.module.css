@@ -423,10 +423,11 @@
   align-items: center;
   justify-content: center;
   position: absolute;
-  /* Leftmost slot of the centered right-edge cluster, left of ✕ (9px) and
-   * flip (37px). Vertically centered like the others so the persistent branch
-   * nudge never collides with the hover-revealed ✕ (the Image #2 bug). */
-  right: 65px;
+  /* Outermost slot of the centered right-edge cluster, left of ✕ (9px), flip
+   * (37px), and the ✶ pin (65px). Vertically centered like the others so the
+   * persistent branch nudge never collides with the hover-revealed ✕ (the
+   * Image #2 bug). */
+  right: 93px;
   top: 50%;
   width: 22px;
   height: 22px;
@@ -1221,11 +1222,11 @@
   position: relative;
 }
 
-.folderChildren .workspaceItem {
+.sectionChildren .workspaceItem {
   align-items: center;
 }
 
-.folderChildren .workspaceItem.graphiteWorkspace {
+.sectionChildren .workspaceItem.graphiteWorkspace {
   align-items: flex-start;
 }
 
@@ -2158,271 +2159,233 @@
   .actionButtonWrapper {
     transition: none;
   }
-  .folderHeader,
-  .folderChevron,
-  .folderHeaderDropTarget {
+  .sectionHeader,
+  .sectionChevron {
     transition: none !important;
   }
 }
 
-/* ── Sidebar Folders ── */
+/* ── Sidebar status sections (auto-by-status + Pinned override) ── */
 
-.folderSection {
+.sectionGroup {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  /* Folder header: pl + 15px icon + gap — nested rows use this to line up name column */
-  --sidebar-nested-inset: calc(var(--space-3) + 15px + var(--space-2));
 }
 
-.folderSectionDragging {
-  opacity: 0.45;
-}
-
-.folderChildren {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 2px 0 4px 0;
-  padding: 2px 0;
-  /* Align first text column with folder name (row has 16px glyph + same gap/pl as header) */
-  padding-left: max(
-    0px,
-    calc(var(--sidebar-nested-inset) - var(--space-3) - 16px - var(--space-2))
-  );
-}
-
-.folderHeader {
+/* Whisper-quiet section label row — lighter than the old folder header. */
+.sectionHeader {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 4px var(--space-3);
-  margin: 1px 0;
-  min-height: 28px;
+  padding: 3px var(--space-3);
+  min-height: 22px;
   border-radius: var(--radius-md);
   cursor: pointer;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
   font-family: var(--font-ui);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   user-select: none;
-  transition: background-color 160ms var(--ease-out, var(--ease-out)),
-    box-shadow 160ms var(--ease-out, var(--ease-out)),
-    color 160ms ease;
+  transition: background-color var(--motion-fast), color var(--motion-fast);
 }
 
-.folderHeader[draggable="true"] {
-  cursor: grab;
+.sectionHeader:hover {
+  background: var(--surface-2);
+  color: var(--text-secondary);
 }
 
-.folderHeader[draggable="true"]:active {
-  cursor: grabbing;
-}
-
-.folderHeader:focus-visible {
+.sectionHeader:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 55%, transparent);
 }
 
-.folderHeader:hover {
-  background: var(--surface-2);
-}
-
-.folderHeaderDropTarget {
+/* Drop highlight when dragging a bar onto the Pinned section header. */
+.sectionHeaderDropTarget {
   background: var(--surface-3);
   box-shadow: inset 0 0 0 1px var(--accent-blue);
-}
-
-.folderHeaderReorderTarget {
-  position: relative;
-}
-
-.folderHeaderReorderTarget::before {
-  content: '';
-  position: absolute;
-  top: -2px;
-  left: var(--space-3);
-  right: var(--space-3);
-  height: 2px;
-  background: var(--accent-blue);
-  border-radius: 1px;
-  animation: dropIndicatorIn var(--duration-exit-fast) var(--ease-out) forwards;
-}
-
-.folderIcon {
-  flex-shrink: 0;
-  color: var(--text-tertiary);
-  transition: color 160ms ease, opacity 160ms ease;
-}
-
-.folderHeader:hover .folderIcon {
   color: var(--text-secondary);
 }
 
-/* Folder glyph carries the per-folder accent (mockup .fglyph{color:var(--fc)}).
- * --fc is set inline on .folderHeader when the user picks a color; otherwise it
- * falls back to the default blue so existing folders look unchanged. */
-.folderIconClosed {
-  color: color-mix(in srgb, var(--fc, var(--accent-blue)) 24%, var(--text-tertiary));
-  opacity: 0.92;
+.sectionChevron {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transform: rotate(0deg);
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
-.folderIconOpen {
-  color: color-mix(in srgb, var(--fc, var(--accent-blue)) 38%, var(--text-tertiary));
-  opacity: 1;
+.sectionChevronOpen {
+  transform: rotate(90deg);
 }
 
-.folderHeader:hover .folderIconClosed,
-.folderHeader:hover .folderIconOpen {
-  color: color-mix(in srgb, var(--fc, var(--accent-blue)) 50%, var(--text-secondary));
-}
-
-.folderName {
+.sectionLabel {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: var(--weight-medium);
-  color: var(--text-secondary);
-  letter-spacing: -0.01em;
 }
 
-.folderHeader:hover .folderName {
-  color: var(--text-secondary);
-}
-
-.folderNameInput {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 1px 4px;
-  outline: none;
-}
-
-.folderNameInput:focus {
-  border-color: var(--accent-blue);
-}
-
-.folderMenuWrap {
-  position: relative;
-  opacity: 0;
-  transition: opacity var(--motion-default);
-}
-
-.folderHeader:hover .folderMenuWrap,
-.folderHeader:focus-within .folderMenuWrap,
-.folderMenuWrap:has(button[aria-expanded='true']) {
-  opacity: 1;
-}
-
-.folderMenuBtn {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border-radius: var(--radius-sm);
+.sectionCount {
+  flex-shrink: 0;
   color: var(--text-tertiary);
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-  transition: background-color var(--motion-default), color var(--motion-default), transform var(--duration-micro) var(--ease-press);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
 }
 
-.folderMenuBtn:active {
-  transform: scale(0.97);
+.sectionPinIcon {
+  flex-shrink: 0;
+  color: var(--accent-blue);
 }
 
-.folderMenuBtn:hover {
-  background: var(--surface-3);
-  color: var(--text-primary);
+/* Bars run edge-to-edge: no left inset under section headers. */
+.sectionChildren {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 1px 0 4px 0;
 }
 
-.folderMenu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 50;
-  min-width: 180px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-  padding: 4px;
+/* Thin layout/opacity wrapper (framer-motion) around each bar. */
+.workspaceRow {
   display: flex;
   flex-direction: column;
 }
 
-.folderMenuItem {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  text-align: left;
-  padding: 6px 10px;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
+/* Pinned section accent. */
+.pinnedSection .sectionHeader {
+  color: color-mix(in srgb, var(--accent-blue) 55%, var(--text-tertiary));
+}
+
+.pinnedSection .sectionCount {
+  color: color-mix(in srgb, var(--accent-blue) 45%, var(--text-tertiary));
+}
+
+/* Manual (user-created) section accent — a hair warmer than the auto buckets. */
+.customSection .sectionHeader {
+  color: color-mix(in srgb, var(--accent-purple, var(--accent-blue)) 45%, var(--text-tertiary));
+}
+
+/* Inline rename field in a manual section header. */
+.sectionNameInput {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-1);
+  border: 1px solid var(--accent-blue);
   border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-family: inherit;
-  transition: background-color var(--motion-default), transform var(--duration-micro) var(--ease-press);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-family: var(--font-ui);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  outline: none;
 }
 
-.folderMenuItem:active {
-  transform: scale(0.97);
-}
-
-.folderMenuItem:hover:not(:disabled) {
-  background: var(--surface-3);
-}
-
-.folderMenuItem:disabled {
-  color: var(--text-tertiary);
-  cursor: default;
-}
-
-.folderMenuItemDanger {
-  color: var(--accent-red, #f87171);
-}
-
-/* Folder color picker — a swatch row at the top of the actions menu. */
-.folderColorRow {
+/* Hover-revealed rename/delete cluster on a manual section header. */
+.sectionActions {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 8px 6px;
-  margin-bottom: 2px;
-  border-bottom: 1px solid var(--border-subtle, var(--border));
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--motion-fast);
 }
 
-.folderColorSwatch {
-  width: 15px;
-  height: 15px;
-  flex: none;
+.sectionHeader:hover .sectionActions,
+.sectionHeader:focus-within .sectionActions {
+  opacity: 1;
+}
+
+.sectionActionBtn {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   padding: 0;
-  border: 1.5px solid transparent;
-  border-radius: var(--radius-full);
-  background: var(--swatch, var(--accent-blue));
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1;
   cursor: pointer;
-  transition: transform var(--duration-micro) var(--ease-out), border-color var(--motion-fast) ease;
+  transition: background-color var(--motion-fast), color var(--motion-fast);
 }
 
-.folderColorSwatch:hover {
-  transform: scale(1.15);
-}
-
-/* "Default / none" swatch — neutral, with a hairline ring so it reads as a chip. */
-.folderColorSwatchNone {
+.sectionActionBtn:hover {
   background: var(--surface-3);
-  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-primary);
 }
 
-.folderColorSwatchActive {
-  border-color: var(--text-primary);
+/* Pin toggle on each bar — hover-revealed, like the delete button. */
+.pinToggle {
+  appearance: none;
+  /* Slot in the absolutely-positioned right-edge hover cluster, left of the
+   * Local⇄PR flip (37px) and ✕ delete (9px); the rarely-shown branch nudge sits
+   * one slot further out (93px). Absolute (not in normal flow) so the
+   * hover-revealed delete button never lands on top of the ✶ — the reported
+   * pin↔delete overlap. */
+  position: absolute;
+  right: 65px;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  z-index: 1;
+  opacity: 0;
+  transform: translateY(-50%) scale(0.9);
+  transition:
+    opacity var(--duration-default) var(--ease-out),
+    transform var(--duration-default) var(--ease-out),
+    background-color var(--duration-exit-fast) ease,
+    color var(--duration-exit-fast) ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .workspaceItem:hover .pinToggle,
+  .workspaceItem:focus-within .pinToggle {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+.pinToggle:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.pinToggle:active {
+  transform: translateY(-50%) scale(0.92);
+}
+
+/* Pinned state: tint + fill the ✶ so a hovered pinned row reads as "on" (click
+ * to unpin). The Pinned section header already carries the at-rest cue, so this
+ * stays hover-revealed like the rest of the cluster (no persistent opacity). */
+.pinToggleActive {
+  color: var(--accent-blue);
+}
+
+.pinToggleActive .pinIcon {
+  fill: currentColor;
+}
+
+.pinIcon {
+  display: block;
 }
 
 /* Per-project compact “Add” — disclosure with smooth expand (grid 0fr→1fr) */
@@ -2537,8 +2500,7 @@
   }
 
   .projectAddMenuItem:active,
-  .folderMenuBtn:active,
-  .folderMenuItem:active,
+  .pinToggle:active,
   .projectAddSummary:active {
     transform: none;
   }

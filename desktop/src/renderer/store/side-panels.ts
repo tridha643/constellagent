@@ -7,6 +7,7 @@ const DEFAULT_PANEL_SIDE: Record<PanelType, Side> = {
   project: 'left',
   files: 'right',
   changes: 'right',
+  checks: 'right',
   sideChat: 'right',
 }
 
@@ -132,6 +133,7 @@ export function panelLabel(panel: PanelType): string {
   if (panel === 'project') return 'Projects'
   if (panel === 'files') return 'Files'
   if (panel === 'changes') return 'Changes'
+  if (panel === 'checks') return 'Checks & Todos'
   if (panel === 'sideChat') return 'Side Chat'
   return 'Files'
 }

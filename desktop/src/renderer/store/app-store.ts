@@ -4,7 +4,7 @@ import type {
   AppState,
   Automation,
   ChatSnippet,
-  Folder,
+  CustomSection,
   LinearIssuesPriorityPreset,
   PersistedState,
   Project,
@@ -15,6 +15,7 @@ import type {
   Tab,
   SplitNode,
   SideTerminalSession,
+  TodoItem,
   Workspace,
 } from './types'
 import {
@@ -42,6 +43,7 @@ import {
   normalizeLinearWorkspaceTabOrder,
   normalizeLinearWorkspaceView,
 } from './types'
+import { migrateFoldersToOverrides } from './folder-migration'
 import {
   formatLinearIssueAgentPrompt,
   linearIssueAgentBranchName,
@@ -233,6 +235,9 @@ function normalizeProject(project: Project): Project {
     prLinkProvider: project.prLinkProvider ?? DEFAULT_PR_LINK_PROVIDER,
     startupCommands: normalizeHydratedStartupCommands(project.startupCommands),
   }
+  // Drop removed legacy Folder pointers if they ride in on old persisted state.
+  delete (normalized as unknown as Record<string, unknown>).priorityFolderId
+  delete (normalized as unknown as Record<string, unknown>).defaultFolderId
   if (project.graphiteNewBranchSource !== 'trunk' && project.graphiteNewBranchSource !== 'branch') {
     delete normalized.graphiteNewBranchSource
   }
@@ -479,6 +484,35 @@ function normalizeStringArrayByWorkspace(
   return out
 }
 
+/** Deserialize per-workspace todo lists with light validation (drops malformed entries). */
+function normalizeWorkspaceTodosMap(
+  raw: Record<string, import('./types').TodoItem[]> | undefined,
+): Record<string, import('./types').TodoItem[]> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, import('./types').TodoItem[]> = {}
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof k !== 'string' || !Array.isArray(v)) continue
+    const todos: import('./types').TodoItem[] = []
+    for (const item of v) {
+      if (!item || typeof item !== 'object') continue
+      const id = typeof item.id === 'string' ? item.id : null
+      const text = typeof item.text === 'string' ? item.text : null
+      if (!id || text === null) continue
+      todos.push({
+        id,
+        text,
+        done: item.done === true,
+        createdAt:
+          typeof item.createdAt === 'number' && Number.isFinite(item.createdAt)
+            ? item.createdAt
+            : 0,
+      })
+    }
+    if (todos.length > 0) out[k] = todos
+  }
+  return out
+}
+
 /** Track 3: deserialize the per-workspace HunkReview UI state. */
 function normalizeReviewPanelStateByWorkspace(
   raw: Record<string, Partial<import('./types').ReviewPanelPersistedState>> | undefined,
@@ -595,92 +629,12 @@ function normalizeHunkReviewWidthByWorkspace(
   return out
 }
 
-/**
- * Sidebar folders: every project keeps a "Priority" + "Non-Priority" pair.
- * `seedFoldersForProjects` builds folders for any project missing pointers
- * (legacy state). Reassigns dangling workspaces to the default folder.
- */
-function seedFoldersForProjects(
-  projects: Project[],
-  workspaces: Workspace[],
-  folders: Folder[],
-): { projects: Project[]; workspaces: Workspace[]; folders: Folder[] } {
-  const nextFolders = [...folders]
-  const folderIds = new Set(nextFolders.map((f) => f.id))
-  const foldersByProject = new Map<string, Folder[]>()
-  for (const f of nextFolders) {
-    const list = foldersByProject.get(f.projectId) ?? []
-    list.push(f)
-    foldersByProject.set(f.projectId, list)
-  }
-
-  const nextProjects = projects.map((project) => {
-    let projectFolders = foldersByProject.get(project.id) ?? []
-    let priorityId = project.priorityFolderId && folderIds.has(project.priorityFolderId) ? project.priorityFolderId : null
-    let defaultId = project.defaultFolderId && folderIds.has(project.defaultFolderId) ? project.defaultFolderId : null
-
-    if (!priorityId || !defaultId || projectFolders.length === 0) {
-      // Reuse existing folders that match canonical names if present; otherwise create.
-      let priority = projectFolders.find((f) => f.id === priorityId)
-        ?? projectFolders.find((f) => f.name.toLowerCase() === 'priority')
-      let nonPriority = projectFolders.find((f) => f.id === defaultId && f.id !== priority?.id)
-        ?? projectFolders.find((f) => f !== priority && f.name.toLowerCase() === 'non-priority')
-
-      if (!priority) {
-        priority = { id: crypto.randomUUID(), projectId: project.id, name: 'Priority', order: 0 }
-        nextFolders.push(priority)
-        folderIds.add(priority.id)
-        projectFolders = [...projectFolders, priority]
-      }
-      if (!nonPriority) {
-        nonPriority = { id: crypto.randomUUID(), projectId: project.id, name: 'Non-Priority', order: 1 }
-        nextFolders.push(nonPriority)
-        folderIds.add(nonPriority.id)
-        projectFolders = [...projectFolders, nonPriority]
-      }
-      priorityId = priority.id
-      defaultId = nonPriority.id
-      foldersByProject.set(project.id, projectFolders)
-    }
-
-    if (project.priorityFolderId === priorityId && project.defaultFolderId === defaultId) return project
-    return { ...project, priorityFolderId: priorityId, defaultFolderId: defaultId }
-  })
-
-  const projectDefaults = new Map<string, string>()
-  for (const project of nextProjects) {
-    if (project.defaultFolderId) projectDefaults.set(project.id, project.defaultFolderId)
-  }
-
-  const nextWorkspaces = workspaces.map((ws) => {
-    if (ws.folderId && folderIds.has(ws.folderId)) {
-      const folder = nextFolders.find((f) => f.id === ws.folderId)
-      if (folder && folder.projectId === ws.projectId) return ws
-    }
-    const fallback = projectDefaults.get(ws.projectId)
-    if (!fallback) return ws
-    if (ws.folderId === fallback) return ws
-    return { ...ws, folderId: fallback }
-  })
-
-  return { projects: nextProjects, workspaces: nextWorkspaces, folders: nextFolders }
-}
-
-function normalizeFolders(raw: unknown): Folder[] {
-  if (!Array.isArray(raw)) return []
-  const out: Folder[] = []
-  for (const entry of raw) {
-    if (!entry || typeof entry !== 'object') continue
-    const r = entry as Record<string, unknown>
-    if (typeof r.id !== 'string' || typeof r.projectId !== 'string' || typeof r.name !== 'string') continue
-    const order = typeof r.order === 'number' && Number.isFinite(r.order) ? r.order : out.length
-    out.push({
-      id: r.id,
-      projectId: r.projectId,
-      name: r.name,
-      order,
-      collapsed: r.collapsed === true ? true : undefined,
-    })
+/** Validate the persisted collapsed-sections map (string keys → true). */
+function normalizeCollapsedSidebarSections(raw: unknown): Record<string, boolean> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, boolean> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (value === true) out[key] = true
   }
   return out
 }
@@ -704,7 +658,7 @@ function pruneLastActiveWorkspaceByProjectId(
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
   workspaces: [],
-  folders: [],
+  customSections: [],
   tabs: [],
   automations: [],
   activeWorkspaceId: null,
@@ -716,9 +670,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   fileTreeExpandedPathsByWorkspace: {},
   reviewPanelStateByWorkspace: {},
   stagedSelectionByWorkspace: {},
+  workspaceTodos: {},
   sideTerminalsByWorkspace: {},
   rightSidebarBottomPanel: 'terminal',
   collapsedProjectIds: new Set<string>(),
+  collapsedSidebarSections: {},
   lastActiveWorkspaceByProjectId: {},
   lastSavedTabId: null,
   workspaceDialogProjectId: null,
@@ -765,11 +721,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addProject: (project) => {
     const normalizedProject = normalizeProject(project)
-    set((s) => {
-      const projects = [...s.projects, normalizedProject]
-      const seeded = seedFoldersForProjects(projects, s.workspaces, s.folders)
-      return { projects: seeded.projects, workspaces: seeded.workspaces, folders: seeded.folders }
-    })
+    set((s) => ({ projects: [...s.projects, normalizedProject] }))
     void syncExternalProjectStartupCommandsForProject(
       normalizedProject.id,
       normalizedProject.repoPath,
@@ -793,6 +745,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const newTabs = s.tabs.filter((t) => !removedWsIds.has(t.workspaceId))
       const sideTerminalsByWorkspace = { ...s.sideTerminalsByWorkspace }
       for (const wsId of removedWsIds) delete sideTerminalsByWorkspace[wsId]
+      const workspaceTodos = { ...s.workspaceTodos }
+      for (const wsId of removedWsIds) delete workspaceTodos[wsId]
       const planBuildTerminalByPlanPath = planBuildMapForTabs(s.planBuildTerminalByPlanPath, newTabs)
       const newAutomations = s.automations.filter((a) => a.projectId !== id)
       const newUnread = new Set(Array.from(s.unreadWorkspaceIds).filter((wsId) => !removedWsIds.has(wsId)))
@@ -840,12 +794,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? s.activeTabId
         : (newTabs.find((t) => t.workspaceId === activeWorkspaceId)?.id ?? newTabs[0]?.id ?? null)
 
-      const newFolders = s.folders.filter((f) => f.projectId !== id)
-
       return {
         projects: newProjects,
         workspaces: newWorkspaces,
-        folders: newFolders,
+        customSections: s.customSections.filter((sec) => sec.projectId !== id),
         tabs: newTabs,
         automations: newAutomations,
         unreadWorkspaceIds: newUnread,
@@ -858,6 +810,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         workspaceBarModeOverride: newWorkspaceBarModeOverride,
         worktreeSyncStatus: newWorktreeSyncStatus,
         sideTerminalsByWorkspace,
+        workspaceTodos,
         graphiteStacks: newGraphiteStacks,
         spotlightStatusByProject: newSpotlightStatusByProject,
         spotlightWorkspaceIdByProject: newSpotlightWorkspaceIdByProject,
@@ -880,9 +833,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       meta: workspace.automationId ? { automationOrigin: workspace.automationId } : undefined,
     })
     set((s) => {
-      const project = s.projects.find((p) => p.id === workspace.projectId)
-      const folderId = workspace.folderId ?? project?.defaultFolderId ?? undefined
-      const ws = folderId ? { ...workspace, folderId } : workspace
+      // A freshly created workspace becomes active immediately — stamp activity so
+      // it lands in the Active section and orders newest-first.
+      const ws: Workspace = { ...workspace, lastActiveAt: Date.now() }
       return {
         workspaces: [...s.workspaces, ws],
         activeWorkspaceId: ws.id,
@@ -919,6 +872,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       newWorktreeSyncStatus.delete(id)
       const sideTerminalsByWorkspace = { ...s.sideTerminalsByWorkspace }
       delete sideTerminalsByWorkspace[id]
+      const workspaceTodos = { ...s.workspaceTodos }
+      delete workspaceTodos[id]
       const newGraphiteStacks = new Map(s.graphiteStacks)
       newGraphiteStacks.delete(id)
       const newWorkspaceBarStatsMap = new Map(s.workspaceBarStatsMap)
@@ -959,6 +914,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeClaudeWorkspaceIds: newActiveClaude,
         worktreeSyncStatus: newWorktreeSyncStatus,
         sideTerminalsByWorkspace,
+        workspaceTodos,
         graphiteStacks: newGraphiteStacks,
         workspaceBarStatsMap: newWorkspaceBarStatsMap,
         workspaceBarModeOverride: newWorkspaceBarModeOverride,
@@ -1016,164 +972,204 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  addFolder: (projectId, name) => {
+  pinWorkspace: (workspaceId) => {
+    set((s) => {
+      const ws = s.workspaces.find((w) => w.id === workspaceId)
+      if (!ws || ws.pinned) return s
+      const maxOrder = s.workspaces.reduce(
+        (max, w) => (w.pinned && typeof w.pinOrder === 'number' ? Math.max(max, w.pinOrder) : max),
+        -1,
+      )
+      return {
+        // Pinning is mutually exclusive with a custom-section / bucket override.
+        workspaces: s.workspaces.map((w) =>
+          w.id === workspaceId
+            ? { ...w, pinned: true, pinOrder: maxOrder + 1, sectionId: undefined, bucketOverride: undefined }
+            : w,
+        ),
+      }
+    })
+  },
+
+  unpinWorkspace: (workspaceId) => {
+    set((s) => {
+      const ws = s.workspaces.find((w) => w.id === workspaceId)
+      if (!ws || !ws.pinned) return s
+      return {
+        workspaces: s.workspaces.map((w) =>
+          w.id === workspaceId ? { ...w, pinned: false, pinOrder: undefined } : w,
+        ),
+      }
+    })
+  },
+
+  togglePinWorkspace: (workspaceId) => {
+    const ws = get().workspaces.find((w) => w.id === workspaceId)
+    if (!ws) return
+    if (ws.pinned) get().unpinWorkspace(workspaceId)
+    else get().pinWorkspace(workspaceId)
+  },
+
+  movePinnedWorkspaceBefore: (workspaceId, beforeWorkspaceId) => {
+    if (workspaceId === beforeWorkspaceId) return
+    set((s) => {
+      const ws = s.workspaces.find((w) => w.id === workspaceId)
+      if (!ws) return s
+      // Re-sequence the dragged workspace's project pinned list. The dragged item
+      // is pinned in the process (drag-from-auto-onto-Pinned pins it).
+      const projectId = ws.projectId
+      const ordered = s.workspaces
+        .filter((w) => w.projectId === projectId && w.pinned && w.id !== workspaceId)
+        .slice()
+        .sort((a, b) => (a.pinOrder ?? 0) - (b.pinOrder ?? 0))
+      let insertIdx = ordered.length
+      if (beforeWorkspaceId) {
+        const idx = ordered.findIndex((w) => w.id === beforeWorkspaceId)
+        if (idx !== -1) insertIdx = idx
+      }
+      ordered.splice(insertIdx, 0, ws)
+      const orderMap = new Map(ordered.map((w, idx) => [w.id, idx]))
+      return {
+        // Pinning clears any custom-section / bucket override on the moved bar.
+        workspaces: s.workspaces.map((w) =>
+          orderMap.has(w.id)
+            ? { ...w, pinned: true, pinOrder: orderMap.get(w.id)!, sectionId: undefined, bucketOverride: undefined }
+            : w,
+        ),
+      }
+    })
+  },
+
+  touchWorkspaceActivity: (workspaceId) => {
+    set((s) => {
+      if (!s.workspaces.some((w) => w.id === workspaceId)) return s
+      const now = Date.now()
+      return {
+        workspaces: s.workspaces.map((w) => (w.id === workspaceId ? { ...w, lastActiveAt: now } : w)),
+      }
+    })
+  },
+
+  toggleSidebarSectionCollapsed: (projectId, sectionId) => {
+    set((s) => {
+      const key = `${projectId}:${sectionId}`
+      const next = { ...s.collapsedSidebarSections }
+      if (next[key]) delete next[key]
+      else next[key] = true
+      return { collapsedSidebarSections: next }
+    })
+  },
+
+  createCustomSection: (projectId, name) => {
     const id = crypto.randomUUID()
     set((s) => {
-      const siblingMax = s.folders
-        .filter((f) => f.projectId === projectId)
-        .reduce((max, f) => Math.max(max, f.order), -1)
-      const folder: Folder = {
-        id,
-        projectId,
-        name: name.trim() || 'Folder',
-        order: siblingMax + 1,
+      const maxOrder = s.customSections.reduce(
+        (max, sec) => (sec.projectId === projectId ? Math.max(max, sec.order) : max),
+        -1,
+      )
+      return {
+        customSections: [
+          ...s.customSections,
+          { id, projectId, name: name.trim() || 'New section', order: maxOrder + 1 },
+        ],
       }
-      return { folders: [...s.folders, folder] }
     })
     return id
   },
 
-  renameFolder: (id, name) => {
+  renameCustomSection: (sectionId, name) => {
     const trimmed = name.trim()
     if (!trimmed) return
     set((s) => ({
-      folders: s.folders.map((f) => (f.id === id ? { ...f, name: trimmed } : f)),
+      customSections: s.customSections.map((sec) =>
+        sec.id === sectionId ? { ...sec, name: trimmed } : sec,
+      ),
     }))
   },
 
-  setFolderColor: (id, color) => {
-    set((s) => ({
-      folders: s.folders.map((f) => (f.id === id ? { ...f, color } : f)),
-    }))
-  },
-
-  removeFolder: (id, reassignTo) => {
+  deleteCustomSection: (sectionId) => {
     set((s) => {
-      const folder = s.folders.find((f) => f.id === id)
-      if (!folder) return s
-      const siblings = s.folders.filter((f) => f.projectId === folder.projectId && f.id !== id)
-      if (siblings.length === 0) return s
-      const project = s.projects.find((p) => p.id === folder.projectId)
-
-      const firstSiblingByOrder = siblings.slice().sort((a, b) => a.order - b.order)[0]!.id
-      const explicit = reassignTo && siblings.some((f) => f.id === reassignTo) ? reassignTo : null
-      // Pointer migration: if the deleted folder is the default/priority pointer,
-      // move it to the explicit target or the first remaining folder.
-      const newDefaultId =
-        project?.defaultFolderId === id
-          ? explicit ?? firstSiblingByOrder
-          : project?.defaultFolderId ?? firstSiblingByOrder
-      const newPriorityId =
-        project?.priorityFolderId === id
-          ? explicit ?? firstSiblingByOrder
-          : project?.priorityFolderId ?? firstSiblingByOrder
-      // Workspaces in the deleted folder land in the (post-update) defaultFolderId.
-      const workspaceTargetId = explicit ?? newDefaultId
-
-      const projects = s.projects.map((p) => {
-        if (p.id !== folder.projectId) return p
-        return { ...p, defaultFolderId: newDefaultId, priorityFolderId: newPriorityId }
-      })
-      const workspaces = s.workspaces.map((w) => (w.folderId === id ? { ...w, folderId: workspaceTargetId } : w))
-      const folders = s.folders.filter((f) => f.id !== id)
-      return { projects, workspaces, folders }
+      if (!s.customSections.some((sec) => sec.id === sectionId)) return s
+      return {
+        customSections: s.customSections.filter((sec) => sec.id !== sectionId),
+        // Members revert to auto placement.
+        workspaces: s.workspaces.map((w) =>
+          w.sectionId === sectionId ? { ...w, sectionId: undefined } : w,
+        ),
+      }
     })
   },
 
-  reorderFolder: (fromId, toId) => {
+  reorderCustomSection: (fromId, toId) => {
     if (fromId === toId) return
     set((s) => {
-      const from = s.folders.find((f) => f.id === fromId)
-      const to = s.folders.find((f) => f.id === toId)
+      const from = s.customSections.find((sec) => sec.id === fromId)
+      const to = s.customSections.find((sec) => sec.id === toId)
       if (!from || !to || from.projectId !== to.projectId) return s
-      const list = s.folders
-        .filter((f) => f.projectId === from.projectId)
+      const ordered = s.customSections
+        .filter((sec) => sec.projectId === from.projectId)
         .slice()
         .sort((a, b) => a.order - b.order)
-      const fromIdx = list.findIndex((f) => f.id === fromId)
-      const toIdx = list.findIndex((f) => f.id === toId)
+      const fromIdx = ordered.findIndex((sec) => sec.id === fromId)
+      const toIdx = ordered.findIndex((sec) => sec.id === toId)
       if (fromIdx === -1 || toIdx === -1) return s
-      const [moved] = list.splice(fromIdx, 1)
-      list.splice(toIdx, 0, moved)
-      const orderMap = new Map(list.map((f, idx) => [f.id, idx]))
-      const folders = s.folders.map((f) =>
-        f.projectId === from.projectId ? { ...f, order: orderMap.get(f.id) ?? f.order } : f,
-      )
-      return { folders }
-    })
-  },
-
-  toggleFolderCollapsed: (id) => {
-    set((s) => ({
-      folders: s.folders.map((f) => (f.id === id ? { ...f, collapsed: !f.collapsed } : f)),
-    }))
-  },
-
-  setProjectPriorityFolder: (projectId, folderId) => {
-    set((s) => {
-      const folder = s.folders.find((f) => f.id === folderId)
-      if (!folder || folder.projectId !== projectId) return s
+      const [moved] = ordered.splice(fromIdx, 1)
+      ordered.splice(toIdx, 0, moved)
+      const orderMap = new Map(ordered.map((sec, idx) => [sec.id, idx]))
       return {
-        projects: s.projects.map((p) => (p.id === projectId ? { ...p, priorityFolderId: folderId } : p)),
+        customSections: s.customSections.map((sec) =>
+          orderMap.has(sec.id) ? { ...sec, order: orderMap.get(sec.id)! } : sec,
+        ),
       }
     })
   },
 
-  setProjectDefaultFolder: (projectId, folderId) => {
-    set((s) => {
-      const folder = s.folders.find((f) => f.id === folderId)
-      if (!folder || folder.projectId !== projectId) return s
-      return {
-        projects: s.projects.map((p) => (p.id === projectId ? { ...p, defaultFolderId: folderId } : p)),
-      }
-    })
-  },
-
-  moveWorkspaceToFolder: (workspaceId, folderId) => {
-    set((s) => {
-      const ws = s.workspaces.find((w) => w.id === workspaceId)
-      const folder = s.folders.find((f) => f.id === folderId)
-      if (!ws || !folder || folder.projectId !== ws.projectId) return s
-      if (ws.folderId === folderId) return s
-      return {
-        workspaces: s.workspaces.map((w) => (w.id === workspaceId ? { ...w, folderId } : w)),
-      }
-    })
-  },
-
-  moveWorkspaceToFolderBefore: (workspaceId, folderId, beforeWorkspaceId) => {
-    if (workspaceId === beforeWorkspaceId) return
-    set((s) => {
-      const ws = s.workspaces.find((w) => w.id === workspaceId)
-      const folder = s.folders.find((f) => f.id === folderId)
-      const beforeWs = s.workspaces.find((w) => w.id === beforeWorkspaceId)
-      if (!ws || !folder || !beforeWs) return s
-      if (folder.projectId !== ws.projectId || beforeWs.projectId !== ws.projectId) return s
-      const project = s.projects.find((p) => p.id === beforeWs.projectId)
-      const beforeFolderId = beforeWs.folderId ?? project?.defaultFolderId
-      if (beforeFolderId !== folderId) return s
-
-      const next = s.workspaces.filter((w) => w.id !== workspaceId)
-      const toIdx = next.findIndex((w) => w.id === beforeWorkspaceId)
-      if (toIdx === -1) return s
-
-      next.splice(toIdx, 0, ws.folderId === folderId ? ws : { ...ws, folderId })
-      return { workspaces: next }
-    })
-  },
-
-  togglePriorityForWorkspace: (workspaceId) => {
+  assignWorkspaceToSection: (workspaceId, sectionId) => {
     set((s) => {
       const ws = s.workspaces.find((w) => w.id === workspaceId)
       if (!ws) return s
-      const project = s.projects.find((p) => p.id === ws.projectId)
-      if (!project?.priorityFolderId || !project.defaultFolderId) return s
-      const targetId = ws.folderId === project.priorityFolderId
-        ? project.defaultFolderId
-        : project.priorityFolderId
-      if (ws.folderId === targetId) return s
+      // Assigning to a section requires it to exist for this workspace's project.
+      if (sectionId !== null) {
+        const sec = s.customSections.find((c) => c.id === sectionId)
+        if (!sec || sec.projectId !== ws.projectId) return s
+      }
       return {
-        workspaces: s.workspaces.map((w) => (w.id === workspaceId ? { ...w, folderId: targetId } : w)),
+        // A custom-section assignment is mutually exclusive with pinning / bucket override.
+        workspaces: s.workspaces.map((w) =>
+          w.id === workspaceId
+            ? { ...w, sectionId: sectionId ?? undefined, pinned: false, pinOrder: undefined, bucketOverride: undefined }
+            : w,
+        ),
+      }
+    })
+  },
+
+  setWorkspaceBucketOverride: (workspaceId, bucket) => {
+    set((s) => {
+      const ws = s.workspaces.find((w) => w.id === workspaceId)
+      if (!ws) return s
+      return {
+        // A bucket override is mutually exclusive with pinning / custom section.
+        workspaces: s.workspaces.map((w) =>
+          w.id === workspaceId
+            ? { ...w, bucketOverride: bucket ?? undefined, pinned: false, pinOrder: undefined, sectionId: undefined }
+            : w,
+        ),
+      }
+    })
+  },
+
+  resetWorkspacePlacement: (workspaceId) => {
+    set((s) => {
+      const ws = s.workspaces.find((w) => w.id === workspaceId)
+      if (!ws) return s
+      if (!ws.pinned && ws.sectionId === undefined && ws.bucketOverride === undefined) return s
+      return {
+        workspaces: s.workspaces.map((w) =>
+          w.id === workspaceId
+            ? { ...w, pinned: false, pinOrder: undefined, sectionId: undefined, bucketOverride: undefined }
+            : w,
+        ),
       }
     })
   },
@@ -1243,6 +1239,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         : s.sidePanels
       if (id && !sidePanelsByWorkspace[id]) sidePanelsByWorkspace[id] = nextSidePanels
 
+      // Selection is the activity floor: stamp lastActiveAt so the entering
+      // workspace powers the Active/Idle split and orders newest-first.
+      const workspaces = nextWorkspace
+        ? s.workspaces.map((w) => (w.id === id ? { ...w, lastActiveAt: Date.now() } : w))
+        : s.workspaces
+
       return {
         activeWorkspaceId: id,
         activeTabId,
@@ -1252,6 +1254,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         collapsedProjectIds,
         sidePanels: nextSidePanels,
         sidePanelsByWorkspace,
+        workspaces,
       }
     }),
 
@@ -3616,6 +3619,77 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
+  addTodo: (workspaceId, text) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    set((s) => {
+      const existing = s.workspaceTodos[workspaceId] ?? []
+      const todo: TodoItem = {
+        id: crypto.randomUUID(),
+        text: trimmed,
+        done: false,
+        createdAt: Date.now(),
+      }
+      return {
+        workspaceTodos: { ...s.workspaceTodos, [workspaceId]: [...existing, todo] },
+      }
+    })
+  },
+
+  renameTodo: (workspaceId, todoId, text) => {
+    const trimmed = text.trim()
+    // Inline-edit to empty ⇒ revert (no-op), don't delete.
+    if (!trimmed) return
+    set((s) => {
+      const existing = s.workspaceTodos[workspaceId]
+      if (!existing) return {}
+      const next = existing.map((t) => (t.id === todoId ? { ...t, text: trimmed } : t))
+      return { workspaceTodos: { ...s.workspaceTodos, [workspaceId]: next } }
+    })
+  },
+
+  toggleTodo: (workspaceId, todoId) => {
+    set((s) => {
+      const existing = s.workspaceTodos[workspaceId]
+      if (!existing) return {}
+      const next = existing.map((t) => (t.id === todoId ? { ...t, done: !t.done } : t))
+      return { workspaceTodos: { ...s.workspaceTodos, [workspaceId]: next } }
+    })
+  },
+
+  removeTodo: (workspaceId, todoId) => {
+    set((s) => {
+      const existing = s.workspaceTodos[workspaceId]
+      if (!existing) return {}
+      const next = existing.filter((t) => t.id !== todoId)
+      return { workspaceTodos: { ...s.workspaceTodos, [workspaceId]: next } }
+    })
+  },
+
+  reorderTodos: (workspaceId, orderedIds) => {
+    set((s) => {
+      const existing = s.workspaceTodos[workspaceId]
+      if (!existing) return {}
+      const byId = new Map(existing.map((t) => [t.id, t]))
+      const reordered = orderedIds
+        .map((id) => byId.get(id))
+        .filter((t): t is TodoItem => t !== undefined)
+      // Guard against a malformed permutation dropping items.
+      if (reordered.length !== existing.length) return {}
+      return { workspaceTodos: { ...s.workspaceTodos, [workspaceId]: reordered } }
+    })
+  },
+
+  clearCompletedTodos: (workspaceId) => {
+    set((s) => {
+      const existing = s.workspaceTodos[workspaceId]
+      if (!existing) return {}
+      const next = existing.filter((t) => !t.done)
+      if (next.length === existing.length) return {}
+      return { workspaceTodos: { ...s.workspaceTodos, [workspaceId]: next } }
+    })
+  },
+
   setSidePanelsForWorkspace: (workspaceId, layout) => {
     set((s) => ({
       sidePanelsByWorkspace: { ...s.sidePanelsByWorkspace, [workspaceId]: layout },
@@ -3811,7 +3885,32 @@ export const useAppStore = create<AppState>((set, get) => ({
         tabs.some((tab) => tab.id === tabId),
       ),
     )
-    const seeded = seedFoldersForProjects(projects, workspaces, normalizeFolders(data.folders))
+    const migratedWorkspaces = migrateFoldersToOverrides(data, workspaces)
+    // Manual sections: keep only well-formed entries for still-existing projects,
+    // then strip any workspace.sectionId that no longer points at a live section.
+    const projectIds = new Set(projects.map((p) => p.id))
+    const hydratedCustomSections: CustomSection[] = (data.customSections ?? [])
+      .filter(
+        (sec): sec is CustomSection =>
+          !!sec &&
+          typeof sec.id === 'string' &&
+          typeof sec.projectId === 'string' &&
+          typeof sec.name === 'string' &&
+          projectIds.has(sec.projectId),
+      )
+      .map((sec, idx) => ({ ...sec, order: typeof sec.order === 'number' ? sec.order : idx }))
+    const validSectionIds = new Set(hydratedCustomSections.map((sec) => sec.id))
+    const validBucketOverrides = new Set(['needs-you', 'in-review', 'active', 'idle'])
+    const sanitizedWorkspaces = migratedWorkspaces.map((w) => {
+      const dropSection = w.sectionId && !validSectionIds.has(w.sectionId)
+      const dropBucket = w.bucketOverride && !validBucketOverrides.has(w.bucketOverride)
+      if (!dropSection && !dropBucket) return w
+      return {
+        ...w,
+        sectionId: dropSection ? undefined : w.sectionId,
+        bucketOverride: dropBucket ? undefined : w.bucketOverride,
+      }
+    })
     // Seed working-tree snapshots from persisted statuses so the Changes panel
     // can render synchronously at cold boot. Diff bodies aren't persisted —
     // they're regenerated on demand by the diff viewer.
@@ -3831,9 +3930,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
     set({
-      projects: seeded.projects,
-      workspaces: seeded.workspaces,
-      folders: seeded.folders,
+      projects,
+      workspaces: sanitizedWorkspaces,
+      customSections: hydratedCustomSections,
+      collapsedSidebarSections: normalizeCollapsedSidebarSections(data.collapsedSidebarSections),
       tabs,
       automations: (data.automations ?? []).map((automation) => normalizeRendererAutomation(automation)),
       activeWorkspaceId,
@@ -3867,7 +3967,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       fileTreeExpandedPathsByWorkspace: normalizeStringArrayByWorkspace(data.fileTreeExpandedPathsByWorkspace),
       reviewPanelStateByWorkspace: normalizeReviewPanelStateByWorkspace(data.reviewPanelStateByWorkspace),
       stagedSelectionByWorkspace: normalizeStringArrayByWorkspace(data.stagedSelectionByWorkspace),
-      sideTerminalsByWorkspace: normalizeSideTerminalsByWorkspace(data.sideTerminalsByWorkspace, seeded.workspaces),
+      workspaceTodos: normalizeWorkspaceTodosMap(data.workspaceTodos),
+      sideTerminalsByWorkspace: normalizeSideTerminalsByWorkspace(data.sideTerminalsByWorkspace, sanitizedWorkspaces),
     })
   },
 
@@ -4087,7 +4188,7 @@ function getPersistedSlice(state: AppState): PersistedState {
   return {
     projects: state.projects.map(({ startupCommands, ...project }) => project),
     workspaces: state.workspaces,
-    folders: state.folders,
+    customSections: state.customSections,
     tabs: state.tabs,
     automations: state.automations,
     composioWebhook: state.composioWebhook,
@@ -4101,8 +4202,10 @@ function getPersistedSlice(state: AppState): PersistedState {
     fileTreeExpandedPathsByWorkspace: state.fileTreeExpandedPathsByWorkspace,
     reviewPanelStateByWorkspace: state.reviewPanelStateByWorkspace,
     stagedSelectionByWorkspace: state.stagedSelectionByWorkspace,
+    workspaceTodos: state.workspaceTodos,
     sideTerminalsByWorkspace: persistedSideTerminals(state.sideTerminalsByWorkspace),
     sidebarActionOrder: state.sidebarActionOrder,
+    collapsedSidebarSections: state.collapsedSidebarSections,
     spotlightWorkspaceIdByProject: state.spotlightWorkspaceIdByProject,
     workingTreeStatusByPath,
   }
@@ -4123,7 +4226,8 @@ useAppStore.subscribe((state, prevState) => {
   if (
     state.projects !== prevState.projects ||
     state.workspaces !== prevState.workspaces ||
-    state.folders !== prevState.folders ||
+    state.customSections !== prevState.customSections ||
+    state.collapsedSidebarSections !== prevState.collapsedSidebarSections ||
     state.tabs !== prevState.tabs ||
     state.activeTabId !== prevState.activeTabId ||
     state.automations !== prevState.automations ||
@@ -4136,6 +4240,7 @@ useAppStore.subscribe((state, prevState) => {
     state.fileTreeExpandedPathsByWorkspace !== prevState.fileTreeExpandedPathsByWorkspace ||
     state.reviewPanelStateByWorkspace !== prevState.reviewPanelStateByWorkspace ||
     state.stagedSelectionByWorkspace !== prevState.stagedSelectionByWorkspace ||
+    state.workspaceTodos !== prevState.workspaceTodos ||
     state.sideTerminalsByWorkspace !== prevState.sideTerminalsByWorkspace ||
     state.sidebarActionOrder !== prevState.sidebarActionOrder ||
     state.spotlightWorkspaceIdByProject !== prevState.spotlightWorkspaceIdByProject

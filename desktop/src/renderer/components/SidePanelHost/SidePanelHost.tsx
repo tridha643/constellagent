@@ -5,6 +5,7 @@ import {
   FilePlus,
   FolderTree,
   LayoutList,
+  ListChecks,
   MessageSquareMore,
   Plus,
   Search,
@@ -16,6 +17,7 @@ import { panelLabel } from '../../store/side-panels'
 import { Sidebar } from '../Sidebar/Sidebar'
 import { FileTree } from '../RightPanel/FileTree'
 import { ChangedFiles } from '../RightPanel/ChangedFiles'
+import { ChecksTodosPanel } from '../Checks/ChecksTodosPanel'
 import { SideChatPanel } from '../SideChatPanel/SideChatPanel'
 import { SideTerminalPanel } from '../SideTerminalPanel/SideTerminalPanel'
 import { SetupPanel } from './SetupPanel'
@@ -27,11 +29,13 @@ import styles from './SidePanelHost.module.css'
 const PANEL_SHORTCUTS: Partial<Record<PanelType, string>> = {
   files: '⇧⌘E',
   changes: '⇧⌘G',
+  checks: '⇧⌘H',
 }
 
 const PANEL_ICONS: Record<PanelType, ComponentType<{ size?: number; strokeWidth?: number }>> = {
   files: FolderTree,
   changes: FileDiff,
+  checks: ListChecks,
   project: LayoutList,
   sideChat: MessageSquareMore,
 }
@@ -73,6 +77,9 @@ function renderPanel(panel: PanelType, workspace: { id: string; worktreePath: st
   if (panel === 'changes') {
     return <ChangedFiles worktreePath={workspace.worktreePath} workspaceId={workspace.id} isActive />
   }
+  if (panel === 'checks') {
+    return <ChecksTodosPanel workspaceId={workspace.id} />
+  }
   if (panel === 'sideChat') {
     return <SideChatPanel workspaceId={workspace.id} worktreePath={workspace.worktreePath} />
   }
@@ -84,7 +91,8 @@ function RightSidebarBottomDock({ workspace }: { workspace: { id: string; projec
   const setActiveBottomPanel = useAppStore((s) => s.setRightSidebarBottomPanel)
   const createSideTerminal = useAppStore((s) => s.createSideTerminalForActiveWorkspace)
 
-  const [collapsed, setCollapsed] = useState(false)
+  // Default to collapsed — the dock only expands when explicitly opened.
+  const [collapsed, setCollapsed] = useState(true)
 
   // Selecting a tab while collapsed should reveal the dock body, not silently
   // switch a hidden panel.
