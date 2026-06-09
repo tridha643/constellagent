@@ -38,6 +38,7 @@ import {
   subagentTaskMessageText,
 } from './cursor-driver-deltas'
 import { loadCursorSdkAgents } from './cursor-subagent-config'
+import { SkillsService } from '../skills-service'
 import { createCursorAskQuestionHandler } from './cursor-interaction-bridge'
 import { setCursorAskQuestionHandler } from './cursor-sdk-interaction-patch'
 import { cursorConductorLocalPermissions } from './conductor-sdk-cli-permissions'
@@ -168,7 +169,7 @@ async function createCursorSdkAgent(
     model: { id: effectiveModel },
     local: {
       cwd: ctx.workspacePath,
-      settingSources: ['project' as const],
+      settingSources: ['all' as const],
       ...cursorConductorLocalPermissions(ctx.plan),
     },
     ...(Object.keys(agents).length > 0 ? { agents } : {}),
@@ -272,15 +273,29 @@ export class CursorDriver implements AgentDriver {
     // Send the markdown formatting prefix only once per agent; it stays in the
     // agent's history afterwards, so continuation turns skip the ~75 tokens.
     const includeFormatPrefix = !state.formatPrimed
-    const prompt = buildAgentPrompt(
+    const skillExpansion = await SkillsService.expandSkillInvocation(
       ctx.text,
+      'cursor',
+      ctx.workspacePath,
+    )
+    const prompt = buildAgentPrompt(
+      skillExpansion.text,
       ctx.plan,
       needsNewAgent ? ctx.previousTranscript : undefined,
       'cursor',
       ctx.canvas,
       includeFormatPrefix,
+      skillExpansion.isSkillInvocation,
     )
-    if (promptEmitsFormatPrefix(ctx.text, 'cursor', ctx.canvas, includeFormatPrefix)) {
+    if (
+      promptEmitsFormatPrefix(
+        skillExpansion.text,
+        'cursor',
+        ctx.canvas,
+        includeFormatPrefix,
+        skillExpansion.isSkillInvocation,
+      )
+    ) {
       state.formatPrimed = true
     }
     const message = buildCursorUserMessage(prompt, ctx.attachments)

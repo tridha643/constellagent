@@ -22,7 +22,7 @@ import {
 } from '../../../shared/conductor-model-utils'
 import type { Tab } from '../../store/types'
 import { ChatTimeline, type ChatTimelineHandle } from './chat/ChatTimeline'
-import { ChatComposer, type ChatComposerHandle } from './chat/ChatComposer'
+import { ChatComposer, EMPTY_QUEUED_AGENT_MESSAGES, type ChatComposerHandle } from './chat/ChatComposer'
 import { ConductorEmbeddedTerminal } from './chat/ConductorEmbeddedTerminal'
 import { ConductorMcpStatusPanel } from './chat/ConductorMcpStatusPanel'
 import { ConductorMcpTerminalBanner } from './chat/ConductorMcpTerminalBanner'
@@ -730,7 +730,7 @@ export function ConductorChatView({
         plan={plan}
         running={running}
         disabled={!worktreePath || awaitingUser}
-        queuedMessages={controller.state?.queuedMessages ?? []}
+        queuedMessages={controller.state?.queuedMessages ?? EMPTY_QUEUED_AGENT_MESSAGES}
         transcript={controller.transcript}
         onSubmit={handleSubmit}
         onCancel={controller.cancel}

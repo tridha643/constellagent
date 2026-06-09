@@ -155,7 +155,10 @@ export function ChatMessage({
 
   useLayoutEffect(() => {
     if (isUser || isStreaming) return
-    streamRef.current?.refreshDecorations()
+    const handle = streamRef.current
+    if (!handle) return
+    handle.endStreaming(normalizedText)
+    handle.refreshDecorations()
   }, [isStreaming, isUser, message.id, normalizedText])
 
   return (

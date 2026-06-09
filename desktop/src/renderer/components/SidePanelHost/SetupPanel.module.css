@@ -1,0 +1,313 @@
+/* Setup panel — Emil-grade polish: ease-out everywhere, scale(0.97) press
+   feedback, a subtle staggered entrance, and motion gated behind
+   prefers-reduced-motion. */
+.panel {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  box-sizing: border-box;
+}
+
+/* ── Primary "most used" action ── */
+.primary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 30%, var(--panel-border));
+  background: color-mix(in srgb, var(--accent-blue) 9%, transparent);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out), background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.primary:active {
+  transform: scale(0.97);
+}
+
+.primaryIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--accent-blue) 22%, transparent);
+  color: var(--accent-blue);
+}
+
+.primaryText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.primaryName {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.primaryCommand {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.primaryHint {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.primary:hover .primaryHint {
+  opacity: 0.8;
+}
+
+/* ── Script list ── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sectionLabel {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.list > li {
+  opacity: 0;
+  transform: translateY(4px);
+  animation: setupRowIn 200ms var(--ease-out) forwards;
+  animation-delay: calc(var(--row-index, 0) * 28ms);
+}
+
+@keyframes setupRowIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 140ms var(--ease-out), background-color 140ms ease,
+    color 140ms ease;
+}
+
+.row:active {
+  transform: scale(0.985);
+}
+
+.rowIcon {
+  flex: none;
+  color: var(--text-tertiary);
+  transition: color 140ms ease;
+}
+
+.rowName {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  flex: none;
+}
+
+.rowCommand {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ── Custom command ── */
+.customForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.input {
+  height: 30px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--panel-border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.input:focus {
+  border-color: color-mix(in srgb, var(--accent-blue) 50%, var(--panel-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 14%, transparent);
+}
+
+.input::placeholder {
+  color: var(--text-ghost);
+  font-family: var(--font-ui);
+}
+
+.customRow {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.customRow .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.runButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 var(--space-3);
+  flex: none;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition: transform 140ms var(--ease-out), background-color 140ms ease;
+}
+
+.runButton:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.runButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.hint,
+.note {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.note {
+  padding: var(--space-2) 0;
+}
+
+/* ── Empty state (no workspace) ── */
+.empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.emptyText {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .primary:hover {
+    background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+    border-color: color-mix(in srgb, var(--accent-blue) 42%, var(--panel-border));
+  }
+
+  .row:hover {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+    color: var(--text-primary);
+  }
+
+  .row:hover .rowIcon {
+    color: var(--accent-blue);
+  }
+
+  .runButton:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary,
+  .row,
+  .runButton {
+    transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+  }
+
+  .primary:active,
+  .row:active,
+  .runButton:active:not(:disabled) {
+    transform: none;
+  }
+
+  .list > li {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
+}

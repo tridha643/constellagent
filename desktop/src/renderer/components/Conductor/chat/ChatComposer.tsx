@@ -45,6 +45,9 @@ import {
 } from './conductor-attachments'
 import styles from '../Conductor.module.css'
 
+/** Stable fallback so queue-reconcile effects do not re-run on every parent render. */
+export const EMPTY_QUEUED_AGENT_MESSAGES: readonly QueuedAgentMessage[] = []
+
 export interface ChatComposerHandle {
   setText: (text: string) => void
   focus: () => void

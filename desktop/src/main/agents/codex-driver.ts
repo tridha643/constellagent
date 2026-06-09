@@ -62,6 +62,7 @@ import {
   mapAppServerNotification,
   type CodexAppServerEventMapperState,
 } from './codex-app-server-events'
+import { SkillsService } from '../skills-service'
 
 interface CodexThreadHandle {
   readonly threadId: string
@@ -582,15 +583,29 @@ export class CodexDriver implements AgentDriver {
     // Send the markdown formatting prefix only on a thread's first turn; it
     // persists in thread history thereafter (saves ~75 tokens every later turn).
     const includeFormatPrefix = !state.formatPrimed
-    const prompt = buildAgentPrompt(
+    const skillExpansion = await SkillsService.expandSkillInvocation(
       ctx.text,
+      'codex',
+      ctx.workspacePath,
+    )
+    const prompt = buildAgentPrompt(
+      skillExpansion.text,
       plan,
       seedTranscript && ctx.previousTranscript?.length ? ctx.previousTranscript : undefined,
       'codex',
       ctx.canvas,
       includeFormatPrefix,
+      skillExpansion.isSkillInvocation,
     )
-    if (promptEmitsFormatPrefix(ctx.text, 'codex', ctx.canvas, includeFormatPrefix)) {
+    if (
+      promptEmitsFormatPrefix(
+        skillExpansion.text,
+        'codex',
+        ctx.canvas,
+        includeFormatPrefix,
+        skillExpansion.isSkillInvocation,
+      )
+    ) {
       state.formatPrimed = true
     }
     const imageInput = await writeCodexImageAttachments(ctx.attachments)

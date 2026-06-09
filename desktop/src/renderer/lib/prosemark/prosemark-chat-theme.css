@@ -84,7 +84,9 @@
   line-height: 1.65;
   letter-spacing: -0.011em;
   color: var(--text-primary);
-  text-wrap: pretty;
+  text-wrap: wrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .prosemark-chat .cm-editor .cm-line:not(.cm-fenced-code-line),
@@ -376,6 +378,11 @@
   color: inherit;
   background: var(--pm-inline-code-background-color);
   border: none;
+  /* Padding must apply only to the true outer edges. CodeMirror splits one
+     inline-code mark into multiple adjacent spans on stream-chunk boundaries;
+     `clone` would re-pad each fragment and split words ("Cod ex"). */
+  box-decoration-break: slice;
+  -webkit-box-decoration-break: slice;
 }
 
 /* Inline tool rows: same prose-native code; file paths should prefer cm-file-chip. */
@@ -408,6 +415,9 @@
 /* Writer-style block rhythm + richer media/file chips for chat markdown. */
 .prosemark-chat .cm-editor .cm-line {
   min-height: 1.62em;
+  text-wrap: wrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .prosemark-chat .cm-editor .cm-content .cm-heading-line-1,

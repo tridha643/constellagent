@@ -10,13 +10,27 @@ import {
 import { createPortal } from 'react-dom'
 import styles from './Tooltip.module.css'
 
+type TooltipChildProps = Record<string, unknown> & {
+  ref?: React.Ref<HTMLElement>
+}
+
 interface Props {
   label: ReactNode
   shortcut?: string
   position?: 'top' | 'bottom'
   /** Wider tooltip with wrapped lines (e.g. context stats). */
   multiline?: boolean
-  children: React.ReactElement<Record<string, unknown>>
+  children: React.ReactElement<TooltipChildProps>
+}
+
+function mergeRefs<T>(...refs: Array<React.Ref<T> | undefined>): React.RefCallback<T> {
+  return (node) => {
+    for (const ref of refs) {
+      if (!ref) continue
+      if (typeof ref === 'function') ref(node)
+      else (ref as React.MutableRefObject<T | null>).current = node
+    }
+  }
 }
 
 const SHOW_DELAY = 400
@@ -38,6 +52,10 @@ export function Tooltip({ label, shortcut, position = 'top', multiline = false, 
   const elRef = useRef<HTMLElement | null>(null)
   const tooltipRef = useRef<HTMLDivElement | null>(null)
   const showTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const visibleRef = useRef(visible)
+  const childRef = useRef(children.props.ref)
+  visibleRef.current = visible
+  childRef.current = children.props.ref
 
   const show = useCallback(() => {
     clearTimeout(showTimer.current)
@@ -70,10 +88,10 @@ export function Tooltip({ label, shortcut, position = 'top', multiline = false, 
 
   const hide = useCallback(() => {
     clearTimeout(showTimer.current)
-    if (visible) lastTooltipHidden = Date.now()
+    if (visibleRef.current) lastTooltipHidden = Date.now()
     setEntered(false)
     setVisible(false)
-  }, [visible])
+  }, [])
 
   useEffect(() => {
     return () => clearTimeout(showTimer.current)
@@ -103,15 +121,13 @@ export function Tooltip({ label, shortcut, position = 'top', multiline = false, 
     }
   }, [visible, coords.x])
 
-  // Merge our ref with any existing ref on the child
-  const setRef = useCallback((node: HTMLElement | null) => {
-    elRef.current = node
-    const childRef = (children as { ref?: React.Ref<HTMLElement> }).ref
-    if (typeof childRef === 'function') childRef(node)
-    else if (childRef && typeof childRef === 'object') {
-      (childRef as React.MutableRefObject<HTMLElement | null>).current = node
-    }
-  }, [children])
+  const setRef = useCallback(
+    (node: HTMLElement | null) => {
+      elRef.current = node
+      mergeRefs(childRef.current)(node)
+    },
+    [],
+  )
 
   const child = cloneElement(children, {
     ref: setRef,

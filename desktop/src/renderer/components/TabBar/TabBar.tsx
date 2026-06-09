@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../../store/app-store'
-import { ServiceLauncherMenu } from './ServiceLauncherMenu'
 import type { Tab, AgentType } from '../../store/types'
 import { resolveEditor } from '../../store/types'
 import { getAllPtyIds } from '../../store/split-helpers'
@@ -99,9 +98,6 @@ export function TabBar() {
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null)
   const [reorderDropIndex, setReorderDropIndex] = useState<number | null>(null)
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
-  const [serviceLauncherState, setServiceLauncherState] = useState<{ open: boolean; rect: DOMRect | null; el: HTMLElement | null }>(
-    { open: false, rect: null, el: null },
-  )
   /** Same pattern as Sidebar `draggingWorkspaceIdRef` — Electron needs sync ref for dragOver. */
   const draggingTabIdRef = useRef<string | null>(null)
   const leftSidePanelOpen = useAppStore((s) => s.sidePanels.left.open)
@@ -442,32 +438,6 @@ export function TabBar() {
           π
         </button>
       </Tooltip>
-
-      <Tooltip label="Run service" shortcut="">
-        <button
-          type="button"
-          className={`${styles.newTabButton} ${!activeWorkspaceId ? styles.tabBarActionMuted : ''}`}
-          aria-label="Run service"
-          aria-disabled={!activeWorkspaceId}
-          data-testid="service-launcher-button"
-          onClick={(e) => {
-            if (!activeWorkspaceId) return
-            const el = e.currentTarget
-            setServiceLauncherState((s) => (
-              s.open ? { open: false, rect: null, el: null } : { open: true, rect: el.getBoundingClientRect(), el }
-            ))
-          }}
-        >
-          <PlayIcon className={styles.serviceLauncherIcon} />
-        </button>
-      </Tooltip>
-      {serviceLauncherState.open && activeWorkspaceId && (
-        <ServiceLauncherMenu
-          anchorRect={serviceLauncherState.rect}
-          anchorEl={serviceLauncherState.el}
-          onClose={() => setServiceLauncherState({ open: false, rect: null, el: null })}
-        />
-      )}
 
       <Tooltip label={isSpotlightActiveHere ? 'Stop spotlight' : 'Spotlight this workspace'} shortcut="">
         <button

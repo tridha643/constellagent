@@ -189,72 +189,69 @@ test.describe('Service tabs', () => {
     }
   })
 
-  test('launcher button opens popover, clicking a script creates a service tab', async () => {
+  // Reveal the Setup tab in the right-sidebar bottom dock so its scripts render.
+  async function openSetupPanel(window: Page) {
+    await window.evaluate(() => {
+      const store = (window as any).__store.getState()
+      store.setSidePanelOpen('right', true)
+      store.setRightSidebarBottomPanel('setup')
+    })
+    await expect(window.locator('[data-testid="setup-panel"]')).toBeVisible({ timeout: 5000 })
+  }
+
+  test('Setup panel lists scripts and launching one opens a side terminal', async () => {
     const repoPath = createServiceRepo('ui')
     const { app, window } = await launchApp()
     try {
-      await setupServiceWorkspace(window, repoPath)
+      const { wsId } = await setupServiceWorkspace(window, repoPath)
       await window.waitForTimeout(800)
+      await openSetupPanel(window)
 
-      // Open the launcher popover. The button lives in TabBar (always rendered).
-      const launcherBtn = window.locator('[data-testid="service-launcher-button"]')
-      await launcherBtn.click()
-
-      const menu = window.locator('[data-testid="service-launcher-menu"]')
-      await expect(menu).toBeVisible({ timeout: 5000 })
-
-      // `fast` exits immediately so we don't leave a dangling process.
-      const fastEntry = window.locator('[data-testid="service-script-fast"]')
+      // `dev` is the primary (well-known sort); `fast` exits immediately so it
+      // won't leave a dangling process — launch it from the script list.
+      const fastEntry = window.locator('[data-testid="setup-script-fast"]')
       await expect(fastEntry).toBeVisible({ timeout: 3000 })
       await fastEntry.click()
 
-      // Service tab appears in store.
-      await window.waitForFunction(() => {
+      // A side terminal session is created for the workspace (tmux or local).
+      await window.waitForFunction((id: string) => {
         const s = (window as any).__store.getState()
-        return s.tabs.some((t: any) => t.type === 'service')
-      }, undefined, { timeout: 5000 })
+        return (s.sideTerminalsByWorkspace[id] ?? []).length > 0
+      }, wsId, { timeout: 5000 })
 
-      const serviceTab = await window.evaluate(() => {
+      const session = await window.evaluate((id: string) => {
         const s = (window as any).__store.getState()
-        return s.tabs.find((t: any) => t.type === 'service')
-      })
-      expect(serviceTab.scriptName).toBe('fast')
-
-      // ServicePanel is in the DOM.
-      const panel = window.locator('[data-testid="service-panel"]')
-      await expect(panel).toBeVisible({ timeout: 3000 })
+        return (s.sideTerminalsByWorkspace[id] ?? [])[0]
+      }, wsId)
+      expect(session.title).toBe('fast')
     } finally {
       await app.close()
     }
   })
 
-  test('launcher can run a named custom command', async () => {
+  test('Setup panel runs a named custom command in a side terminal', async () => {
     const repoPath = createServiceRepo('custom')
     const { app, window } = await launchApp()
     try {
-      await setupServiceWorkspace(window, repoPath)
+      const { wsId } = await setupServiceWorkspace(window, repoPath)
       await window.waitForTimeout(800)
-
-      await window.locator('[data-testid="service-launcher-button"]').click()
-      await expect(window.locator('[data-testid="service-launcher-menu"]')).toBeVisible({ timeout: 5000 })
+      await openSetupPanel(window)
 
       const customCommand = "node -e \"console.log('custom-ok');process.exit(0);\""
-      await window.locator('[data-testid="service-custom-name"]').fill('custom fast')
-      await window.locator('[data-testid="service-custom-input"]').fill(customCommand)
-      await window.locator('[data-testid="service-custom-run"]').click()
+      await window.locator('[data-testid="setup-custom-name"]').fill('custom fast')
+      await window.locator('[data-testid="setup-custom-input"]').fill(customCommand)
+      await window.locator('[data-testid="setup-custom-run"]').click()
 
-      await window.waitForFunction(() => {
+      await window.waitForFunction((id: string) => {
         const s = (window as any).__store.getState()
-        return s.tabs.some((t: any) => t.type === 'service')
-      }, undefined, { timeout: 5000 })
+        return (s.sideTerminalsByWorkspace[id] ?? []).some((t: any) => t.title === 'custom fast')
+      }, wsId, { timeout: 5000 })
 
-      const serviceTab = await window.evaluate(() => {
+      const session = await window.evaluate((id: string) => {
         const s = (window as any).__store.getState()
-        return s.tabs.find((t: any) => t.type === 'service')
-      })
-      expect(serviceTab.scriptName).toBe('custom fast')
-      expect(serviceTab.command).toBe(customCommand)
-      await expect(window.locator('[data-testid="service-panel"]')).toBeVisible({ timeout: 3000 })
+        return (s.sideTerminalsByWorkspace[id] ?? []).find((t: any) => t.title === 'custom fast')
+      }, wsId)
+      expect(session).toBeTruthy()
     } finally {
       await app.close()
     }

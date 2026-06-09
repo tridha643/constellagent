@@ -83,6 +83,13 @@ export const IPC = {
   /** Renderer → main: current input line on Enter (xterm often sends only \\r to PTY) */
   PTY_SUGGEST_TAB_TITLE: 'pty:suggest-tab-title',
 
+  // Persistent side-terminal sessions (tmux when available, local PTY fallback)
+  TERMINAL_SESSION_AVAILABILITY: 'terminal-session:availability',
+  TERMINAL_SESSION_CREATE_ATTACH: 'terminal-session:create-attach',
+  TERMINAL_SESSION_ATTACH: 'terminal-session:attach',
+  TERMINAL_SESSION_LIST: 'terminal-session:list',
+  TERMINAL_SESSION_KILL: 'terminal-session:kill',
+
   // File operations
   FS_GET_TREE: 'fs:get-tree',
   FS_GET_TREE_WITH_STATUS: 'fs:get-tree-with-status',

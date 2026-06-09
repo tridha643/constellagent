@@ -514,20 +514,21 @@ export const ChatTimeline = forwardRef<
     return result
   }, [transcript, planActive, running])
 
-  const turnGroupKeys = useMemo(() => {
-    const keys = new Set<string>()
+  const turnGroupKeysKey = useMemo(() => {
+    const keys: string[] = []
     for (const unit of units) {
-      if (unit.type === 'turnGroup') keys.add(unit.key)
+      if (unit.type === 'turnGroup') keys.push(unit.key)
     }
-    return keys
+    return keys.join('\0')
   }, [units])
 
   useEffect(() => {
+    const validKeys = new Set(turnGroupKeysKey ? turnGroupKeysKey.split('\0') : [])
     setExpandedTurnKeys((previous) => {
       let changed = false
       const next = new Set<string>()
       for (const key of previous) {
-        if (turnGroupKeys.has(key)) {
+        if (validKeys.has(key)) {
           next.add(key)
         } else {
           changed = true
@@ -535,7 +536,7 @@ export const ChatTimeline = forwardRef<
       }
       return changed ? next : previous
     })
-  }, [turnGroupKeys])
+  }, [turnGroupKeysKey])
 
   const setTurnExpanded = useCallback((key: string, open: boolean) => {
     setExpandedTurnKeys((previous) => {

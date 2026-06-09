@@ -1374,6 +1374,29 @@ export class GitService {
     }
   }
 
+  /**
+   * User-initiated worktree delete: tolerate paths already removed from disk or
+   * unregistered with git, while still refusing unsafe targets (primary repo, foreign repos).
+   */
+  static async removeWorktreeForDelete(repoPath: string, worktreePath: string): Promise<void> {
+    if (!existsSync(worktreePath)) return
+
+    const [repoRealPath, worktreeRealPath] = await Promise.all([
+      realpath(repoPath).catch(() => resolve(repoPath)),
+      realpath(worktreePath).catch(() => resolve(worktreePath)),
+    ])
+    if (repoRealPath === worktreeRealPath) {
+      throw new Error('Refusing to replace the primary repository directory')
+    }
+
+    try {
+      await GitService.removeExistingWorkspacePath(repoPath, worktreePath)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : friendlyGitError(err, 'Failed to remove worktree')
+      throw new Error(message)
+    }
+  }
+
   static async getTopLevel(cwd: string): Promise<string> {
     return git(['rev-parse', '--show-toplevel'], cwd)
   }

@@ -18,6 +18,7 @@ import {
 import type { AgentCompactContext, AgentDriver, AgentTurnContext } from './agent-driver'
 import { getConstellPiHost } from '../pi-host-service'
 import { listPiModels } from '../pi-models'
+import { SkillsService } from '../skills-service'
 
 export class PiConductorDriver implements AgentDriver {
   readonly provider = 'pi' as const
@@ -48,8 +49,13 @@ export class PiConductorDriver implements AgentDriver {
     })
 
     try {
+      const skillExpansion = await SkillsService.expandSkillInvocation(
+        ctx.text,
+        'pi',
+        ctx.workspacePath,
+      )
       await this.piHost.driver.sendUserMessage(piRef, {
-        text: ctx.text,
+        text: skillExpansion.text,
         ...sessionAttachmentsFromConductor(ctx.attachments),
       })
       if (terminalError) throw terminalError

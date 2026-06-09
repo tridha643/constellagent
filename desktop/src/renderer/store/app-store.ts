@@ -15,6 +15,7 @@ import type {
   SubagentEntry,
   Tab,
   SplitNode,
+  SideTerminalSession,
   Workspace,
 } from './types'
 import {
@@ -79,6 +80,17 @@ const linearIssueAgentLaunchInFlight = new Set<string>()
 
 function normalizeRepoPathCompareKey(path: string): string {
   return path.trim().replace(/\/+$/, '')
+}
+
+/** True when git/disk no longer treat the path as an active linked worktree of `repoPath`. */
+async function isWorktreeAlreadyGone(repoPath: string, worktreePath: string): Promise<boolean> {
+  const listed = await window.api.git.listWorktrees(repoPath).catch(() => [])
+  const registered = listed.some((entry) => entry.path && pathsEqualOrAlias(entry.path, worktreePath))
+  if (registered) return false
+
+  // Path is not registered — gone unless it is an independent git checkout we refuse to auto-delete.
+  const isRepo = await window.api.git.checkIsRepo(worktreePath).catch(() => false)
+  return !isRepo
 }
 
 function resolveProjectForAutomationRun(
@@ -491,6 +503,55 @@ function normalizeReviewPanelStateByWorkspace(
   return out
 }
 
+function normalizeSideTerminalsByWorkspace(
+  raw: Record<string, SideTerminalSession[]> | undefined,
+  workspaces: Workspace[],
+): Record<string, SideTerminalSession[]> {
+  if (!raw || typeof raw !== 'object') return {}
+  const wsIds = new Set(workspaces.map((w) => w.id))
+  const out: Record<string, SideTerminalSession[]> = {}
+  for (const [workspaceId, entries] of Object.entries(raw)) {
+    if (!wsIds.has(workspaceId) || !Array.isArray(entries)) continue
+    const normalized: SideTerminalSession[] = []
+    const seen = new Set<string>()
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') continue
+      const record = entry as Record<string, unknown>
+      const id = typeof record.id === 'string' ? record.id : ''
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      const backend = record.backend === 'local' ? 'local' : 'tmux'
+      normalized.push({
+        id,
+        workspaceId,
+        backend,
+        sessionName: typeof record.sessionName === 'string' ? record.sessionName : undefined,
+        title: typeof record.title === 'string' && record.title.trim() ? record.title : 'Terminal',
+        status: record.status === 'missing' || record.status === 'error' ? record.status : 'detached',
+        createdAt: typeof record.createdAt === 'number' ? record.createdAt : Date.now(),
+        lastAttachedAt: typeof record.lastAttachedAt === 'number' ? record.lastAttachedAt : undefined,
+        error: typeof record.error === 'string' ? record.error : undefined,
+      })
+    }
+    if (normalized.length > 0) out[workspaceId] = normalized
+  }
+  return out
+}
+
+function persistedSideTerminals(
+  map: Record<string, SideTerminalSession[]>,
+): Record<string, SideTerminalSession[]> {
+  const out: Record<string, SideTerminalSession[]> = {}
+  for (const [workspaceId, sessions] of Object.entries(map)) {
+    const entries = sessions.map(({ clientPtyId: _clientPtyId, ...session }) => ({
+      ...session,
+      status: session.backend === 'tmux' ? 'detached' as const : session.status,
+    }))
+    if (entries.length > 0) out[workspaceId] = entries
+  }
+  return out
+}
+
 /** Track 8: per-workspace panel layout migration. On first load after upgrade,
  *  seed every existing workspace with the previous global layout so the UI
  *  doesn't snap back to defaults. */
@@ -654,6 +715,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   fileTreeExpandedPathsByWorkspace: {},
   reviewPanelStateByWorkspace: {},
   stagedSelectionByWorkspace: {},
+  sideTerminalsByWorkspace: {},
+  rightSidebarBottomPanel: 'terminal',
   panelDockDrag: null,
   collapsedProjectIds: new Set<string>(),
   lastActiveWorkspaceByProjectId: {},
@@ -725,6 +788,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const newProjects = s.projects.filter((p) => p.id !== id)
       const newWorkspaces = s.workspaces.filter((w) => w.projectId !== id)
       const newTabs = s.tabs.filter((t) => !removedWsIds.has(t.workspaceId))
+      const sideTerminalsByWorkspace = { ...s.sideTerminalsByWorkspace }
+      for (const wsId of removedWsIds) delete sideTerminalsByWorkspace[wsId]
       const planBuildTerminalByPlanPath = planBuildMapForTabs(s.planBuildTerminalByPlanPath, newTabs)
       const newAutomations = s.automations.filter((a) => a.projectId !== id)
       const newUnread = new Set(Array.from(s.unreadWorkspaceIds).filter((wsId) => !removedWsIds.has(wsId)))
@@ -789,6 +854,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         workspaceBarStatsMap: newWorkspaceBarStatsMap,
         workspaceBarModeOverride: newWorkspaceBarModeOverride,
         worktreeSyncStatus: newWorktreeSyncStatus,
+        sideTerminalsByWorkspace,
         graphiteStacks: newGraphiteStacks,
         spotlightStatusByProject: newSpotlightStatusByProject,
         spotlightWorkspaceIdByProject: newSpotlightWorkspaceIdByProject,
@@ -848,6 +914,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       delete tabMap[id]
       const newWorktreeSyncStatus = new Map(s.worktreeSyncStatus)
       newWorktreeSyncStatus.delete(id)
+      const sideTerminalsByWorkspace = { ...s.sideTerminalsByWorkspace }
+      delete sideTerminalsByWorkspace[id]
       const newGraphiteStacks = new Map(s.graphiteStacks)
       newGraphiteStacks.delete(id)
       const newWorkspaceBarStatsMap = new Map(s.workspaceBarStatsMap)
@@ -887,6 +955,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         unreadWorkspaceIds: newUnread,
         activeClaudeWorkspaceIds: newActiveClaude,
         worktreeSyncStatus: newWorktreeSyncStatus,
+        sideTerminalsByWorkspace,
         graphiteStacks: newGraphiteStacks,
         workspaceBarStatsMap: newWorkspaceBarStatsMap,
         workspaceBarModeOverride: newWorkspaceBarModeOverride,
@@ -2066,6 +2135,311 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  focusOrCreateSideTerminal: async () => {
+    const s = get()
+    const workspaceId = s.activeWorkspaceId
+    if (!workspaceId) return
+    get().setSidePanelOpen('right', true)
+    get().setRightSidebarBottomPanel('terminal')
+    const sessions = s.sideTerminalsByWorkspace[workspaceId] ?? []
+    const existing = sessions.find((session) => session.status === 'attached')
+      ?? sessions.find((session) => session.status === 'detached')
+      ?? sessions[0]
+    if (existing) {
+      await get().attachSideTerminal(workspaceId, existing.id)
+      return
+    }
+    await get().createSideTerminalForActiveWorkspace()
+  },
+
+  createSideTerminalForActiveWorkspace: async (options) => {
+    const s = get()
+    const workspaceId = s.activeWorkspaceId
+    if (!workspaceId) return
+    const ws = s.workspaces.find((w) => w.id === workspaceId)
+    if (!ws) return
+
+    const terminalId = crypto.randomUUID()
+    const initialCommand = options?.initialCommand?.trim() || undefined
+    const existingCount = s.sideTerminalsByWorkspace[workspaceId]?.length ?? 0
+    const title = options?.title?.trim() || `Terminal ${existingCount + 1}`
+    try {
+      const result = await window.api.terminalSession.createAttach({
+        workspaceId,
+        terminalId,
+        cwd: ws.worktreePath,
+        shell: s.settings.defaultShell || undefined,
+        initialCommand,
+      })
+      const now = Date.now()
+      const session: SideTerminalSession = {
+        id: terminalId,
+        workspaceId,
+        backend: result.backend,
+        sessionName: result.sessionName,
+        clientPtyId: result.ptyId,
+        title,
+        status: 'attached',
+        createdAt: now,
+        lastAttachedAt: now,
+      }
+      ;(get().sideTerminalsByWorkspace[workspaceId] ?? []).forEach((entry) => {
+        if (entry.clientPtyId) window.api.pty.destroy(entry.clientPtyId)
+      })
+      set((state) => ({
+        sideTerminalsByWorkspace: {
+          ...state.sideTerminalsByWorkspace,
+          [workspaceId]: [
+            ...(state.sideTerminalsByWorkspace[workspaceId] ?? []).map((entry) => ({
+              ...entry,
+              clientPtyId: undefined,
+              status: entry.backend === 'tmux' ? 'detached' as const : 'missing' as const,
+            })),
+            session,
+          ],
+        },
+      }))
+      get().setSidePanelOpen('right', true)
+      get().setRightSidebarBottomPanel('terminal')
+      // Remember a launched script (dedupe by command) so the Setup panel can
+      // surface it as the most-recent / "most used" entry across restarts.
+      if (initialCommand) {
+        const project = get().projects.find((p) => p.id === ws.projectId)
+        if (project) {
+          try {
+            const existing = (await window.api.projectStartupSettings.get(project.repoPath)) ?? []
+            const deduped = existing.filter((e) => e.command !== initialCommand)
+            await window.api.projectStartupSettings.set(project.repoPath, [
+              ...deduped,
+              { name: options?.title?.trim() || initialCommand, command: initialCommand },
+            ])
+          } catch {
+            // Best-effort persistence; the terminal still launched in-session.
+          }
+        }
+      }
+    } catch (error) {
+      get().addToast({
+        id: crypto.randomUUID(),
+        message: error instanceof Error ? error.message : 'Failed to create terminal session',
+        type: 'error',
+      })
+    }
+  },
+
+  attachSideTerminal: async (workspaceId, terminalId) => {
+    const s = get()
+    const ws = s.workspaces.find((w) => w.id === workspaceId)
+    const session = s.sideTerminalsByWorkspace[workspaceId]?.find((entry) => entry.id === terminalId)
+    if (!ws || !session) return
+    if (session.clientPtyId && session.status === 'attached') {
+      const now = Date.now()
+      set((state) => ({
+        sideTerminalsByWorkspace: {
+          ...state.sideTerminalsByWorkspace,
+          [workspaceId]: (state.sideTerminalsByWorkspace[workspaceId] ?? []).map((entry) =>
+            entry.id === terminalId ? { ...entry, lastAttachedAt: now } : entry,
+          ),
+        },
+      }))
+      get().setSidePanelOpen('right', true)
+      get().setRightSidebarBottomPanel('terminal')
+      return
+    }
+
+    try {
+      const result = await window.api.terminalSession.attach({
+        workspaceId,
+        terminalId,
+        cwd: ws.worktreePath,
+        shell: s.settings.defaultShell || undefined,
+        sessionName: session.sessionName,
+      })
+      if (result.status === 'missing') {
+        set((state) => ({
+          sideTerminalsByWorkspace: {
+            ...state.sideTerminalsByWorkspace,
+            [workspaceId]: (state.sideTerminalsByWorkspace[workspaceId] ?? []).map((entry) =>
+              entry.id === terminalId
+                ? { ...entry, clientPtyId: undefined, status: 'missing', error: 'tmux session is no longer running' }
+                : entry,
+            ),
+          },
+        }))
+        return
+      }
+      const now = Date.now()
+      ;(get().sideTerminalsByWorkspace[workspaceId] ?? []).forEach((entry) => {
+        if (entry.id !== terminalId && entry.clientPtyId) window.api.pty.destroy(entry.clientPtyId)
+      })
+      set((state) => ({
+        sideTerminalsByWorkspace: {
+          ...state.sideTerminalsByWorkspace,
+          [workspaceId]: (state.sideTerminalsByWorkspace[workspaceId] ?? []).map((entry) =>
+            entry.id === terminalId
+              ? {
+                  ...entry,
+                  backend: result.backend,
+                  sessionName: result.sessionName ?? entry.sessionName,
+                  clientPtyId: result.ptyId,
+                  status: 'attached',
+                  lastAttachedAt: now,
+                  error: undefined,
+                }
+              : {
+                  ...entry,
+                  clientPtyId: undefined,
+                  status: entry.backend === 'tmux' ? 'detached' : 'missing',
+                },
+          ),
+        },
+      }))
+      get().setSidePanelOpen('right', true)
+      get().setRightSidebarBottomPanel('terminal')
+    } catch (error) {
+      set((state) => ({
+        sideTerminalsByWorkspace: {
+          ...state.sideTerminalsByWorkspace,
+          [workspaceId]: (state.sideTerminalsByWorkspace[workspaceId] ?? []).map((entry) =>
+            entry.id === terminalId
+              ? { ...entry, status: 'error', error: error instanceof Error ? error.message : String(error) }
+              : entry,
+          ),
+        },
+      }))
+    }
+  },
+
+  detachSideTerminal: (workspaceId, terminalId) => {
+    const session = get().sideTerminalsByWorkspace[workspaceId]?.find((entry) => entry.id === terminalId)
+    if (!session) return
+    if (session.clientPtyId) window.api.pty.destroy(session.clientPtyId)
+    // Already detached — skip the set() so we don't churn a fresh array
+    // reference (and re-render) for a no-op state transition.
+    if (!session.clientPtyId && (session.status === 'detached' || session.status === 'missing')) return
+    set((state) => ({
+      sideTerminalsByWorkspace: {
+        ...state.sideTerminalsByWorkspace,
+        [workspaceId]: (state.sideTerminalsByWorkspace[workspaceId] ?? []).map((entry) =>
+          entry.id === terminalId
+            ? { ...entry, clientPtyId: undefined, status: entry.backend === 'tmux' ? 'detached' : 'missing' }
+            : entry,
+        ),
+      },
+    }))
+  },
+
+  killSideTerminalSession: async (workspaceId, terminalId) => {
+    const session = get().sideTerminalsByWorkspace[workspaceId]?.find((entry) => entry.id === terminalId)
+    if (!session) return
+    if (session.clientPtyId) window.api.pty.destroy(session.clientPtyId)
+    // Close means gone: drop it from state immediately so the UI feels
+    // decisive and a later workspace switch can't resurrect it. The tmux kill
+    // runs after; reconcile won't re-add it because it's no longer alive.
+    set((state) => ({
+      sideTerminalsByWorkspace: {
+        ...state.sideTerminalsByWorkspace,
+        [workspaceId]: (state.sideTerminalsByWorkspace[workspaceId] ?? []).filter((entry) => entry.id !== terminalId),
+      },
+    }))
+    if (session.backend === 'tmux' && session.sessionName) {
+      try {
+        await window.api.terminalSession.kill(session.sessionName)
+      } catch (error) {
+        get().addToast({
+          id: crypto.randomUUID(),
+          message: error instanceof Error ? error.message : 'Failed to kill terminal session',
+          type: 'error',
+        })
+      }
+    }
+  },
+
+  reconcileSideTerminalsForWorkspace: async (workspaceId) => {
+    const ws = get().workspaces.find((entry) => entry.id === workspaceId)
+    if (!ws) return
+    // Stamp the request so we never prune a terminal that the user created
+    // after this list() snapshot was taken (it can't be in `sessions` yet).
+    const requestedAt = Date.now()
+    let sessions: Awaited<ReturnType<typeof window.api.terminalSession.list>>
+    try {
+      sessions = await window.api.terminalSession.list(workspaceId)
+    } catch {
+      // A transient tmux error must not nuke state — keep what we have.
+      return
+    }
+    const liveTerminalIds = new Set(
+      sessions.map((summary) => summary.terminalId).filter((id): id is string => Boolean(id)),
+    )
+    set((state) => {
+      const existing = state.sideTerminalsByWorkspace[workspaceId] ?? []
+      const byId = new Map(existing.map((entry) => [entry.id, entry]))
+      let changed = false
+
+      // Prune tmux-backed sessions that are no longer alive — closed/killed
+      // ones must not reappear after a workspace switch. Local (non-tmux)
+      // sessions and freshly-created ones (created after this snapshot) are
+      // left untouched since list() can't speak to them.
+      for (const entry of existing) {
+        const isStaleTmux =
+          entry.backend === 'tmux' &&
+          Boolean(entry.sessionName) &&
+          !liveTerminalIds.has(entry.id) &&
+          entry.createdAt < requestedAt
+        if (isStaleTmux) {
+          if (entry.clientPtyId) window.api.pty.destroy(entry.clientPtyId)
+          byId.delete(entry.id)
+          changed = true
+        }
+      }
+
+      // Adopt tmux sessions discovered out-of-band (e.g. created in another
+      // window or surviving a restart).
+      for (const summary of sessions) {
+        if (!summary.terminalId || byId.has(summary.terminalId)) continue
+        changed = true
+        byId.set(summary.terminalId, {
+          id: summary.terminalId,
+          workspaceId,
+          backend: 'tmux',
+          sessionName: summary.sessionName,
+          title: `Terminal ${byId.size + 1}`,
+          status: 'detached',
+          createdAt: summary.createdAt ?? requestedAt,
+        })
+      }
+
+      if (!changed) return {}
+      return {
+        sideTerminalsByWorkspace: {
+          ...state.sideTerminalsByWorkspace,
+          [workspaceId]: Array.from(byId.values()),
+        },
+      }
+    })
+  },
+
+  handleSideTerminalClientExit: (ptyId) => {
+    set((state) => {
+      let changed = false
+      const next: Record<string, SideTerminalSession[]> = {}
+      for (const [workspaceId, sessions] of Object.entries(state.sideTerminalsByWorkspace)) {
+        next[workspaceId] = sessions.map((session) => {
+          if (session.clientPtyId !== ptyId) return session
+          changed = true
+          return {
+            ...session,
+            clientPtyId: undefined,
+            status: session.backend === 'tmux' ? 'detached' : 'missing',
+          }
+        })
+      }
+      return changed ? { sideTerminalsByWorkspace: next } : {}
+    })
+  },
+
+  setRightSidebarBottomPanel: (panel) => set({ rightSidebarBottomPanel: panel }),
+
   splitTerminalPaneForTab: async (tabId, direction) => {
     const s = get()
     const tab = s.tabs.find((t) => t.id === tabId)
@@ -2484,9 +2858,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       try {
         await window.api.git.removeWorktree(project.repoPath, ws.worktreePath)
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to remove worktree'
-        get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
-        return
+        if (!(await isWorktreeAlreadyGone(project.repoPath, ws.worktreePath))) {
+          const msg = err instanceof Error ? err.message : 'Failed to remove worktree'
+          get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
+          return
+        }
       }
     }
 
@@ -2497,6 +2873,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         ptyIds.add(t.ptyId)
         ptyIds.forEach((id) => window.api.pty.destroy(id))
       }
+    })
+    ;(s.sideTerminalsByWorkspace[workspaceId] ?? []).forEach((session) => {
+      if (session.clientPtyId) window.api.pty.destroy(session.clientPtyId)
     })
 
     get().removeWorkspace(workspaceId)
@@ -2546,12 +2925,15 @@ export const useAppStore = create<AppState>((set, get) => ({
           ptyIds.forEach((id) => window.api.pty.destroy(id))
         }
       })
-      if (ws.worktreePath !== project.repoPath) {
+      if (normalizeRepoPathCompareKey(ws.worktreePath) !== normalizeRepoPathCompareKey(project.repoPath)) {
         try {
           await window.api.git.removeWorktree(project.repoPath, ws.worktreePath)
         } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Failed to remove worktree'
-          get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
+          if (!(await isWorktreeAlreadyGone(project.repoPath, ws.worktreePath))) {
+            const msg = err instanceof Error ? err.message : 'Failed to remove worktree'
+            get().addToast({ id: crypto.randomUUID(), message: msg, type: 'error' })
+            return
+          }
         }
       }
     }
@@ -2797,9 +3179,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         changed = true
         return { ...tab, title: nextTitle }
       })
-      if (!changed) return {}
+      let sideTerminalChanged = false
+      const sideTerminalsByWorkspace: Record<string, SideTerminalSession[]> = {}
+      for (const [workspaceId, sessions] of Object.entries(s.sideTerminalsByWorkspace)) {
+        sideTerminalsByWorkspace[workspaceId] = sessions.map((session) => {
+          if (session.clientPtyId !== ptyId || session.title === title) return session
+          sideTerminalChanged = true
+          return { ...session, title }
+        })
+      }
+      if (!changed && !sideTerminalChanged) return {}
       console.log(TAB_TITLE_LOG, 'renderer updateTerminalTitle', { ptyId, title: title.slice(0, 80) })
-      return { tabs }
+      return sideTerminalChanged ? { tabs, sideTerminalsByWorkspace } : { tabs }
     }),
 
   setActiveMonacoEditor: (editor) => set({ activeMonacoEditor: editor }),
@@ -3345,6 +3736,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       fileTreeExpandedPathsByWorkspace: normalizeStringArrayByWorkspace(data.fileTreeExpandedPathsByWorkspace),
       reviewPanelStateByWorkspace: normalizeReviewPanelStateByWorkspace(data.reviewPanelStateByWorkspace),
       stagedSelectionByWorkspace: normalizeStringArrayByWorkspace(data.stagedSelectionByWorkspace),
+      sideTerminalsByWorkspace: normalizeSideTerminalsByWorkspace(data.sideTerminalsByWorkspace, seeded.workspaces),
     })
   },
 
@@ -3578,6 +3970,7 @@ function getPersistedSlice(state: AppState): PersistedState {
     fileTreeExpandedPathsByWorkspace: state.fileTreeExpandedPathsByWorkspace,
     reviewPanelStateByWorkspace: state.reviewPanelStateByWorkspace,
     stagedSelectionByWorkspace: state.stagedSelectionByWorkspace,
+    sideTerminalsByWorkspace: persistedSideTerminals(state.sideTerminalsByWorkspace),
     sidebarActionOrder: state.sidebarActionOrder,
     spotlightWorkspaceIdByProject: state.spotlightWorkspaceIdByProject,
     workingTreeStatusByPath,
@@ -3611,6 +4004,7 @@ useAppStore.subscribe((state, prevState) => {
     state.fileTreeExpandedPathsByWorkspace !== prevState.fileTreeExpandedPathsByWorkspace ||
     state.reviewPanelStateByWorkspace !== prevState.reviewPanelStateByWorkspace ||
     state.stagedSelectionByWorkspace !== prevState.stagedSelectionByWorkspace ||
+    state.sideTerminalsByWorkspace !== prevState.sideTerminalsByWorkspace ||
     state.sidebarActionOrder !== prevState.sidebarActionOrder ||
     state.spotlightWorkspaceIdByProject !== prevState.spotlightWorkspaceIdByProject
   ) {

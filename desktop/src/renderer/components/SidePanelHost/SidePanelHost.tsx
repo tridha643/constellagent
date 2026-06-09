@@ -1,5 +1,6 @@
 import {
   ChevronsDownUp,
+  ChevronDown,
   FileDiff,
   FilePlus,
   FolderTree,
@@ -7,6 +8,7 @@ import {
   Globe,
   LayoutList,
   MessageSquareMore,
+  Plus,
   Search,
 } from 'lucide-react'
 import { BrowserPanel } from '../BrowserPanel/BrowserPanel'
@@ -19,6 +21,9 @@ import { FileTree } from '../RightPanel/FileTree'
 import { ChangedFiles } from '../RightPanel/ChangedFiles'
 import { GitGraph } from '../RightPanel/GitGraph'
 import { SideChatPanel } from '../SideChatPanel/SideChatPanel'
+import { SideTerminalPanel } from '../SideTerminalPanel/SideTerminalPanel'
+import { SetupPanel } from './SetupPanel'
+import { SpotlightIcon } from '../Icons/SpotlightIcon'
 import { fileTreeActions } from '../RightPanel/file-tree-actions'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary'
@@ -84,6 +89,130 @@ function renderPanel(panel: PanelType, workspace: { id: string; worktreePath: st
     return <SideChatPanel workspaceId={workspace.id} worktreePath={workspace.worktreePath} />
   }
   return <GitGraph worktreePath={workspace.worktreePath} workspaceId={workspace.id} isActive />
+}
+
+function RightSidebarBottomDock({ workspace }: { workspace: { id: string; projectId?: string; worktreePath: string } | undefined }) {
+  const activeBottomPanel = useAppStore((s) => s.rightSidebarBottomPanel)
+  const setActiveBottomPanel = useAppStore((s) => s.setRightSidebarBottomPanel)
+  const createSideTerminal = useAppStore((s) => s.createSideTerminalForActiveWorkspace)
+  const projects = useAppStore((s) => s.projects)
+  const spotlightWorkspaceIdByProject = useAppStore((s) => s.spotlightWorkspaceIdByProject)
+  const setSpotlightWorkspace = useAppStore((s) => s.setSpotlightWorkspace)
+  const addToast = useAppStore((s) => s.addToast)
+
+  const [collapsed, setCollapsed] = useState(false)
+
+  const project = workspace ? projects.find((entry) => entry.id === workspace.projectId) : undefined
+  const isSpotlightActiveHere = Boolean(
+    workspace && project && spotlightWorkspaceIdByProject[project.id] === workspace.id,
+  )
+
+  // Selecting a tab while collapsed should reveal the dock body, not silently
+  // switch a hidden panel.
+  const selectBottomPanel = (panel: 'setup' | 'spotlight' | 'terminal') => {
+    setActiveBottomPanel(panel)
+    setCollapsed(false)
+  }
+
+  const toggleSpotlight = async () => {
+    if (!workspace || !project) return
+    try {
+      if (isSpotlightActiveHere) {
+        await window.api.spotlight.disable(project.id)
+        setSpotlightWorkspace(project.id, null)
+      } else {
+        await window.api.spotlight.enable({
+          projectId: project.id,
+          workspaceId: workspace.id,
+          worktreePath: workspace.worktreePath,
+          rootPath: project.repoPath,
+        })
+        setSpotlightWorkspace(project.id, workspace.id)
+      }
+    } catch (error) {
+      addToast({
+        id: crypto.randomUUID(),
+        message: error instanceof Error ? error.message : 'Spotlight toggle failed',
+        type: 'error',
+      })
+    }
+  }
+
+  return (
+    <div
+      className={`${styles.bottomDock} ${collapsed ? styles.bottomDockCollapsed : ''}`}
+      data-testid="right-sidebar-bottom-dock"
+      data-collapsed={collapsed ? 'true' : 'false'}
+    >
+      <div className={styles.bottomDockTabs}>
+        <button
+          type="button"
+          className={styles.bottomDockChevron}
+          aria-label={collapsed ? 'Expand bottom dock' : 'Collapse bottom dock'}
+          aria-expanded={!collapsed}
+          data-testid="right-sidebar-bottom-dock-toggle"
+          onClick={() => setCollapsed((value) => !value)}
+        >
+          <ChevronDown size={15} strokeWidth={2} className={styles.bottomDockChevronIcon} />
+        </button>
+        {(['setup', 'spotlight', 'terminal'] as const).map((panel) => (
+          <button
+            key={panel}
+            type="button"
+            className={`${styles.bottomDockTab} ${!collapsed && activeBottomPanel === panel ? styles.bottomDockTabActive : ''}`}
+            aria-pressed={!collapsed && activeBottomPanel === panel}
+            onClick={() => selectBottomPanel(panel)}
+          >
+            {panel === 'setup' ? 'Setup' : panel === 'spotlight' ? 'Spotlight' : 'Terminal'}
+          </button>
+        ))}
+        <button
+          type="button"
+          className={styles.bottomDockIconButton}
+          aria-label="New terminal"
+          disabled={!workspace}
+          onClick={() => {
+            selectBottomPanel('terminal')
+            void createSideTerminal()
+          }}
+        >
+          <Plus size={15} strokeWidth={2} />
+        </button>
+        <button
+          type="button"
+          className={`${styles.bottomDockSpotlightButton} ${isSpotlightActiveHere ? styles.bottomDockSpotlightActive : ''}`}
+          aria-pressed={isSpotlightActiveHere}
+          onClick={() => void toggleSpotlight()}
+        >
+          <SpotlightIcon className={styles.bottomDockSpotlightIcon} />
+          <span>Spotlight</span>
+        </button>
+      </div>
+      {!collapsed && (
+      <div className={styles.bottomDockBody}>
+        {activeBottomPanel === 'terminal' && workspace ? (
+          <SideTerminalPanel workspaceId={workspace.id} />
+        ) : activeBottomPanel === 'spotlight' ? (
+          <div className={styles.bottomDockEmpty}>
+            <SpotlightIcon className={styles.bottomDockEmptyIcon} />
+            <button
+              type="button"
+              className={styles.bottomDockPrimaryButton}
+              disabled={!workspace || !project}
+              onClick={() => void toggleSpotlight()}
+            >
+              {isSpotlightActiveHere ? 'Stop spotlight' : 'Start spotlight'}
+              <span className={styles.bottomDockShortcut}>⌘R</span>
+            </button>
+            <span className={styles.bottomDockMuted}>Sync your changes to the repository root.</span>
+          </div>
+        ) : (
+          <SetupPanel workspace={workspace} />
+        )}
+      </div>
+      )}
+    </div>
+  )
 }
 
 export function SidePanelHost({ side }: { side: Side }) {
@@ -310,6 +439,12 @@ export function SidePanelHost({ side }: { side: Side }) {
           </ErrorBoundary>
         )}
       </div>
+
+      {side === 'right' && (
+        <RightSidebarBottomDock
+          workspace={workspace ? { id: workspace.id, projectId: workspace.projectId, worktreePath: workspace.worktreePath } : undefined}
+        />
+      )}
 
       {canAcceptDock && (
         <div className={styles.dockOverlay} aria-hidden="true">

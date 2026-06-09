@@ -6,6 +6,8 @@ type MockWindow = typeof globalThis & {
     automations: { emitWorkspaceEvent: (event: unknown) => void }
     git: {
       removeWorktree: (repoPath: string, worktreePath: string) => Promise<void>
+      listWorktrees: (repoPath: string) => Promise<Array<{ path: string }>>
+      checkIsRepo: (dirPath: string) => Promise<boolean>
       setSyncBusy: (paths: string[]) => void
     }
     pty: { destroy: (id: string) => void }
@@ -38,6 +40,8 @@ let removeWorktreeCalls: Array<[string, string]> = []
 let destroyedPtys: string[] = []
 let emittedEvents: unknown[] = []
 let failRemoveWorktree = false
+let listWorktreesResult: Array<{ path: string }> = []
+let checkIsRepoResult = false
 
 function installWindowMock() {
   const mockWindow: MockWindow = {
@@ -53,6 +57,8 @@ function installWindowMock() {
           removeWorktreeCalls.push([repoPath, worktreePath])
           if (failRemoveWorktree) throw new Error('remove failed')
         },
+        listWorktrees: async () => listWorktreesResult,
+        checkIsRepo: async () => checkIsRepoResult,
         setSyncBusy: () => {},
       },
       pty: {
@@ -112,6 +118,8 @@ beforeEach(() => {
   destroyedPtys = []
   emittedEvents = []
   failRemoveWorktree = false
+  listWorktreesResult = [{ path: workspace.worktreePath }]
+  checkIsRepoResult = false
 })
 
 describe('deleteWorkspace', () => {
@@ -141,5 +149,21 @@ describe('deleteWorkspace', () => {
     expect(useAppStore.getState().tabs.map((entry) => entry.id)).toEqual(['tab-1'])
     expect(destroyedPtys).toEqual([])
     expect(useAppStore.getState().toasts.at(-1)?.message).toBe('remove failed')
+  })
+
+  it('removes the workspace when git removal fails but the worktree is already gone', async () => {
+    const { useAppStore } = await loadStore()
+    seedDeleteState(useAppStore)
+    failRemoveWorktree = true
+    listWorktreesResult = []
+    checkIsRepoResult = false
+
+    await useAppStore.getState().deleteWorkspace(workspace.id)
+
+    expect(removeWorktreeCalls).toEqual([[project.repoPath, workspace.worktreePath]])
+    expect(useAppStore.getState().workspaces).toEqual([])
+    expect(useAppStore.getState().tabs).toEqual([])
+    expect(destroyedPtys).toEqual(['pty-1'])
+    expect(useAppStore.getState().toasts).toEqual([])
   })
 })

@@ -18,6 +18,7 @@ import type { WorktreeCredentialRule } from '../shared/worktree-credentials'
 import type { GraphiteStackAction } from '../shared/graphite-types'
 import type { GitHunkActionRequest } from '../shared/git-hunk-action-types'
 import { PtyManager, type PtyWriteOpts } from './pty-manager'
+import { TmuxService } from './tmux-service'
 import { readPackageScripts } from './package-scripts-service'
 import { GitService, RebaseConflictError } from './git-service'
 import { WorktreeSyncService } from './worktree-sync-service'
@@ -94,6 +95,7 @@ import {
 
 const ptyManager = new PtyManager()
 setTimeout(() => ptyManager.prewarm(), 0)
+const tmuxService = new TmuxService({ userDataPath: app.getPath('userData') })
 const worktreeSyncService = new WorktreeSyncService()
 const spotlightService = new SpotlightService()
 
@@ -481,7 +483,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.GIT_REMOVE_WORKTREE, async (_e, repoPath: string, worktreePath: string) => {
-    return GitService.removeWorktree(repoPath, worktreePath)
+    return GitService.removeWorktreeForDelete(repoPath, worktreePath)
   })
 
   ipcMain.handle(IPC.GIT_GET_STATUS, async (_e, worktreePath: string) => {
@@ -816,6 +818,102 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.PTY_SNAPSHOT, async (_e, ptyId: string) => {
     return ptyManager.snapshot(ptyId)
+  })
+
+  ipcMain.handle(IPC.TERMINAL_SESSION_AVAILABILITY, async () => {
+    return tmuxService.getAvailability()
+  })
+
+  ipcMain.handle(
+    IPC.TERMINAL_SESSION_CREATE_ATTACH,
+    async (
+      event,
+      input: import('../shared/terminal-session-types').TerminalSessionAttachRequest,
+    ): Promise<import('../shared/terminal-session-types').TerminalSessionAttachResult> => {
+      const workspaceId = typeof input?.workspaceId === 'string' ? input.workspaceId : ''
+      const terminalId = typeof input?.terminalId === 'string' ? input.terminalId : ''
+      const cwd = typeof input?.cwd === 'string' ? input.cwd : ''
+      if (!workspaceId || !terminalId || !cwd) throw new Error('Invalid terminal session request')
+      const initialCommand = typeof input?.initialCommand === 'string' ? input.initialCommand.trim() : ''
+
+      const availability = await tmuxService.getAvailability()
+      if (availability.available) {
+        const sessionName = tmuxService.makeSessionName(workspaceId, terminalId)
+        await tmuxService.ensureSession({ sessionName, cwd, shell: input.shell })
+        // Run the requested script inside the persistent session before the
+        // client PTY attaches, so it is already live (and survives detach).
+        if (initialCommand) await tmuxService.runCommand(sessionName, initialCommand)
+        const command = tmuxService.attachCommand(sessionName)
+        const ptyId = ptyManager.create(cwd, event.sender, undefined, command, undefined, {
+          AGENT_ORCH_WS_ID: workspaceId,
+        })
+        return { backend: 'tmux', terminalId, sessionName, ptyId, status: 'attached' }
+      }
+
+      // Local fallback (no tmux): exec the script through the login shell so
+      // user tooling on PATH resolves; otherwise a plain interactive shell.
+      const localShell = input.shell || process.env.SHELL || '/bin/zsh'
+      const localCommand = initialCommand ? [localShell, '-l', '-c', initialCommand] : undefined
+      const ptyId = ptyManager.create(
+        cwd,
+        event.sender,
+        initialCommand ? undefined : input.shell,
+        localCommand,
+        undefined,
+        { AGENT_ORCH_WS_ID: workspaceId },
+      )
+      return { backend: 'local', terminalId, ptyId, status: 'attached' }
+    },
+  )
+
+  ipcMain.handle(
+    IPC.TERMINAL_SESSION_ATTACH,
+    async (
+      event,
+      input: import('../shared/terminal-session-types').TerminalSessionAttachRequest,
+    ): Promise<import('../shared/terminal-session-types').TerminalSessionAttachResult | { status: 'missing' }> => {
+      const workspaceId = typeof input?.workspaceId === 'string' ? input.workspaceId : ''
+      const terminalId = typeof input?.terminalId === 'string' ? input.terminalId : ''
+      const cwd = typeof input?.cwd === 'string' ? input.cwd : ''
+      if (!workspaceId || !terminalId || !cwd) throw new Error('Invalid terminal attach request')
+
+      const sessionName = input.sessionName || tmuxService.makeSessionName(workspaceId, terminalId)
+      const availability = await tmuxService.getAvailability()
+      if (!availability.available) {
+        const ptyId = ptyManager.create(cwd, event.sender, input.shell, undefined, undefined, {
+          AGENT_ORCH_WS_ID: workspaceId,
+        })
+        return { backend: 'local', terminalId, ptyId, status: 'attached' }
+      }
+      if (!(await tmuxService.hasSession(sessionName))) return { status: 'missing' }
+      // Hide the status bar on reattach too — older sessions predate the option.
+      await tmuxService.configureServer(sessionName)
+      const command = tmuxService.attachCommand(sessionName)
+      const ptyId = ptyManager.create(cwd, event.sender, undefined, command, undefined, {
+        AGENT_ORCH_WS_ID: workspaceId,
+      })
+      return { backend: 'tmux', terminalId, sessionName, ptyId, status: 'attached' }
+    },
+  )
+
+  ipcMain.handle(IPC.TERMINAL_SESSION_LIST, async (_e, workspaceId?: string) => {
+    try {
+      const availability = await tmuxService.getAvailability()
+      if (!availability.available) return []
+      return await tmuxService.listSessions(typeof workspaceId === 'string' ? workspaceId : undefined)
+    } catch {
+      // A dead/absent tmux server is expected (no sessions yet) — degrade to an
+      // empty list instead of rejecting and spamming the renderer console.
+      return []
+    }
+  })
+
+  ipcMain.handle(IPC.TERMINAL_SESSION_KILL, async (_e, sessionName: string) => {
+    if (typeof sessionName !== 'string' || !sessionName.startsWith('ca-')) {
+      throw new Error('Invalid terminal session name')
+    }
+    await tmuxService.killSession(sessionName)
+    return { ok: true }
   })
 
   // ── File handlers ──

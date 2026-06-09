@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { TranscriptMessage } from '../../shared/pi/pi-desktop-state'
 import {
+  appendAssistantStreamDelta,
   buildAgentPrompt,
   computeTextDelta,
   needsAssistantWordBoundarySpace,
@@ -118,6 +119,18 @@ describe('agent-driver prompt construction', () => {
     expect(prompt).toEndWith('\n\n/caveman')
   })
 
+  test('skips format prefix when skill invocation flag is set', () => {
+    const prompt = buildAgentPrompt('Follow this skill (task-prep):\n\nPrep body', false, undefined, 'codex', false, true, true)
+
+    expect(prompt).not.toContain('GitHub-Flavored Markdown')
+    expect(prompt).not.toContain(CONDUCTOR_RTK_PROMPT_PREFIX)
+    expect(prompt).toContain('Follow this skill (task-prep):')
+  })
+
+  test('promptEmitsFormatPrefix skips skill invocations', () => {
+    expect(promptEmitsFormatPrefix('/task-prep', 'codex', false, true, true)).toBe(false)
+  })
+
   test('passes Pi slash commands through as raw runtime commands', () => {
     expect(buildAgentPrompt('/ask-user-question align on scope', false, undefined, 'pi')).toBe(
       '/ask-user-question align on scope',
@@ -130,6 +143,27 @@ describe('assistant stream delta normalization', () => {
     expect(computeTextDelta('Hello', 'Hello world')).toEqual({
       delta: ' world',
       emitted: 'Hello world',
+    })
+  })
+
+  test('appendAssistantStreamDelta does not insert spaces mid-word', () => {
+    expect(appendAssistantStreamDelta('...Cod', 'ex')).toEqual({
+      delta: 'ex',
+      emitted: '...Codex',
+    })
+  })
+
+  test('appendAssistantStreamDelta preserves mermaid fence tokens', () => {
+    expect(appendAssistantStreamDelta('```mer', 'maid\nflow')).toEqual({
+      delta: 'maid\nflow',
+      emitted: '```mermaid\nflow',
+    })
+  })
+
+  test('appendAssistantStreamDelta ignores empty fragments', () => {
+    expect(appendAssistantStreamDelta('Hello', '')).toEqual({
+      delta: '',
+      emitted: 'Hello',
     })
   })
 

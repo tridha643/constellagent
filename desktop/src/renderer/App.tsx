@@ -178,6 +178,7 @@ export function App() {
   // running/exited toggle on the JS side, so we have to listen here and flip the matching tab.
   useEffect(() => {
     return window.api.pty.onExit(async ({ ptyId, exitCode }) => {
+      useAppStore.getState().handleSideTerminalClientExit(ptyId)
       const { classifyExit } = await import('@shared/service-types')
       const status = classifyExit(exitCode)
       useAppStore.setState((state) => ({
@@ -229,6 +230,7 @@ export function App() {
   const allTabs = useAppStore((s) => s.tabs)
   const activeTabId = useAppStore((s) => s.activeTabId)
   const sidePanels = useAppStore((s) => s.sidePanels)
+  const rightSidebarBottomPanel = useAppStore((s) => s.rightSidebarBottomPanel)
   const panelDockDrag = useAppStore((s) => s.panelDockDrag)
   const movePanelToSide = useAppStore((s) => s.movePanelToSide)
   const setSidePanelOpen = useAppStore((s) => s.setSidePanelOpen)
@@ -337,12 +339,13 @@ export function App() {
 
   const rightSplitPaneSizes = useMemo(() => {
     const projectOnly = sidePanels.right.panelOrder.includes('project') && sidePanels.right.panelOrder.length === 1
+    const terminalActive = rightSidebarBottomPanel === 'terminal'
     return {
-      minSize: projectOnly ? 160 : 240,
+      minSize: terminalActive ? 360 : projectOnly ? 160 : 240,
       maxSize: sidePanelMaxSizePx(projectOnly, viewportWidth),
-      preferredSize: projectOnly ? 220 : 280,
+      preferredSize: terminalActive ? 520 : projectOnly ? 220 : 280,
     }
-  }, [sidePanels.right.panelOrder, viewportWidth])
+  }, [rightSidebarBottomPanel, sidePanels.right.panelOrder, viewportWidth])
 
   /** Allotment pane order is fixed: [left, center, right]. Snap-drag collapses side panes to match store `open`. */
   const onAllotmentVisibleChange = useCallback(

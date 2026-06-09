@@ -6,6 +6,7 @@ import { useAppStore } from '../../store/app-store'
 import { getAppearanceTerminalTheme } from '../../theme/appearance'
 import { CONSTELLAGENT_PATH_MIME, wrapBracketedPaste } from '../../utils/add-to-chat'
 import { logTerminalTiming, terminalTimingMs } from '../../utils/terminal-timing'
+import { sanitizeTerminalReplay } from '../../../shared/terminal-replay-sanitize'
 import styles from './TerminalPanel.module.css'
 
 const TAB_TITLE_LOG = '[constellagent:tab-title]'
@@ -299,14 +300,16 @@ export function TerminalPanel({ ptyId, active, inSplit, paneId, onFocus, isFocus
         void window.api.pty.snapshot(ptyId).then(async (snapshot) => {
           if (disposed) return
           if (snapshot) {
-            term.write(snapshot)
+            // Replayed history must not re-trigger device-attribute responses
+            // (the stray `1;2c0;276;0c` echo on reattach) — strip queries first.
+            term.write(sanitizeTerminalReplay(snapshot))
             scrollbackRingRef.current = snapshot
             return
           }
           if (!scrollbackKey) return
           const saved = await window.api.pty.loadScrollback(scrollbackKey)
           if (disposed || !saved) return
-          term.write(saved)
+          term.write(sanitizeTerminalReplay(saved))
           scrollbackRingRef.current = saved
         }).catch(() => {})
 

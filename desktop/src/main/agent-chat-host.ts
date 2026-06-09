@@ -79,7 +79,7 @@ import {
   findSteerMessageIndex,
 } from './agent-chat-queue'
 import { getConductorQuestionBridge } from './agents/conductor-question-bridge'
-import { computeTextDelta, normalizeAssistantStreamDelta, needsAssistantWordBoundarySpace } from './agents/agent-driver'
+import { appendAssistantStreamDelta } from './agents/agent-driver'
 import { logMainPerfEvent, measureMainAsync } from './perf'
 import { mobileDebugLog, shouldSampleMobileDelta } from './mobile-debug-log'
 
@@ -619,22 +619,19 @@ export class AgentChatHost {
     if (event.type === 'assistantDelta') {
       const key = sessionKey(event.sessionRef)
       const emitted = this.emittedAssistantTextBySession.get(key) ?? ''
-      const { delta: rawDelta } = computeTextDelta(emitted, event.text)
-      const { delta, emitted: nextEmitted } = normalizeAssistantStreamDelta(emitted, event.text)
+      const { delta, emitted: nextEmitted } = appendAssistantStreamDelta(emitted, event.text)
       if (delta.length === 0) {
         return
       }
       const sequence = (this.assistantDeltaDebugSequenceBySession.get(key) ?? 0) + 1
       this.assistantDeltaDebugSequenceBySession.set(key, sequence)
-      const wordBoundaryInserted = needsAssistantWordBoundarySpace(emitted, rawDelta)
-      if (wordBoundaryInserted || shouldSampleMobileDelta(sequence)) {
-        mobileDebugLog('agent-chat-host', 'assistantDelta normalized', {
+      if (shouldSampleMobileDelta(sequence)) {
+        mobileDebugLog('agent-chat-host', 'assistantDelta append', {
           sessionId,
           sequence,
           incomingChars: event.text.length,
           deltaChars: delta.length,
           emittedChars: nextEmitted.length,
-          wordBoundaryInserted,
           incomingPreview: event.text.slice(0, 48),
           deltaPreview: delta.slice(0, 48),
         })
