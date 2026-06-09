@@ -48,9 +48,8 @@ export interface ReviewThreadsState {
 export function useReviewThreads(opts: {
   worktreePath: string
   active: boolean
-  commitHash?: string
 }): ReviewThreadsState {
-  const { worktreePath, active, commitHash } = opts
+  const { worktreePath, active } = opts
 
   const [localAnnotations, setLocalAnnotations] = useState<DiffAnnotation[]>([])
   const [prAnnotations, setPrAnnotations] = useState<DiffAnnotation[]>([])
@@ -134,7 +133,7 @@ export function useReviewThreads(opts: {
 
   // GitHub PR review comments — pulled on demand, keyed off prStatusMap.
   useEffect(() => {
-    if (!active || commitHash) return
+    if (!active) return
     let cancelled = false
     ;(async () => {
       try {
@@ -165,7 +164,7 @@ export function useReviewThreads(opts: {
       }
     })()
     return () => { cancelled = true }
-  }, [active, worktreePath, commitHash])
+  }, [active, worktreePath])
 
   const annotations = useMemo(
     () => [...localAnnotations, ...prAnnotations],

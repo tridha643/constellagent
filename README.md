@@ -10,7 +10,7 @@ A macOS desktop app for running multiple AI agents in parallel. Each agent gets 
 - **Terminals** — full terminal emulator (`xterm.js` + `node-pty`) with persistent PTY state, split panes, and agent-aware terminals for Claude, Codex, Gemini, Cursor, OpenCode, and Pi (with last-session resume)
 - **Conductor** — a native multi-provider agent chat panel (Codex, Cursor, Pi) with streaming, extended thinking, JSON canvas tool-UIs, image attachments, and a `/side` chat for parallel conversations
 - **Editing** — Monaco editing with LSP (TypeScript, Pyright), markdown preview via the prosemark engine (Shiki, Mermaid, file/skill chips), git-aware file tree, and fff-powered Quick Open for files *and* code
-- **Git & GitHub** — staging/commit panel with AI commit messages, a visual git history graph, PR badges (CI, approvals, comments), an open-PR browser with one-click "Pull locally", and Graphite stack support
+- **Git & GitHub** — staging/commit panel with AI commit messages, PR badges (CI, approvals, comments), an open-PR browser with one-click "Pull locally", and Graphite stack support
 - **Review** — a full inline review panel (⌘⇧R) with hunk comments, accept/reject staging, an agent-authored code tour, and one-click submission of selected comments to an agent
 - **Browser & DOM picker** — embedded webview for localhost dev servers with a React-aware element picker that sends DOM context straight to your agent
 - **Linear** — issues/projects/tickets/updates panel with Pi-drafted issue text, fff-ranked pickers, and "open agent on this issue" workflows
@@ -92,17 +92,6 @@ Press **⌘⇧R** to open the review drawer — a full code-review surface for t
 
 ---
 
-## Git history panel
-
-Press **⌥⌘G** (or the branch icon in the side panel switcher) to open the commit graph.
-
-- **Topology graph**: `git log --all --topo-order` rendered as colored lanes — one color per branch line, S-curve merges, double-circle dots for merge commits, and a highlighted dot for the current HEAD
-- **Ref pills**: each commit shows its refs — blue for `HEAD ->` / local branches, gray for remotes (`origin/...`), orange for tags
-- **Commit details**: clicking a commit opens a Commit Diff tab with the full patch (`git show`); commits missing locally are fetched on demand (`git fetch --depth=1`). The tab is reused as you click through history
-- **Workspace-aware**: the graph follows the active worktree and refreshes on filesystem/git changes
-
----
-
 ## Browser panel & DOM picker
 
 The browser panel (globe icon in the side panel switcher) embeds a webview inside the app — primarily for pointing at your localhost dev server (defaults to `http://localhost:5173`) while an agent works on the code.
@@ -149,7 +138,7 @@ A full Linear client lives in the sidebar (Linear icon), authenticated with a pe
 
 - **Quick Open (⌘P / ⌘F)** — fff-backed fuzzy search across the workspace. With "Search code in Quick Open" enabled (Settings), file-name matches and **content grep matches** appear together, labeled `file` / `code`, with file-type icons and highlighted match ranges. Unsaved-buffer changes are flagged since fff reads from disk
 - **Spotlight search** — code search and file discovery across projects
-- **Keyboard-first UX** — shortcuts for tab/workspace switching, pane management, panel toggles (Files, Changes, Browser, Git Graph, Side Chat), settings, and the plan/context palettes
+- **Keyboard-first UX** — shortcuts for tab/workspace switching, pane management, panel toggles (Files, Changes, Browser, Side Chat), settings, and the plan/context palettes
 
 ---
 

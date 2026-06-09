@@ -36,8 +36,6 @@ export const IPC = {
   /** Local-mode workspace bar stats: commit subject + working-tree-inclusive numstat vs merge-base. */
   GIT_GET_WORKSPACE_BAR_STATS: 'git:get-workspace-bar-stats',
   GIT_SHOW_FILE_AT_HEAD: 'git:show-file-at-head',
-  GIT_GET_LOG: 'git:get-log',
-  GIT_GET_COMMIT_DIFF: 'git:get-commit-diff',
   /** Resolve `origin` default branch tip (`ls-remote origin HEAD`). */
   GIT_GET_REMOTE_HEAD: 'git:get-remote-head',
   GIT_SYNC_ALL_WORKTREES: 'git:sync-all-worktrees',

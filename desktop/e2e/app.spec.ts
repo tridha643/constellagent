@@ -40,13 +40,12 @@ test.describe('app shell', () => {
       expect(sidePanels.right).toEqual({
         open: true,
         activePanel: 'files',
-        panelOrder: ['files', 'changes', 'graph', 'browser', 'sideChat'],
+        panelOrder: ['files', 'changes', 'browser', 'sideChat'],
       })
 
       await expect(window.getByTestId('side-panel-tab-project')).toBeVisible()
       await expect(window.getByTestId('right-panel-mode-files')).toBeVisible()
       await expect(window.getByTestId('right-panel-mode-changes')).toBeVisible()
-      await expect(window.getByTestId('right-panel-mode-graph')).toBeVisible()
     } finally {
       await app.close()
       rmSync(userDataPath, { recursive: true, force: true })
@@ -69,20 +68,20 @@ test.describe('app shell', () => {
       await expect(window.getByTestId('side-panel-left')).toBeVisible({ timeout: 5000 })
 
       let sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
-      expect(sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph', 'browser', 'sideChat'])
+      expect(sidePanels.left.panelOrder).toEqual(['files', 'changes', 'browser', 'sideChat'])
       expect(sidePanels.right.panelOrder).toEqual(['project'])
 
       await app.close()
 
       ;({ app, window } = await launchApp(userDataPath))
       sidePanels = await window.evaluate(() => (window as any).__store.getState().sidePanels)
-      expect(sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph', 'browser', 'sideChat'])
+      expect(sidePanels.left.panelOrder).toEqual(['files', 'changes', 'browser', 'sideChat'])
       expect(sidePanels.right.panelOrder).toEqual(['project'])
 
       const persisted = await window.evaluate(async () => {
         return await (window as any).api.state.load()
       })
-      expect(persisted.sidePanels.left.panelOrder).toEqual(['files', 'changes', 'graph', 'browser', 'sideChat'])
+      expect(persisted.sidePanels.left.panelOrder).toEqual(['files', 'changes', 'browser', 'sideChat'])
       expect(persisted.sidePanels.right.panelOrder).toEqual(['project'])
     } finally {
       if (app) await app.close()

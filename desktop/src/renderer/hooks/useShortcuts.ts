@@ -466,12 +466,6 @@ export function useShortcuts() {
         store.activatePanel('changes')
         return
       }
-      // Cmd+Option+G — git panel (routes to the side that owns Git)
-      if (!shift && alt && e.code === 'KeyG') {
-        consume()
-        store.activatePanel('graph')
-        return
-      }
 
       // ── Focus ──
       // Cmd+J — focus terminal (or create one)

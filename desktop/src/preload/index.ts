@@ -152,10 +152,6 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_GET_WORKSPACE_BAR_STATS, worktreePath, defaultBranch) as Promise<import('../shared/git-types').WorkspaceBarStats>,
     showFileAtHead: (worktreePath: string, filePath: string) =>
       ipcRenderer.invoke(IPC.GIT_SHOW_FILE_AT_HEAD, worktreePath, filePath) as Promise<string | null>,
-    getLog: (worktreePath: string, maxCount?: number) =>
-      ipcRenderer.invoke(IPC.GIT_GET_LOG, worktreePath, maxCount) as Promise<import('../shared/git-types').GitLogEntry[]>,
-    getCommitDiff: (worktreePath: string, hash: string) =>
-      ipcRenderer.invoke(IPC.GIT_GET_COMMIT_DIFF, worktreePath, hash) as Promise<string>,
     getRemoteHead: (repoPath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_REMOTE_HEAD, repoPath) as Promise<string | null>,
     syncAllWorktrees: (projectId: string) => ipcRenderer.invoke(IPC.GIT_SYNC_ALL_WORKTREES, projectId),

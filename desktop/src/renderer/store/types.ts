@@ -148,7 +148,7 @@ export type Tab = {
 } & (
   | { type: 'terminal'; title: string; ptyId: string; agentType?: AgentType; splitRoot?: SplitNode; focusedPaneId?: string }
   | { type: 'file'; filePath: string; unsaved?: boolean; deleted?: boolean; splitRoot?: SplitNode; focusedPaneId?: string; initialPosition?: { lineNumber: number; column: number }; viewState?: editor.ICodeEditorViewState | null }
-  | { type: 'diff'; commitHash?: string; commitMessage?: string }
+  | { type: 'diff' }
   | { type: 'fileDiff'; filePath: string; status?: WorkingTreeFileStatus['status']; originalRef?: string }
   | { type: 'markdownPreview'; filePath: string; title: string }
   /** Conductor agent chat (Cursor / Codex SDK); session lives in conductor-chat.db. */
@@ -161,9 +161,9 @@ export type Tab = {
 
 export type Side = 'left' | 'right'
 
-export type PanelType = 'project' | 'files' | 'changes' | 'graph' | 'browser' | 'sideChat'
+export type PanelType = 'project' | 'files' | 'changes' | 'browser' | 'sideChat'
 
-export type RightSidebarBottomPanel = 'setup' | 'spotlight' | 'terminal'
+export type RightSidebarBottomPanel = 'setup' | 'terminal'
 
 export interface SidePanelState {
   open: boolean
@@ -181,9 +181,9 @@ export interface PanelDockDrag {
   side: Side
 }
 
-export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'graph', 'browser', 'sideChat']
+export const SIDE_PANEL_TYPES: PanelType[] = ['project', 'files', 'changes', 'browser', 'sideChat']
 
-export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes', 'graph', 'browser']
+export const NAVIGATION_PANEL_TYPES: PanelType[] = ['files', 'changes', 'browser']
 
 export const DEFAULT_SIDE_PANEL_LAYOUT: SidePanelLayout = {
   left: {
@@ -194,7 +194,7 @@ export const DEFAULT_SIDE_PANEL_LAYOUT: SidePanelLayout = {
   right: {
     open: true,
     activePanel: 'files',
-    panelOrder: ['files', 'changes', 'graph', 'browser', 'sideChat'],
+    panelOrder: ['files', 'changes', 'browser', 'sideChat'],
   },
 }
 
@@ -925,7 +925,6 @@ export interface AppState {
   /** Open newest .md/.mdx across agent plan dirs (.cursor/plans, etc.) in the active workspace */
   openLatestAgentPlan: () => Promise<void>
   openDiffTab: (workspaceId: string) => void
-  openCommitDiffTab: (workspaceId: string, hash: string, message: string) => void
   /** Open a VS Code-style full-file diff tab for a single file (HEAD vs working tree). */
   openFullFileDiffTab: (filePath: string, opts?: { status?: WorkingTreeFileStatus['status']; originalRef?: string }) => void
   nextWorkspace: () => void

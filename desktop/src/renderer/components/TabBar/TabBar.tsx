@@ -77,10 +77,7 @@ const TAB_ICONS: Record<Tab['type'], { icon: string; className: string }> = {
 
 function getTabTitle(tab: Tab): string {
   if (tab.type === 'terminal') return tab.title
-  if (tab.type === 'diff') {
-    if (tab.commitHash) return `${tab.commitHash.slice(0, 7)} ${tab.commitMessage || ''}`
-    return 'Changes'
-  }
+  if (tab.type === 'diff') return 'Changes'
   if (tab.type === 'fileDiff') {
     const name = tab.filePath.split('/').pop() || tab.filePath
     return name

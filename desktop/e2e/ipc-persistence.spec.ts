@@ -94,7 +94,7 @@ test.describe('IPC handlers & state persistence', () => {
         projects: [{ id: 'test-id', name: 'persist-project', repoPath }],
         workspaces: [],
         sidePanels: {
-          left: { open: true, activePanel: 'files', panelOrder: ['files', 'changes', 'graph'] },
+          left: { open: true, activePanel: 'files', panelOrder: ['files', 'changes'] },
           right: { open: false, activePanel: 'project', panelOrder: ['project'] },
         },
       }
@@ -149,7 +149,7 @@ test.describe('IPC handlers & state persistence', () => {
       expect(sidePanels.right).toEqual({
         open: false,
         activePanel: 'changes',
-        panelOrder: ['files', 'changes', 'graph', 'browser', 'sideChat'],
+        panelOrder: ['files', 'changes', 'browser', 'sideChat'],
       })
 
       const loaded = await window.evaluate(async () => {
@@ -178,7 +178,7 @@ test.describe('IPC handlers & state persistence', () => {
       workspaces: [],
       tabs: [],
       rightPanelOpen: false,
-      rightPanelMode: 'graph',
+      rightPanelMode: 'browser',
       sidePanels: {
         left: {
           panelOrder: ['project', 'files'],
@@ -199,16 +199,16 @@ test.describe('IPC handlers & state persistence', () => {
       })
       expect(sidePanels.right).toEqual({
         open: false,
-        activePanel: 'graph',
-        panelOrder: ['changes', 'graph', 'browser', 'sideChat'],
+        activePanel: 'browser',
+        panelOrder: ['changes', 'browser', 'sideChat'],
       })
 
       const loaded = await window.evaluate(async () => {
         return await (window as any).api.state.load()
       })
       expect(loaded.sidePanels.left.panelOrder).toEqual(['project', 'files'])
-      expect(loaded.sidePanels.right.panelOrder).toEqual(['changes', 'graph', 'browser', 'sideChat'])
-      expect(loaded.sidePanels.right.activePanel).toBe('graph')
+      expect(loaded.sidePanels.right.panelOrder).toEqual(['changes', 'browser', 'sideChat'])
+      expect(loaded.sidePanels.right.activePanel).toBe('browser')
       expect(loaded.rightPanelOpen).toBeUndefined()
       expect(loaded.rightPanelMode).toBeUndefined()
     } finally {

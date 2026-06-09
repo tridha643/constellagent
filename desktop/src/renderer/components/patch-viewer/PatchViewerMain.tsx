@@ -58,8 +58,6 @@ export interface PatchViewerMainProps {
   variant: 'tab' | 'drawer'
   /** Tab variant: whether this is the active diff tab (mount-all). Drawer: always true. */
   active?: boolean
-  commitHash?: string
-  commitMessage?: string
 }
 
 /**
@@ -72,11 +70,9 @@ export function PatchViewerMain({
   worktreePath,
   variant,
   active = true,
-  commitHash,
-  commitMessage,
 }: PatchViewerMainProps) {
   const isDrawer = variant === 'drawer'
-  const enableAcceptReject = !commitHash
+  const enableAcceptReject = true
 
   const inline = useAppStore((s) => s.settings.diffInline)
   const defaultShowFullContext = useAppStore((s) => s.settings.diffShowFullContextByDefault)
@@ -101,13 +97,13 @@ export function PatchViewerMain({
   )
 
   // ── Data layers ──
-  const workingTree = useWorkingTreeDiff({ worktreePath, active, commitHash })
+  const workingTree = useWorkingTreeDiff({ worktreePath, active })
   const { files, loading } = workingTree
   const parsed = usePatchParsing(files)
-  const review = useReviewThreads({ worktreePath, active, commitHash })
+  const review = useReviewThreads({ worktreePath, active })
   const viewedState = useReviewViewedState({
     files,
-    autoCollapseEnabled: !commitHash,
+    autoCollapseEnabled: true,
     annotations: review.annotations,
     enableViewed: isDrawer,
   })
@@ -435,21 +431,15 @@ export function PatchViewerMain({
         <div className={editorStyles.diffToolbar}>
           <div className={editorStyles.diffReviewSummary}>
             <span className={`${editorStyles.diffSummaryPrimary} ${editorStyles.diffFileCount}`}>
-              {commitHash
-                ? `${commitHash.slice(0, 7)} ${commitMessage || ''}`
-                : `${files.length} file${files.length !== 1 ? 's' : ''}`}
+              {`${files.length} file${files.length !== 1 ? 's' : ''}`}
             </span>
-            {!commitHash && (
-              <>
-                <span className={editorStyles.diffSummaryPill}>
-                  {viewedState.viewedFilePaths.size}/{files.length} viewed
-                </span>
-                <span className={editorStyles.diffSummaryAdd}>+{reviewSummary.additions}</span>
-                <span className={editorStyles.diffSummaryDel}>-{reviewSummary.deletions}</span>
-                <span className={editorStyles.diffSummaryPill}>{reviewSummary.staged} staged</span>
-                <span className={editorStyles.diffSummaryPill}>{reviewSummary.unstaged} unstaged</span>
-              </>
-            )}
+            <span className={editorStyles.diffSummaryPill}>
+              {viewedState.viewedFilePaths.size}/{files.length} viewed
+            </span>
+            <span className={editorStyles.diffSummaryAdd}>+{reviewSummary.additions}</span>
+            <span className={editorStyles.diffSummaryDel}>-{reviewSummary.deletions}</span>
+            <span className={editorStyles.diffSummaryPill}>{reviewSummary.staged} staged</span>
+            <span className={editorStyles.diffSummaryPill}>{reviewSummary.unstaged} unstaged</span>
             {loading && files.length > 0 && (
               <span className={editorStyles.diffSummaryMuted}>Loading remaining changes...</span>
             )}
@@ -460,11 +450,9 @@ export function PatchViewerMain({
             )}
           </div>
           <div className={editorStyles.diffControlsRight}>
-            {!commitHash && (
-              <button type="button" className={editorStyles.diffReviewButton} onClick={openReviewDrawer}>
-                Review
-              </button>
-            )}
+            <button type="button" className={editorStyles.diffReviewButton} onClick={openReviewDrawer}>
+              Review
+            </button>
             <div className={editorStyles.diffToggle}>
               <button
                 className={`${editorStyles.diffToggleOption} ${!inline ? editorStyles.active : ''}`}

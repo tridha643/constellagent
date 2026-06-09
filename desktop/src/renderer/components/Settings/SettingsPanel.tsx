@@ -83,7 +83,6 @@ const SHORTCUTS = [
   { action: 'Toggle right sidebar', keys: '⌥⌘B' },
   { action: 'Files panel', keys: '⇧⌘E' },
   { action: 'Changes panel', keys: '⇧⌘G' },
-  { action: 'Git panel', keys: '⌥⌘G' },
   { action: 'Focus terminal', keys: '⌘J' },
   { action: 'Increase font size', keys: '⌘+' },
   { action: 'Decrease font size', keys: '⌘−' },
@@ -107,7 +106,7 @@ const SETTINGS_SIDEBAR: readonly {
   {
     id: 'sidebar',
     label: 'Sidebar',
-    blurb: 'Dock Projects against Files / Changes / Git.',
+    blurb: 'Dock Projects against Files / Changes / Browser.',
   },
   {
     id: 'general',
@@ -572,7 +571,7 @@ function SidePanelSettingsSection() {
     <div className={styles.section}>
       <div className={styles.sectionTitle}>Sidebar Layout</div>
       <div className={styles.sectionHint}>
-        Choose which physical side hosts project navigation versus files, changes, and git history.
+        Choose which physical side hosts project navigation versus files and changes.
       </div>
       {splitNavigationPanels && (
         <div className={styles.inlineHint}>
@@ -589,7 +588,7 @@ function SidePanelSettingsSection() {
       />
 
       <SelectRow
-        label="Files / Changes / Git side"
+        label="Files / Changes / Browser side"
         description="Where semantic panel shortcuts route after swapping sidebars."
         value={navigationSide}
         onChange={(value) => setNavigationPanelSide(value as Side)}
@@ -612,7 +611,7 @@ function SidePanelSettingsSection() {
         <div className={styles.rowText}>
           <div className={styles.rowLabel}>Restore default docking</div>
           <div className={styles.rowDescription}>
-            Put Projects back on the left and Files / Changes / Git back on the right.
+            Put Projects back on the left and Files / Changes / Browser back on the right.
           </div>
         </div>
         <button type="button" className={styles.actionBtn} onClick={() => resetSidePanelLayout()}>

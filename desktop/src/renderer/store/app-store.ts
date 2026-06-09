@@ -3406,32 +3406,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  openCommitDiffTab: (workspaceId, hash, message) => {
-    const s = get()
-    // Reuse existing commit-diff tab for this workspace (one with commitHash set)
-    const existing = s.tabs.find(
-      (t) => t.workspaceId === workspaceId && t.type === 'diff' && t.commitHash
-    )
-    if (existing) {
-      set((state) => ({
-        tabs: state.tabs.map((t) =>
-          t.id === existing.id && t.type === 'diff'
-            ? { ...t, commitHash: hash, commitMessage: message }
-            : t
-        ),
-        activeTabId: existing.id,
-      }))
-      return
-    }
-    get().addTab({
-      id: crypto.randomUUID(),
-      workspaceId,
-      type: 'diff',
-      commitHash: hash,
-      commitMessage: message,
-    })
-  },
-
   setSidePanelsForWorkspace: (workspaceId, layout) => {
     set((s) => ({
       sidePanelsByWorkspace: { ...s.sidePanelsByWorkspace, [workspaceId]: layout },
@@ -3603,6 +3577,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Normalize split trees from old persisted state (leaves without contentType).
     const rawTabs = (data.tabs ?? []).filter((tab) => tab.type !== 'pi-thread')
     const tabs = rawTabs.map((tab) => {
+      if (tab.type === 'diff' && ('commitHash' in tab || 'commitMessage' in tab)) {
+        const { commitHash: _commitHash, commitMessage: _commitMessage, ...rest } = tab as typeof tab & {
+          commitHash?: string
+          commitMessage?: string
+        }
+        return rest
+      }
       if (tab.type === 'terminal' && tab.splitRoot) {
         return { ...tab, splitRoot: normalizeSplitTree(tab.splitRoot) }
       }
