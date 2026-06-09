@@ -79,14 +79,8 @@ function PatternFrame({
   )
 }
 
-/** Conductor dot-matrix loader rotation + elapsed timer while a turn is in flight. */
-export function MuloadLoader({
-  startedAt,
-  className,
-}: {
-  startedAt?: number | null
-  className?: string
-}) {
+/** Seconds elapsed since `startedAt` (or mount), ticking every TICK_MS. */
+function useElapsedSeconds(startedAt?: number | null): number {
   const [elapsed, setElapsed] = useState(0)
 
   useEffect(() => {
@@ -97,8 +91,57 @@ export function MuloadLoader({
     return () => window.clearInterval(id)
   }, [startedAt])
 
-  const variantIndex = Math.floor(elapsed / PATTERN_SECONDS) % LOADER_VARIANTS.length
-  const variant = LOADER_VARIANTS[variantIndex]
+  return elapsed
+}
+
+function renderVariant(variant: LoaderVariant, loaderProps: LoaderProps): ReactNode {
+  return variant.pattern && variant.patternCss ? (
+    <PatternFrame pattern={variant.pattern} patternCss={variant.patternCss}>
+      {variant.render(loaderProps)}
+    </PatternFrame>
+  ) : (
+    variant.render(loaderProps)
+  )
+}
+
+/**
+ * Just the rotating dot-matrix glyph (no elapsed timer), sized for inline/icon use.
+ * Same variant rotation as the Conductor loader — see {@link MuloadLoader}.
+ */
+export function MuloadGlyph({
+  dotSize = LOADER_DOT_SIZE,
+  color = 'var(--text-secondary)',
+  className,
+}: {
+  dotSize?: number
+  color?: string
+  className?: string
+}) {
+  const elapsed = useElapsedSeconds()
+  const variant = LOADER_VARIANTS[Math.floor(elapsed / PATTERN_SECONDS) % LOADER_VARIANTS.length]
+
+  const loaderProps = useMemo<LoaderProps>(
+    () => ({ speed: LOADER_SPEED, dotSize, cellPadding: 0.5, color }),
+    [dotSize, color],
+  )
+
+  return (
+    <span className={className} aria-hidden>
+      {renderVariant(variant, loaderProps)}
+    </span>
+  )
+}
+
+/** Conductor dot-matrix loader rotation + elapsed timer while a turn is in flight. */
+export function MuloadLoader({
+  startedAt,
+  className,
+}: {
+  startedAt?: number | null
+  className?: string
+}) {
+  const elapsed = useElapsedSeconds(startedAt)
+  const variant = LOADER_VARIANTS[Math.floor(elapsed / PATTERN_SECONDS) % LOADER_VARIANTS.length]
 
   const loaderProps = useMemo<LoaderProps>(
     () => ({
@@ -110,18 +153,10 @@ export function MuloadLoader({
     [],
   )
 
-  const loader = variant.pattern && variant.patternCss ? (
-    <PatternFrame pattern={variant.pattern} patternCss={variant.patternCss}>
-      {variant.render(loaderProps)}
-    </PatternFrame>
-  ) : (
-    variant.render(loaderProps)
-  )
-
   return (
     <span className={`${styles.muloadLoader} ${className ?? ''}`} role="status" aria-live="polite">
       <span className={styles.muloadGlyph} aria-hidden>
-        {loader}
+        {renderVariant(variant, loaderProps)}
       </span>
       <span className={styles.muloadElapsed}>{formatElapsedSeconds(elapsed)}</span>
     </span>
