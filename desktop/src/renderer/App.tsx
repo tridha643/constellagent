@@ -12,6 +12,7 @@ import { FullFileDiffEditor } from './components/Editor/FullFileDiffEditor'
 import { MarkdownPreview } from './components/MarkdownPreview/MarkdownPreview'
 import { ServicePanel } from './components/Service/ServicePanel'
 import { ConductorChatView } from './components/Conductor/ConductorChatView'
+import { BrowserPanel } from './components/BrowserPanel/BrowserPanel'
 import { QuickOpen } from './components/QuickOpen/QuickOpen'
 import { ChangesFileFind } from './components/QuickOpen/ChangesFileFind'
 
@@ -29,9 +30,6 @@ const LinearWorkspacePanel = lazy(() =>
 )
 const PlanPalette = lazy(() =>
   import('./components/PlanPalette/PlanPalette').then((m) => ({ default: m.PlanPalette })),
-)
-const BrowserPanel = lazy(() =>
-  import('./components/BrowserPanel/BrowserPanel').then((m) => ({ default: m.BrowserPanel })),
 )
 import { FloatingPanel } from './components/FloatingPanel/FloatingPanel'
 import { ConfirmDialog } from './components/Sidebar/ConfirmDialog'
@@ -206,7 +204,6 @@ export function App() {
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const automationsOpen = useAppStore((s) => s.automationsOpen)
   const linearPanelOpen = useAppStore((s) => s.linearPanelOpen)
-  const browserPanelOpen = useAppStore((s) => s.browserPanelOpen)
   const quickOpenVisible = useAppStore((s) => s.quickOpenVisible)
   const changesFileFind = useAppStore((s) => s.changesFileFind)
   const planPaletteVisible = useAppStore((s) => s.planPaletteVisible)
@@ -305,6 +302,9 @@ export function App() {
   const mountedConductorTabs = allTabs.filter((t): t is Extract<typeof t, { type: 'conductor' }> => (
     t.type === 'conductor'
   ))
+  const mountedBrowserTabs = allTabs.filter((t): t is Extract<typeof t, { type: 'browser' }> => (
+    t.type === 'browser'
+  ))
   // All file tabs — kept mounted so unsaved edits, scroll position, cursor,
   // selection, and undo stack survive tab switches (mirrors terminal pattern).
   const allFileTabs = allTabs.filter((t): t is Extract<typeof t, { type: 'file' }> => t.type === 'file')
@@ -326,10 +326,6 @@ export function App() {
         ) : linearPanelOpen ? (
           <Suspense fallback={null}>
             <LinearWorkspacePanel />
-          </Suspense>
-        ) : browserPanelOpen ? (
-          <Suspense fallback={null}>
-            <BrowserPanel />
           </Suspense>
         ) : (
           <ErrorBoundary
@@ -405,6 +401,10 @@ export function App() {
                       </ErrorBoundary>
                     )
                   })}
+
+                  {mountedBrowserTabs.map((t) => (
+                    <BrowserPanel key={t.id} tab={t} active={t.id === activeTabId} />
+                  ))}
 
                   {/* Keep ALL file editor tabs alive so unsaved edits, cursor,
                       scroll position, and undo stack survive tab switches */}

@@ -71,6 +71,7 @@ const TAB_ICONS: Record<Tab['type'], { icon: string; className: string }> = {
   fileDiff: { icon: '⇄', className: styles.diff },
   markdownPreview: { icon: '◈', className: styles.file },
   conductor: { icon: '◎', className: styles.terminal },
+  browser: { icon: '🌐', className: styles.terminal },
   // Distinct teal-green play glyph so users can spot service tabs at a glance.
   service: { icon: '▶', className: styles.service },
 }
@@ -84,6 +85,7 @@ function getTabTitle(tab: Tab): string {
   }
   if (tab.type === 'markdownPreview') return tab.title
   if (tab.type === 'conductor') return tab.title
+  if (tab.type === 'browser') return tab.title
   if (tab.type === 'service') return tab.title
   const name = tab.filePath.split('/').pop() || tab.filePath
   return name

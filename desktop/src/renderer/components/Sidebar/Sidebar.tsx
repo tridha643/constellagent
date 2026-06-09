@@ -820,7 +820,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
   const toggleSettings = useAppStore((s) => s.toggleSettings);
   const toggleAutomations = useAppStore((s) => s.toggleAutomations);
   const toggleLinear = useAppStore((s) => s.toggleLinear);
-  const toggleBrowser = useAppStore((s) => s.toggleBrowser);
+  const createBrowserTabForActiveWorkspace = useAppStore((s) => s.createBrowserTabForActiveWorkspace);
   const createConductorTabForActiveWorkspace = useAppStore((s) => s.createConductorTabForActiveWorkspace);
   const toggleHunkReview = useAppStore((s) => s.toggleHunkReview);
   const openLatestAgentPlan = useAppStore((s) => s.openLatestAgentPlan);
@@ -1666,7 +1666,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       icon: '🌐',
       label: 'Browser',
       tooltipLabel: 'Browser with Agentation',
-      onClick: toggleBrowser,
+      onClick: createBrowserTabForActiveWorkspace,
     },
     plans: {
       id: 'plans',
@@ -1691,7 +1691,7 @@ export function Sidebar({ embedded = false, showTitleArea = true }: { embedded?:
       shortcut: '⌘,',
       onClick: toggleSettings,
     },
-  }), [handleAddProject, createConductorTabForActiveWorkspace, toggleAutomations, toggleLinear, toggleBrowser, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
+  }), [handleAddProject, createConductorTabForActiveWorkspace, createBrowserTabForActiveWorkspace, toggleAutomations, toggleLinear, openLatestAgentPlan, toggleSettings, toggleHunkReview]);
 
   const orderedActions = useMemo(
     () => sidebarActionOrder.map((id) => actionButtonConfigs[id]),

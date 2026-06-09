@@ -229,6 +229,8 @@ export const IPC = {
   AGENTATION_SET_ENDPOINT: 'agentation:set-endpoint',
   /** Main → renderer: forwarded SSE event / status change. */
   AGENTATION_EVENT: 'agentation:event',
+  /** Renderer → main: absolute path to the Browser webview guest preload script. */
+  APP_BROWSER_WEBVIEW_PRELOAD: 'app:browser-webview-preload',
 
   // State persistence
   STATE_SAVE: 'state:save',

@@ -63,6 +63,27 @@ export default defineConfig({
     }
   },
   preload: {
+    build: {
+      rollupOptions: {
+        // Keep `electron` as a runtime require. Without this, the custom
+        // rollupOptions bundle the `electron` npm shim — whose module.exports
+        // is the *path string* to the Electron binary — so
+        // `import_electron.contextBridge` is undefined and the preload throws
+        // before exposing `window.api`, leaving the renderer with no bridge.
+        external: ['electron'],
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          'browser-guest-preload': resolve(__dirname, 'src/preload/browser-guest-preload.ts'),
+        },
+        output: {
+          format: 'cjs',
+          entryFileNames: (chunkInfo) =>
+            chunkInfo.name === 'browser-guest-preload'
+              ? 'browser-guest-preload.js'
+              : 'index.js',
+        },
+      },
+    },
     resolve: {
       alias: {
         '@shared': resolve(__dirname, 'src/shared'),

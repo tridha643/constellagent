@@ -92,19 +92,18 @@ Press **⌘⇧R** to open the review drawer — a full code-review surface for t
 
 ---
 
-## Browser panel & DOM picker
+## Browser tab & Agentation
 
-The browser panel (globe icon in the side panel switcher) embeds a webview inside the app — primarily for pointing at your localhost dev server (defaults to `http://localhost:5173`) while an agent works on the code.
+Open **Browser** from the sidebar (globe icon) to create a center tab with an embedded webview — primarily for pointing at your localhost dev server (default URL `http://localhost:5173`) while an agent works on the code.
 
-**The DOM picker** is the headline feature:
+**Agentation toolbar** (◎ control, bottom-right of the loaded page):
 
-1. Click **Pick element** — the page gets a crosshair cursor and a hover overlay
-2. Hover highlights any element with its tag *and React component name* (when available from dev builds)
-3. Click to capture: tag, CSS classes, text preview, React component, and **source file location** (`src/components/Button.tsx:42`) when the build has source info
-4. Add an optional note per captured element ("this button stays disabled after loading")
-5. **Send N to agent** formats everything into readable context and pastes it into the active agent terminal, switching you to that tab
+1. Click elements to annotate them (tag, CSS path, React component names when available)
+2. Add comments per annotation
+3. **Copy** writes formatted markdown to your clipboard
+4. **Send Annotations** copies markdown and routes it to your agent terminal or Conductor composer
 
-This closes the loop for UI debugging: see the bug in the rendered page, click it, and the agent receives the exact component and source location to fix.
+constellagent embeds the Agentation HTTP/SSE server automatically — no `npx agentation-mcp server` required. Annotations sync to the tab's annotation rail via the live event stream.
 
 The **open-PR browser** is a separate feature: right-click a project → "Open Pull Requests" for a filterable list of open PRs (CI status, approvals, comment counts) with one-click **Pull locally** into a new workspace.
 

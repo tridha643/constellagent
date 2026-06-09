@@ -182,13 +182,14 @@ function ToggleRow({ label, description, value, onChange }: {
   )
 }
 
-function TextRow({ label, description, value, onChange, placeholder, password }: {
+function TextRow({ label, description, value, onChange, placeholder, password, readOnly }: {
   label: string
   description: string
   value: string
   onChange: (v: string) => void
   placeholder?: string
   password?: boolean
+  readOnly?: boolean
 }) {
   return (
     <div className={styles.row}>
@@ -203,6 +204,7 @@ function TextRow({ label, description, value, onChange, placeholder, password }:
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete={password ? 'off' : undefined}
+        readOnly={readOnly}
       />
     </div>
   )
@@ -558,7 +560,9 @@ function SidePanelSettingsSection() {
   const swapSidebarRoles = useAppStore((s) => s.swapSidebarRoles)
   const resetSidePanelLayout = useAppStore((s) => s.resetSidePanelLayout)
   const agentationEndpoint = useAppStore((s) => s.settings.agentationEndpoint)
+  const agentationStatus = useAppStore((s) => s.agentationStatus)
   const updateSettings = useAppStore((s) => s.updateSettings)
+  const embeddedEndpoint = agentationStatus?.endpoint ?? 'http://127.0.0.1:4747'
 
   const projectSide: Side = sidePanels.left.panelOrder.includes('project') ? 'left' : 'right'
   const navigationSide: Side = sidePanels.left.panelOrder.includes('files') ? 'left' : 'right'
@@ -623,15 +627,30 @@ function SidePanelSettingsSection() {
 
       <div className={styles.sectionTitle} style={{ marginTop: 24 }}>Browser</div>
       <div className={styles.sectionHint}>
-        The Browser panel loads pages with the Agentation toolbar and syncs annotations from a
-        local <code>agentation-mcp</code> server. Changing the endpoint reconnects the live stream.
+        Browser tabs embed the Agentation toolbar in a webview. constellagent runs the annotation
+        HTTP server automatically ({embeddedEndpoint}). Open Browser from the sidebar to annotate
+        localhost pages; Copy / Send Annotations write markdown to your clipboard.
       </div>
       <TextRow
-        label="Annotation server endpoint"
-        description="HTTP/SSE address of the local agentation-mcp server."
+        label="Embedded server"
+        description="Status of the built-in Agentation HTTP/SSE server."
+        value={
+          agentationStatus?.connected
+            ? `Running at ${embeddedEndpoint}`
+            : agentationStatus?.reconnecting
+              ? `Reconnecting to ${embeddedEndpoint}…`
+              : `Starting ${embeddedEndpoint}…`
+        }
+        onChange={() => {}}
+        placeholder={embeddedEndpoint}
+        readOnly
+      />
+      <TextRow
+        label="Endpoint override (advanced)"
+        description="Leave empty to use the embedded server. Set only when pointing at an external Agentation HTTP server."
         value={agentationEndpoint}
         onChange={(v) => updateSettings({ agentationEndpoint: v })}
-        placeholder="http://localhost:4747"
+        placeholder="http://127.0.0.1:4747"
       />
     </div>
   )
