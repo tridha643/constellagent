@@ -22,22 +22,24 @@ export const PI_CONDUCTOR_MODEL_PRESETS: readonly ModelPreset[] = [
   { label: 'Pi default', cliModel: '' },
 ]
 
+/**
+ * Conductor (Cursor SDK) intentionally exposes only the Composer 2.5 models.
+ * The full `PLAN_MODEL_PRESETS.cursor` list still backs effort/fast resolution
+ * and the plan-build dropdown — this only limits what the Conductor selector shows.
+ */
+export const CURSOR_CONDUCTOR_MODEL_PRESETS: readonly ModelPreset[] = [
+  { label: 'Composer 2.5', cliModel: 'composer-2.5' },
+  { label: 'Composer 2.5 Fast', cliModel: 'composer-2.5-fast' },
+]
+
 export function conductorModelPresets(provider: AgentProvider): readonly ModelPreset[] {
   if (provider === 'pi') return PI_CONDUCTOR_MODEL_PRESETS
+  if (provider === 'cursor') return CURSOR_CONDUCTOR_MODEL_PRESETS
   return PLAN_MODEL_PRESETS[provider]
 }
 
-function defaultCursorConductorModel(): string {
-  const effortPreset = PLAN_MODEL_PRESETS.cursor.find((preset) => {
-    if (preset.cliModel === 'auto') return false
-    const { base } = parseModelEffort(preset.cliModel)
-    return hasEffortVariants(base)
-  })
-  return effortPreset ? parseModelEffort(effortPreset.cliModel).base : 'composer-2'
-}
-
 export function defaultConductorModel(provider: AgentProvider): string {
-  if (provider === 'cursor') return defaultCursorConductorModel()
+  if (provider === 'cursor') return 'composer-2.5'
   if (provider === 'pi') return ''
   return conductorModelPresets(provider).find((preset) => preset.cliModel.trim() !== '')?.cliModel ?? 'gpt-5.5'
 }
