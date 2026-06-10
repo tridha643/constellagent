@@ -12,6 +12,7 @@ import {
   reviewAnnotationErrorMessage,
   reviewerDisplayName,
 } from './review-attribution'
+import { MarkdownBody } from '../Markdown/MarkdownBody'
 import styles from '../Editor/AnnotationBubble.module.css'
 
 /**
@@ -114,16 +115,20 @@ export function ReviewCommentCard({
             {isGithub && <span className={styles.resolvedPill}>Reviewer</span>}
             {annotation.resolved && <span className={styles.resolvedPill}>Resolved</span>}
             {isHuman && onToggle && (
-              <input
-                type="checkbox"
-                checked={!!selected}
-                onChange={() => onToggle(annotation.id)}
-                className={styles.commentCheckbox}
-              />
+              <label className={styles.commentSelectLabel}>
+                <input
+                  type="checkbox"
+                  checked={!!selected}
+                  onChange={() => onToggle(annotation.id)}
+                  className={styles.commentCheckbox}
+                  aria-label={`Select ${rangeLabel} comment for review`}
+                />
+                <span className={styles.commentSelectBox} aria-hidden />
+              </label>
             )}
           </div>
-          <p className={styles.commentBody}>{annotation.body}</p>
-          {showTourDetails && <p className={styles.commentRationale}>{annotation.rationale}</p>}
+          <MarkdownBody content={annotation.body} className={styles.commentBody} compact />
+          {showTourDetails && <div className={styles.commentRationale}>{annotation.rationale}</div>}
           {!isGithub && !isAgent && (
             <div className={styles.commentActions}>
               <button

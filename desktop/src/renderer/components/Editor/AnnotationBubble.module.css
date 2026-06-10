@@ -153,13 +153,80 @@
   line-height: 1.4;
 }
 
-.commentCheckbox {
+.commentSelectLabel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   margin-left: auto;
-  width: 14px;
-  height: 14px;
-  accent-color: rgb(59, 130, 246);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   flex-shrink: 0;
+  transition:
+    background-color var(--motion-fast),
+    box-shadow var(--motion-fast);
+}
+
+.commentSelectLabel:hover {
+  background: var(--rudu-canvas-hover);
+}
+
+.commentCheckbox {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.commentSelectBox {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--review-badge-border);
+  border-radius: 4px;
+  background: var(--review-input-bg);
+  box-shadow: inset 0 0 0 1px transparent;
+  pointer-events: none;
+  transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast),
+    box-shadow var(--motion-fast);
+}
+
+.commentSelectBox::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  width: 5px;
+  height: 8px;
+  border: solid var(--review-submit-text);
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: rotate(45deg) scale(0.8);
+  transition:
+    opacity var(--motion-fast),
+    transform var(--motion-fast);
+}
+
+.commentCheckbox:checked + .commentSelectBox {
+  border-color: var(--review-accent);
+  background: var(--review-accent);
+  box-shadow: 0 0 0 2px var(--review-accent-soft);
+}
+
+.commentCheckbox:checked + .commentSelectBox::after {
+  opacity: 1;
+  transform: rotate(45deg) scale(1);
+}
+
+.commentCheckbox:focus-visible + .commentSelectBox {
+  box-shadow: 0 0 0 3px var(--review-accent-soft);
 }
 
 .commentBody {
@@ -167,8 +234,61 @@
   font-size: 13px;
   color: var(--review-text-body);
   line-height: 1.55;
-  white-space: pre-wrap;
+  white-space: normal;
   word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.commentBody :global(.cm-editor) {
+  background: transparent;
+}
+
+.commentBody :global(.cm-scroller) {
+  overflow: visible;
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+}
+
+.commentBody :global(.cm-content) {
+  padding: 0;
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.commentBody :global(.cm-line:not(.cm-fenced-code-line)) {
+  padding: 0;
+}
+
+.commentBody :global(.cm-line:empty) {
+  min-height: 0.8em;
+}
+
+.commentBody :global(.cm-fenced-code-line) {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.commentBody :global(.cm-fenced-code-line-first) {
+  margin-top: 8px;
+}
+
+.commentBody :global(.cm-fenced-code-line-last) {
+  margin-bottom: 8px;
+}
+
+.commentBody :global(.cm-code-block-info) {
+  padding: 0 0 2px 8px;
+}
+
+.commentBody :global(.cm-code-block-copy-button) {
+  display: none;
 }
 
 .commentRationale {
@@ -183,21 +303,25 @@
 .commentActions {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 6px;
-  padding-top: 4px;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 2px;
 }
 
 .commentActionBtn {
   font-size: 12px;
   font-family: var(--font-sans, system-ui, sans-serif);
-  background: none;
-  border: none;
-  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
   cursor: pointer;
   transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast),
     color var(--motion-fast),
     opacity var(--motion-fast),
+    box-shadow var(--motion-fast),
     transform var(--duration-micro) var(--ease-press);
 }
 
@@ -210,11 +334,18 @@
   transform: scale(0.97);
 }
 
+.commentActionBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--review-accent-soft);
+}
+
 .resolve {
   color: rgba(74, 222, 128, 0.8);
 }
 .resolve:hover:not(:disabled) {
   color: rgb(74, 222, 128);
+  background: rgba(74, 222, 128, 0.08);
+  border-color: rgba(74, 222, 128, 0.18);
 }
 
 .unresolve {
@@ -222,6 +353,8 @@
 }
 .unresolve:hover:not(:disabled) {
   color: rgb(250, 204, 21);
+  background: rgba(250, 204, 21, 0.08);
+  border-color: rgba(250, 204, 21, 0.18);
 }
 
 .delete {
@@ -229,6 +362,8 @@
 }
 .delete:hover:not(:disabled) {
   color: rgb(248, 113, 113);
+  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(248, 113, 113, 0.18);
 }
 
 /* ── Hunk Accept/Reject Action Bar (Pierre Diffs-inspired) ── */
@@ -404,6 +539,19 @@
   font-weight: 500;
   color: var(--review-text-muted);
   letter-spacing: 0.01em;
+  /* Blur-masked crossfade when the label morphs "New comment" ↔ "Suggest a
+     change" (the span is re-keyed in React so @starting-style re-fires). Blur
+     bridges the two text states into one morph instead of an instant swap. */
+  transition:
+    opacity var(--motion-fast),
+    filter var(--motion-fast);
+}
+
+@starting-style {
+  .composerTitle {
+    opacity: 0;
+    filter: blur(2px);
+  }
 }
 
 .composerLineMeta {
@@ -428,6 +576,8 @@
 
 .composerEditorWrap:focus-within {
   border-color: var(--rudu-ink-400);
+  /* Soft focus ring — the primary input should announce it's listening. */
+  box-shadow: 0 0 0 3px var(--review-accent-soft);
 }
 
 .composerToolbar {
@@ -453,6 +603,7 @@
   transition:
     color var(--motion-fast),
     background-color var(--motion-fast),
+    box-shadow var(--motion-fast),
     transform var(--duration-micro) var(--ease-press);
 }
 
@@ -461,8 +612,14 @@
   background: var(--rudu-canvas-hover);
 }
 
+.composerToolbarBtn:focus-visible {
+  outline: none;
+  color: var(--review-text-strong);
+  box-shadow: 0 0 0 2px var(--review-accent-soft);
+}
+
 .composerToolbarBtn:active:not(:disabled) {
-  transform: scale(0.94);
+  transform: scale(0.95);
 }
 
 .composerToolbarBtn:disabled {
@@ -482,7 +639,7 @@
 
 .composerEditorWrap :global(.cm-scroller) {
   overflow: auto;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
   line-height: 1.5;
 }
 
@@ -491,6 +648,22 @@
   min-height: 72px;
   color: var(--review-input-text);
   caret-color: var(--review-input-text);
+  overflow-wrap: anywhere;
+}
+
+.composerEditorWrap :global(.cm-fenced-code-line) {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.composerEditorWrap :global(.cm-code-block-info) {
+  padding: 0 0 2px 8px;
 }
 
 .composerEditorWrap :global(.cm-placeholder) {
@@ -500,6 +673,7 @@
 .composerActions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
 }
@@ -520,6 +694,7 @@
   cursor: pointer;
   transition:
     background-color var(--motion-fast),
+    box-shadow var(--motion-fast),
     transform var(--duration-micro) var(--ease-press);
 }
 
@@ -532,6 +707,11 @@
 
 .composerSubmit:hover:not(:disabled) {
   background: var(--review-submit-bg-hover);
+}
+
+.composerSubmit:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--review-accent-soft);
 }
 
 .composerSubmit:active:not(:disabled) {
@@ -568,6 +748,16 @@
   background: var(--rudu-canvas-hover);
 }
 
+.composerCancel:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--review-accent-soft);
+}
+
+.composerCancel:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .composerHint {
   margin-left: auto;
   font-size: 11px;
@@ -596,12 +786,19 @@
   }
   .commentBubble,
   .composerBubble,
+  .composerTitle,
+  .composerToolbarBtn,
   .hunkActionUndo,
   .hunkActionKeep,
+  .commentSelectLabel,
+  .commentSelectBox,
+  .commentSelectBox::after,
   .commentActionBtn {
     transition: none;
   }
   .composerSubmit:active:not(:disabled),
+  .composerToolbarBtn:active:not(:disabled),
+  .commentActionBtn:active:not(:disabled),
   .composerCancel:active {
     transform: none;
   }
@@ -610,6 +807,11 @@
     .composerBubble {
       opacity: 1;
       transform: none;
+    }
+    /* Reduced motion keeps the label crossfade gentle: fade only, no blur. */
+    .composerTitle {
+      opacity: 1;
+      filter: none;
     }
   }
   :global(.highlightFlash) {

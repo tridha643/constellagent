@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { CodeViewLineSelection } from '@pierre/diffs'
+import { useAppStore } from '../../store/app-store'
 import { sendAddToChatText } from '../../utils/add-to-chat'
 import { selectionToDraft, draftTargetsEqual, type PatchDraftTarget } from './line-selection'
 
@@ -15,6 +16,10 @@ export interface ReviewComposerSession {
   markComposerPristine: (body: string) => void
   /** Single entry point for selection changes (drag-select, gutter "+", clear). */
   onSelectionChange: (selection: CodeViewLineSelection | null) => void
+  /** Explicit user cancel: discard the current draft immediately. */
+  onComposerCancel: () => void
+  /** Clear after a successful save without running the dirty-draft discard gate. */
+  onComposerSaved: () => void
   onAddToChat: (target: PatchDraftTarget) => void
   openDraft: (target: PatchDraftTarget) => void
 }
@@ -26,39 +31,95 @@ function languageIdFromPath(filePath: string): string {
 /**
  * Lifted comment-draft state machine. The pending range + body live here (not in
  * CodeView rows, which unmount off-screen) so a draft survives virtualization.
- * Mirrors the retired DiffFileSection dirty-discard confirm, adapted to CodeView's
- * single global controlled selection.
+ * Dirty drafts are pinned until the user explicitly cancels or submits; this
+ * keeps drag/select events from silently destroying a half-written comment.
  */
 export function useReviewComposerSession(): ReviewComposerSession {
   const [draftTarget, setDraftTarget] = useState<PatchDraftTarget | null>(null)
   const [composerBody, setComposerBody] = useState('')
+  const draftTargetRef = useRef<PatchDraftTarget | null>(null)
+  const composerBodyRef = useRef('')
+  const pristineBodyRef = useRef('')
+  const blockedSelectionToastRef = useRef(0)
+  const addToast = useAppStore((s) => s.addToast)
 
-  // A programmatically seeded body (suggestion pre-fill) is just set directly;
-  // there's no dirty/confirm gate anymore, so no separate pristine baseline.
-  const markComposerPristine = useCallback((body: string) => {
+  const setDraftTargetState = useCallback((target: PatchDraftTarget | null) => {
+    draftTargetRef.current = target
+    setDraftTarget(target)
+  }, [])
+
+  const setComposerBodyState = useCallback((body: string) => {
+    composerBodyRef.current = body
     setComposerBody(body)
   }, [])
 
-  // Switching drafts or cancelling discards the current body directly — no confirm
-  // modal. Cancel/selection-change is a plain, immediate action (pre-rudu behavior).
-  const openDraft = useCallback((target: PatchDraftTarget) => {
-    setDraftTarget((current) => {
-      if (!draftTargetsEqual(target, current)) setComposerBody('')
-      return target
-    })
+  // A programmatically seeded body (suggestion pre-fill) should be replaceable
+  // by a new selection until the user edits it.
+  const markComposerPristine = useCallback((body: string) => {
+    pristineBodyRef.current = body
+    setComposerBodyState(body)
+  }, [setComposerBodyState])
+
+  const canDiscardDraft = useCallback(() => {
+    const composerBody = composerBodyRef.current
+    if (!composerBody.trim() || composerBody === pristineBodyRef.current) return true
+    return false
   }, [])
+
+  const showPinnedDraftToast = useCallback(() => {
+    const now = Date.now()
+    if (now - blockedSelectionToastRef.current < 1600) return
+    blockedSelectionToastRef.current = now
+    window.setTimeout(() => {
+      addToast({
+        id: `review-draft-pinned-${now}`,
+        message: 'Finish or cancel the current inline comment before selecting another range.',
+        type: 'info',
+      })
+    }, 0)
+  }, [addToast])
+
+  const openDraft = useCallback((target: PatchDraftTarget) => {
+    const current = draftTargetRef.current
+    if (!draftTargetsEqual(target, current)) {
+      if (!canDiscardDraft()) {
+        showPinnedDraftToast()
+        return
+      }
+      pristineBodyRef.current = ''
+      setComposerBodyState('')
+    }
+    setDraftTargetState(target)
+  }, [canDiscardDraft, setComposerBodyState, setDraftTargetState, showPinnedDraftToast])
 
   const onSelectionChange = useCallback(
     (selection: CodeViewLineSelection | null) => {
       if (!selection) {
-        setDraftTarget(null)
-        setComposerBody('')
+        if (!canDiscardDraft()) {
+          showPinnedDraftToast()
+          return
+        }
+        setDraftTargetState(null)
+        pristineBodyRef.current = ''
+        setComposerBodyState('')
         return
       }
       openDraft(selectionToDraft(selection))
     },
-    [openDraft],
+    [canDiscardDraft, openDraft, setComposerBodyState, setDraftTargetState, showPinnedDraftToast],
   )
+
+  const onComposerCancel = useCallback(() => {
+    setDraftTargetState(null)
+    pristineBodyRef.current = ''
+    setComposerBodyState('')
+  }, [setComposerBodyState, setDraftTargetState])
+
+  const onComposerSaved = useCallback(() => {
+    setDraftTargetState(null)
+    pristineBodyRef.current = ''
+    setComposerBodyState('')
+  }, [setComposerBodyState, setDraftTargetState])
 
   const onAddToChat = useCallback((target: PatchDraftTarget) => {
     const filePath = target.filePath
@@ -73,9 +134,11 @@ export function useReviewComposerSession(): ReviewComposerSession {
   return {
     draftTarget,
     composerBody,
-    setComposerBody,
+    setComposerBody: setComposerBodyState,
     markComposerPristine,
     onSelectionChange,
+    onComposerCancel,
+    onComposerSaved,
     onAddToChat,
     openDraft,
   }
