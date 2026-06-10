@@ -128,6 +128,7 @@ function linearIssueWorktreeDirectoryName(issue: LinearIssueNode): string {
   return `linear-${idSlug}-${ts}`
 }
 import {
+  getOrderedVisibleWorkspaces,
   getRenderableProjectWorkspaces,
   getSwitchableVisibleProjects,
   getVisibleProjects,
@@ -2022,7 +2023,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   nextWorkspace: () => {
     const s = get()
-    const ordered = getVisibleWorkspaces(s.projects, s.workspaces, s.collapsedProjectIds)
+    const ordered = getOrderedVisibleWorkspaces(s.projects, s.workspaces, s.collapsedProjectIds, s.customSections, s.collapsedSidebarSections)
     if (ordered.length <= 1) return
     const idx = ordered.findIndex((workspace) => workspace.id === s.activeWorkspaceId)
     const next = idx === -1 ? ordered[0] : ordered[(idx + 1) % ordered.length]
@@ -2031,7 +2032,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   prevWorkspace: () => {
     const s = get()
-    const ordered = getVisibleWorkspaces(s.projects, s.workspaces, s.collapsedProjectIds)
+    const ordered = getOrderedVisibleWorkspaces(s.projects, s.workspaces, s.collapsedProjectIds, s.customSections, s.collapsedSidebarSections)
     if (ordered.length <= 1) return
     const idx = ordered.findIndex((workspace) => workspace.id === s.activeWorkspaceId)
     const prev = idx === -1 ? ordered[ordered.length - 1] : ordered[(idx - 1 + ordered.length) % ordered.length]

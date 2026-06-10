@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   deriveBucket,
   ensureDefaultCustomSections,
+  getOrderedVisibleWorkspaces,
   getRenderableProjectWorkspaces,
   getWorkspaceSections,
   resolveProjectTargetWorkspace,
@@ -141,7 +142,7 @@ describe('getWorkspaceSections', () => {
     expect(sections.find((s) => s.id === 'non-priority')?.workspaces.map((w) => w.id)).toEqual(['orphan'])
   })
 
-  it('orders within a folder by lastActiveAt desc, then name', () => {
+  it('preserves array order within a folder — selection (lastActiveAt) must not reorder', () => {
     const workspaces = [
       workspace('older', { name: 'older', lastActiveAt: NOW - 5000 }),
       workspace('newer', { name: 'newer', lastActiveAt: NOW - 1000 }),
@@ -150,7 +151,9 @@ describe('getWorkspaceSections', () => {
     ]
     const sections = getWorkspaceSections(workspaces, noSignals, NOW, folders())
     const def = sections.find((s) => s.id === 'non-priority')!
-    expect(def.workspaces.map((w) => w.id)).toEqual(['newer', 'older', 'abe', 'zeb'])
+    // Array order is kept verbatim; a freshly-selected (most-recent lastActiveAt)
+    // workspace does NOT rise to the top.
+    expect(def.workspaces.map((w) => w.id)).toEqual(['older', 'newer', 'zeb', 'abe'])
   })
 
   it('synthesizes a Non-priority folder when a project has no folders yet', () => {
@@ -159,6 +162,55 @@ describe('getWorkspaceSections', () => {
     expect(sections[0]!.label).toBe('Non-priority')
     expect(sections[0]!.isDefault).toBe(true)
     expect(sections[0]!.workspaces.map((w) => w.id)).toEqual(['a'])
+  })
+})
+
+describe('getOrderedVisibleWorkspaces', () => {
+  const projects = [{ id: 'project-1' }, { id: 'project-2' }] as any
+
+  it('walks folder-by-folder within a project, then across into the next project', () => {
+    const sections = [
+      { id: 'p1-prio', projectId: 'project-1', name: 'Priority', order: 0 },
+      { id: 'p1-rest', projectId: 'project-1', name: 'Non-priority', order: 1, isDefault: true },
+      { id: 'p2-rest', projectId: 'project-2', name: 'Non-priority', order: 0, isDefault: true },
+    ]
+    const workspaces = [
+      // intentionally not in visual order in the array
+      workspace('p1-loose', { projectId: 'project-1' }),
+      workspace('p1-prio-a', { projectId: 'project-1', sectionId: 'p1-prio' }),
+      workspace('p2-a', { projectId: 'project-2' }),
+      workspace('p1-prio-b', { projectId: 'project-1', sectionId: 'p1-prio' }),
+    ]
+    const ordered = getOrderedVisibleWorkspaces(projects, workspaces, new Set(), sections)
+    // project-1 Priority (array order within folder), then project-1 Non-priority, then project-2
+    expect(ordered.map((w) => w.id)).toEqual(['p1-prio-a', 'p1-prio-b', 'p1-loose', 'p2-a'])
+  })
+
+  it('skips collapsed projects', () => {
+    const sections = [
+      { id: 'p1-rest', projectId: 'project-1', name: 'Non-priority', order: 0, isDefault: true },
+      { id: 'p2-rest', projectId: 'project-2', name: 'Non-priority', order: 0, isDefault: true },
+    ]
+    const workspaces = [
+      workspace('p1-a', { projectId: 'project-1' }),
+      workspace('p2-a', { projectId: 'project-2' }),
+    ]
+    const ordered = getOrderedVisibleWorkspaces(projects, workspaces, new Set(['project-1']), sections)
+    expect(ordered.map((w) => w.id)).toEqual(['p2-a'])
+  })
+
+  it('skips collapsed folders, keeping the rest of the project', () => {
+    const sections = [
+      { id: 'p1-prio', projectId: 'project-1', name: 'Priority', order: 0 },
+      { id: 'p1-rest', projectId: 'project-1', name: 'Non-priority', order: 1, isDefault: true },
+    ]
+    const workspaces = [
+      workspace('prio-a', { projectId: 'project-1', sectionId: 'p1-prio' }),
+      workspace('rest-a', { projectId: 'project-1' }),
+    ]
+    const collapsed = { 'project-1:p1-prio': true }
+    const ordered = getOrderedVisibleWorkspaces(projects, workspaces, new Set(), sections, collapsed)
+    expect(ordered.map((w) => w.id)).toEqual(['rest-a'])
   })
 })
 
