@@ -10,6 +10,7 @@ import {
   optionLetter,
 } from '../../../../shared/conductor-ask-question-types'
 import { useFocusTrap } from '../../../hooks/useFocusTrap'
+import { useExitAnimation } from '../../../hooks/useExitAnimation'
 import styles from '../Conductor.module.css'
 
 interface QuestionUiState {
@@ -18,12 +19,46 @@ interface QuestionUiState {
   extraDetails: string | null
 }
 
+/** Match `constellagent-dialog-*--exiting` duration (`--duration-exit` in design-tokens). */
+const EXIT_MS = 140
+
+/**
+ * Host that keeps the last question mounted through the shared dialog exit
+ * transition after `blockingQuestion` clears (answer submitted or cancelled).
+ */
 export function ConductorAskQuestionModal({
   question,
   onSubmit,
   onCancel,
 }: {
+  question: ConductorBlockingQuestion | null
+  onSubmit: (details: ConductorAskQuestionDetails) => void
+  onCancel: () => void
+}) {
+  const [lastQuestion, setLastQuestion] = useState(question)
+  if (question && question !== lastQuestion) {
+    setLastQuestion(question)
+  }
+  const { shouldRender, animating } = useExitAnimation(Boolean(question), EXIT_MS)
+  if (!shouldRender || !lastQuestion) return null
+  return (
+    <AskQuestionCard
+      question={lastQuestion}
+      exiting={animating === 'exit'}
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+    />
+  )
+}
+
+function AskQuestionCard({
+  question,
+  exiting,
+  onSubmit,
+  onCancel,
+}: {
   question: ConductorBlockingQuestion
+  exiting: boolean
   onSubmit: (details: ConductorAskQuestionDetails) => void
   onCancel: () => void
 }) {
@@ -102,14 +137,15 @@ export function ConductorAskQuestionModal({
   }, [questions, states])
 
   const submit = useCallback(() => {
-    if (!allAnswered) return
+    if (!allAnswered || exiting) return
     onSubmit({ cancelled: false, answers: buildAnswers() })
-  }, [allAnswered, buildAnswers, onSubmit])
+  }, [allAnswered, buildAnswers, exiting, onSubmit])
 
   const cancel = useCallback(() => {
+    if (exiting) return
     onSubmit({ cancelled: true, answers: [] })
     onCancel()
-  }, [onCancel, onSubmit])
+  }, [exiting, onCancel, onSubmit])
 
   useEffect(() => {
     setHighlight(0)
@@ -198,10 +234,14 @@ export function ConductorAskQuestionModal({
   if (!current || !currentState) return null
 
   return (
-    <div className={styles.askQuestionBackdrop} role="presentation" onClick={cancel}>
+    <div
+      className={`${styles.askQuestionBackdrop} constellagent-dialog-overlay ${exiting ? 'constellagent-dialog-overlay--exiting' : ''}`}
+      role="presentation"
+      onClick={cancel}
+    >
       <div
         ref={cardRef}
-        className={styles.askQuestionCard}
+        className={`${styles.askQuestionCard} constellagent-dialog-body ${exiting ? 'constellagent-dialog-body--exiting' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="conductor-ask-question-title"
@@ -211,6 +251,7 @@ export function ConductorAskQuestionModal({
           ×
         </button>
 
+        <div key={current.header} className={styles.askQuestionPage}>
         <div className={styles.askQuestionHeaderLabel}>{clampAskQuestionHeader(current.header)}</div>
         <h2 id="conductor-ask-question-title" className={styles.askQuestionTitle}>
           {current.question}
@@ -279,6 +320,7 @@ export function ConductorAskQuestionModal({
               </button>
             )
           })}
+        </div>
         </div>
 
         <div className={styles.askQuestionFooter}>

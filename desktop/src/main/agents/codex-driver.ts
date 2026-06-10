@@ -52,6 +52,10 @@ import {
   formatAppServerRequestUserInputResult,
   parseAppServerRequestUserInput,
 } from './codex-ask-user'
+import {
+  buildCodexCollaborationMode,
+  isCollaborationModeUnsupportedError,
+} from './codex-collaboration-mode'
 import { getConductorQuestionBridge } from './conductor-question-bridge'
 import {
   buildCodexAppServerConfigArgs,
@@ -662,12 +666,25 @@ export class CodexDriver implements AgentDriver {
     ctx.signal.addEventListener('abort', abortHandler)
 
     try {
-      await client.request('turn/start', {
+      const baseParams = {
         threadId: state.thread.threadId,
         input,
         effort: logContext.effort,
         model: logContext.model,
-      })
+      }
+      try {
+        await client.request('turn/start', {
+          ...baseParams,
+          collaborationMode: buildCodexCollaborationMode(
+            logContext.model,
+            logContext.effort,
+            state.plan,
+          ),
+        })
+      } catch (err) {
+        if (!isCollaborationModeUnsupportedError(err)) throw err
+        await client.request('turn/start', baseParams)
+      }
       logMainPerfEvent('codex.appServer.turn_started', performance.now() - turnStartedAt, logContext)
       await completion.wait(ctx.signal)
       logMainPerfEvent('codex.appServer.turn_completed', performance.now() - turnStartedAt, logContext)
