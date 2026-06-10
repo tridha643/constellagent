@@ -104,18 +104,16 @@ export function deriveBucket(signals: WorkspaceSignals, now: number): WorkspaceB
   return 'idle'
 }
 
-function compareByActivityThenName(a: Workspace, b: Workspace): number {
-  const delta = (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0)
-  if (delta !== 0) return delta
-  return a.name.localeCompare(b.name)
-}
-
 /**
  * Split a project's workspaces into its folder sections. Every workspace lives in
  * a folder: an explicit `sectionId` if it still exists, otherwise the default
  * (Non-priority) catch-all. Folders render in `order`, always emitted — even when
  * empty — so each stays a valid drop target. There are no auto status buckets or
  * a Pinned section anymore; placement is purely the user's folders.
+ *
+ * Within a folder, workspaces keep their array order (insertion order, mutated by
+ * the `reorderWorkspace` drag action). They are deliberately NOT sorted by
+ * `lastActiveAt` — selecting a workspace must not make it jump to the top.
  *
  * `resolveSignals`/`now` are unused now (folders aren't status-derived) but kept
  * in the signature for call-site + test compatibility. `deriveBucket` is retained
@@ -150,8 +148,6 @@ export function getWorkspaceSections(
     }
   }
 
-  for (const list of members.values()) list.sort(compareByActivityThenName)
-
   const sections: WorkspaceSection[] = orderedCustom.map((sec) => ({
     id: sec.id,
     kind: 'custom',
@@ -162,7 +158,6 @@ export function getWorkspaceSections(
 
   // Safety net: a project not yet seeded still shows its workspaces.
   if (!defaultSection && ungrouped.length > 0) {
-    ungrouped.sort(compareByActivityThenName)
     sections.push({
       id: '__ungrouped',
       kind: 'custom',
@@ -204,6 +199,39 @@ export function getVisibleWorkspaces(
     collapsedProjectIds.has(project.id)
       ? []
       : getRenderableProjectWorkspaces(workspaces, project.id)
+  ))
+}
+
+/**
+ * Workspaces in the exact order they render in the sidebar: every non-collapsed
+ * project (in project order), and within each project its folders in `order`
+ * with the workspaces inside each folder in array order — exactly what
+ * {@link getWorkspaceSections} produces. This is the traversal Cmd+Option+Up/Down
+ * follows so the cycle walks straight down the sidebar and across into the next
+ * project, irrespective of folder boundaries.
+ *
+ * Collapsed projects and collapsed folders are skipped: their workspaces aren't
+ * visible, so the cycle steps over them exactly as the eye does.
+ * `collapsedSidebarSections` is keyed `${projectId}:${sectionId}` (true = collapsed).
+ */
+export function getOrderedVisibleWorkspaces(
+  projects: Project[],
+  workspaces: Workspace[],
+  collapsedProjectIds: Set<string>,
+  customSections: CustomSection[] = [],
+  collapsedSidebarSections: Record<string, boolean> = {},
+): Workspace[] {
+  return getVisibleProjects(projects).flatMap((project) => (
+    collapsedProjectIds.has(project.id)
+      ? []
+      : getWorkspaceSections(
+          getRenderableProjectWorkspaces(workspaces, project.id),
+          () => ({}),
+          0,
+          customSections.filter((sec) => sec.projectId === project.id),
+        )
+          .filter((section) => !collapsedSidebarSections[`${project.id}:${section.id}`])
+          .flatMap((section) => section.workspaces)
   ))
 }
 
