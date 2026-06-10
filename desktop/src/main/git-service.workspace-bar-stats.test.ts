@@ -60,13 +60,13 @@ describe('GitService.getWorkspaceBarStats', () => {
     expect(stats.deletions).toBe(0)
   })
 
-  it('returns +0 -0 for a branch with no diff against base', async () => {
+  it('returns +0 -0 and no subject for a branch with no commits of its own', async () => {
     const repoPath = await initRepo()
     await runGit(repoPath, 'checkout', '-q', '-b', 'clean')
 
     const stats = await GitService.getWorkspaceBarStats(repoPath, 'main')
 
-    expect(stats.subject).toBe('base')
+    expect(stats.subject).toBe('')
     expect(stats.additions).toBe(0)
     expect(stats.deletions).toBe(0)
     expect(stats.headSha).toMatch(/^[0-9a-f]{40}$/)

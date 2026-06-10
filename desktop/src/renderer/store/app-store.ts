@@ -708,7 +708,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   defaultBranchByProjectId: new Map(),
   repoInfoByProjectId: new Map(),
   workspaceBarStatsMap: new Map(),
-  workspaceBarModeOverride: new Map(),
   gitFileStatuses: new Map(),
   workingTreeDiffSnapshots: new Map(),
   worktreeSyncStatus: new Map(),
@@ -775,12 +774,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       const newWorktreeSyncStatus = new Map(s.worktreeSyncStatus)
       const newGraphiteStacks = new Map(s.graphiteStacks)
       const newWorkspaceBarStatsMap = new Map(s.workspaceBarStatsMap)
-      const newWorkspaceBarModeOverride = new Map(s.workspaceBarModeOverride)
       for (const ws of s.workspaces.filter((w) => w.projectId === id)) {
         newWorktreeSyncStatus.delete(ws.id)
         newGraphiteStacks.delete(ws.id)
         newWorkspaceBarStatsMap.delete(ws.id)
-        newWorkspaceBarModeOverride.delete(ws.id)
       }
       const newSpotlightStatusByProject = new Map(s.spotlightStatusByProject)
       newSpotlightStatusByProject.delete(id)
@@ -818,7 +815,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         defaultBranchByProjectId: newDefaultBranchByProjectId,
         repoInfoByProjectId: newRepoInfoByProjectId,
         workspaceBarStatsMap: newWorkspaceBarStatsMap,
-        workspaceBarModeOverride: newWorkspaceBarModeOverride,
         worktreeSyncStatus: newWorktreeSyncStatus,
         sideTerminalsByWorkspace,
         workspaceTodos,
@@ -889,8 +885,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       newGraphiteStacks.delete(id)
       const newWorkspaceBarStatsMap = new Map(s.workspaceBarStatsMap)
       newWorkspaceBarStatsMap.delete(id)
-      const newWorkspaceBarModeOverride = new Map(s.workspaceBarModeOverride)
-      newWorkspaceBarModeOverride.delete(id)
       const lastActiveWorkspaceByProjectId = pruneLastActiveWorkspaceByProjectId(
         s.lastActiveWorkspaceByProjectId,
         s.projects,
@@ -928,7 +922,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         workspaceTodos,
         graphiteStacks: newGraphiteStacks,
         workspaceBarStatsMap: newWorkspaceBarStatsMap,
-        workspaceBarModeOverride: newWorkspaceBarModeOverride,
         lastActiveWorkspaceByProjectId,
         lastActiveTabByWorkspace: tabMap,
         planBuildTerminalByPlanPath,
@@ -3517,25 +3510,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       const next = new Map(s.workspaceBarStatsMap)
       next.set(workspaceId, stats)
       return { workspaceBarStatsMap: next }
-    }),
-
-  toggleWorkspaceBarMode: (workspaceId) =>
-    set((s) => {
-      const ws = s.workspaces.find((w) => w.id === workspaceId)
-      if (!ws) return {}
-      const autoMode =
-        s.prStatusMap.get(`${ws.projectId}:${ws.branch}`)?.state === 'open' ? 'pr' : 'local'
-      const current = s.workspaceBarModeOverride.get(workspaceId) ?? autoMode
-      const nextMode = current === 'pr' ? 'local' : 'pr'
-      const next = new Map(s.workspaceBarModeOverride)
-      // Clear the override once a flip lands back on the auto mode — keeps the
-      // map sparse and lets PR-state changes resume driving the face.
-      if (nextMode === autoMode) {
-        next.delete(workspaceId)
-      } else {
-        next.set(workspaceId, nextMode)
-      }
-      return { workspaceBarModeOverride: next }
     }),
 
   setWorktreeSyncStatus: (projectId, workspaces) =>

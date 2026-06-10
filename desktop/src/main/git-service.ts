@@ -1604,14 +1604,31 @@ export class GitService {
     const empty: WorkspaceBarStats = { subject: '', additions: 0, deletions: 0, headSha: '' }
     if (!existsSync(worktreePath)) return empty
 
-    const headSha = await git(['rev-parse', 'HEAD'], worktreePath).catch(() => '')
+    const headSha = (await git(['rev-parse', 'HEAD'], worktreePath).catch(() => '')).trim()
     if (!headSha) return empty
-
-    const subject = await git(['log', '-1', '--format=%s'], worktreePath).catch(() => '')
 
     const base = (defaultBranch?.trim() || (await this.getDefaultBranch(worktreePath))).trim()
     const baseSha = base
-      ? await git(['merge-base', base, 'HEAD'], worktreePath).catch(() => '')
+      ? (await git(['merge-base', base, 'HEAD'], worktreePath).catch(() => '')).trim()
+      : ''
+
+    // `git log -1` returns HEAD's subject, which on a freshly-branched workspace
+    // is the *base branch's* tip — a commit this workspace didn't author. Only
+    // surface a subject when HEAD is actually ahead of the base (the workspace
+    // has its own commit); otherwise leave it blank so the bar renders the
+    // branch/workspace name instead of an inherited, misleading subject. We ask
+    // git directly for the ahead-count (`base..HEAD`) rather than comparing
+    // SHAs — `git()` doesn't trim its output, so a raw equality check is fragile.
+    let hasOwnCommit = false
+    if (base) {
+      const aheadRaw = await git(
+        ['rev-list', '--count', `${base}..HEAD`],
+        worktreePath,
+      ).catch(() => '0')
+      hasOwnCommit = Number.parseInt(aheadRaw.trim(), 10) > 0
+    }
+    const subject = hasOwnCommit
+      ? (await git(['log', '-1', '--format=%s'], worktreePath).catch(() => '')).trim()
       : ''
 
     let additions = 0
