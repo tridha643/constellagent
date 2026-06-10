@@ -28,6 +28,8 @@ import {
   getWorkspaceBarLocalTitle,
   isDefaultWorkspaceBarBranch,
   shouldRenderWorkspaceBarStats,
+  shouldShowWorkspaceBranchMeta,
+  shouldUseCompactWorkspaceBarLocalFace,
 } from "./workspace-bar-display";
 
 import {
@@ -258,11 +260,17 @@ interface ActionButtonConfig {
   disabled?: boolean;
 }
 
-function PrStateIcon({ state }: { state: "open" | "merged" | "closed" }) {
+function PrStateIcon({
+  state,
+  size = PR_ICON_SIZE,
+}: {
+  state: "open" | "merged" | "closed";
+  size?: number;
+}) {
   if (state === "open") {
     // GitHub git-pull-request icon (simplified)
     return (
-      <svg width={PR_ICON_SIZE} height={PR_ICON_SIZE} viewBox="0 0 16 16" fill="currentColor">
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
         <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
       </svg>
     );
@@ -270,17 +278,24 @@ function PrStateIcon({ state }: { state: "open" | "merged" | "closed" }) {
   if (state === "merged") {
     // GitHub git-merge icon
     return (
-      <svg width={PR_ICON_SIZE} height={PR_ICON_SIZE} viewBox="0 0 16 16" fill="currentColor">
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
         <path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z" />
       </svg>
     );
   }
   // closed — GitHub git-pull-request-closed icon
   return (
-    <svg width={PR_ICON_SIZE} height={PR_ICON_SIZE} viewBox="0 0 16 16" fill="currentColor">
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
       <path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l.97.97.97-.97a.75.75 0 1 1 1.06 1.06l-.97.97.97.97a.75.75 0 0 1-1.06 1.06l-.97-.97-.97.97a.75.75 0 1 1-1.06-1.06l.97-.97-.97-.97a.75.75 0 0 1 0-1.06ZM3.25 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
     </svg>
   );
+}
+
+/** PR-state → CSS color class used on the workspace bar's PR-mode icon. */
+function prStateClass(state: PrInfo["state"] | undefined): string {
+  if (state === "merged") return styles.pr_merged;
+  if (state === "closed") return styles.pr_closed;
+  return styles.pr_open;
 }
 
 function labelForSpotlightState(state: SpotlightState): string {
@@ -468,11 +483,9 @@ function WorkspaceStats({ additions, deletions }: { additions: number; deletions
 }
 
 /**
- * The "rudu" workspace bar: a universal two-face layout whose data source flips
- * by whether an open PR exists. Both faces are always rendered into one grid
- * cell so the local⇄PR change is a pure opacity+blur crossfade (no reflow).
- * Local mode = name≡branch · latest commit subject · working-tree-inclusive
- * `+N -N`. PR mode = PR author (+avatar) · PR title · the PR's real `+N -N`.
+ * Workspace bar: PR face when an open PR exists; otherwise a local-git face.
+ * Pre-PR / no-commit workspaces use the compact single-line layout (old sidebar
+ * style). Branches with their own commit subject use the two-line rudu layout.
  */
 function WorkspaceBarFaces({
   ws,
@@ -491,15 +504,11 @@ function WorkspaceBarFaces({
 }) {
   const pr = useAppStore((s) => s.prStatusMap.get(`${ws.projectId}:${ws.branch}`));
   const barStats = useAppStore((s) => s.workspaceBarStatsMap.get(ws.id));
-  const modeOverride = useAppStore((s) => s.workspaceBarModeOverride.get(ws.id));
   const defaultBranch = useAppStore((s) => s.defaultBranchByProjectId.get(project.id));
-  const toggleWorkspaceBarMode = useAppStore((s) => s.toggleWorkspaceBarMode);
   const prLinkProvider = project.prLinkProvider ?? "github";
 
-  // Auto mode follows PR state; a manual flip override wins until it lands back
-  // on auto (the store clears the override at that point).
-  const autoMode = pr?.state === "open" ? "pr" : "local";
-  const mode = modeOverride ?? autoMode;
+  const hasOpenPr = pr?.state === "open";
+  const mode = hasOpenPr ? "pr" : "local";
 
   const localAdditions = barStats?.additions ?? 0;
   const localDeletions = barStats?.deletions ?? 0;
@@ -510,76 +519,117 @@ function WorkspaceBarFaces({
     subject: barStats?.subject,
   });
   const isDefaultBranch = isDefaultWorkspaceBarBranch(ws.branch, defaultBranch);
+  const compactLocal = shouldUseCompactWorkspaceBarLocalFace({
+    displayName,
+    subject: barStats?.subject,
+    workspaceBranch: ws.branch,
+    defaultBranch,
+  });
+  const showBranchMeta =
+    compactLocal &&
+    shouldShowWorkspaceBranchMeta({
+      workspaceName: ws.name,
+      workspaceBranch: ws.branch,
+    });
   const showLocalStats = shouldRenderWorkspaceBarStats(true, localAdditions, localDeletions);
 
   const prAdditions = pr?.additions ?? 0;
   const prDeletions = pr?.deletions ?? 0;
-  const showPrStats = shouldRenderWorkspaceBarStats(!!pr, prAdditions, prDeletions);
+  const showPrStats = shouldRenderWorkspaceBarStats(hasOpenPr, prAdditions, prDeletions);
   const prAuthor = pr?.authorLogin;
 
+  const statusChips = (
+    <span className={styles.wsChips}>
+      {!compactLocal && (
+        <SidebarWorkspaceGlyph sync={sync} automationId={ws.automationId} />
+      )}
+      <WorkspaceSyncIndicator workspaceId={ws.id} />
+      {isSpotlightWorkspace && spotlightStatus && (
+        <SidebarSpotlightStatusChip status={spotlightStatus} />
+      )}
+    </span>
+  );
+
   return (
-    <>
-      <div className={styles.wsFaces} data-mode={mode}>
-      {/* PR face */}
-      <div className={`${styles.wsFace} ${styles.wsFacePr}`} aria-hidden={mode !== "pr"}>
-        <div className={styles.wsTopline}>
-          <span className={styles.wsAuthor}>
-            {prAuthor && (
-              <img
-                className={styles.wsAuthorAvatar}
-                src={getGithubUserAvatarUrl(prAuthor, 24)}
-                alt=""
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).style.display = "none";
-                }}
-              />
-            )}
-            <span className={styles.wsAuthorLogin}>{prAuthor ?? "PR"}</span>
-          </span>
-          {pr && (
+    <div className={styles.wsFaces} data-mode={mode}>
+      {hasOpenPr && pr && (
+        <div className={`${styles.wsFace} ${styles.wsFacePr}`} aria-hidden={mode !== "pr"}>
+          <div className={styles.wsTopline}>
+            <span className={styles.wsAuthor}>
+              {prAuthor && (
+                <img
+                  className={styles.wsAuthorAvatar}
+                  src={getGithubUserAvatarUrl(prAuthor, 24)}
+                  alt=""
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              )}
+              <span className={styles.wsAuthorLogin}>{prAuthor ?? "PR"}</span>
+            </span>
             <span className={styles.wsChips}>
               <CiChip status={pr.checkStatus} />
             </span>
-          )}
+          </div>
+          <div className={styles.wsMainline}>
+            <span className={`${styles.wsPrIcon} ${prStateClass(pr.state)}`}>
+              <PrStateIcon state={pr.state} size={14} />
+            </span>
+            <span
+              className={styles.wsTitle}
+              title={`PR #${pr.number}: ${pr.title}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(providerUrl(pr.url, prLinkProvider));
+              }}
+            >
+              {pr.title}
+            </span>
+            {showPrStats && <WorkspaceStats additions={prAdditions} deletions={prDeletions} />}
+          </div>
         </div>
-        <div className={styles.wsMainline}>
-          <PrBranchIcon />
-          <span
-            className={styles.wsTitle}
-            title={pr ? `PR #${pr.number}: ${pr.title}` : undefined}
-            onClick={(e) => {
-              if (!pr) return;
-              e.stopPropagation();
-              window.open(providerUrl(pr.url, prLinkProvider));
-            }}
-          >
-            {pr?.title ?? "(no open PR)"}
-          </span>
-          {showPrStats && <WorkspaceStats additions={prAdditions} deletions={prDeletions} />}
-        </div>
-      </div>
+      )}
 
-      {/* Local face */}
-      <div className={`${styles.wsFace} ${styles.wsFaceLocal}`} aria-hidden={mode !== "local"}>
-        <div className={styles.wsTopline}>
-          <span className={styles.wsIdent}>{displayName}</span>
-          <span className={styles.wsChips}>
-            <SidebarWorkspaceGlyph sync={sync} automationId={ws.automationId} />
-            <WorkspaceSyncIndicator workspaceId={ws.id} />
-            {isSpotlightWorkspace && spotlightStatus && (
-              <SidebarSpotlightStatusChip status={spotlightStatus} />
+      <div
+        className={`${styles.wsFace} ${styles.wsFaceLocal}${compactLocal ? ` ${styles.wsFaceLocalCompact}` : ""}`}
+        aria-hidden={mode !== "local"}
+      >
+        {compactLocal ? (
+          <>
+            <div className={styles.wsMainline}>
+              <span className={styles.wsCompactGlyph}>
+                <SidebarWorkspaceGlyph sync={sync} automationId={ws.automationId} />
+              </span>
+              <span className={styles.wsTitle} title={displayName}>
+                {displayName}
+              </span>
+              {showLocalStats && (
+                <WorkspaceStats additions={localAdditions} deletions={localDeletions} />
+              )}
+              {statusChips}
+            </div>
+            {showBranchMeta && (
+              <div className={styles.wsBranchMeta}>{ws.branch}</div>
             )}
-          </span>
-        </div>
-        <div className={styles.wsMainline}>
-          <PrBranchIcon local />
-          <span className={styles.wsTitle} title={localSubject}>
-            {localSubject}
-          </span>
-          {showLocalStats && (
-            <WorkspaceStats additions={localAdditions} deletions={localDeletions} />
-          )}
-        </div>
+          </>
+        ) : (
+          <>
+            <div className={styles.wsTopline}>
+              <span className={styles.wsIdent}>{displayName}</span>
+              {statusChips}
+            </div>
+            <div className={styles.wsMainline}>
+              <PrBranchIcon local />
+              <span className={styles.wsTitle} title={localSubject}>
+                {localSubject}
+              </span>
+              {showLocalStats && (
+                <WorkspaceStats additions={localAdditions} deletions={localDeletions} />
+              )}
+            </div>
+          </>
+        )}
         {!isDefaultBranch && (
           <GraphiteStack
             workspaceId={ws.id}
@@ -589,33 +639,7 @@ function WorkspaceBarFaces({
           />
         )}
       </div>
-      </div>
-      {/* Local⇄PR flip (rudu .flip): hover-revealed beside delete; pure override. */}
-      <button
-        className={styles.wsFlip}
-        title="Switch view · local ⇄ PR"
-        aria-label="Switch between local and PR view"
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleWorkspaceBarMode(ws.id);
-        }}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          width="14"
-          height="14"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <rect x="2" y="6" width="20" height="12" rx="6" />
-          <circle cx="16" cy="12" r="2.7" fill="currentColor" stroke="none" />
-        </svg>
-      </button>
-    </>
+    </div>
   );
 }
 

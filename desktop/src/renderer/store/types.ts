@@ -858,12 +858,6 @@ export interface AppState {
   repoInfoByProjectId: Map<string, GithubRepoInfo | null>
   /** Local-mode workspace bar stats keyed by workspace id (commit subject + working-tree-inclusive numstat). */
   workspaceBarStatsMap: Map<string, WorkspaceBarStats>
-  /**
-   * Manual local⇄PR face override per workspace id (ephemeral; resets on reload).
-   * Absent ⇒ the bar follows the auto mode derived from PR state. Cleared when a
-   * toggle lands back on the auto mode.
-   */
-  workspaceBarModeOverride: Map<string, 'local' | 'pr'>
   gitFileStatuses: Map<string, Map<string, string>>
   workingTreeDiffSnapshots: Map<string, WorkingTreeDiffSnapshot>
   /** Per-workspace worktree sync status (key = workspace id) */
@@ -1120,8 +1114,6 @@ export interface AppState {
   setProjectRepoInfo: (projectId: string, info: GithubRepoInfo | null) => void
   /** Update local-mode workspace bar stats for a workspace (dirty-checked). */
   setWorkspaceBarStats: (workspaceId: string, stats: WorkspaceBarStats) => void
-  /** Flip the workspace bar between local and PR faces (ephemeral override). */
-  toggleWorkspaceBarMode: (workspaceId: string) => void
   setWorktreeSyncStatus: (projectId: string, workspaces: Record<string, WorkspaceSyncInfo>) => void
   /** Persist which workspace is spotlighting into a project's repo root (null = none). */
   setSpotlightWorkspace: (projectId: string, workspaceId: string | null) => void

@@ -4,6 +4,8 @@ import {
   isDefaultWorkspaceBarBranch,
   normalizeWorkspaceBarBranch,
   shouldRenderWorkspaceBarStats,
+  shouldShowWorkspaceBranchMeta,
+  shouldUseCompactWorkspaceBarLocalFace,
 } from './workspace-bar-display'
 
 describe('normalizeWorkspaceBarBranch', () => {
@@ -66,6 +68,61 @@ describe('getWorkspaceBarLocalTitle', () => {
         subject: '',
       }),
     ).toBe('feature/sidebar')
+  })
+})
+
+describe('shouldUseCompactWorkspaceBarLocalFace', () => {
+  it('uses compact layout when there is no commit subject', () => {
+    expect(
+      shouldUseCompactWorkspaceBarLocalFace({
+        workspaceBranch: 'feature/sidebar',
+        defaultBranch: 'main',
+        displayName: 'feature/sidebar',
+        subject: '',
+      }),
+    ).toBe(true)
+  })
+
+  it('uses the two-line layout when a branch has its own commit subject', () => {
+    expect(
+      shouldUseCompactWorkspaceBarLocalFace({
+        workspaceBranch: 'feature/sidebar',
+        defaultBranch: 'main',
+        displayName: 'feature/sidebar',
+        subject: 'Implement sidebar row',
+      }),
+    ).toBe(false)
+  })
+
+  it('uses compact layout when the mainline would repeat the branch ident', () => {
+    expect(
+      shouldUseCompactWorkspaceBarLocalFace({
+        workspaceBranch: 'main',
+        defaultBranch: 'main',
+        displayName: 'main',
+        subject: 'Latest on main',
+      }),
+    ).toBe(true)
+  })
+})
+
+describe('shouldShowWorkspaceBranchMeta', () => {
+  it('shows branch meta for custom workspace names', () => {
+    expect(
+      shouldShowWorkspaceBranchMeta({
+        workspaceName: 'Terminal work',
+        workspaceBranch: 'feat/terminal',
+      }),
+    ).toBe(true)
+  })
+
+  it('hides branch meta for auto-generated workspace names', () => {
+    expect(
+      shouldShowWorkspaceBranchMeta({
+        workspaceName: 'ws-abc123',
+        workspaceBranch: 'feat/terminal',
+      }),
+    ).toBe(false)
   })
 })
 

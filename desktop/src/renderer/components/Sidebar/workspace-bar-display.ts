@@ -55,3 +55,40 @@ export function getWorkspaceBarLocalTitle({
 
   return subject || displayName
 }
+
+/** True when the workspace has no commit subject worth a second mainline row. */
+export function shouldUseCompactWorkspaceBarLocalFace({
+  displayName,
+  subject,
+  workspaceBranch,
+  defaultBranch,
+}: {
+  displayName: string
+  subject: string | null | undefined
+  workspaceBranch: string | null | undefined
+  defaultBranch: string | null | undefined
+}): boolean {
+  const trimmedSubject = subject?.trim() ?? ''
+  if (!trimmedSubject) return true
+
+  const localTitle = getWorkspaceBarLocalTitle({
+    workspaceBranch,
+    defaultBranch,
+    displayName,
+    subject: trimmedSubject,
+  })
+  const ident = normalizeWorkspaceBarBranch(workspaceBranch) || displayName
+  return localTitle === ident || localTitle === displayName
+}
+
+/** Show branch as a secondary line when the workspace has a custom display name. */
+export function shouldShowWorkspaceBranchMeta({
+  workspaceName,
+  workspaceBranch,
+}: {
+  workspaceName: string
+  workspaceBranch: string
+}): boolean {
+  const isAutoName = /^ws-[a-z0-9]+$/.test(workspaceName)
+  return !isAutoName && !!workspaceBranch && workspaceBranch !== workspaceName
+}
