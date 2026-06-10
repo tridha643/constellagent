@@ -47,8 +47,17 @@ export function useWorkingTreeDiff(opts: {
   const updateGitStatusSnapshot = useAppStore((s) => s.updateGitStatusSnapshot)
   const setWorkingTreeDiffSnapshot = useAppStore((s) => s.setWorkingTreeDiffSnapshot)
 
+  // Single write path: keeps filesRef in sync SYNCHRONOUSLY so async consumers
+  // (the metadata merge below) can compute the next array outside a setState
+  // updater. Side effects inside updaters run during React's render phase — the
+  // old in-updater snapshot persist wrote the zustand store mid-render
+  // ("Cannot update a component while rendering a different component").
+  const applyFiles = useCallback((nextFiles: DiffFileData[]) => {
+    filesRef.current = nextFiles
+    setFiles(nextFiles)
+  }, [])
+
   useEffect(() => {
-    filesRef.current = files
     for (const file of files) {
       if (file.fileDiff) fileDiffLoadedRef.current.add(file.filePath)
     }
@@ -81,7 +90,7 @@ export function useWorkingTreeDiff(opts: {
     let resolvedSnapshot: GitStatusSnapshot | null = warmSnapshot ?? null
     if (warmSnapshot) setExpectedFileCount(warmSnapshot.statuses?.length ?? 0)
     if (warmFiles.length > 0) {
-      setFiles(warmFiles)
+      applyFiles(warmFiles)
       setLoading(false)
     }
     if (warmSnapshot?.complete && warmFiles.length > 0 && canReuseWarmStatus) {
@@ -104,13 +113,13 @@ export function useWorkingTreeDiff(opts: {
         },
         onProgress: (nextFiles) => {
           if (loadGenerationRef.current !== generation) return
-          setFiles(nextFiles)
+          applyFiles(nextFiles)
           setLoading(false)
           persistWorkingTreeSnapshot(resolvedSnapshot, nextFiles, false)
         },
       })
       if (loadGenerationRef.current !== generation) return
-      setFiles(results)
+      applyFiles(results)
       setLoading(false)
       persistWorkingTreeSnapshot(resolvedSnapshot, results, true)
     } catch (err) {
@@ -118,7 +127,7 @@ export function useWorkingTreeDiff(opts: {
     } finally {
       if (loadGenerationRef.current === generation) setLoading(false)
     }
-  }, [worktreePath, updateGitStatusSnapshot, persistWorkingTreeSnapshot])
+  }, [worktreePath, updateGitStatusSnapshot, persistWorkingTreeSnapshot, applyFiles])
 
   const pumpFileDiffQueue = useCallback(() => {
     while (fileDiffInFlightRef.current < FILE_DIFF_LOAD_CONCURRENCY && fileDiffQueueRef.current.length > 0) {
@@ -135,14 +144,14 @@ export function useWorkingTreeDiff(opts: {
         .then((fileDiff) => {
           if (!fileDiff || loadGenerationRef.current !== generation) return
           fileDiffLoadedRef.current.add(filePath)
-          setFiles((prev) => {
-            const nextFiles = prev.map((entry) =>
-              entry.filePath === filePath && !entry.fileDiff ? { ...entry, fileDiff } : entry,
-            )
-            const snapshot = useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath)
-            persistWorkingTreeSnapshot(snapshot ?? null, nextFiles, snapshot?.complete ?? false)
-            return nextFiles
-          })
+          // filesRef is updated synchronously by applyFiles, so concurrent
+          // metadata resolutions never clobber each other's merge.
+          const nextFiles = filesRef.current.map((entry) =>
+            entry.filePath === filePath && !entry.fileDiff ? { ...entry, fileDiff } : entry,
+          )
+          applyFiles(nextFiles)
+          const snapshot = useAppStore.getState().workingTreeDiffSnapshots.get(worktreePath)
+          persistWorkingTreeSnapshot(snapshot ?? null, nextFiles, snapshot?.complete ?? false)
         })
         .catch((error) => console.warn('Failed to load expandable diff metadata:', error))
         .finally(() => {
@@ -151,7 +160,7 @@ export function useWorkingTreeDiff(opts: {
           pumpFileDiffQueue()
         })
     }
-  }, [worktreePath, persistWorkingTreeSnapshot])
+  }, [worktreePath, persistWorkingTreeSnapshot, applyFiles])
 
   const ensureFileDiffLoaded = useCallback((filePath: string) => {
     const file = filesRef.current.find((entry) => entry.filePath === filePath)

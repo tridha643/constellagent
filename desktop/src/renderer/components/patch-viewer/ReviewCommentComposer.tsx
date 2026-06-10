@@ -25,16 +25,15 @@ import {
 } from '../../lib/prosemark/markdownFormattingKeymap'
 import {
   insertCodeBlock,
-  insertSuggestionBlock,
   toggleBulletList,
   toggleHeading,
   toggleOrderedList,
   toggleQuote,
+  toggleSuggestionBlock,
   toggleTaskList,
 } from './markdownBlockCommands'
 import { MarkdownComposerEditor } from './MarkdownComposerEditor'
 import { modShortcutHintLabel, reviewAnnotationErrorMessage } from './review-attribution'
-import { buildSuggestionBlock } from './review-suggestion-block'
 import styles from '../Editor/AnnotationBubble.module.css'
 
 type ToolbarIcon = typeof Bold
@@ -66,11 +65,13 @@ function FormattingToolbar({
   busy,
   allowSuggestion,
   suggestionSeed,
+  suggestionActive,
 }: {
   onRun: (command: Command) => void
   busy: boolean
   allowSuggestion: boolean
   suggestionSeed: string
+  suggestionActive: boolean
 }) {
   return (
     <div className={styles.composerToolbar} role="toolbar" aria-label="Formatting">
@@ -96,11 +97,13 @@ function FormattingToolbar({
         <button
           type="button"
           className={styles.composerToolbarBtn}
+          data-active={suggestionActive || undefined}
+          aria-pressed={suggestionActive}
           onMouseDown={(event) => event.preventDefault()}
-          onClick={() => onRun(insertSuggestionBlock(suggestionSeed))}
+          onClick={() => onRun(toggleSuggestionBlock(suggestionSeed))}
           disabled={busy}
-          title="Suggest a change"
-          aria-label="Suggest a change"
+          title={suggestionActive ? 'Remove suggestion block' : 'Suggest a change'}
+          aria-label={suggestionActive ? 'Remove suggestion block' : 'Suggest a change'}
           data-testid="composer-format-suggestion"
         >
           <Lightbulb size={14} strokeWidth={2} aria-hidden />
@@ -114,8 +117,14 @@ function FormattingToolbar({
  * Rudu-shaped comment composer wired to our libSQL backend, built on the in-repo
  * prosemark / CodeMirror 6 stack. A formatting toolbar + syntax-highlighted
  * markdown editor (`MarkdownComposerEditor`) replace the old monospace textarea;
- * the suggestion affordance inserts a ```suggestion fence rather than swapping a
- * placeholder. A selected line range still seeds a pristine ```suggestion block.
+ * the suggestion affordance is an explicit toolbar toggle: it inserts a
+ * ```suggestion fence seeded with the selected diff lines (never auto-filled on
+ * selection), and pressing it again removes the block.
+ *
+ * The body is **local state** initialized from `initialBody`; every change is
+ * mirrored to `onBodyChange` (a ref write upstream). Keystrokes therefore never
+ * re-render the patch viewer tree — only this composer — while the draft still
+ * survives virtualization unmounts via the session ref.
  *
  * Optimistic insert + `window.api.review.commentAdd` are preserved verbatim from
  * the retired `CommentComposer`.
@@ -126,7 +135,7 @@ export function ReviewCommentComposer({
   side,
   lineNumber,
   lineEnd,
-  body: bodyProp,
+  initialBody = '',
   onBodyChange,
   onCancel,
   onSaved,
@@ -136,14 +145,15 @@ export function ReviewCommentComposer({
   suggestionSeed = '',
   selectedLineLabel,
   onAddToChat,
-  onSeedPristine,
 }: {
   worktreePath: string
   filePath: string
   side: DiffAnnotationSide
   lineNumber: number
   lineEnd: number
-  body?: string
+  /** Body to restore on mount (e.g. after a virtualization unmount/remount). */
+  initialBody?: string
+  /** Mirror of every body change; the session stores it in a ref. */
   onBodyChange?: (body: string) => void
   onCancel: () => void
   onSaved: () => void
@@ -153,14 +163,11 @@ export function ReviewCommentComposer({
   suggestionSeed?: string
   selectedLineLabel?: string
   onAddToChat?: () => void
-  /** Records a seeded body as the pristine baseline (no spurious dirty/discard). */
-  onSeedPristine?: (body: string) => void
 }) {
-  const [internalBody, setInternalBody] = useState('')
-  const body = bodyProp ?? internalBody
+  const [body, setBodyState] = useState(initialBody)
   const setBody = useCallback((next: string) => {
-    if (onBodyChange) onBodyChange(next)
-    else setInternalBody(next)
+    setBodyState(next)
+    onBodyChange?.(next)
   }, [onBodyChange])
   const [busy, setBusy] = useState(false)
   const viewRef = useRef<EditorView | null>(null)
@@ -173,24 +180,6 @@ export function ReviewCommentComposer({
   useEffect(() => {
     onDirtyChange?.(body.trim().length > 0)
   }, [body, onDirtyChange])
-
-  const suggestionBlock = useCallback(() => {
-    return buildSuggestionBlock(suggestionSeed)
-  }, [suggestionSeed])
-
-  // Multi-line selection → grab the selected code into the composer as a
-  // ```suggestion block (rudu's seed). Runs once per draft mount (the composer
-  // is keyed per draft target). Recorded as pristine so it isn't a dirty draft.
-  const seededRef = useRef(false)
-  useEffect(() => {
-    if (seededRef.current) return
-    if (!suggestionSeed || lineEnd <= lineNumber) return
-    if (body.trim().length > 0) return
-    seededRef.current = true
-    const seeded = suggestionBlock()
-    if (onSeedPristine) onSeedPristine(seeded)
-    else setBody(seeded)
-  }, [suggestionSeed, lineEnd, lineNumber, body, suggestionBlock, onSeedPristine, setBody])
 
   const runCommand = useCallback(
     (command: Command) => {
@@ -262,6 +251,7 @@ export function ReviewCommentComposer({
           busy={busy}
           allowSuggestion={allowSuggestion}
           suggestionSeed={suggestionSeed}
+          suggestionActive={isSuggestion}
         />
         <MarkdownComposerEditor
           value={body}

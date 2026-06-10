@@ -1,14 +1,14 @@
-import { forwardRef, useCallback, useMemo, type CSSProperties } from 'react'
+import { forwardRef, useCallback, useMemo, useState, type CSSProperties } from 'react'
 import { CodeView, type CodeViewHandle } from '@pierre/diffs/react'
 import type { CodeViewDiffItem, DiffLineAnnotation } from '@pierre/diffs/react'
-import type { CodeViewLineSelection, CodeViewOptions } from '@pierre/diffs'
-import type { AnnotationPatch, DiffAnnotation, DiffAnnotationSide } from '@shared/diff-annotation-types'
+import type { CodeViewLineSelection, CodeViewOptions, SelectedLineRange } from '@pierre/diffs'
+import type { AnnotationPatch, DiffAnnotation } from '@shared/diff-annotation-types'
 import { STATUS_LABELS } from '@shared/status-labels'
 import { CODEX_ABSOLUTELY_DIFF_THEME_ID } from '../../themes/diff/codex-absolutely-dark'
 import { ReviewCommentCard } from './ReviewCommentCard'
 import { ReviewCommentComposer } from './ReviewCommentComposer'
 import type { PatchViewFile } from './patch-view-model'
-import { draftToSelection, draftTargetFor, type PatchDraftTarget } from './line-selection'
+import { draftToSelection, type PatchDraftTarget } from './line-selection'
 import { filePathFromItemId } from './patch-utils'
 import { normalizePath } from './review-threads'
 import { getSuggestionSeedForLineRange } from './review-suggestion-seeds'
@@ -16,25 +16,38 @@ import editorStyles from '../Editor/Editor.module.css'
 import annotationUi from '../Editor/AnnotationBubble.module.css'
 
 /**
- * Pierre `[data-hover-slot]` is a flex row without vertical alignment; the
- * slotted "+" wrapper needs centering. Injected via `unsafeCSS` (relocated from
- * the retired DiffFileSection).
+ * Pierre diff shadow-DOM overrides (gutter "+", selection chrome, scrollbars).
+ * Injected via `options.unsafeCSS` (relocated from the retired DiffFileSection).
  */
 const HOVER_UTILITY_UNSAFE_CSS = `
 [data-hover-slot] {
   align-items: center;
 }
-::slotted([slot="hover-slot"]) {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  position: static !important;
-  top: auto !important;
-  bottom: auto !important;
-  width: 100%;
-  height: 100%;
-  min-height: 100%;
-  box-sizing: border-box;
+/* Pierre default gutter "+" (onGutterUtilityClick API — mutually exclusive with renderGutterUtility). */
+[data-utility-button] {
+  width: 20px;
+  height: 20px;
+  margin-right: 0;
+  border: 1px solid var(--review-badge-border, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-md, 6px);
+  background: var(--review-badge-bg, rgba(255, 255, 255, 0.04));
+  color: var(--review-text-muted, rgba(255, 255, 255, 0.55));
+  fill: currentColor;
+}
+@media (hover: hover) and (pointer: fine) {
+  [data-utility-button]:hover {
+    background: var(--review-accent-soft, rgba(245, 158, 11, 0.16));
+    border-color: var(--review-accent, #f59e0b);
+    color: var(--review-accent, #f59e0b);
+  }
+}
+[data-utility-button]:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-utility-button]:active {
+    transform: none;
+  }
 }
 /* rudu parity: amber selected-line marker (matches the "+" affordance accent) */
 [data-column-number][data-selected-line]::before {
@@ -101,9 +114,9 @@ export interface PatchCodeViewProps {
   inline: boolean
   worktreePath: string
   draftTarget: PatchDraftTarget | null
-  composerBody: string
+  /** Ref-backed body accessor — read at composer mount; never changes identity. */
+  getComposerBody: () => string
   onComposerBodyChange: (body: string) => void
-  onComposerSeedPristine?: (body: string) => void
   onComposerCancel: () => void
   onComposerSaved: () => void
   onSelectionChange: (selection: CodeViewLineSelection | null) => void
@@ -132,9 +145,8 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
       inline,
       worktreePath,
       draftTarget,
-      composerBody,
+      getComposerBody,
       onComposerBodyChange,
-      onComposerSeedPristine,
       onComposerCancel,
       onComposerSaved,
       onSelectionChange,
@@ -155,32 +167,32 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
       style,
     } = props
 
+    // Live drag highlight. Under `controlledSelection` Pierre renders ONLY the
+    // `selectedLines` prop, so the in-progress range must round-trip through
+    // React — but it must stay a highlight-only update. Committing the draft per
+    // pointermove (the old wiring) remounted the composer mid-drag, shifting the
+    // line under the pointer and feeding back into the selection: the jitter.
+    const [transientSelection, setTransientSelection] = useState<CodeViewLineSelection | null>(null)
+
     const selectedLines = useMemo<CodeViewLineSelection | null>(
-      () => (draftTarget ? draftToSelection(draftTarget) : null),
-      [draftTarget],
+      () => transientSelection ?? (draftTarget ? draftToSelection(draftTarget) : null),
+      [transientSelection, draftTarget],
     )
 
-    const renderGutterUtility = useCallback(
-      (
-        getHoveredLine: () => { lineNumber: number; side?: DiffAnnotationSide } | undefined,
-        item: { id: string },
-      ) => (
-        <button
-          className={editorStyles.hoverAddBtn}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation()
-            const hovered = getHoveredLine()
-            if (!hovered || hovered.side == null) return
-            const filePath = filePathFromItemId(item.id)
-            onSelectionChange(
-              draftToSelection(draftTargetFor(filePath, hovered.side, hovered.lineNumber)),
-            )
-          }}
-        >
-          +
-        </button>
-      ),
+    /** Drag in progress (selection start + every move): highlight only. */
+    const handleSelectionLive = useCallback(
+      (range: SelectedLineRange | null, ctx: { item: { id: string } }) => {
+        setTransientSelection(range ? { id: ctx.item.id, range } : null)
+      },
+      [],
+    )
+
+    /** Pointer released: commit once — this is what opens/moves the composer. */
+    const handleSelectionEnd = useCallback(
+      (range: SelectedLineRange | null, ctx: { item: { id: string } }) => {
+        setTransientSelection(null)
+        onSelectionChange(range ? { id: ctx.item.id, range } : null)
+      },
       [onSelectionChange],
     )
 
@@ -287,9 +299,8 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
                 side={draftTarget.side}
                 lineNumber={draftTarget.lineNumber}
                 lineEnd={draftTarget.lineEnd}
-                body={composerBody}
+                initialBody={getComposerBody()}
                 onBodyChange={onComposerBodyChange}
-                onSeedPristine={onComposerSeedPristine}
                 onCancel={onComposerCancel}
                 onSaved={onComposerSaved}
                 onApply={onApplyAnnotation}
@@ -314,7 +325,7 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
           </div>
         )
       },
-      [byItemId, draftTarget, worktreePath, composerBody, onComposerBodyChange, onComposerSeedPristine, onComposerCancel, onComposerSaved, onSelectionChange, onApplyAnnotation, tourMode, activeTourAnnotationId, selectedCommentIds, onToggleComment, onAddToChat],
+      [byItemId, draftTarget, worktreePath, getComposerBody, onComposerBodyChange, onComposerCancel, onComposerSaved, onApplyAnnotation, tourMode, activeTourAnnotationId, selectedCommentIds, onToggleComment, onAddToChat],
     )
 
     const options = useMemo<CodeViewOptions<DiffAnnotation[]>>(
@@ -337,6 +348,16 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
         enableGutterUtility: true,
         controlledSelection: true,
         stickyHeaders: true,
+        // Selection lifecycle: live range → transient highlight; release → one
+        // commit. (The React-level `onSelectedLinesChange` fires on every
+        // lifecycle event including each pointermove, so it is NOT used.)
+        onLineSelectionStart: handleSelectionLive as CodeViewOptions<DiffAnnotation[]>['onLineSelectionStart'],
+        onLineSelectionChange: handleSelectionLive as CodeViewOptions<DiffAnnotation[]>['onLineSelectionChange'],
+        onLineSelectionEnd: handleSelectionEnd as CodeViewOptions<DiffAnnotation[]>['onLineSelectionEnd'],
+        // Required for Pierre's gutter "+" press/drag mode; commits like a drag end.
+        onGutterUtilityClick: ((range: SelectedLineRange, ctx: { item: { id: string } }) => {
+          handleSelectionEnd(range, ctx)
+        }) as CodeViewOptions<DiffAnnotation[]>['onGutterUtilityClick'],
         // Layout estimate the virtualizer uses BEFORE a line is measured. Without
         // it CodeView can't size items, so the render window is wrong and the
         // surface renders blank/janky on load (rudu's VIRTUAL_FILE_METRICS).
@@ -346,7 +367,7 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
         layout: FLAT_LAYOUT,
         unsafeCSS: HOVER_UTILITY_UNSAFE_CSS,
       }),
-      [inline],
+      [inline, handleSelectionLive, handleSelectionEnd],
     )
 
     // The CodeView root element IS the vertical scroll container — it reads its
@@ -366,10 +387,9 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
     )
 
     // Selection routing: dragging across the code text (or the line-number gutter,
-    // or the hover "+" slot) selects a review range and opens the composer — this is
-    // the pre-rudu behavior the user expects (drag line 100→110, or from mid-line,
-    // to comment on the range). Pierre's `enableLineSelection` handles the content
-    // drag natively via `onSelectedLinesChange`; we no longer intercept it.
+    // or the hover "+" slot) selects a review range; the composer opens once, on
+    // release. While the pointer is down only the highlight tracks the drag —
+    // opening the composer mid-drag inserts layout under the cursor and jitters.
     return (
       <div style={CONTENTS_WRAPPER_STYLE}>
         <CodeView<DiffAnnotation[]>
@@ -379,10 +399,8 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
           items={items}
           options={options}
           selectedLines={selectedLines}
-          onSelectedLinesChange={onSelectionChange}
           renderAnnotation={renderAnnotation}
           renderHeaderMetadata={renderHeaderMetadata}
-          renderGutterUtility={renderGutterUtility}
           onScroll={onScroll ? (scrollTop) => onScroll(scrollTop) : undefined}
         />
       </div>

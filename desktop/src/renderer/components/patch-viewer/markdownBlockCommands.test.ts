@@ -10,6 +10,7 @@ import {
   toggleHeading,
   toggleOrderedList,
   toggleQuote,
+  toggleSuggestionBlock,
   toggleTaskList,
 } from './markdownBlockCommands'
 
@@ -136,5 +137,37 @@ describe('insertSuggestionBlock', () => {
     expect(r.doc).toBe('```suggestion\nbar\n```\n')
     expect(r.from).toBe(14)
     expect(r.to).toBe(17)
+  })
+})
+
+describe('toggleSuggestionBlock', () => {
+  test('outside a block inserts a seeded suggestion fence', () => {
+    expect(run(toggleSuggestionBlock('foo()'), '', 0).doc).toBe('```suggestion\nfoo()\n```\n')
+  })
+  test('cursor inside an untouched seeded block removes the whole block', () => {
+    const doc = '```suggestion\nfoo()\n```\n'
+    expect(run(toggleSuggestionBlock('foo()'), doc, 16).doc).toBe('')
+  })
+  test('cursor inside an untouched placeholder block removes the whole block', () => {
+    const doc = '```suggestion\nsuggested change\n```\n'
+    expect(run(toggleSuggestionBlock(), doc, 16).doc).toBe('')
+  })
+  test('cursor inside an edited block unwraps the fences but keeps the body', () => {
+    const doc = '```suggestion\nmy edit\n```\n'
+    expect(run(toggleSuggestionBlock('foo()'), doc, 16).doc).toBe('my edit')
+  })
+  test('only removes the block containing the cursor', () => {
+    const doc = 'note\n```suggestion\nfoo()\n```\n'
+    const r = run(toggleSuggestionBlock('foo()'), doc, 21)
+    expect(r.doc).toBe('note\n')
+  })
+  test('cursor outside an existing block inserts a new one instead of touching it', () => {
+    const doc = '```suggestion\nfoo()\n```\nafter '
+    const r = run(toggleSuggestionBlock('seed'), doc, doc.length)
+    expect(r.doc).toBe('```suggestion\nfoo()\n```\nafter ```suggestion\nseed\n```\n')
+  })
+  test('handles an unclosed fence running to end-of-doc', () => {
+    const doc = '```suggestion\nfoo()'
+    expect(run(toggleSuggestionBlock('foo()'), doc, doc.length).doc).toBe('')
   })
 })
