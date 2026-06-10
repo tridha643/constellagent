@@ -104,6 +104,8 @@ export interface PatchCodeViewProps {
   composerBody: string
   onComposerBodyChange: (body: string) => void
   onComposerSeedPristine?: (body: string) => void
+  onComposerCancel: () => void
+  onComposerSaved: () => void
   onSelectionChange: (selection: CodeViewLineSelection | null) => void
   onApplyAnnotation: (patch: AnnotationPatch) => void
   onOpenFile: (fullPath: string) => void
@@ -122,11 +124,6 @@ export interface PatchCodeViewProps {
   style?: CSSProperties
 }
 
-function languageIdFromPath(filePath: string): string {
-  const ext = filePath.split('.').pop() ?? ''
-  return ext.toLowerCase()
-}
-
 export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchCodeViewProps>(
   function PatchCodeView(props, ref) {
     const {
@@ -138,6 +135,8 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
       composerBody,
       onComposerBodyChange,
       onComposerSeedPristine,
+      onComposerCancel,
+      onComposerSaved,
       onSelectionChange,
       onApplyAnnotation,
       onOpenFile,
@@ -291,8 +290,8 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
                 body={composerBody}
                 onBodyChange={onComposerBodyChange}
                 onSeedPristine={onComposerSeedPristine}
-                onCancel={() => onSelectionChange(null)}
-                onSaved={() => onSelectionChange(null)}
+                onCancel={onComposerCancel}
+                onSaved={onComposerSaved}
                 onApply={onApplyAnnotation}
                 allowSuggestion
                 suggestionSeed={
@@ -304,7 +303,6 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
                       )
                     : undefined
                 }
-                suggestionLanguage={languageIdFromPath(filePath)}
                 selectedLineLabel={
                   draftTarget.lineEnd > draftTarget.lineNumber
                     ? `Lines ${draftTarget.lineNumber}–${draftTarget.lineEnd}`
@@ -316,7 +314,7 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
           </div>
         )
       },
-      [byItemId, draftTarget, worktreePath, composerBody, onComposerBodyChange, onComposerSeedPristine, onSelectionChange, onApplyAnnotation, tourMode, activeTourAnnotationId, selectedCommentIds, onToggleComment, onAddToChat],
+      [byItemId, draftTarget, worktreePath, composerBody, onComposerBodyChange, onComposerSeedPristine, onComposerCancel, onComposerSaved, onSelectionChange, onApplyAnnotation, tourMode, activeTourAnnotationId, selectedCommentIds, onToggleComment, onAddToChat],
     )
 
     const options = useMemo<CodeViewOptions<DiffAnnotation[]>>(

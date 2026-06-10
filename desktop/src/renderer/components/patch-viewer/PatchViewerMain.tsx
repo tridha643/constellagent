@@ -17,7 +17,6 @@ import { TourRail } from '../HunkReview/TourRail'
 import { PatchCodeView } from './PatchCodeView'
 import { CombinedMergeFallback } from './combined-merge-fallback'
 import { buildPatchViewModel } from './patch-view-model'
-import { getCodeViewItemId } from './patch-utils'
 import { normalizePath } from './review-threads'
 import { getDiffReviewSummary } from './diff-stats'
 import {
@@ -181,7 +180,8 @@ export function PatchViewerMain({
   const jumpToFile = useCallback(
     (filePath: string) => {
       viewedState.toggleCollapsed(filePath, false)
-      const itemId = model.byFilePath.get(normalizePath(filePath)) ?? getCodeViewItemId(filePath)
+      const itemId = model.byFilePath.get(normalizePath(filePath))
+      if (!itemId) return
       requestAnimationFrame(() => {
         codeViewRef.current?.scrollTo({
           type: 'item',
@@ -230,7 +230,8 @@ export function PatchViewerMain({
     const step = viewedState.activeTourStep
     if (!step) return
     const annotation = step.annotation
-    const itemId = model.byFilePath.get(normalizePath(annotation.filePath)) ?? getCodeViewItemId(annotation.filePath)
+    const itemId = model.byFilePath.get(normalizePath(annotation.filePath))
+    if (!itemId) return
     codeViewRef.current?.scrollTo({
       type: 'line',
       id: itemId,
@@ -239,7 +240,7 @@ export function PatchViewerMain({
       align: 'center',
       behavior: codeViewScrollBehavior(),
     })
-  }, [isDrawer, viewedState.reviewMode, viewedState.activeTourStep])
+  }, [isDrawer, viewedState.reviewMode, viewedState.activeTourStep, model.byFilePath])
 
   // ── Callbacks wired into CodeView ──
   const openFileFromDiff = useCallback(
@@ -330,6 +331,8 @@ export function PatchViewerMain({
       composerBody={composer.composerBody}
       onComposerBodyChange={composer.setComposerBody}
       onComposerSeedPristine={composer.markComposerPristine}
+      onComposerCancel={composer.onComposerCancel}
+      onComposerSaved={composer.onComposerSaved}
       onSelectionChange={composer.onSelectionChange}
       onApplyAnnotation={review.applyAnnotationPatch}
       onOpenFile={openFileFromDiff}

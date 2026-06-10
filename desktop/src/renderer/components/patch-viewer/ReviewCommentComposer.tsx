@@ -34,6 +34,7 @@ import {
 } from './markdownBlockCommands'
 import { MarkdownComposerEditor } from './MarkdownComposerEditor'
 import { modShortcutHintLabel, reviewAnnotationErrorMessage } from './review-attribution'
+import { buildSuggestionBlock } from './review-suggestion-block'
 import styles from '../Editor/AnnotationBubble.module.css'
 
 type ToolbarIcon = typeof Bold
@@ -80,6 +81,7 @@ function FormattingToolbar({
             key={action.key}
             type="button"
             className={styles.composerToolbarBtn}
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => onRun(action.command)}
             disabled={busy}
             title={action.label}
@@ -94,6 +96,7 @@ function FormattingToolbar({
         <button
           type="button"
           className={styles.composerToolbarBtn}
+          onMouseDown={(event) => event.preventDefault()}
           onClick={() => onRun(insertSuggestionBlock(suggestionSeed))}
           disabled={busy}
           title="Suggest a change"
@@ -131,7 +134,6 @@ export function ReviewCommentComposer({
   onDirtyChange,
   allowSuggestion = false,
   suggestionSeed = '',
-  suggestionLanguage = '',
   selectedLineLabel,
   onAddToChat,
   onSeedPristine,
@@ -149,7 +151,6 @@ export function ReviewCommentComposer({
   onDirtyChange?: (dirty: boolean) => void
   allowSuggestion?: boolean
   suggestionSeed?: string
-  suggestionLanguage?: string
   selectedLineLabel?: string
   onAddToChat?: () => void
   /** Records a seeded body as the pristine baseline (no spurious dirty/discard). */
@@ -174,9 +175,8 @@ export function ReviewCommentComposer({
   }, [body, onDirtyChange])
 
   const suggestionBlock = useCallback(() => {
-    const fence = suggestionLanguage ? `suggestion ${suggestionLanguage}` : 'suggestion'
-    return `\`\`\`${fence}\n${suggestionSeed}\n\`\`\`\n`
-  }, [suggestionSeed, suggestionLanguage])
+    return buildSuggestionBlock(suggestionSeed)
+  }, [suggestionSeed])
 
   // Multi-line selection → grab the selected code into the composer as a
   // ```suggestion block (rudu's seed). Runs once per draft mount (the composer
@@ -245,7 +245,12 @@ export function ReviewCommentComposer({
   return (
     <div className={styles.composerBubble} data-diff-annotation-composer>
       <div className={styles.composerHeader}>
-        <span className={styles.composerTitle}>{isSuggestion ? 'Suggest a change' : 'New comment'}</span>
+        <span
+          key={isSuggestion ? 'suggest' : 'comment'}
+          className={styles.composerTitle}
+        >
+          {isSuggestion ? 'Suggest a change' : 'New comment'}
+        </span>
         <div className={styles.composerLineMeta}>
           <span className={styles.linePill}>{linePillText}</span>
           <span className={styles.sidePill}>{sideShort}</span>
@@ -278,7 +283,7 @@ export function ReviewCommentComposer({
           disabled={busy || !body.trim()}
           className={styles.composerSubmit}
         >
-          Comment
+          {isSuggestion ? 'Suggest' : 'Comment'}
           <span className={styles.composerSubmitChip} aria-hidden>
             {mod}↵
           </span>
@@ -286,16 +291,6 @@ export function ReviewCommentComposer({
         <button type="button" onClick={onCancel} className={styles.composerCancel}>
           Cancel
         </button>
-        {allowSuggestion && (
-          <button
-            type="button"
-            onClick={() => runCommand(insertSuggestionBlock(suggestionSeed))}
-            className={styles.composerCancel}
-            disabled={busy}
-          >
-            Suggest
-          </button>
-        )}
         {onAddToChat && (
           <button type="button" onClick={onAddToChat} className={styles.composerCancel}>
             Add to Chat

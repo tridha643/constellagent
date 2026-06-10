@@ -3,6 +3,7 @@ import { markdown } from '@codemirror/lang-markdown'
 import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap, placeholder as placeholderExt } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { codeBlockDecorationsExtension, codeFenceTheme } from '../../lib/prosemark/codeFenceExtension'
 import { prosemarkMarkdownFormattingKeymap } from '../../lib/prosemark/markdownFormattingKeymap'
 import {
   baseSyntaxHighlights,
@@ -93,8 +94,10 @@ export function MarkdownComposerEditor({
           keymap.of([...defaultKeymap, ...historyKeymap]),
           baseTheme,
           darkTheme,
+          codeFenceTheme,
           baseSyntaxHighlights,
           generalSyntaxHighlights,
+          codeBlockDecorationsExtension,
           EditorView.lineWrapping,
           editableCompartment.current.of([
             EditorView.editable.of(!readOnly),
