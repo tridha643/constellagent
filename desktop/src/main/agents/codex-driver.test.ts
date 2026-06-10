@@ -110,17 +110,20 @@ describe('CodexDriver app-server transport', () => {
       collab: createCodexCollabSessionState(),
     }
     const controller = new AbortController()
-    ;(driver as unknown as { activeTurn: unknown }).activeTurn = {
-      ctx: {
-        sessionRef,
-        workspacePath: '/tmp/workspace',
-        signal: controller.signal,
-        emit: (event: SessionDriverEvent) => emitted.push(event),
+    ;(driver as unknown as { activeTurnsByThread: Map<string, unknown> }).activeTurnsByThread.set(
+      'thread-1',
+      {
+        ctx: {
+          sessionRef,
+          workspacePath: '/tmp/workspace',
+          signal: controller.signal,
+          emit: (event: SessionDriverEvent) => emitted.push(event),
+        },
+        state,
+        mapper: createCodexAppServerEventMapperState(),
+        completion: { markCompleted() {}, markFailed() {} },
       },
-      state,
-      mapper: createCodexAppServerEventMapperState(),
-      completion: { markCompleted() {}, markFailed() {} },
-    }
+    )
 
     const bridge = getConductorQuestionBridge()
     let requestId = ''
@@ -165,6 +168,128 @@ describe('CodexDriver app-server transport', () => {
       },
     })
     expect(emitted.map((event) => event.type)).toEqual(['toolStarted', 'toolFinished'])
+  })
+})
+
+describe('CodexDriver concurrent turn routing', () => {
+  function makeTurn(workspaceId: string, sessionId: string, threadId: string) {
+    const emitted: SessionDriverEvent[] = []
+    const completions: string[] = []
+    const controller = new AbortController()
+    return {
+      emitted,
+      completions,
+      turn: {
+        ctx: {
+          sessionRef: { workspaceId, sessionId } satisfies SessionRef,
+          workspacePath: '/tmp/workspace',
+          signal: controller.signal,
+          emit: (event: SessionDriverEvent) => emitted.push(event),
+        },
+        state: {
+          thread: { threadId },
+          codexThreadId: threadId,
+          activeTurnId: null,
+          model: 'gpt-5.3-codex',
+          effort: 'medium',
+          plan: false,
+          webSocketsEnabled: false,
+          formatPrimed: true,
+          emittedByItem: new Map<string, string>(),
+          lastToolUpdateByItem: new Map<string, { text: string; emittedAt: number }>(),
+          collab: createCodexCollabSessionState(),
+        },
+        mapper: createCodexAppServerEventMapperState(),
+        completion: {
+          markCompleted: () => completions.push('completed'),
+          markFailed: () => completions.push('failed'),
+        },
+      },
+    }
+  }
+
+  test('routes notifications to the turn owning the threadId, not the latest turn', () => {
+    const driver = new CodexDriver()
+    const a = makeTurn('workspace-1', 'session-a', 'thread-a')
+    const b = makeTurn('workspace-1', 'session-b', 'thread-b')
+    const turns = (driver as unknown as { activeTurnsByThread: Map<string, unknown> }).activeTurnsByThread
+    turns.set('thread-a', a.turn)
+    turns.set('thread-b', b.turn)
+    const notify = (
+      driver as unknown as { handleAppServerNotification(method: string, params: unknown): void }
+    ).handleAppServerNotification.bind(driver)
+
+    notify('item/agentMessage/delta', {
+      threadId: 'thread-a',
+      turnId: 'turn-a',
+      itemId: 'msg-a',
+      delta: 'from chat A',
+    })
+    notify('item/agentMessage/delta', {
+      threadId: 'thread-b',
+      turnId: 'turn-b',
+      itemId: 'msg-b',
+      delta: 'from chat B',
+    })
+
+    const aDeltas = a.emitted.filter((event) => event.type === 'assistantDelta')
+    const bDeltas = b.emitted.filter((event) => event.type === 'assistantDelta')
+    expect(aDeltas).toHaveLength(1)
+    expect(bDeltas).toHaveLength(1)
+    expect((aDeltas[0] as { text: string }).text).toBe('from chat A')
+    expect((bDeltas[0] as { text: string }).text).toBe('from chat B')
+    expect(aDeltas.every((event) => event.sessionRef.sessionId === 'session-a')).toBe(true)
+    expect(bDeltas.every((event) => event.sessionRef.sessionId === 'session-b')).toBe(true)
+  })
+
+  test('turn/completed for one thread does not complete the other turn', () => {
+    const driver = new CodexDriver()
+    const a = makeTurn('workspace-1', 'session-a', 'thread-a')
+    const b = makeTurn('workspace-1', 'session-b', 'thread-b')
+    const turns = (driver as unknown as { activeTurnsByThread: Map<string, unknown> }).activeTurnsByThread
+    turns.set('thread-a', a.turn)
+    turns.set('thread-b', b.turn)
+    const notify = (
+      driver as unknown as { handleAppServerNotification(method: string, params: unknown): void }
+    ).handleAppServerNotification.bind(driver)
+
+    notify('turn/completed', { threadId: 'thread-a', turn: { id: 'turn-a', status: 'completed' } })
+
+    expect(a.completions).toEqual(['completed'])
+    expect(b.completions).toEqual([])
+  })
+
+  test('drops unattributable notifications when several turns are in flight', () => {
+    const driver = new CodexDriver()
+    const a = makeTurn('workspace-1', 'session-a', 'thread-a')
+    const b = makeTurn('workspace-1', 'session-b', 'thread-b')
+    const turns = (driver as unknown as { activeTurnsByThread: Map<string, unknown> }).activeTurnsByThread
+    turns.set('thread-a', a.turn)
+    turns.set('thread-b', b.turn)
+    const notify = (
+      driver as unknown as { handleAppServerNotification(method: string, params: unknown): void }
+    ).handleAppServerNotification.bind(driver)
+
+    notify('item/agentMessage/delta', { itemId: 'msg-x', delta: 'no thread id' })
+
+    expect(a.emitted).toHaveLength(0)
+    expect(b.emitted).toHaveLength(0)
+  })
+
+  test('falls back to the sole active turn for payloads without a threadId', () => {
+    const driver = new CodexDriver()
+    const a = makeTurn('workspace-1', 'session-a', 'thread-a')
+    const turns = (driver as unknown as { activeTurnsByThread: Map<string, unknown> }).activeTurnsByThread
+    turns.set('thread-a', a.turn)
+    const notify = (
+      driver as unknown as { handleAppServerNotification(method: string, params: unknown): void }
+    ).handleAppServerNotification.bind(driver)
+
+    notify('item/agentMessage/delta', { itemId: 'msg-a', delta: 'single turn' })
+
+    const deltas = a.emitted.filter((event) => event.type === 'assistantDelta')
+    expect(deltas).toHaveLength(1)
+    expect((deltas[0] as { text: string }).text).toBe('single turn')
   })
 })
 
