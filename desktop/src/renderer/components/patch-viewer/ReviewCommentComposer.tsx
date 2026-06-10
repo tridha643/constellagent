@@ -1,15 +1,118 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Bold,
+  Code,
+  Heading3,
+  Italic,
+  Lightbulb,
+  Link as LinkIcon,
+  List,
+  ListOrdered,
+  ListTodo,
+  Quote,
+  SquareCode,
+  Strikethrough,
+} from 'lucide-react'
+import type { Command, EditorView } from '@codemirror/view'
 import type { AnnotationPatch, DiffAnnotation, DiffAnnotationSide } from '@shared/diff-annotation-types'
 import { useAppStore } from '../../store/app-store'
+import {
+  insertLink,
+  toggleEmphasis,
+  toggleInlineCode,
+  toggleStrikethrough,
+  toggleStrongEmphasis,
+} from '../../lib/prosemark/markdownFormattingKeymap'
+import {
+  insertCodeBlock,
+  insertSuggestionBlock,
+  toggleBulletList,
+  toggleHeading,
+  toggleOrderedList,
+  toggleQuote,
+  toggleTaskList,
+} from './markdownBlockCommands'
+import { MarkdownComposerEditor } from './MarkdownComposerEditor'
 import { modShortcutHintLabel, reviewAnnotationErrorMessage } from './review-attribution'
 import styles from '../Editor/AnnotationBubble.module.css'
 
+type ToolbarIcon = typeof Bold
+
+interface ToolbarAction {
+  key: string
+  label: string
+  icon: ToolbarIcon
+  command: Command
+}
+
+const INLINE_ACTIONS: ToolbarAction[] = [
+  { key: 'bold', label: 'Bold', icon: Bold, command: toggleStrongEmphasis },
+  { key: 'italic', label: 'Italic', icon: Italic, command: toggleEmphasis },
+  { key: 'strikethrough', label: 'Strikethrough', icon: Strikethrough, command: toggleStrikethrough },
+  { key: 'code', label: 'Inline code', icon: Code, command: toggleInlineCode },
+  { key: 'codeblock', label: 'Code block', icon: SquareCode, command: insertCodeBlock },
+  { key: 'quote', label: 'Quote', icon: Quote, command: toggleQuote },
+  { key: 'bullet', label: 'Bulleted list', icon: List, command: toggleBulletList },
+  { key: 'numbered', label: 'Numbered list', icon: ListOrdered, command: toggleOrderedList },
+  { key: 'task', label: 'Task list', icon: ListTodo, command: toggleTaskList },
+  { key: 'heading', label: 'Heading', icon: Heading3, command: toggleHeading },
+  { key: 'link', label: 'Link', icon: LinkIcon, command: insertLink },
+]
+
+/** rudu-style formatting toolbar; each button runs a CodeMirror command on the editor. */
+function FormattingToolbar({
+  onRun,
+  busy,
+  allowSuggestion,
+  suggestionSeed,
+}: {
+  onRun: (command: Command) => void
+  busy: boolean
+  allowSuggestion: boolean
+  suggestionSeed: string
+}) {
+  return (
+    <div className={styles.composerToolbar} role="toolbar" aria-label="Formatting">
+      {INLINE_ACTIONS.map((action) => {
+        const Icon = action.icon
+        return (
+          <button
+            key={action.key}
+            type="button"
+            className={styles.composerToolbarBtn}
+            onClick={() => onRun(action.command)}
+            disabled={busy}
+            title={action.label}
+            aria-label={action.label}
+            data-testid={`composer-format-${action.key}`}
+          >
+            <Icon size={14} strokeWidth={2} aria-hidden />
+          </button>
+        )
+      })}
+      {allowSuggestion && (
+        <button
+          type="button"
+          className={styles.composerToolbarBtn}
+          onClick={() => onRun(insertSuggestionBlock(suggestionSeed))}
+          disabled={busy}
+          title="Suggest a change"
+          aria-label="Suggest a change"
+          data-testid="composer-format-suggestion"
+        >
+          <Lightbulb size={14} strokeWidth={2} aria-hidden />
+        </button>
+      )}
+    </div>
+  )
+}
+
 /**
- * Rudu-shaped comment composer wired to our libSQL backend. Faithful clone of
- * rudu's `review-comment-composer` affordances: markdown textarea, a
- * suggestion mode that wraps the seed in a ```suggestion fence, a
- * selected-line label, and a secondary action repurposed from rudu's "Add to
- * Rudu" to our "Add to Chat" (attach the line range to the agent thread).
+ * Rudu-shaped comment composer wired to our libSQL backend, built on the in-repo
+ * prosemark / CodeMirror 6 stack. A formatting toolbar + syntax-highlighted
+ * markdown editor (`MarkdownComposerEditor`) replace the old monospace textarea;
+ * the suggestion affordance inserts a ```suggestion fence rather than swapping a
+ * placeholder. A selected line range still seeds a pristine ```suggestion block.
  *
  * Optimistic insert + `window.api.review.commentAdd` are preserved verbatim from
  * the retired `CommentComposer`.
@@ -59,20 +162,21 @@ export function ReviewCommentComposer({
     else setInternalBody(next)
   }, [onBodyChange])
   const [busy, setBusy] = useState(false)
-  const [suggesting, setSuggesting] = useState(false)
+  const viewRef = useRef<EditorView | null>(null)
   const addToast = useAppStore((s) => s.addToast)
+
+  // Header label is derived from the body rather than a standalone toggle: once a
+  // ```suggestion fence exists, this reads as a change suggestion.
+  const isSuggestion = body.includes('```suggestion')
 
   useEffect(() => {
     onDirtyChange?.(body.trim().length > 0)
   }, [body, onDirtyChange])
 
-  const suggestionBlock = useCallback(
-    () => {
-      const fence = suggestionLanguage ? `suggestion ${suggestionLanguage}` : 'suggestion'
-      return `\`\`\`${fence}\n${suggestionSeed}\n\`\`\`\n`
-    },
-    [suggestionSeed, suggestionLanguage],
-  )
+  const suggestionBlock = useCallback(() => {
+    const fence = suggestionLanguage ? `suggestion ${suggestionLanguage}` : 'suggestion'
+    return `\`\`\`${fence}\n${suggestionSeed}\n\`\`\`\n`
+  }, [suggestionSeed, suggestionLanguage])
 
   // Multi-line selection → grab the selected code into the composer as a
   // ```suggestion block (rudu's seed). Runs once per draft mount (the composer
@@ -84,20 +188,21 @@ export function ReviewCommentComposer({
     if (body.trim().length > 0) return
     seededRef.current = true
     const seeded = suggestionBlock()
-    setSuggesting(true)
     if (onSeedPristine) onSeedPristine(seeded)
     else setBody(seeded)
   }, [suggestionSeed, lineEnd, lineNumber, body, suggestionBlock, onSeedPristine, setBody])
 
-  const toggleSuggestion = useCallback(() => {
-    setSuggesting((prev) => {
-      const next = !prev
-      if (next && body.trim().length === 0) setBody(suggestionBlock())
-      return next
-    })
-  }, [body, setBody, suggestionBlock])
+  const runCommand = useCallback(
+    (command: Command) => {
+      const view = viewRef.current
+      if (!view || busy) return
+      command(view)
+      view.focus()
+    },
+    [busy],
+  )
 
-  const submit = async () => {
+  const submit = useCallback(async () => {
     const trimmed = body.trim()
     if (!trimmed || busy) return
     const id = crypto.randomUUID()
@@ -130,7 +235,7 @@ export function ReviewCommentComposer({
     } finally {
       setBusy(false)
     }
-  }
+  }, [body, busy, filePath, side, lineNumber, lineEnd, onApply, setBody, onSaved, worktreePath, addToast])
 
   const sideShort = side === 'additions' ? 'New' : 'Old'
   const linePillText =
@@ -140,28 +245,32 @@ export function ReviewCommentComposer({
   return (
     <div className={styles.composerBubble} data-diff-annotation-composer>
       <div className={styles.composerHeader}>
-        <span className={styles.composerTitle}>{suggesting ? 'Suggest a change' : 'New comment'}</span>
+        <span className={styles.composerTitle}>{isSuggestion ? 'Suggest a change' : 'New comment'}</span>
         <div className={styles.composerLineMeta}>
           <span className={styles.linePill}>{linePillText}</span>
           <span className={styles.sidePill}>{sideShort}</span>
         </div>
       </div>
-      <textarea
-        data-testid="diff-comment-composer-textarea"
-        className={styles.composerTextarea}
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        placeholder={suggesting ? 'Propose replacement code…' : 'Leave a comment…'}
-        autoFocus
-        rows={suggesting ? 5 : 3}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') onCancel()
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault()
-            void submit()
-          }
-        }}
-      />
+      <div className={styles.composerEditorWrap}>
+        <FormattingToolbar
+          onRun={runCommand}
+          busy={busy}
+          allowSuggestion={allowSuggestion}
+          suggestionSeed={suggestionSeed}
+        />
+        <MarkdownComposerEditor
+          value={body}
+          onChange={setBody}
+          onSubmit={() => void submit()}
+          onCancel={onCancel}
+          autoFocus
+          readOnly={busy}
+          placeholder={isSuggestion ? 'Propose replacement code…' : 'Leave a comment…'}
+          onViewReady={(view) => {
+            viewRef.current = view
+          }}
+        />
+      </div>
       <div className={styles.composerActions}>
         <button
           type="button"
@@ -170,6 +279,9 @@ export function ReviewCommentComposer({
           className={styles.composerSubmit}
         >
           Comment
+          <span className={styles.composerSubmitChip} aria-hidden>
+            {mod}↵
+          </span>
         </button>
         <button type="button" onClick={onCancel} className={styles.composerCancel}>
           Cancel
@@ -177,11 +289,11 @@ export function ReviewCommentComposer({
         {allowSuggestion && (
           <button
             type="button"
-            onClick={toggleSuggestion}
+            onClick={() => runCommand(insertSuggestionBlock(suggestionSeed))}
             className={styles.composerCancel}
-            aria-pressed={suggesting}
+            disabled={busy}
           >
-            {suggesting ? 'Plain comment' : 'Suggest'}
+            Suggest
           </button>
         )}
         {onAddToChat && (
@@ -189,7 +301,6 @@ export function ReviewCommentComposer({
             Add to Chat
           </button>
         )}
-        <span className={styles.composerHint}>{mod}+Enter to submit</span>
       </div>
     </div>
   )

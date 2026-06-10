@@ -72,7 +72,6 @@ export function PatchViewerMain({
   active = true,
 }: PatchViewerMainProps) {
   const isDrawer = variant === 'drawer'
-  const enableAcceptReject = true
 
   const inline = useAppStore((s) => s.settings.diffInline)
   const defaultShowFullContext = useAppStore((s) => s.settings.diffShowFullContextByDefault)
@@ -125,7 +124,8 @@ export function PatchViewerMain({
         collapsedPaths: viewedState.collapsedPaths,
         showFullContextOverrides: viewedState.showFullContextOverrides,
         defaultShowFullContext,
-        enableAcceptReject,
+        // Hunk staging (accept/reject) was removed from the review surface.
+        enableAcceptReject: false,
         hiddenHunksByPath: hunkActions.hiddenHunksByPath,
         fileDiffOverrides: hunkActions.fileDiffOverrides,
         draftTarget: composer.draftTarget,
@@ -137,7 +137,6 @@ export function PatchViewerMain({
       viewedState.collapsedPaths,
       viewedState.showFullContextOverrides,
       defaultShowFullContext,
-      enableAcceptReject,
       hunkActions.hiddenHunksByPath,
       hunkActions.fileDiffOverrides,
       composer.draftTarget,
@@ -251,39 +250,6 @@ export function PatchViewerMain({
     [openFileTab, openMarkdownPreview],
   )
 
-  const onHunkAccept = useCallback(
-    (filePath: string, hunkIndex: number) => {
-      const itemId = model.byFilePath.get(normalizePath(filePath)) ?? getCodeViewItemId(filePath)
-      const viewFile = model.byItemId.get(itemId)
-      if (!viewFile) return
-      hunkActions.apply({
-        filePath,
-        hunkIndex,
-        action: 'keep',
-        fileDiff: viewFile.fileDiff,
-        patch: viewFile.file.patch,
-        status: viewFile.file.status,
-      })
-    },
-    [model.byItemId, hunkActions],
-  )
-  const onHunkReject = useCallback(
-    (filePath: string, hunkIndex: number) => {
-      const itemId = model.byFilePath.get(normalizePath(filePath)) ?? getCodeViewItemId(filePath)
-      const viewFile = model.byItemId.get(itemId)
-      if (!viewFile) return
-      hunkActions.apply({
-        filePath,
-        hunkIndex,
-        action: 'undo',
-        fileDiff: viewFile.fileDiff,
-        patch: viewFile.file.patch,
-        status: viewFile.file.status,
-      })
-    },
-    [model.byItemId, hunkActions],
-  )
-
   const ensureExpandedForFullContext = useCallback(
     (filePath: string, next: boolean) => {
       if (next) workingTree.ensureFileDiffLoaded(filePath)
@@ -367,9 +333,6 @@ export function PatchViewerMain({
       onSelectionChange={composer.onSelectionChange}
       onApplyAnnotation={review.applyAnnotationPatch}
       onOpenFile={openFileFromDiff}
-      onHunkAccept={onHunkAccept}
-      onHunkReject={onHunkReject}
-      hunkActionPending={hunkActions.pending}
       onToggleCollapsed={viewedState.toggleCollapsed}
       onToggleViewed={isDrawer ? viewedState.toggleViewed : undefined}
       onToggleShowFullContext={ensureExpandedForFullContext}
@@ -438,8 +401,6 @@ export function PatchViewerMain({
             </span>
             <span className={editorStyles.diffSummaryAdd}>+{reviewSummary.additions}</span>
             <span className={editorStyles.diffSummaryDel}>-{reviewSummary.deletions}</span>
-            <span className={editorStyles.diffSummaryPill}>{reviewSummary.staged} staged</span>
-            <span className={editorStyles.diffSummaryPill}>{reviewSummary.unstaged} unstaged</span>
             {loading && files.length > 0 && (
               <span className={editorStyles.diffSummaryMuted}>Loading remaining changes...</span>
             )}

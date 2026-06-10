@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react'
+import { forwardRef, useCallback, useMemo, type CSSProperties } from 'react'
 import { CodeView, type CodeViewHandle } from '@pierre/diffs/react'
 import type { CodeViewDiffItem, DiffLineAnnotation } from '@pierre/diffs/react'
 import type { CodeViewLineSelection, CodeViewOptions } from '@pierre/diffs'
@@ -7,8 +7,6 @@ import { STATUS_LABELS } from '@shared/status-labels'
 import { CODEX_ABSOLUTELY_DIFF_THEME_ID } from '../../themes/diff/codex-absolutely-dark'
 import { ReviewCommentCard } from './ReviewCommentCard'
 import { ReviewCommentComposer } from './ReviewCommentComposer'
-import { HunkActionAnnotation } from './HunkActionAnnotation'
-import { HUNK_ACTION_KEY } from './patch-view-model'
 import type { PatchViewFile } from './patch-view-model'
 import { draftToSelection, draftTargetFor, type PatchDraftTarget } from './line-selection'
 import { filePathFromItemId } from './patch-utils'
@@ -92,8 +90,7 @@ const ITEM_METRICS = {
 /** Flat layout — our own toolbar/file-strip owns surrounding spacing. */
 const FLAT_LAYOUT = { paddingTop: 0, paddingBottom: 0, gap: 0 } as const
 
-/** `display:contents` wrapper adds no box, so the CodeView root stays the scroll
- *  container while still being a DOM ancestor we can attach a capture listener to. */
+/** `display:contents` wrapper adds no box, so the CodeView root stays the scroll container. */
 const CONTENTS_WRAPPER_STYLE: CSSProperties = { display: 'contents' }
 
 export type CodeViewDiffItemArr = CodeViewDiffItem<DiffAnnotation[]>
@@ -110,9 +107,6 @@ export interface PatchCodeViewProps {
   onSelectionChange: (selection: CodeViewLineSelection | null) => void
   onApplyAnnotation: (patch: AnnotationPatch) => void
   onOpenFile: (fullPath: string) => void
-  onHunkAccept: (filePath: string, hunkIndex: number) => void
-  onHunkReject: (filePath: string, hunkIndex: number) => void
-  hunkActionPending: boolean
   onToggleCollapsed: (filePath: string, collapsed: boolean) => void
   onToggleViewed?: (filePath: string, viewed: boolean) => void
   onToggleShowFullContext: (filePath: string, next: boolean) => void
@@ -147,9 +141,6 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
       onSelectionChange,
       onApplyAnnotation,
       onOpenFile,
-      onHunkAccept,
-      onHunkReject,
-      hunkActionPending,
       onToggleCollapsed,
       onToggleViewed,
       onToggleShowFullContext,
@@ -269,29 +260,15 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
       (annotation: DiffLineAnnotation<DiffAnnotation[]>, item: { id: string }) => {
         const viewFile = byItemId.get(item.id)
         const filePath = viewFile?.file.filePath ?? filePathFromItemId(item.id)
-        const metadata = annotation.metadata ?? []
-        const hunkActions = metadata.filter((a) => a.id.startsWith(HUNK_ACTION_KEY))
-        const comments = metadata.filter((a) => !a.id.startsWith(HUNK_ACTION_KEY))
+        const comments = annotation.metadata ?? []
         const showComposer =
           draftTarget != null &&
           normalizePath(draftTarget.filePath) === normalizePath(filePath) &&
           annotation.side === draftTarget.side &&
           annotation.lineNumber === draftTarget.lineEnd
-        if (!hunkActions.length && !comments.length && !showComposer) return null
+        if (!comments.length && !showComposer) return null
         return (
           <div className={annotationUi.annotationStack}>
-            {hunkActions.map((a) => {
-              const idx = parseInt(a.id.slice(HUNK_ACTION_KEY.length), 10)
-              return (
-                <HunkActionAnnotation
-                  key={a.id}
-                  hunkIndex={idx}
-                  onAccept={(hunkIndex) => onHunkAccept(filePath, hunkIndex)}
-                  onReject={(hunkIndex) => onHunkReject(filePath, hunkIndex)}
-                  disabled={hunkActionPending}
-                />
-              )
-            })}
             {comments.map((a) => (
               <ReviewCommentCard
                 key={a.id}
@@ -339,7 +316,7 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
           </div>
         )
       },
-      [byItemId, draftTarget, worktreePath, composerBody, onComposerBodyChange, onComposerSeedPristine, onSelectionChange, onApplyAnnotation, onHunkAccept, onHunkReject, hunkActionPending, tourMode, activeTourAnnotationId, selectedCommentIds, onToggleComment, onAddToChat],
+      [byItemId, draftTarget, worktreePath, composerBody, onComposerBodyChange, onComposerSeedPristine, onSelectionChange, onApplyAnnotation, tourMode, activeTourAnnotationId, selectedCommentIds, onToggleComment, onAddToChat],
     )
 
     const options = useMemo<CodeViewOptions<DiffAnnotation[]>>(
@@ -390,38 +367,13 @@ export const PatchCodeView = forwardRef<CodeViewHandle<DiffAnnotation[]>, PatchC
       [style],
     )
 
-    // Selection routing (GitHub/rudu model): dragging the line-number gutter (or
-    // the hover "+" slot) selects a review range and opens the composer; dragging
-    // the code text is a normal text selection the user can copy. Pierre would
-    // otherwise hijack EVERY content drag into a line selection and
-    // preventDefault() the browser's text selection (no copy). We stop Pierre's
-    // pointerdown in the capture phase — before it reaches its listener on the
-    // inner <pre> (across the shadow boundary via composedPath) — for any drag
-    // that doesn't start on the gutter. The wrapper is `display:contents` so it
-    // adds no box and the CodeView root stays the scroll container.
-    const selectionGuardRef = useRef<HTMLDivElement>(null)
-    useEffect(() => {
-      const el = selectionGuardRef.current
-      if (!el) return
-      const onPointerDownCapture = (e: PointerEvent) => {
-        if (e.pointerType === 'mouse' && e.button !== 0) return
-        const onGutter = e
-          .composedPath()
-          .some(
-            (n) =>
-              n instanceof Element &&
-              n.matches?.(
-                '[data-column-number],[data-gutter-buffer],[data-hover-slot],[slot="hover-slot"]',
-              ),
-          )
-        if (!onGutter) e.stopImmediatePropagation()
-      }
-      el.addEventListener('pointerdown', onPointerDownCapture, true)
-      return () => el.removeEventListener('pointerdown', onPointerDownCapture, true)
-    }, [])
-
+    // Selection routing: dragging across the code text (or the line-number gutter,
+    // or the hover "+" slot) selects a review range and opens the composer — this is
+    // the pre-rudu behavior the user expects (drag line 100→110, or from mid-line,
+    // to comment on the range). Pierre's `enableLineSelection` handles the content
+    // drag natively via `onSelectedLinesChange`; we no longer intercept it.
     return (
-      <div ref={selectionGuardRef} style={CONTENTS_WRAPPER_STYLE}>
+      <div style={CONTENTS_WRAPPER_STYLE}>
         <CodeView<DiffAnnotation[]>
           ref={ref}
           className={className}

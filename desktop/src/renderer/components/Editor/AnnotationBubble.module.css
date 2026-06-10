@@ -413,30 +413,87 @@
   flex-wrap: wrap;
 }
 
-/* rudu textarea: bg-surface, no border, font-mono, min-h 96px (review-comment-markdown-textarea) */
-.composerTextarea {
-  width: 100%;
-  min-height: 96px;
-  resize: vertical;
+/* ── Composer editor (CodeMirror 6) + formatting toolbar ──
+   Scoped under .composerEditorWrap so the editable editor's styles never leak
+   into the read-only prosemark surfaces elsewhere (plan R5). */
+.composerEditorWrap {
   border-radius: var(--radius-lg);
   border: 1px solid transparent;
   background: var(--review-input-bg);
-  padding: 8px 12px;
-  font-size: 13px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--review-input-text);
-  line-height: 1.5;
-  outline: none;
+  overflow: hidden;
   transition:
     border-color var(--motion-fast),
     box-shadow var(--motion-fast);
 }
 
-.composerTextarea:focus {
+.composerEditorWrap:focus-within {
   border-color: var(--rudu-ink-400);
 }
 
-.composerTextarea::placeholder {
+.composerToolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--review-card-border);
+}
+
+.composerToolbarBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--review-text-author);
+  cursor: pointer;
+  transition:
+    color var(--motion-fast),
+    background-color var(--motion-fast),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.composerToolbarBtn:hover:not(:disabled) {
+  color: var(--review-text-strong);
+  background: var(--rudu-canvas-hover);
+}
+
+.composerToolbarBtn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.composerToolbarBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.composerEditorWrap :global(.cm-editor) {
+  background: transparent;
+  font-size: 13px;
+  max-height: 280px;
+}
+
+.composerEditorWrap :global(.cm-editor.cm-focused) {
+  outline: none;
+}
+
+.composerEditorWrap :global(.cm-scroller) {
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  line-height: 1.5;
+}
+
+.composerEditorWrap :global(.cm-content) {
+  padding: 8px 12px;
+  min-height: 72px;
+  color: var(--review-input-text);
+  caret-color: var(--review-input-text);
+}
+
+.composerEditorWrap :global(.cm-placeholder) {
   color: var(--review-input-placeholder);
 }
 
@@ -449,6 +506,9 @@
 
 /* rudu submit: rounded-md bg-ink-900 text-white  /  dark:bg-ink-200 text-ink-900 */
 .composerSubmit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px 12px;
   border: none;
   border-radius: var(--radius-md);
@@ -461,6 +521,13 @@
   transition:
     background-color var(--motion-fast),
     transform var(--duration-micro) var(--ease-press);
+}
+
+.composerSubmitChip {
+  font-size: 10px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  opacity: 0.7;
+  letter-spacing: 0.02em;
 }
 
 .composerSubmit:hover:not(:disabled) {
