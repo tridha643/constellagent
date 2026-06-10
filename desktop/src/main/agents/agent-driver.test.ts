@@ -9,6 +9,7 @@ import {
   promptEmitsFormatPrefix,
   PLAN_PROMPT_PREFIX,
   CONDUCTOR_RTK_PROMPT_PREFIX,
+  CONDUCTOR_CODEX_ASK_PROMPT_PREFIX,
 } from './agent-driver'
 
 function msg(
@@ -52,7 +53,17 @@ describe('agent-driver prompt construction', () => {
 
     expect(prompt).not.toContain('GitHub-Flavored Markdown')
     expect(prompt).not.toContain(CONDUCTOR_RTK_PROMPT_PREFIX)
+    expect(prompt).not.toContain(CONDUCTOR_CODEX_ASK_PROMPT_PREFIX)
     expect(prompt).toBe('next step')
+  })
+
+  test('tells codex about request_user_input on a thread first turn, codex only', () => {
+    const codexPrompt = buildAgentPrompt('build the feature', false, undefined, 'codex')
+    expect(codexPrompt).toContain(CONDUCTOR_CODEX_ASK_PROMPT_PREFIX)
+    expect(codexPrompt).toContain('request_user_input')
+
+    const cursorPrompt = buildAgentPrompt('build the feature', false, undefined, 'cursor')
+    expect(cursorPrompt).not.toContain(CONDUCTOR_CODEX_ASK_PROMPT_PREFIX)
   })
 
   test('still sends plan-mode instructions on continuation turns (only the format prefix is gated)', () => {

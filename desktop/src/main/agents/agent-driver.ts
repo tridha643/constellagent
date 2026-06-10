@@ -48,6 +48,15 @@ export const CONDUCTOR_MARKDOWN_FORMAT_PREFIX =
 export const CONDUCTOR_RTK_PROMPT_PREFIX =
   'Use RTK for shell-style work so command output is compact before it reaches context: prefer `rtk git ...`, `rtk grep ...`, `rtk find ...`, `rtk read ...`, `rtk test <cmd>`, `rtk err <cmd>`, or the closest `rtk` wrapper for searches, file reads, git, build, lint, and test commands. If `rtk` is not installed, say so briefly and keep fallback command output tightly scoped.'
 
+/**
+ * Codex-only, sent once per thread alongside the format prefix (persists in
+ * thread history). Reinforces — at the user-message level — what the custom
+ * collaboration-mode developer instructions establish: the `request_user_input`
+ * tool is available and should be used at real decision points.
+ */
+export const CONDUCTOR_CODEX_ASK_PROMPT_PREFIX =
+  'You have a `request_user_input` tool that shows the user rich multiple-choice questions in this app. Use it whenever a decision, preference, ambiguity, or risky assumption could change the outcome — ask early instead of guessing. Never ask a multiple-choice question as plain text.'
+
 const CONDUCTOR_CONTEXT_PROMPT_PREFIX =
   'Previous conversation context from this Conductor chat is below. Use it as the authoritative thread history, including any plan the assistant already produced.'
 
@@ -101,6 +110,9 @@ export function buildAgentPrompt(
   } else if (promptEmitsFormatPrefix(text, provider, canvas, includeFormatPrefix, isSkillInvocation)) {
     parts.push(CONDUCTOR_MARKDOWN_FORMAT_PREFIX)
     parts.push(CONDUCTOR_RTK_PROMPT_PREFIX)
+    if (provider === 'codex') {
+      parts.push(CONDUCTOR_CODEX_ASK_PROMPT_PREFIX)
+    }
   }
   if (plan) {
     parts.push(PLAN_PROMPT_PREFIX)

@@ -3364,6 +3364,27 @@
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
+  transition: color var(--duration-fast) var(--ease), transform var(--duration-micro) var(--ease-press);
+}
+
+.askQuestionClose:active {
+  transform: scale(0.92);
+}
+
+/* Keyed per question page: quick crossfade + 4px rise on pagination. */
+.askQuestionPage {
+  animation: askQuestionPageIn var(--duration-fast) var(--ease-out) both;
+}
+
+@keyframes askQuestionPageIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .askQuestionHeaderLabel {
@@ -3403,21 +3424,41 @@
   color: var(--text-primary);
   padding: 10px 12px;
   cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease),
+    border-color var(--duration-fast) var(--ease),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.askQuestionOption:active {
+  transform: scale(0.985);
+}
+
+.askQuestionOption:focus-visible {
+  outline: none;
+  border-color: var(--border-accent, var(--accent-blue));
 }
 
 .askQuestionOptionActive {
-  border-color: var(--accent, #7c9cff);
-  background: rgb(124 156 255 / 8%);
+  border-color: color-mix(in srgb, var(--accent-blue, #7b93bd) 70%, transparent);
+  background: color-mix(in srgb, var(--accent-blue, #7b93bd) 10%, var(--surface-2));
 }
 
 .askQuestionOptionSelected {
-  border-color: color-mix(in srgb, var(--accent, #7c9cff) 65%, transparent);
+  border-color: var(--border-accent, var(--accent-blue, #7b93bd));
+  background: color-mix(in srgb, var(--accent-blue, #7b93bd) 14%, var(--surface-2));
 }
 
 .askQuestionOptionIndex {
   font-size: 12px;
   color: var(--text-tertiary);
   padding-top: 2px;
+  transition: color var(--duration-fast) var(--ease);
+}
+
+.askQuestionOptionActive .askQuestionOptionIndex,
+.askQuestionOptionSelected .askQuestionOptionIndex {
+  color: var(--accent-blue, #7b93bd);
 }
 
 .askQuestionOptionBody {
@@ -3446,6 +3487,13 @@
   color: var(--text-primary);
   padding: 8px 10px;
   font: inherit;
+  transition: border-color var(--duration-fast) var(--ease), box-shadow var(--duration-fast) var(--ease);
+}
+
+.askQuestionCustomInput:focus {
+  outline: none;
+  border-color: var(--border-accent, var(--accent-blue, #7b93bd));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue, #7b93bd) 35%, transparent);
 }
 
 .askQuestionFooter {
@@ -3464,6 +3512,15 @@
   height: 28px;
   border-radius: 999px;
   cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease),
+    border-color var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.askQuestionNavBtn:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 .askQuestionNavBtn:disabled {
@@ -3484,29 +3541,80 @@
   border-radius: 999px;
   background: var(--text-tertiary);
   opacity: 0.35;
+  transition:
+    background-color var(--duration-default) var(--ease),
+    opacity var(--duration-default) var(--ease),
+    transform var(--duration-default) var(--ease-out);
 }
 
 .askQuestionDotActive {
   opacity: 1;
-  background: var(--text-primary);
+  background: var(--accent-blue, #7b93bd);
+  transform: scale(1.2);
 }
 
+/* Mirrors .sendButton: the panel's primary-action tile (dark tile, white glyph). */
 .askQuestionSubmit {
   appearance: none;
   border: none;
   width: 32px;
   height: 32px;
-  border-radius: 999px;
-  background: var(--accent, #7c9cff);
-  color: #0b0b0b;
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+  color: #fff;
   font-size: 16px;
   font-weight: 700;
   cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease),
+    opacity var(--duration-fast) var(--ease),
+    transform var(--duration-micro) var(--ease-press);
+}
+
+.askQuestionSubmit:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .askQuestionSubmit:disabled {
-  opacity: 0.35;
-  cursor: default;
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .askQuestionClose:hover {
+    color: var(--text-secondary);
+  }
+
+  .askQuestionNavBtn:hover:not(:disabled) {
+    background: var(--surface-2);
+    color: var(--text-primary);
+  }
+
+  .askQuestionSubmit:hover:not(:disabled) {
+    background: var(--surface-4, var(--border-strong));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .askQuestionPage {
+    animation: none;
+  }
+
+  .askQuestionOption,
+  .askQuestionClose,
+  .askQuestionNavBtn,
+  .askQuestionSubmit,
+  .askQuestionDot {
+    transition-property: background-color, border-color, color, opacity;
+  }
+
+  .askQuestionOption:active,
+  .askQuestionClose:active,
+  .askQuestionNavBtn:active:not(:disabled),
+  .askQuestionSubmit:active:not(:disabled),
+  .askQuestionDotActive {
+    transform: none;
+  }
 }
 
 .jsonCanvasBlock {

@@ -691,17 +691,17 @@ export function ConductorChatView({
           </span>
         </div>
       )}
-      {blockingQuestion ? (
-        <ConductorAskQuestionModal
-          question={blockingQuestion}
-          onSubmit={(details) => {
-            controller.respondBlockingQuestion({ requestId: blockingQuestion.requestId, details })
-          }}
-          onCancel={() => {
-            void controller.cancel()
-          }}
-        />
-      ) : null}
+      <ConductorAskQuestionModal
+        question={blockingQuestion ?? null}
+        onSubmit={(details) => {
+          if (!blockingQuestion) return
+          controller.respondBlockingQuestion({ requestId: blockingQuestion.requestId, details })
+        }}
+        onCancel={() => {
+          void controller.cancel()
+        }}
+      />
+
       {agentSessionId && topPiExtensionDialog ? (
         <ExtensionDialog
           dialog={topPiExtensionDialog}
