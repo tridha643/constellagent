@@ -32,47 +32,32 @@ function languageIdFromPath(filePath: string): string {
 export function useReviewComposerSession(): ReviewComposerSession {
   const [draftTarget, setDraftTarget] = useState<PatchDraftTarget | null>(null)
   const [composerBody, setComposerBody] = useState('')
-  // Programmatically seeded baseline (suggestion pre-fill). A body equal to this
-  // is "pristine" — the user hasn't typed, so switching drafts needs no confirm.
-  const [pristineBody, setPristineBody] = useState('')
 
-  const isDirty = composerBody.trim().length > 0 && composerBody !== pristineBody
-
+  // A programmatically seeded body (suggestion pre-fill) is just set directly;
+  // there's no dirty/confirm gate anymore, so no separate pristine baseline.
   const markComposerPristine = useCallback((body: string) => {
     setComposerBody(body)
-    setPristineBody(body)
   }, [])
 
-  const openDraft = useCallback(
-    (target: PatchDraftTarget) => {
-      setDraftTarget((current) => {
-        if (current && isDirty && !draftTargetsEqual(target, current)) {
-          if (!window.confirm('Discard your comment draft?')) return current
-        }
-        if (!draftTargetsEqual(target, current)) {
-          setComposerBody('')
-          setPristineBody('')
-        }
-        return target
-      })
-    },
-    [isDirty],
-  )
+  // Switching drafts or cancelling discards the current body directly — no confirm
+  // modal. Cancel/selection-change is a plain, immediate action (pre-rudu behavior).
+  const openDraft = useCallback((target: PatchDraftTarget) => {
+    setDraftTarget((current) => {
+      if (!draftTargetsEqual(target, current)) setComposerBody('')
+      return target
+    })
+  }, [])
 
   const onSelectionChange = useCallback(
     (selection: CodeViewLineSelection | null) => {
       if (!selection) {
-        if (isDirty) {
-          if (!window.confirm('Discard your comment draft?')) return
-        }
         setDraftTarget(null)
         setComposerBody('')
-        setPristineBody('')
         return
       }
       openDraft(selectionToDraft(selection))
     },
-    [isDirty, openDraft],
+    [openDraft],
   )
 
   const onAddToChat = useCallback((target: PatchDraftTarget) => {

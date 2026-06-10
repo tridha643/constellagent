@@ -462,10 +462,12 @@ test.describe('Review annotations IPC integration', () => {
         }))
       }, filePath!)
 
-      const textarea = window.getByTestId('diff-comment-composer-textarea')
-      await expect(textarea).toBeVisible()
+      // The composer is now a CodeMirror 6 contenteditable, not a textarea; the
+      // testid host carries the doc text on `data-comment-body` for readback.
+      const editor = window.getByTestId('diff-comment-composer-textarea')
+      await expect(editor).toBeVisible()
       const draftText = 'Draft should survive virtualization scroll'
-      await textarea.fill(draftText)
+      await editor.fill(draftText)
 
       const afterScroll = await window.evaluate(async () => {
         const root = document.querySelector('[data-testid="hunk-review-scroll-area"]')
@@ -476,11 +478,32 @@ test.describe('Review annotations IPC integration', () => {
         root.scrollTop = 0
         root.dispatchEvent(new Event('scroll', { bubbles: true }))
         await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
-        const textarea = document.querySelector('[data-testid="diff-comment-composer-textarea"]')
-        return textarea instanceof HTMLTextAreaElement ? textarea.value : null
+        const el = document.querySelector('[data-testid="diff-comment-composer-textarea"]')
+        return el instanceof HTMLElement ? (el.getAttribute('data-comment-body') ?? el.textContent) : null
       })
 
       expect(afterScroll).toBe(draftText)
+
+      // The formatting toolbar's Bold button wraps the current selection as **…**.
+      // Select the whole draft line within CodeMirror (End → Shift+Home; Mod+A
+      // would trigger Pierre's select-all-lines + dirty-draft confirm dialog), then
+      // fire the button's onClick directly — Playwright's hit-testing can't reach a
+      // button nested in Pierre's virtualized annotation area, but it is light DOM.
+      await editor.press('End')
+      await editor.press('Shift+Home')
+      await window.evaluate(() => {
+        const btn = document.querySelector('[data-testid="composer-format-bold"]')
+        if (btn instanceof HTMLElement) btn.click()
+      })
+      await expect
+        .poll(async () =>
+          window.evaluate(() => {
+            const el = document.querySelector('[data-testid="diff-comment-composer-textarea"]')
+            if (!(el instanceof HTMLElement)) return null
+            return el.getAttribute('data-comment-body') ?? el.textContent
+          }),
+        )
+        .toBe(`**${draftText}**`)
     } finally {
       await app.close()
       cleanupTestRepo(repoPath)

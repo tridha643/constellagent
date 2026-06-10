@@ -115,10 +115,10 @@ function makeToggleInlineCommand(nodeName: string, open: string, close: string):
   };
 }
 
-const toggleStrongEmphasis = makeToggleInlineCommand("StrongEmphasis", "**", "**");
-const toggleEmphasis = makeToggleInlineCommand("Emphasis", "_", "_");
-const toggleInlineCode = makeToggleInlineCommand("InlineCode", "`", "`");
-const toggleStrikethrough = makeToggleInlineCommand("Strikethrough", "~~", "~~");
+export const toggleStrongEmphasis = makeToggleInlineCommand("StrongEmphasis", "**", "**");
+export const toggleEmphasis = makeToggleInlineCommand("Emphasis", "_", "_");
+export const toggleInlineCode = makeToggleInlineCommand("InlineCode", "`", "`");
+export const toggleStrikethrough = makeToggleInlineCommand("Strikethrough", "~~", "~~");
 
 /**
  * Wraps the selection as a Markdown link: selected text becomes the **label**
@@ -126,7 +126,7 @@ const toggleStrikethrough = makeToggleInlineCommand("Strikethrough", "~~", "~~")
  * be typed next. With no selection, inserts `[]()` and focuses the label
  * brackets first.
  */
-const insertLink: Command = (view) => {
+export const insertLink: Command = (view) => {
   const { state } = view;
   for (const range of state.selection.ranges) {
     if (!isMarkdownContext(state, range.from)) return false;
