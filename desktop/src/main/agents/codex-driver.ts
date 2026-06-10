@@ -405,8 +405,18 @@ class TurnCompletionGate {
 
 export class CodexDriver implements AgentDriver {
   readonly provider = 'codex' as const
-  private appServer: { client: CodexAppServerClient; webSocketsEnabled: boolean } | null = null
-  private activeTurn: CodexActiveTurnContext | null = null
+  /**
+   * One app-server process per WebSockets flag. Keyed (not replaced) so a chat
+   * using a WebSockets-eligible model cannot kill another chat's live threads
+   * that run on the other flag.
+   */
+  private readonly appServers = new Map<boolean, CodexAppServerClient>()
+  /**
+   * Concurrent turns keyed by Codex thread id. Notifications and server
+   * requests carry `threadId`, so events from parallel chats in the same
+   * workspace route to their own session instead of whichever turn started last.
+   */
+  private readonly activeTurnsByThread = new Map<string, CodexActiveTurnContext>()
   private readonly sessions = new Map<string, CodexSessionState>()
   private readonly recovery = new Map<string, CodexSessionRecovery>()
   private readonly contextUsage = new Map<string, CodexContextUsage>()
@@ -414,13 +424,13 @@ export class CodexDriver implements AgentDriver {
   constructor(private readonly hooks: CodexDriverHooks = {}) {}
 
   private async getAppServerClient(webSocketsEnabled: boolean): Promise<CodexAppServerClient> {
-    if (!this.appServer || this.appServer.webSocketsEnabled !== webSocketsEnabled) {
-      this.appServer?.client.dispose()
+    let client = this.appServers.get(webSocketsEnabled)
+    if (!client) {
       const codexPath = resolveCodexCliPath()
       if (!codexPath) {
         throw new Error('Codex CLI not found. Install Codex and ensure it supports app-server.')
       }
-      const client = new CodexAppServerClient({
+      client = new CodexAppServerClient({
         codexPath,
         env: {
           ...codexSdkEnv(),
@@ -430,10 +440,10 @@ export class CodexDriver implements AgentDriver {
         onNotification: (method, params) => this.handleAppServerNotification(method, params),
         onServerRequest: (method, id, params) => this.handleAppServerServerRequest(method, id, params),
       })
-      this.appServer = { client, webSocketsEnabled }
+      this.appServers.set(webSocketsEnabled, client)
     }
-    await this.appServer.client.ensureReady()
-    return this.appServer.client
+    await client.ensureReady()
+    return client
   }
 
   checkAuth(): string | null {
@@ -653,7 +663,8 @@ export class CodexDriver implements AgentDriver {
     const turnStartedAt = performance.now()
     const mapper = createCodexAppServerEventMapperState()
     const completion = new TurnCompletionGate()
-    this.activeTurn = { ctx, state, mapper, completion }
+    const turn: CodexActiveTurnContext = { ctx, state, mapper, completion }
+    this.activeTurnsByThread.set(state.thread.threadId, turn)
 
     const abortHandler = () => {
       const turnId = state.activeTurnId
@@ -692,13 +703,35 @@ export class CodexDriver implements AgentDriver {
       if (!isBenignCodexInterruptError(err, ctx.signal)) throw err
     } finally {
       ctx.signal.removeEventListener('abort', abortHandler)
-      this.activeTurn = null
+      if (this.activeTurnsByThread.get(state.thread.threadId) === turn) {
+        this.activeTurnsByThread.delete(state.thread.threadId)
+      }
       state.activeTurnId = null
     }
   }
 
+  /**
+   * Resolve which in-flight turn a notification or server request belongs to.
+   * Falls back to the sole active turn for payloads without a threadId; with
+   * several turns in flight an unattributable payload is dropped rather than
+   * appended to the wrong chat.
+   */
+  private activeTurnForParams(params: unknown): CodexActiveTurnContext | null {
+    const threadId =
+      params && typeof params === 'object' && typeof (params as { threadId?: unknown }).threadId === 'string'
+        ? (params as { threadId: string }).threadId
+        : null
+    if (threadId) {
+      return this.activeTurnsByThread.get(threadId) ?? null
+    }
+    if (this.activeTurnsByThread.size === 1) {
+      return this.activeTurnsByThread.values().next().value ?? null
+    }
+    return null
+  }
+
   private handleAppServerNotification(method: string, params: unknown): void {
-    const activeTurn = this.activeTurn
+    const activeTurn = this.activeTurnForParams(params)
     if (!activeTurn) return
     const events = mapAppServerNotification(method, params, activeTurn.mapper)
     for (const event of events) {
@@ -738,7 +771,7 @@ export class CodexDriver implements AgentDriver {
   }
 
   private async resolveAppServerRequestUserInput(params: unknown): Promise<unknown> {
-    const activeTurn = this.activeTurn
+    const activeTurn = this.activeTurnForParams(params)
     if (!activeTurn) {
       return { answers: {} }
     }
