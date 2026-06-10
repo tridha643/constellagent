@@ -6,14 +6,13 @@ import { selectionToDraft, draftTargetsEqual, type PatchDraftTarget } from './li
 
 export interface ReviewComposerSession {
   draftTarget: PatchDraftTarget | null
-  composerBody: string
-  setComposerBody: (body: string) => void
   /**
-   * Record a programmatically seeded body (e.g. a ```suggestion pre-fill) as the
-   * pristine baseline so an untouched seed isn't treated as a dirty draft (no
-   * spurious discard prompt when re-selecting).
+   * Read the live draft body. Ref-backed: body keystrokes do NOT re-render this
+   * hook's owner — the composer owns its text locally and mirrors it here so the
+   * draft survives virtualization unmounts and gates discard decisions.
    */
-  markComposerPristine: (body: string) => void
+  getComposerBody: () => string
+  setComposerBody: (body: string) => void
   /** Single entry point for selection changes (drag-select, gutter "+", clear). */
   onSelectionChange: (selection: CodeViewLineSelection | null) => void
   /** Explicit user cancel: discard the current draft immediately. */
@@ -33,13 +32,15 @@ function languageIdFromPath(filePath: string): string {
  * CodeView rows, which unmount off-screen) so a draft survives virtualization.
  * Dirty drafts are pinned until the user explicitly cancels or submits; this
  * keeps drag/select events from silently destroying a half-written comment.
+ *
+ * The body is a ref, NOT state: routing every keystroke through state here
+ * re-rendered PatchViewerMain → PatchCodeView → all visible CodeView annotation
+ * widgets, making typing/backspace in the composer visibly laggy.
  */
 export function useReviewComposerSession(): ReviewComposerSession {
   const [draftTarget, setDraftTarget] = useState<PatchDraftTarget | null>(null)
-  const [composerBody, setComposerBody] = useState('')
   const draftTargetRef = useRef<PatchDraftTarget | null>(null)
   const composerBodyRef = useRef('')
-  const pristineBodyRef = useRef('')
   const blockedSelectionToastRef = useRef(0)
   const addToast = useAppStore((s) => s.addToast)
 
@@ -48,22 +49,14 @@ export function useReviewComposerSession(): ReviewComposerSession {
     setDraftTarget(target)
   }, [])
 
+  const getComposerBody = useCallback(() => composerBodyRef.current, [])
+
   const setComposerBodyState = useCallback((body: string) => {
     composerBodyRef.current = body
-    setComposerBody(body)
   }, [])
 
-  // A programmatically seeded body (suggestion pre-fill) should be replaceable
-  // by a new selection until the user edits it.
-  const markComposerPristine = useCallback((body: string) => {
-    pristineBodyRef.current = body
-    setComposerBodyState(body)
-  }, [setComposerBodyState])
-
   const canDiscardDraft = useCallback(() => {
-    const composerBody = composerBodyRef.current
-    if (!composerBody.trim() || composerBody === pristineBodyRef.current) return true
-    return false
+    return !composerBodyRef.current.trim()
   }, [])
 
   const showPinnedDraftToast = useCallback(() => {
@@ -81,14 +74,15 @@ export function useReviewComposerSession(): ReviewComposerSession {
 
   const openDraft = useCallback((target: PatchDraftTarget) => {
     const current = draftTargetRef.current
-    if (!draftTargetsEqual(target, current)) {
-      if (!canDiscardDraft()) {
-        showPinnedDraftToast()
-        return
-      }
-      pristineBodyRef.current = ''
-      setComposerBodyState('')
+    // Same target → keep the existing reference; a fresh (but equal) object
+    // would rebuild the patch view model for nothing (the gutter "+" release
+    // commits the same range twice: onGutterUtilityClick + onLineSelectionEnd).
+    if (draftTargetsEqual(target, current)) return
+    if (!canDiscardDraft()) {
+      showPinnedDraftToast()
+      return
     }
+    setComposerBodyState('')
     setDraftTargetState(target)
   }, [canDiscardDraft, setComposerBodyState, setDraftTargetState, showPinnedDraftToast])
 
@@ -100,7 +94,6 @@ export function useReviewComposerSession(): ReviewComposerSession {
           return
         }
         setDraftTargetState(null)
-        pristineBodyRef.current = ''
         setComposerBodyState('')
         return
       }
@@ -111,13 +104,11 @@ export function useReviewComposerSession(): ReviewComposerSession {
 
   const onComposerCancel = useCallback(() => {
     setDraftTargetState(null)
-    pristineBodyRef.current = ''
     setComposerBodyState('')
   }, [setComposerBodyState, setDraftTargetState])
 
   const onComposerSaved = useCallback(() => {
     setDraftTargetState(null)
-    pristineBodyRef.current = ''
     setComposerBodyState('')
   }, [setComposerBodyState, setDraftTargetState])
 
@@ -133,9 +124,8 @@ export function useReviewComposerSession(): ReviewComposerSession {
 
   return {
     draftTarget,
-    composerBody,
+    getComposerBody,
     setComposerBody: setComposerBodyState,
-    markComposerPristine,
     onSelectionChange,
     onComposerCancel,
     onComposerSaved,

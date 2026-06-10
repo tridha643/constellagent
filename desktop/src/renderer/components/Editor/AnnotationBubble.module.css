@@ -612,6 +612,13 @@
   background: var(--rudu-canvas-hover);
 }
 
+/* Toggled-on state (e.g. the suggestion-block toggle). */
+.composerToolbarBtn[data-active] {
+  color: var(--review-text-strong);
+  background: var(--rudu-canvas-hover);
+  box-shadow: inset 0 0 0 1px var(--review-accent-soft);
+}
+
 .composerToolbarBtn:focus-visible {
   outline: none;
   color: var(--review-text-strong);

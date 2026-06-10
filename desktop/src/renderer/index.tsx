@@ -11,18 +11,8 @@ import './styles/shared-dialog-motion.css'
 // Expose store for e2e testing
 ;(window as any).__store = useAppStore
 
-function installBenignBrowserErrorFilters(): void {
-  window.addEventListener('error', (event) => {
-    const message = event.message || String(event.error?.message ?? '')
-    if (
-      message === 'ResizeObserver loop completed with undelivered notifications.' ||
-      message === 'ResizeObserver loop limit exceeded'
-    ) {
-      event.stopImmediatePropagation()
-      event.preventDefault()
-    }
-  })
-}
+// Benign ResizeObserver loop errors are filtered by an inline <script> in
+// index.html — it must register before Vite's dev client error listener.
 
 function renderApp(): void {
   applyAppearanceTheme(useAppStore.getState().settings.appearanceThemeId)
@@ -62,7 +52,6 @@ if (isBrowserWebviewGuest()) {
   // Vite HMR can re-run this entry outside Electron; only show the notice in a real document.
   if (typeof document !== 'undefined') renderMissingApiNotice()
 } else {
-  installBenignBrowserErrorFilters()
   // Hydrate persisted state (tabs, PTYs) before rendering to avoid mounting
   // terminals with stale pty IDs. Never let a slow/failed hydrate (e.g. a
   // hanging IPC call) block the first paint — mount regardless once hydrate

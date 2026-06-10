@@ -4,6 +4,12 @@ These instructions apply to **any repository** where the constellagent app is in
 
 > **Fast navigation:** This file covers cross-repo policy (mobile, skills, storage) and the monorepo's top-level map. For a file-by-file **service map** of the desktop app (which `*-service.ts` owns which feature), the **markdown engine (prosemark/CodeMirror)**, the **JSON canvas / tool-UI rendering** subsystem (`@json-render/*`), and the **OpenSpec change workflow** (`/opsx:*`), see **`desktop/CLAUDE.md`** → *Main-process service map* / *Renderer map* / *JSON canvas* / *OpenSpec change workflow*. Cursor users: repo rules live in `.cursor/rules/constellagent.mdc`.
 
+## Agent interaction conventions
+
+- When a user asks the agent to "ask me a question", "give me choices", "let me pick", or equivalent, and the harness provides a structured user-input tool, use that tool by default instead of replying with a plain-text question.
+- Prefer a short structured question with 2-3 mutually exclusive options and a recommended default when the decision affects which task, files, commands, or workflow the agent should choose.
+- Use plain chat instead when the user explicitly asks for a prose-only response, when no structured input tool is available, or when the question is genuinely open-ended and cannot be reduced to useful choices.
+
 ## Constellagent monorepo layout (this repository)
 
 Bun workspaces: root `package.json` declares `["packages/*", "desktop"]`.

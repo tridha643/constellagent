@@ -328,9 +328,8 @@ export function PatchViewerMain({
       inline={inline}
       worktreePath={worktreePath}
       draftTarget={composer.draftTarget}
-      composerBody={composer.composerBody}
+      getComposerBody={composer.getComposerBody}
       onComposerBodyChange={composer.setComposerBody}
-      onComposerSeedPristine={composer.markComposerPristine}
       onComposerCancel={composer.onComposerCancel}
       onComposerSaved={composer.onComposerSaved}
       onSelectionChange={composer.onSelectionChange}

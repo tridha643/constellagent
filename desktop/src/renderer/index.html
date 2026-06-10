@@ -8,6 +8,26 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' data: https://cdn.jsdelivr.net; worker-src 'self' blob:; connect-src 'self' data: http://127.0.0.1:4747 http://localhost:4747 https://cdn.jsdelivr.net; img-src 'self' data: https: file:"
     />
     <title>Constellagent</title>
+    <script>
+      // Suppress benign ResizeObserver loop errors BEFORE any module script runs.
+      // Must live here (classic inline script) rather than in index.tsx: in dev,
+      // Vite injects /@vite/client into <head> and its window 'error' listener
+      // registers before the app entry module executes. Same-target listeners
+      // fire in registration order, so a filter added later can't stop Vite from
+      // forwarding the error to the terminal / overlay. Inline classic scripts
+      // run during HTML parsing, ahead of all module scripts, so this listener
+      // is guaranteed to be first and stopImmediatePropagation() actually works.
+      window.addEventListener('error', function (event) {
+        var message = event.message || String((event.error && event.error.message) || '')
+        if (
+          message === 'ResizeObserver loop completed with undelivered notifications.' ||
+          message === 'ResizeObserver loop limit exceeded'
+        ) {
+          event.stopImmediatePropagation()
+          event.preventDefault()
+        }
+      })
+    </script>
   </head>
   <body>
     <div id="root"></div>
