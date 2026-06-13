@@ -17,6 +17,7 @@ import {
   PI_CONSTELL_MARKER_SEGMENT,
 } from '../shared/agent-markers'
 import { PtyOutputRing } from './pty-output-ring'
+import { stripNodeModulesBin } from './cli-env'
 
 interface PtyInstance {
   process: pty.IPty
@@ -338,6 +339,10 @@ export class PtyManager {
       cwd: workingDir,
       env: {
         ...process.env,
+        // Strip any `node_modules/.bin` leaked into PATH by the launching package
+        // manager (`bun run dev`); otherwise a bundled CLI shim (e.g. `pi`) shadows
+        // the user's global install in every terminal we spawn.
+        PATH: stripNodeModulesBin(process.env.PATH ?? ''),
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
         // Hide Claude Code's agents view for sessions launched from inside

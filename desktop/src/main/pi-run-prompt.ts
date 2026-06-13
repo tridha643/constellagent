@@ -3,6 +3,7 @@ import * as pty from 'node-pty'
 
 import { pickPiModelIdForCli } from '../shared/pi-models'
 import { listPiModels } from './pi-models'
+import { pathWithStandardCliPrefixes } from './cli-env'
 
 const PI_GENERATE_TIMEOUT_MS = 30_000
 const PI_GENERATE_MAX_BUFFER = 1024 * 1024
@@ -74,6 +75,9 @@ export async function runPiPrompt(
         cwd: homedir(),
         env: {
           ...process.env,
+          // Resolve the global `pi`, not a `node_modules/.bin/pi` shim leaked into
+          // PATH by the launching package manager (`bun run dev`).
+          PATH: pathWithStandardCliPrefixes(),
           TERM: 'xterm-256color',
           COLORTERM: 'truecolor',
         } as Record<string, string>,
