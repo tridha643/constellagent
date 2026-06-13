@@ -49,11 +49,32 @@ function dedupePathEntries(pathValue: string): string {
   return out.join(':')
 }
 
-/** PATH with login-shell + standard CLI install locations prepended (first match wins). */
+/**
+ * Drop `node_modules/.bin` entries from a PATH string. When the app is launched
+ * via a package manager (`bun run dev` → `bun run --cwd desktop dev`), bun
+ * prepends the package's `node_modules/.bin` to PATH. Electron inherits it, and
+ * so does every CLI we spawn — so a bundled dependency (e.g. `pi`) shadows the
+ * user's global install, breaking `pi update`, version pinning, etc. Removing
+ * these entries makes spawned CLIs resolve the global binary. `npm run` / `bunx`
+ * still inject a project's local `.bin` at invocation time, so this does not
+ * affect those.
+ */
+export function stripNodeModulesBin(pathValue: string): string {
+  return pathValue
+    .split(':')
+    .filter((entry) => {
+      const normalized = entry.replace(/\\/g, '/').replace(/\/+$/, '')
+      return !normalized.endsWith('/node_modules/.bin')
+    })
+    .join(':')
+}
+
+/** PATH with login-shell + standard CLI install locations prepended (first match wins), minus any leaked `node_modules/.bin`. */
 export function pathWithStandardCliPrefixes(): string {
-  const existing = process.env.PATH ?? ''
+  const existing = stripNodeModulesBin(process.env.PATH ?? '')
   const login = darwinLoginPathSegment()
-  return dedupePathEntries([login, ...CLI_PATH_PREFIXES, existing].filter((p): p is string => !!p && p.length > 0).join(':'))
+  const loginClean = login ? stripNodeModulesBin(login) : login
+  return dedupePathEntries([loginClean, ...CLI_PATH_PREFIXES, existing].filter((p): p is string => !!p && p.length > 0).join(':'))
 }
 
 /** `process.env` copy with PATH suitable for spawning user-installed CLIs from the main process. */
