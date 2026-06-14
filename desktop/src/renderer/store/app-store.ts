@@ -678,6 +678,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   workspaceTodos: {},
   sideTerminalsByWorkspace: {},
   rightSidebarBottomPanel: 'terminal',
+  leftSidebarWidthPx: null,
   collapsedProjectIds: new Set<string>(),
   collapsedSidebarSections: {},
   lastActiveWorkspaceByProjectId: {},
@@ -2420,6 +2421,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setRightSidebarBottomPanel: (panel) => set({ rightSidebarBottomPanel: panel }),
 
+  setLeftSidebarWidth: (widthPx) => {
+    const next =
+      widthPx == null || !Number.isFinite(widthPx) ? null : Math.round(widthPx)
+    set((s) => (s.leftSidebarWidthPx === next ? {} : { leftSidebarWidthPx: next }))
+  },
+
   splitTerminalPaneForTab: async (tabId, direction) => {
     const s = get()
     const tab = s.tabs.find((t) => t.id === tabId)
@@ -3954,6 +3961,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       sidebarActionOrder: normalizeSidebarActionOrder(data.sidebarActionOrder),
       sidePanelsByWorkspace: sidePanelsMap,
       hunkReviewWidthByWorkspace: normalizeHunkReviewWidthByWorkspace(data.hunkReviewWidthByWorkspace, settings.hunkReviewWidthPx),
+      leftSidebarWidthPx:
+        typeof data.leftSidebarWidthPx === 'number' && Number.isFinite(data.leftSidebarWidthPx)
+          ? Math.round(data.leftSidebarWidthPx)
+          : null,
       fileTreeExpandedPathsByWorkspace: normalizeStringArrayByWorkspace(data.fileTreeExpandedPathsByWorkspace),
       reviewPanelStateByWorkspace: normalizeReviewPanelStateByWorkspace(data.reviewPanelStateByWorkspace),
       stagedSelectionByWorkspace: normalizeStringArrayByWorkspace(data.stagedSelectionByWorkspace),
@@ -4189,6 +4200,7 @@ function getPersistedSlice(state: AppState): PersistedState {
     sidePanels: state.sidePanels,
     sidePanelsByWorkspace: state.sidePanelsByWorkspace,
     hunkReviewWidthByWorkspace: state.hunkReviewWidthByWorkspace,
+    leftSidebarWidthPx: state.leftSidebarWidthPx,
     fileTreeExpandedPathsByWorkspace: state.fileTreeExpandedPathsByWorkspace,
     reviewPanelStateByWorkspace: state.reviewPanelStateByWorkspace,
     stagedSelectionByWorkspace: state.stagedSelectionByWorkspace,
@@ -4227,6 +4239,7 @@ useAppStore.subscribe((state, prevState) => {
     state.sidePanels !== prevState.sidePanels ||
     state.sidePanelsByWorkspace !== prevState.sidePanelsByWorkspace ||
     state.hunkReviewWidthByWorkspace !== prevState.hunkReviewWidthByWorkspace ||
+    state.leftSidebarWidthPx !== prevState.leftSidebarWidthPx ||
     state.fileTreeExpandedPathsByWorkspace !== prevState.fileTreeExpandedPathsByWorkspace ||
     state.reviewPanelStateByWorkspace !== prevState.reviewPanelStateByWorkspace ||
     state.stagedSelectionByWorkspace !== prevState.stagedSelectionByWorkspace ||

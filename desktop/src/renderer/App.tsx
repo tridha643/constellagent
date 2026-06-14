@@ -198,6 +198,8 @@ export function App() {
   const sidePanels = useAppStore((s) => s.sidePanels)
   const rightSidebarBottomPanel = useAppStore((s) => s.rightSidebarBottomPanel)
   const setSidePanelOpen = useAppStore((s) => s.setSidePanelOpen)
+  const leftSidebarWidthPx = useAppStore((s) => s.leftSidebarWidthPx)
+  const setLeftSidebarWidth = useAppStore((s) => s.setLeftSidebarWidth)
   const activeWorkspaceTabs = useAppStore((s) => s.activeWorkspaceTabs)
   const workspaces = useAppStore((s) => s.workspaces)
   const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId)
@@ -262,20 +264,27 @@ export function App() {
 
   const leftSplitPaneSizes = useMemo(() => {
     const projectOnly = sidePanels.left.panelOrder.includes('project') && sidePanels.left.panelOrder.length === 1
-    return {
-      minSize: 160,
-      maxSize: sidePanelMaxSizePx(projectOnly, viewportWidth),
-      preferredSize: projectOnly ? 220 : 280,
-    }
-  }, [sidePanels.left.panelOrder, viewportWidth])
+    const minSize = 160
+    const maxSize = sidePanelMaxSizePx(projectOnly, viewportWidth)
+    const defaultPreferred = projectOnly ? 220 : 280
+    // A persisted user width (from dragging) wins over the per-layout default so
+    // the sidebar keeps its size across restarts and close/reopen toggles.
+    const preferredSize =
+      leftSidebarWidthPx != null
+        ? Math.min(Math.max(leftSidebarWidthPx, minSize), maxSize)
+        : defaultPreferred
+    return { minSize, maxSize, preferredSize }
+  }, [sidePanels.left.panelOrder, viewportWidth, leftSidebarWidthPx])
 
   const rightSplitPaneSizes = useMemo(() => {
     const projectOnly = sidePanels.right.panelOrder.includes('project') && sidePanels.right.panelOrder.length === 1
     const terminalActive = rightSidebarBottomPanel === 'terminal'
+    const minSize = terminalActive ? 360 : projectOnly ? 160 : 240
     return {
-      minSize: terminalActive ? 360 : projectOnly ? 160 : 240,
+      minSize,
       maxSize: sidePanelMaxSizePx(projectOnly, viewportWidth),
-      preferredSize: terminalActive ? 520 : projectOnly ? 220 : 280,
+      // Default to the most minimal width possible (opens at its min size).
+      preferredSize: minSize,
     }
   }, [rightSidebarBottomPanel, sidePanels.right.panelOrder, viewportWidth])
 
@@ -286,6 +295,22 @@ export function App() {
       else if (index === 2) setSidePanelOpen('right', visible)
     },
     [setSidePanelOpen],
+  )
+
+  /** Persist the left sidebar width as the user drags it so it sticks across
+   *  restarts and close/reopen. Debounced; ignores the snapped/closed (~0) state. */
+  const leftWidthSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const onAllotmentChange = useCallback(
+    (sizes: number[]) => {
+      const leftWidth = sizes[0]
+      if (!sidePanels.left.open) return
+      if (typeof leftWidth !== 'number' || leftWidth < leftSplitPaneSizes.minSize) return
+      if (leftWidthSaveTimer.current) clearTimeout(leftWidthSaveTimer.current)
+      leftWidthSaveTimer.current = setTimeout(() => {
+        setLeftSidebarWidth(leftWidth)
+      }, 200)
+    },
+    [sidePanels.left.open, leftSplitPaneSizes.minSize, setLeftSidebarWidth],
   )
 
   // Keep PTY processes alive in main, but only mount the active terminal UI.
@@ -335,7 +360,7 @@ export function App() {
               </div>
             }
           >
-          <Allotment onVisibleChange={onAllotmentVisibleChange}>
+          <Allotment onVisibleChange={onAllotmentVisibleChange} onChange={onAllotmentChange}>
             <Allotment.Pane
               visible={sidePanels.left.open}
               snap
