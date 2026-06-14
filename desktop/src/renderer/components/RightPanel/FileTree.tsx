@@ -207,6 +207,16 @@ export function FileTree({ worktreePath, isActive }: Props) {
 
   const requestIdRef = useRef(0)
   const expandedPathsRef = useRef<string[]>([])
+  // Last path-set applied to pierre via resetPaths. The status-rebuild effect
+  // fires on every git-status tick and allocates a fresh-but-identical
+  // snapshot.paths array; skipping resetPaths when the structural key is
+  // unchanged avoids re-seeding pierre's expansion on pure status churn. Reset
+  // on worktree switch so the first snapshot always rebuilds.
+  const lastPathsKeyRef = useRef<string | null>(null)
+  // Last git-status overlay applied to pierre. setGitStatus re-touches every row;
+  // skip it when the overlay value is unchanged so a busy repo's watcher/status
+  // churn doesn't re-apply an identical overlay on every tick.
+  const lastGitStatusKeyRef = useRef<string | null>(null)
   const treeContainerRef = useRef<HTMLDivElement | null>(null)
   /**
    * Lazy tree state (VS Code's getChildren-on-expand model). `treeNodesRef` holds
@@ -349,13 +359,26 @@ export function FileTree({ worktreePath, isActive }: Props) {
     }
     syncExpandedPaths()
 
+    // Build the refreshed tree on a LOCAL working copy and swap it into
+    // treeNodesRef atomically at the very end. The old code mutated
+    // treeNodesRef in place: it replaced the root array with fresh entries
+    // (children not yet re-attached) and only re-attached each level across
+    // later awaits. A concurrent rebuildSnapshot — e.g. refreshGitStatus runs
+    // in the same Promise.all and its setGitFileStatuses fires the status
+    // effect — would then read a half-rebuilt tree where an expanded folder
+    // momentarily has no children, collapse it via resetPaths, then re-expand
+    // when the refresh finished. That interleaving is the busy-repo open/close
+    // flicker. Working off a clone keeps every concurrent read pointed at the
+    // previous COMPLETE tree until the new one is fully assembled.
+    let working: FileNode[] = treeNodesRef.current
+
     const relistOne = async (absDir: string) => {
       try {
         const { entries } = await window.api.fs.listDirectory(root, absDir)
         if (absDir === root) {
-          treeNodesRef.current = entries as FileNode[]
+          working = entries as FileNode[]
         } else {
-          const node = findDirectoryNode(treeNodesRef.current, absDir)
+          const node = findDirectoryNode(working, absDir)
           if (node) node.children = entries as FileNode[]
         }
       } catch {
@@ -388,6 +411,8 @@ export function FileTree({ worktreePath, isActive }: Props) {
         Array.from({ length: Math.min(REFRESH_LIST_CONCURRENCY, levelDirs.length) }, () => worker()),
       )
     }
+    // Atomic swap: only now does any concurrent reader see the new tree.
+    treeNodesRef.current = working
     rebuildSnapshot()
   }, [loadRoot, rebuildSnapshot, syncExpandedPaths])
 
@@ -512,6 +537,10 @@ export function FileTree({ worktreePath, isActive }: Props) {
     treeNodesRef.current = []
     loadedDirsRef.current = new Set()
     loadingDirsRef.current = new Set()
+    // Force the next snapshot to rebuild expansion + re-apply status for the
+    // new worktree.
+    lastPathsKeyRef.current = null
+    lastGitStatusKeyRef.current = null
     // Seed expansion from the persisted per-workspace map so reopened
     // worktrees come back with their previously open folders intact. Read
     // through getState() so persistence writes don't re-trigger this effect
@@ -568,10 +597,33 @@ export function FileTree({ worktreePath, isActive }: Props) {
 
   useLayoutEffect(() => {
     try {
-      model.resetPaths(snapshot.paths, {
-        initialExpandedPaths: expandedPathsRef.current,
-      })
-      model.setGitStatus(snapshot.gitStatus)
+      // resetPaths() rebuilds pierre's expansion from expandedPathsRef. But
+      // buildFileTreeSnapshot allocates a fresh `paths` array on every rebuild,
+      // so a status-only update (effect below, firing on each git-status tick —
+      // frequent on busy repos) changes snapshot.paths by *identity* while the
+      // structure is byte-identical. Gate resetPaths on a structural key so it
+      // fires only when the path SET actually changes; pure status churn just
+      // re-overlays via setGitStatus. (The busy-repo open/close flicker itself
+      // is fixed in refreshLoaded — see the atomic-swap note there.)
+      const pathsKey = snapshot.paths.join('\n')
+      const pathsChanged = lastPathsKeyRef.current !== pathsKey
+      if (pathsChanged) {
+        lastPathsKeyRef.current = pathsKey
+        model.resetPaths(snapshot.paths, {
+          initialExpandedPaths: expandedPathsRef.current,
+        })
+      }
+      // resetPaths clears the status overlay, so re-apply after a structural
+      // rebuild regardless. Otherwise only re-apply when the overlay value
+      // actually changed — setGitStatus re-touches every row, so re-applying an
+      // identical overlay on each watcher/status tick is wasted render work.
+      const gitStatusKey = snapshot.gitStatus
+        .map((s) => `${s.path}\t${s.status}`)
+        .join('\n')
+      if (pathsChanged || lastGitStatusKeyRef.current !== gitStatusKey) {
+        lastGitStatusKeyRef.current = gitStatusKey
+        model.setGitStatus(snapshot.gitStatus)
+      }
       model.setIcons(treeIcons)
     } catch (err) {
       console.error('[FileTree] model sync failed:', err)
@@ -689,6 +741,24 @@ export function FileTree({ worktreePath, isActive }: Props) {
     if (!relativePath || !itemType) return
 
     if (itemType === 'folder') {
+      // Mirror the toggle Pierre is about to perform into expandedPathsRef *now*,
+      // synchronously in the capture phase before Pierre's own click handler runs.
+      // resetPaths() rebuilds expansion entirely from initialExpandedPaths, so a
+      // structural rebuild landing between this click and the post-toggle
+      // syncExpandedPaths below would otherwise replay a stale ref and collapse
+      // the folder the user just opened. Read the live pre-toggle state from the
+      // model so we invert exactly what Pierre will do, falling back to ref
+      // membership.
+      const liveItem = model.getItem(relativePath)
+      const isExpandedNow = liveItem?.isDirectory()
+        ? (liveItem as typeof liveItem & { isExpanded(): boolean }).isExpanded()
+        : expandedPathsRef.current.includes(relativePath)
+      if (isExpandedNow) {
+        expandedPathsRef.current = expandedPathsRef.current.filter((p) => p !== relativePath)
+      } else if (!expandedPathsRef.current.includes(relativePath)) {
+        expandedPathsRef.current = [...expandedPathsRef.current, relativePath]
+      }
+
       // Lazy load: first time a folder is opened, fetch its children and render
       // it expanded. Already-loaded folders just let Pierre toggle normally.
       const absDir = toAbsolutePath(treeRoot, relativePath)
