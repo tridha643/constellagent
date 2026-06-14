@@ -1681,13 +1681,12 @@ export class GitService {
   }
 
   /**
-   * Local-mode workspace bar stats: the latest commit subject plus a
-   * working-tree-inclusive diff against `merge-base(defaultBranch, HEAD)`.
-   *
-   * Using `git diff <baseSha>` (not `<baseSha>..HEAD`) compares the base commit
-   * to the working tree, so uncommitted edits to tracked files are counted —
-   * the bar stays accurate to disk. Pass `defaultBranch` from the store to skip
-   * re-resolving the base per workspace.
+   * Local-mode workspace bar stats: the latest commit subject plus the WIP
+   * numstat — the working tree relative to `HEAD` (staged + unstaged tracked
+   * changes), not the whole branch diff against the base. `defaultBranch` is
+   * still used to decide whether HEAD carries the workspace's own commit (so
+   * the subject isn't an inherited base-branch tip); pass it from the store to
+   * skip re-resolving the base per workspace.
    */
   static async getWorkspaceBarStats(
     worktreePath: string,
@@ -1700,9 +1699,6 @@ export class GitService {
     if (!headSha) return empty
 
     const base = (defaultBranch?.trim() || (await this.getDefaultBranch(worktreePath))).trim()
-    const baseSha = base
-      ? (await git(['merge-base', base, 'HEAD'], worktreePath).catch(() => '')).trim()
-      : ''
 
     // `git log -1` returns HEAD's subject, which on a freshly-branched workspace
     // is the *base branch's* tip — a commit this workspace didn't author. Only
@@ -1723,21 +1719,22 @@ export class GitService {
       ? (await git(['log', '-1', '--format=%s'], worktreePath).catch(() => '')).trim()
       : ''
 
+    // Bar numstat reflects WIP only — the working tree relative to HEAD
+    // (staged + unstaged tracked changes), not the whole branch diff against
+    // the base. Mirrors the Changes-panel tracked scope (`getDiffLineStats`).
     let additions = 0
     let deletions = 0
-    if (baseSha) {
-      try {
-        const output = await git(
-          ['diff', '--numstat', '-z', '--find-renames', baseSha],
-          worktreePath,
-        )
-        for (const stats of parseGitNumstat(output).values()) {
-          additions += stats.additions
-          deletions += stats.deletions
-        }
-      } catch {
-        // Empty/zero diff or transient git error → leave +0 -0
+    try {
+      const output = await git(
+        ['diff', '--numstat', '-z', '--find-renames', 'HEAD', '--'],
+        worktreePath,
+      )
+      for (const stats of parseGitNumstat(output).values()) {
+        additions += stats.additions
+        deletions += stats.deletions
       }
+    } catch {
+      // Empty/zero diff or transient git error → leave +0 -0
     }
 
     return { subject, additions, deletions, headSha }

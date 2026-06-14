@@ -38,12 +38,13 @@ afterEach(() => {
 })
 
 describe('GitService.getWorkspaceBarStats', () => {
-  it('reports the latest commit subject and working-tree-inclusive +N -N', async () => {
+  it('reports the latest commit subject and WIP-only (vs HEAD) +N -N', async () => {
     const repoPath = await initRepo()
 
-    // Branch ahead of base with a committed change.
+    // Branch ahead of base with a committed change — these committed lines must
+    // NOT count toward the bar numstat (WIP scope is working tree vs HEAD).
     await runGit(repoPath, 'checkout', '-q', '-b', 'feature')
-    appendFileSync(join(repoPath, 'base.txt'), 'd\ne\n') // +2 vs main
+    appendFileSync(join(repoPath, 'base.txt'), 'd\ne\n') // +2, committed
     await runGit(repoPath, 'commit', '-q', '-am', 'feature: add lines')
 
     // Working tree: one staged new file (+1), one unstaged edit (+1 more).
@@ -55,8 +56,9 @@ describe('GitService.getWorkspaceBarStats', () => {
 
     expect(stats.subject).toBe('feature: add lines')
     expect(stats.headSha).toMatch(/^[0-9a-f]{40}$/)
-    // base.txt: 3 lines added vs main (d,e,f); staged.txt: 1 line added.
-    expect(stats.additions).toBe(4)
+    // WIP vs HEAD only: base.txt +1 (f) and staged.txt +1 — the committed d,e
+    // are excluded.
+    expect(stats.additions).toBe(2)
     expect(stats.deletions).toBe(0)
   })
 
