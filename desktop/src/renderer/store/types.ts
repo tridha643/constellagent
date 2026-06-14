@@ -797,6 +797,8 @@ export interface AppState {
   sideTerminalsByWorkspace: Record<string, SideTerminalSession[]>
   /** Bottom dock inside the right sidebar, separate from the top panel mode switcher. */
   rightSidebarBottomPanel: RightSidebarBottomPanel
+  /** Persisted left sidebar pixel width. `null` = use the layout's default preferred size. */
+  leftSidebarWidthPx: number | null
   /** Ephemeral: manually collapsed project sections in the project navigation panel. */
   collapsedProjectIds: Set<string>
   /** Persisted: collapsed sidebar status sections, keyed `${projectId}:${sectionId}`. Absent = expanded. */
@@ -985,6 +987,8 @@ export interface AppState {
   reconcileSideTerminalsForWorkspace: (workspaceId: string) => Promise<void>
   handleSideTerminalClientExit: (ptyId: string) => void
   setRightSidebarBottomPanel: (panel: RightSidebarBottomPanel) => void
+  /** Persist the left sidebar pixel width (from an Allotment drag). `null` resets to default. */
+  setLeftSidebarWidth: (widthPx: number | null) => void
   splitTerminalPaneForTab: (tabId: string, direction: 'horizontal' | 'vertical') => Promise<void>
   splitTerminalPane: (direction: 'horizontal' | 'vertical') => Promise<void>
   openFileInSplit: (filePath: string, direction?: 'horizontal' | 'vertical') => Promise<void>
@@ -1188,6 +1192,7 @@ export interface PersistedState {
   sidePanels?: SidePanelLayout
   sidePanelsByWorkspace?: Record<string, SidePanelLayout>
   hunkReviewWidthByWorkspace?: Record<string, number>
+  leftSidebarWidthPx?: number | null
   fileTreeExpandedPathsByWorkspace?: Record<string, string[]>
   reviewPanelStateByWorkspace?: Record<string, ReviewPanelPersistedState>
   stagedSelectionByWorkspace?: Record<string, string[]>
