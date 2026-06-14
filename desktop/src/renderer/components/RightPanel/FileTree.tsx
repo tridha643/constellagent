@@ -254,6 +254,12 @@ export function FileTree({ worktreePath, isActive }: Props) {
   }, [activeTab, treeRoot])
 
   const expansionWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The active-file row we still need to focus + select. Set when the active tab
+  // changes; cleared once focused. Completion is driven by the resetPaths layout
+  // effect (which fires exactly when a lazily-loaded row mounts) — no polling
+  // rAF loop — and it self-clears, so later structural rebuilds never re-focus an
+  // already-revealed file (that re-focus was the scroll-pull jank).
+  const pendingFocusPathRef = useRef<string | null>(null)
 
   const syncExpandedPaths = useCallback(() => {
     expandedPathsRef.current = readExpandedDirectoryPaths(model.getFileTreeContainer() ?? null)
@@ -265,6 +271,25 @@ export function FileTree({ worktreePath, isActive }: Props) {
       setFileTreeExpandedPaths(workspaceId, expandedPathsRef.current)
     }, 500)
   }, [model, workspaceId, setFileTreeExpandedPaths])
+
+  /** Focus + select the pending active-file row if it now exists in pierre's
+   * model. No-op (and harmless) until the row is present, so it can be called
+   * after every structural rebuild to complete a deep reveal without polling. */
+  const completeRevealFocus = useCallback(() => {
+    const target = pendingFocusPathRef.current
+    if (!target) return
+    try {
+      const item = model.getItem(target)
+      if (!item) return
+      model.focusPath(target)
+      item.select()
+      pendingFocusPathRef.current = null
+      syncExpandedPaths()
+    } catch (err) {
+      console.error('[FileTree] focus selection failed:', err)
+      pendingFocusPathRef.current = null
+    }
+  }, [model, syncExpandedPaths])
 
   // Resolved (realpath'd) root, mirrored into a ref so the lazy loaders below
   // can build absolute child paths without re-rendering on every state read.
@@ -625,10 +650,15 @@ export function FileTree({ worktreePath, isActive }: Props) {
         model.setGitStatus(snapshot.gitStatus)
       }
       model.setIcons(treeIcons)
+      // A structural rebuild may have just mounted a row a pending reveal was
+      // waiting for (e.g. a deep file whose ancestors lazily loaded). Complete it
+      // here, synchronously after resetPaths — gated on pathsChanged so pure
+      // status churn doesn't poke it. No-op when nothing is pending.
+      if (pathsChanged) completeRevealFocus()
     } catch (err) {
       console.error('[FileTree] model sync failed:', err)
     }
-  }, [model, snapshot.gitStatus, snapshot.paths, treeIcons])
+  }, [model, snapshot.gitStatus, snapshot.paths, treeIcons, completeRevealFocus])
 
   // Attach the M/A/D/R/U letter-badge stylesheet into pierre's shadow root.
   // Pierre may mount its shadow host asynchronously on first render, so we
@@ -682,9 +712,21 @@ export function FileTree({ worktreePath, isActive }: Props) {
     })
   }, [isActive, model, snapshot.gitStatus, snapshot.paths])
 
+  // Reveal the active file (expand its ancestors, focus + select its row) when
+  // the active tab changes — NOT on every structural rebuild. This effect used
+  // to also depend on `snapshot.paths`, so any unrelated structural change
+  // (lazy folder expand, watcher refresh) re-fired it and re-focused the active
+  // file, yanking pierre's viewport back to that file mid-interaction — the
+  // "expanding a folder pulls me back to the old clicked folder" jank. We now
+  // key only on the active path (+ isLoaded for the first post-load reveal). The
+  // actual focus is recorded as "pending" and completed by the resetPaths layout
+  // effect once the (possibly lazily-loaded) row mounts — no per-frame rAF poll.
+  // `isLoaded` flips once per worktree and stays true, so this never re-fires on
+  // expands/refreshes.
   useEffect(() => {
-    if (!activeRelativePath) return
+    if (!isLoaded || !activeRelativePath) return
     let cancelled = false
+    pendingFocusPathRef.current = activeRelativePath
 
     const reveal = async () => {
       // Lazy reveal: load + expand every ancestor directory so a deeply-nested
@@ -710,25 +752,16 @@ export function FileTree({ worktreePath, isActive }: Props) {
         }
       }
       if (cancelled) return
-      // Defer focus one frame so any pending resetPaths (from chain loads) has
-      // committed and the target row exists; best-effort if timing still races.
-      requestAnimationFrame(() => {
-        if (cancelled) return
-        try {
-          const item = model.getItem(activeRelativePath)
-          if (!item) return
-          model.focusPath(activeRelativePath)
-          item.select()
-          syncExpandedPaths()
-        } catch (err) {
-          console.error('[FileTree] focus selection failed:', err)
-        }
-      })
+      // Complete now if the row already exists (the common case: switching to or
+      // opening an already-loaded file). When ancestors were lazily loaded the
+      // row isn't committed yet — the resetPaths layout effect completes it after
+      // the rebuild lands.
+      completeRevealFocus()
     }
 
     void reveal()
     return () => { cancelled = true }
-  }, [activeRelativePath, model, loadDir, snapshot.paths, syncExpandedPaths])
+  }, [activeRelativePath, isLoaded, model, loadDir, completeRevealFocus])
 
   const handleTreeClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement | null)?.closest?.('[data-file-tree-context-menu-root="true"]')) return
