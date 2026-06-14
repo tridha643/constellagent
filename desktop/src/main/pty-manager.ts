@@ -16,6 +16,8 @@ import {
   OPENCODE_MARKER_SEGMENT,
   PI_CONSTELL_MARKER_SEGMENT,
 } from '../shared/agent-markers'
+import { Terminal as HeadlessTerminal } from '@xterm/headless'
+import { SerializeAddon } from '@xterm/addon-serialize'
 import { PtyOutputRing } from './pty-output-ring'
 import { stripNodeModulesBin } from './cli-env'
 
@@ -38,6 +40,15 @@ interface PtyInstance {
   oscTitleCarry: string
   /** Recent PTY output for renderer remounts; PTY stays alive while xterm UI is unmounted. */
   outputRing: PtyOutputRing
+  /**
+   * Authoritative headless terminal that mirrors PTY output in the main process.
+   * On reattach (tab/workspace switch or ⌘R) we serialize this — reconstructing
+   * the live *screen* including the alternate-screen buffer used by TUIs like
+   * pi/codex — instead of replaying the raw byte ring (which severs alt-screen
+   * state when truncated). Modeled on cmux's render-grid snapshot/replay.
+   */
+  headless: HeadlessTerminal
+  serialize: SerializeAddon
 }
 
 interface ProcessEntry {
@@ -156,6 +167,13 @@ function detectAgentFromCommand(command: string): string | null {
 }
 
 const MAIN_OUTPUT_RING_MAX_BYTES = 2 * 1024 * 1024
+/**
+ * Scrollback the main-process headless mirror retains, and the number of lines
+ * its snapshot serializes for cold-attach reconstruction. Matches the line-budget
+ * approach cmux uses for its terminal snapshots — generous enough to carry recent
+ * history, bounded so serialize() stays cheap.
+ */
+const HEADLESS_MIRROR_SCROLLBACK_LINES = 5000
 
 const CODEX_PROMPT_BUFFER_MAX = 4096
 const CODEX_QUESTION_HEADER_RE = /Question\s+\d+\s*\/\s*\d+\s*\(\s*\d+\s+unanswered\s*\)/i
@@ -311,6 +329,14 @@ export class PtyManager {
 
   private appendOutputRing(instance: PtyInstance, data: string): void {
     instance.outputRing.append(data)
+    // Mirror into the authoritative headless terminal so snapshot() can serialize
+    // the live screen (incl. alt-screen) for reattach. Best-effort: a parser
+    // hiccup must never break live PTY streaming.
+    try {
+      instance.headless.write(data)
+    } catch {
+      /* headless mirror is non-critical */
+    }
   }
 
   create(workingDir: string, webContents: WebContents, shell?: string, command?: string[], initialWrite?: string, extraEnv?: Record<string, string>): string {
@@ -356,6 +382,15 @@ export class PtyManager {
     const spawnMs = terminalTimingMs(spawnStart)
     let sawFirstData = false
 
+    const headless = new HeadlessTerminal({
+      cols: 80,
+      rows: 24,
+      scrollback: HEADLESS_MIRROR_SCROLLBACK_LINES,
+      allowProposedApi: true,
+    })
+    const serialize = new SerializeAddon()
+    headless.loadAddon(serialize)
+
     const instance: PtyInstance = {
       process: proc,
       webContents,
@@ -372,6 +407,8 @@ export class PtyManager {
       oscTitleTimer: null,
       oscTitleCarry: '',
       outputRing: new PtyOutputRing(MAIN_OUTPUT_RING_MAX_BYTES),
+      headless,
+      serialize,
     }
 
     proc.onData((data) => {
@@ -400,6 +437,7 @@ export class PtyManager {
       this.agentDetectCache.delete(instance.process.pid)
       for (const cb of instance.onExitCallbacks) cb(exitCode)
       this.onPtyExit?.(id, exitCode, instance.workspaceId)
+      try { instance.headless.dispose() } catch { /* best-effort */ }
       this.ptys.delete(id)
     })
 
@@ -522,6 +560,13 @@ export class PtyManager {
       instance.cols = cols
       instance.rows = rows
       instance.process.resize(cols, rows)
+      // Keep the headless mirror's grid in lockstep so its serialized snapshot
+      // reconstructs the screen at the dimensions the PTY is actually drawing for.
+      try {
+        instance.headless.resize(cols, rows)
+      } catch {
+        /* headless mirror is non-critical */
+      }
     }
   }
 
@@ -532,6 +577,7 @@ export class PtyManager {
       this.clearAgentActivityMarker(instance)
       this.agentDetectCache.delete(instance.process.pid)
       instance.process.kill()
+      try { instance.headless.dispose() } catch { /* best-effort */ }
       this.ptys.delete(ptyId)
     }
   }
@@ -541,9 +587,22 @@ export class PtyManager {
     return Array.from(this.ptys.keys())
   }
 
-  /** Recent output for rehydrating xterm after inactive terminal UIs unmount. */
+  /**
+   * Cold-attach snapshot for rehydrating a fresh xterm after the UI unmounts
+   * (tab/workspace switch) or the renderer is destroyed (⌘R). Serializes the
+   * authoritative headless mirror — a self-contained escape stream that repaints
+   * scrollback + viewport, restores the alternate screen, DEC/ANSI modes and the
+   * cursor — so TUIs like pi/codex come back intact. Falls back to the raw byte
+   * ring if serialization fails for any reason.
+   */
   snapshot(ptyId: string): string {
-    return this.ptys.get(ptyId)?.outputRing.snapshot() ?? ''
+    const instance = this.ptys.get(ptyId)
+    if (!instance) return ''
+    try {
+      return instance.serialize.serialize({ scrollback: HEADLESS_MIRROR_SCROLLBACK_LINES })
+    } catch {
+      return instance.outputRing.snapshot()
+    }
   }
 
   getPtyIdsForWorkspace(workspaceId: string): string[] {

@@ -8,11 +8,15 @@ export function normalizeWorkspaceBarBranch(branch: string | null | undefined): 
     .replace(/^remotes\/origin\//, '')
 }
 
+export function shouldRenderWorkspaceBarStatValue(value: number | null | undefined): boolean {
+  return (value ?? 0) > 0
+}
+
 export function hasWorkspaceBarStats(
   additions: number | null | undefined,
   deletions: number | null | undefined,
 ): boolean {
-  return (additions ?? 0) + (deletions ?? 0) > 0
+  return shouldRenderWorkspaceBarStatValue(additions) || shouldRenderWorkspaceBarStatValue(deletions)
 }
 
 export function shouldRenderWorkspaceBarStats(

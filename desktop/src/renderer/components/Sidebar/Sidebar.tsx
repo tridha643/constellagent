@@ -28,6 +28,7 @@ import {
   getWorkspaceBarLocalTitle,
   isDefaultWorkspaceBarBranch,
   shouldRenderWorkspaceBarStats,
+  shouldRenderWorkspaceBarStatValue,
   shouldShowWorkspaceBranchMeta,
   shouldUseCompactWorkspaceBarLocalFace,
 } from "./workspace-bar-display";
@@ -471,13 +472,23 @@ function CiChip({ status }: { status: PrInfo["checkStatus"] }) {
 }
 
 function WorkspaceStats({ additions, deletions }: { additions: number; deletions: number }) {
+  const showAdditions = shouldRenderWorkspaceBarStatValue(additions);
+  const showDeletions = shouldRenderWorkspaceBarStatValue(deletions);
+  if (!showAdditions && !showDeletions) return null;
+
+  const ariaParts = [
+    showAdditions ? `${additions} additions` : null,
+    showDeletions ? `${deletions} deletions` : null,
+  ].filter(Boolean);
+
   return (
     <span
       className={styles.wsStats}
-      aria-label={`${additions} additions, ${deletions} deletions`}
+      aria-label={ariaParts.join(', ')}
     >
-      <span className={styles.wsStatAdd}>+{additions}</span>{" "}
-      <span className={styles.wsStatDel}>-{deletions}</span>
+      {showAdditions && <span className={styles.wsStatAdd}>+{additions}</span>}
+      {showAdditions && showDeletions ? " " : null}
+      {showDeletions && <span className={styles.wsStatDel}>-{deletions}</span>}
     </span>
   );
 }

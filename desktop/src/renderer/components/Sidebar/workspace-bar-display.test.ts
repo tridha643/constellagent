@@ -4,6 +4,7 @@ import {
   isDefaultWorkspaceBarBranch,
   normalizeWorkspaceBarBranch,
   shouldRenderWorkspaceBarStats,
+  shouldRenderWorkspaceBarStatValue,
   shouldShowWorkspaceBranchMeta,
   shouldUseCompactWorkspaceBarLocalFace,
 } from './workspace-bar-display'
@@ -123,6 +124,18 @@ describe('shouldShowWorkspaceBranchMeta', () => {
         workspaceBranch: 'feat/terminal',
       }),
     ).toBe(false)
+  })
+})
+
+describe('shouldRenderWorkspaceBarStatValue', () => {
+  it('hides zero-valued stat sides', () => {
+    expect(shouldRenderWorkspaceBarStatValue(0)).toBe(false)
+    expect(shouldRenderWorkspaceBarStatValue(undefined)).toBe(false)
+    expect(shouldRenderWorkspaceBarStatValue(null)).toBe(false)
+  })
+
+  it('shows only nonzero stat sides', () => {
+    expect(shouldRenderWorkspaceBarStatValue(1)).toBe(true)
   })
 })
 

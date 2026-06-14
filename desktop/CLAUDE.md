@@ -77,7 +77,7 @@ Use this to jump straight to the owning file for a feature. Subdirs: `agents/` (
 | **App lifecycle** | `index.ts`, `app-relaunch.ts`, `notification-watcher.ts`, `persisted-state.ts`, `perf.ts` | Window creation, `constell` CLI symlink, relaunch, macOS notification listener |
 | **IPC** | `ipc.ts` | Central `ipcMain.handle`/`.on` registry; wires every service |
 | **Git / worktrees** | `git-service.ts`, `git-snapshot.ts`, `worktree-sync-service.ts`, `worktree-credential-copy.ts`, `commit-message-service.ts` | Worktree CRUD, staging/commit/diff/log, sync across worktrees, AI commit-message generation |
-| **Terminal** | `pty-manager.ts` | node-pty processes, OSC titles, scrollback ring buffers, exit callbacks |
+| **Terminal** | `pty-manager.ts`, `pty-output-ring.ts` | node-pty processes, OSC titles, exit callbacks; per-PTY **authoritative headless terminal** (`@xterm/headless` + `@xterm/addon-serialize`) so `snapshot()` reconstructs the live screen (incl. alt-screen) on reattach — plus a raw byte ring as fallback |
 | **Files / search** | `file-service.ts`, `spotlight-service.ts`, `package-scripts-service.ts` | File tree, read/write, quick-open, code search, plan-markdown discovery |
 | **Storage** | `agentfs-service.ts`, `plan-meta.ts`, `annotation-service.ts`, `agent-chat-store.ts` | Embedded libSQL access, plan frontmatter, review annotations, chat transcripts |
 | **Agent chat / Conductor** | `agent-chat-host.ts`, `agent-chat-queue.ts`, `agent-chat-store.ts`, `conductor-auth.ts`, `conductor-settings.ts`, `conductor-image-picker.ts`, `conductor-generated-image-files.ts` | Orchestrates agent sessions, queues, API-key/auth caching, generated-image persistence |
@@ -187,7 +187,7 @@ Single Zustand store (`app-store.ts`) with this shape:
 
 ## Key Patterns
 
-**Terminal lifecycle**: xterm terminals are rendered with `visibility:hidden` when inactive (not unmounted) to preserve scrollback and TUI state. PTY processes live in main process via node-pty.
+**Terminal lifecycle**: only the **active** terminal's xterm UI is mounted (`App.tsx` `mountedTerminals`); inactive/other-workspace terminals unmount to avoid starving new-terminal setup. PTY processes live in the main process via node-pty and keep running while the UI is gone. On remount (tab/workspace switch) or renderer reload (⌘R), `TerminalPanel` rehydrates from `pty.snapshot(ptyId)` — which serializes a per-PTY **authoritative headless terminal** (`@xterm/headless` + `@xterm/addon-serialize`) into a cold-attach escape stream that restores scrollback, the alternate-screen buffer, DEC/ANSI modes and the cursor. This is why full-screen TUIs (pi/codex) survive ⌘R and workspace switches; raw-byte replay (the old ring) severed alt-screen state on truncation. Architecture mirrors cmux's render-grid snapshot/replay. A SIGWINCH on `reattach()` nudges the TUI to repaint as a backstop.
 
 **Capture-phase keyboard shortcuts**: terminal input can consume keydown events before global handlers run. All global shortcuts in `useShortcuts.ts` must use capture phase (`addEventListener('keydown', handler, true)`) and call `stopPropagation()` on consumed shortcuts.
 
