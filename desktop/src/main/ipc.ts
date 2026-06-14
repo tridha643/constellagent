@@ -174,6 +174,11 @@ function notifyFsWatchers(
   refreshSearch: boolean,
 ): void {
   entry.lastNotifyAt = now
+  // The working tree (or .git/HEAD, refs) changed — including changes made
+  // outside the app (agent writes, a terminal `git checkout`). Drop the cached
+  // status so the renderer's debounced refresh recomputes fresh instead of
+  // serving a stale promise within the cache TTL.
+  GitService.invalidateStatusCache(dirPath)
   if (refreshSearch) void FileService.refreshQuickOpenSearch(dirPath)
   for (const [id, subscriber] of entry.subscribers.entries()) {
     if (subscriber.webContents.isDestroyed()) {
@@ -484,7 +489,9 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.GIT_GET_STATUS, async (_e, worktreePath: string) => {
-    return measureMainAsync('git:get-status', () => GitService.getStatus(worktreePath), {
+    // Cached + coalescing: bursty callers (Changes tab, file tree, watcher
+    // refreshes) within the TTL window collapse to one git invocation.
+    return measureMainAsync('git:get-status', () => GitService.getStatusCached(worktreePath), {
       worktreePath,
     })
   })
@@ -504,6 +511,21 @@ export function registerIpcHandlers(): void {
       worktreePath,
       filePath,
     })
+  })
+
+  ipcMain.handle(
+    IPC.GIT_GET_FILE_DIFF_BOUNDED,
+    async (_e, worktreePath: string, filePath: string, opts?: { maxBytes?: number; force?: boolean }) => {
+      return measureMainAsync(
+        'git:get-file-diff-bounded',
+        () => GitService.getFileDiffBounded(worktreePath, filePath, opts),
+        { worktreePath, filePath, force: opts?.force ?? false },
+      )
+    },
+  )
+
+  ipcMain.handle(IPC.GIT_IS_REPOSITORY_HUGE, async (_e, worktreePath: string) => {
+    return GitService.isRepositoryHuge(worktreePath)
   })
 
   ipcMain.handle(IPC.GIT_GET_BRANCHES, async (_e, repoPath: string) => {
@@ -923,7 +945,7 @@ export function registerIpcHandlers(): void {
       const [tree, statuses, prefixFromGit] = await Promise.all([
         // Cached structure (clone); annotate() below mutates this clone, not the cache.
         FileService.getTreeStructureCached(basePath),
-        GitService.getStatus(basePath).catch(() => []),
+        GitService.getStatusCached(basePath).catch(() => []),
         GitService.getPathPrefixFromRepoRoot(basePath).catch(() => ''),
       ])
 
@@ -977,43 +999,14 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.FS_LIST_DIRECTORY, async (_e, rootPath: string, dirPath: string) => {
+    // Structure only — O(children). Git status is overlaid in the renderer from
+    // the repo-wide gitFileStatuses store, so expanding folders no longer spawns
+    // a whole-repo `git status` per expand (the per-expand thundering herd).
     return measureMainAsync('fs:list-directory', async () => {
-      const basePath = await FileService.normalizeFsRoot(rootPath)
-      const [entries, statuses, prefixFromGit] = await Promise.all([
+      const [basePath, entries] = await Promise.all([
+        FileService.normalizeFsRoot(rootPath),
         FileService.listDirectory(dirPath),
-        GitService.getStatus(basePath).catch(() => []),
-        GitService.getPathPrefixFromRepoRoot(basePath).catch(() => ''),
       ])
-
-      let prefix = prefixFromGit
-      if (prefix === '.') prefix = ''
-
-      const statusMap = new Map<string, string>()
-      for (const s of statuses) {
-        let p = s.path
-        if (p.includes(' -> ')) p = p.split(' -> ')[1]
-        if (prefix && p.startsWith(`${prefix}/`)) p = p.slice(prefix.length + 1)
-        statusMap.set(p, s.status)
-      }
-
-      for (const node of entries) {
-        const rel = relative(basePath, node.path).replace(/\\/g, '/')
-        if (node.type === 'file') {
-          const st = statusMap.get(rel)
-          if (st) node.gitStatus = st as FileNode['gitStatus']
-        } else {
-          // Directory rollup: 'modified' if any changed path lives under it —
-          // derivable from the flat status list without loading the subtree.
-          const dirPrefix = `${rel}/`
-          for (const key of statusMap.keys()) {
-            if (key.startsWith(dirPrefix)) {
-              node.gitStatus = 'modified'
-              break
-            }
-          }
-        }
-      }
-
       return { rootPath: basePath, entries }
     }, { dirPath })
   })

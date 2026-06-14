@@ -28,7 +28,28 @@ function toDirectoryPath(path: string): string {
   return path.endsWith('/') ? path : `${path}/`
 }
 
-export function buildFileTreeSnapshot(rootPath: string, nodes: FileNode[]): FileTreeSnapshot {
+/** Repo-root-relative status path, resolving git's `old -> new` rename form. */
+function normalizeStatusPath(p: string): string {
+  const renameIdx = p.indexOf(' -> ')
+  const resolved = renameIdx === -1 ? p : p.slice(renameIdx + 4)
+  return resolved.replace(/\/+$/, '')
+}
+
+/**
+ * Build the Pierre tree snapshot (paths + per-row git status).
+ *
+ * When `gitStatusMap` is supplied (repo-root-relative path → status, from the
+ * renderer's `gitFileStatuses` store), status is overlaid here in one O(n) pass:
+ * files take their own status and directories roll up to `modified` when any
+ * changed path lives under them. This replaces reading per-node status from main
+ * (which forced a whole-repo `git status` on every folder expand). Without the
+ * map it falls back to each node's `gitStatus` (back-compat).
+ */
+export function buildFileTreeSnapshot(
+  rootPath: string,
+  nodes: FileNode[],
+  gitStatusMap?: ReadonlyMap<string, string>,
+): FileTreeSnapshot {
   const paths: string[] = []
   const gitStatus: GitStatusEntry[] = []
   // The tree from main is already unique by construction (one node per path), so
@@ -37,6 +58,24 @@ export function buildFileTreeSnapshot(rootPath: string, nodes: FileNode[]): File
   // large repos (10k+ files) cost seconds per tree load (the real load-time bug).
   const seenPaths = new Set<string>()
   const seenStatus = new Set<string>()
+
+  // Pre-index the overlay: file statuses by path, plus the set of directories
+  // (trailing-slash) that contain any change, so dir rollup is O(1) per node.
+  const fileStatusByPath = new Map<string, string>()
+  const changedDirs = new Set<string>()
+  if (gitStatusMap) {
+    for (const [rawPath, status] of gitStatusMap) {
+      const rel = normalizeStatusPath(rawPath)
+      if (!rel) continue
+      fileStatusByPath.set(rel, status)
+      const segments = rel.split('/')
+      let prefix = ''
+      for (let i = 0; i < segments.length - 1; i += 1) {
+        prefix += `${segments[i]}/`
+        changedDirs.add(prefix)
+      }
+    }
+  }
 
   const walk = (entries: FileNode[]) => {
     for (const entry of entries) {
@@ -52,11 +91,17 @@ export function buildFileTreeSnapshot(rootPath: string, nodes: FileNode[]): File
         paths.push(canonicalPath)
       }
 
-      if (entry.gitStatus) {
-        const statusKey = `${canonicalPath} ${entry.gitStatus}`
+      const status = gitStatusMap
+        ? entry.type === 'directory'
+          ? (changedDirs.has(canonicalPath) ? 'modified' : undefined)
+          : fileStatusByPath.get(relativePath)
+        : entry.gitStatus
+
+      if (status) {
+        const statusKey = `${canonicalPath} ${status}`
         if (!seenStatus.has(statusKey)) {
           seenStatus.add(statusKey)
-          gitStatus.push({ path: canonicalPath, status: entry.gitStatus })
+          gitStatus.push({ path: canonicalPath, status: status as GitStatusEntry['status'] })
         }
       }
 

@@ -432,6 +432,17 @@ export class FileService {
     return fsReadFile(filePath, 'utf-8')
   }
 
+  /**
+   * Drop GitService's status cache for a mutated path. Lazy-imported to avoid a
+   * module-init cycle (git-service → worktree-credential-copy → file-service);
+   * the dynamic import is cached, and invalidation is off the critical path.
+   */
+  private static invalidateGitStatusCache(filePath: string): void {
+    void import('./git-service')
+      .then(({ GitService }) => GitService.invalidateStatusCache(filePath))
+      .catch(() => {})
+  }
+
   static async writeFile(filePath: string, content: string): Promise<void> {
     const parent = dirname(filePath)
     if (parent && parent !== filePath) {
@@ -440,6 +451,7 @@ export class FileService {
     await fsWriteFile(filePath, content, 'utf-8')
     this.invalidateQuickOpenCachesForPath(filePath)
     this.invalidateTreeCache(filePath)
+    this.invalidateGitStatusCache(filePath)
   }
 
   static async deleteFile(filePath: string): Promise<void> {
@@ -447,6 +459,7 @@ export class FileService {
     await rm(filePath, { recursive: info.isDirectory(), force: false })
     this.invalidateQuickOpenCachesForPath(filePath)
     this.invalidateTreeCache(filePath)
+    this.invalidateGitStatusCache(filePath)
   }
 
   private static flattenQuickOpenFiles(nodes: FileNode[], basePath: string): QuickOpenFallbackFile[] {

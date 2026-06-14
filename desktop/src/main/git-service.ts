@@ -61,8 +61,22 @@ export interface CreatePrWorktreeOptions {
   headRemoteUrl?: string
 }
 
-async function gitOnce(args: string[], cwd: string): Promise<string> {
-  return spawnAndCapture('git', args, cwd, 10 * 1024 * 1024)
+const DEFAULT_GIT_MAX_BUFFER = 10 * 1024 * 1024
+// A forced single-file diff fetch (user clicked "load anyway" on a large file)
+// is allowed a much bigger buffer than the default so >10 MB files can render.
+const FORCED_FILE_DIFF_MAX_BUFFER = 64 * 1024 * 1024
+
+async function gitOnce(args: string[], cwd: string, maxBuffer = DEFAULT_GIT_MAX_BUFFER): Promise<string> {
+  return spawnAndCapture('git', args, cwd, maxBuffer)
+}
+
+function isMaxBufferError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: unknown }).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+  )
 }
 
 const INDEX_LOCK_RETRY_ATTEMPTS = 4
@@ -106,11 +120,11 @@ async function removeStaleIndexLock(cwd: string): Promise<boolean> {
   }
 }
 
-async function git(args: string[], cwd: string): Promise<string> {
+async function git(args: string[], cwd: string, opts?: { maxBuffer?: number }): Promise<string> {
   let lastErr: unknown
   for (let attempt = 0; attempt < INDEX_LOCK_RETRY_ATTEMPTS; attempt += 1) {
     try {
-      return await gitOnce(args, cwd)
+      return await gitOnce(args, cwd, opts?.maxBuffer)
     } catch (err) {
       // Only the index.lock-contention case is retryable; git acquires the lock
       // before mutating, so a failure to acquire means no work was done.
@@ -123,7 +137,7 @@ async function git(args: string[], cwd: string): Promise<string> {
       // Last attempt: if the lock is stale, clear it and try one final time.
       if (await removeStaleIndexLock(cwd)) {
         try {
-          return await gitOnce(args, cwd)
+          return await gitOnce(args, cwd, opts?.maxBuffer)
         } catch (finalErr) {
           lastErr = finalErr
         }
@@ -755,6 +769,84 @@ export class RebaseConflictError extends Error {
 }
 
 export class GitService {
+  // ── Repo-wide status cache (coalesce concurrent + bursty callers) ──────────
+  // Mirrors FileService.treeStructureCache. Keyed by worktree path, caches the
+  // in-flight *promise* with a short TTL so K callers in the same tick collapse
+  // to one git invocation (VS Code's git extension does `@debounce(1000)`).
+  private static statusCache = new Map<string, { promise: Promise<FileStatus[]>; expiresAt: number }>()
+  private static readonly STATUS_CACHE_TTL_MS = 1000
+
+  // ── Repo-size guard (degrade work on very large repos, VS Code's
+  // `isRepositoryHuge`). Cached per worktree; recomputed at most once a minute.
+  private static hugeRepoCache = new Map<string, { huge: boolean; expiresAt: number }>()
+  private static readonly HUGE_REPO_TTL_MS = 60_000
+  private static readonly HUGE_REPO_TRACKED_FILE_THRESHOLD = 30_000
+
+  /** Soft per-file diff ceiling — files whose patch exceeds this load only on demand. */
+  static readonly MAX_FILE_DIFF_BYTES = 1.5 * 1024 * 1024
+
+  /**
+   * Cached, coalescing wrapper around {@link getStatus}. Concurrent callers
+   * within {@link STATUS_CACHE_TTL_MS} share one git invocation; rejections are
+   * never cached so a transient failure self-heals on the next call.
+   */
+  static async getStatusCached(worktreePath: string): Promise<FileStatus[]> {
+    const now = Date.now()
+    const hit = this.statusCache.get(worktreePath)
+    if (hit && hit.expiresAt > now) return hit.promise
+    const promise = this.getStatus(worktreePath)
+    this.statusCache.set(worktreePath, { promise, expiresAt: now + this.STATUS_CACHE_TTL_MS })
+    promise.catch(() => {
+      // Drop only if still the entry we wrote — a newer call may have replaced it.
+      if (this.statusCache.get(worktreePath)?.promise === promise) {
+        this.statusCache.delete(worktreePath)
+      }
+    })
+    return promise
+  }
+
+  /** Drop cached status overlapping `affectedPath` (or everything if omitted). */
+  static invalidateStatusCache(affectedPath?: string): void {
+    if (!affectedPath) {
+      this.statusCache.clear()
+      return
+    }
+    const p = affectedPath.replace(/\/+$/, '')
+    for (const key of [...this.statusCache.keys()]) {
+      if (p === key || p.startsWith(`${key}/`) || key.startsWith(`${p}/`)) {
+        this.statusCache.delete(key)
+      }
+    }
+  }
+
+  /**
+   * True when the worktree has more tracked files than
+   * {@link HUGE_REPO_TRACKED_FILE_THRESHOLD}. Cached for {@link HUGE_REPO_TTL_MS};
+   * a list too big to even buffer is treated as huge.
+   */
+  static async isRepositoryHuge(worktreePath: string): Promise<boolean> {
+    const now = Date.now()
+    const hit = this.hugeRepoCache.get(worktreePath)
+    if (hit && hit.expiresAt > now) return hit.huge
+    let huge = false
+    try {
+      const out = await git(['ls-files', '-z'], worktreePath)
+      let count = 0
+      for (let i = 0; i < out.length; i += 1) {
+        if (out.charCodeAt(i) === 0) count += 1
+      }
+      // `git()` trims trailing whitespace but not the trailing NUL, so the count
+      // of NUL separators equals the entry count; guard the no-trailing case.
+      if (out.length > 0 && out.charCodeAt(out.length - 1) !== 0) count += 1
+      huge = count > this.HUGE_REPO_TRACKED_FILE_THRESHOLD
+    } catch (err) {
+      // Can't even buffer the file list → definitely huge; other errors → assume not.
+      huge = isMaxBufferError(err)
+    }
+    this.hugeRepoCache.set(worktreePath, { huge, expiresAt: now + this.HUGE_REPO_TTL_MS })
+    return huge
+  }
+
   private static async hasRemote(repoPath: string, remoteName: string): Promise<boolean> {
     return git(['remote', 'get-url', remoteName], repoPath).then(
       () => true,
@@ -1652,12 +1744,17 @@ export class GitService {
   }
 
   static async getStatus(worktreePath: string): Promise<FileStatus[]> {
+    // On huge repos, skip the deep untracked walk (`-uall` re-walks the whole
+    // tree) and the per-file line-count work — the tree only needs the M/A/D/R/U
+    // letters, and `additions`/`deletions` are optional. Mirrors VS Code's
+    // huge-repo degradation in its git extension.
+    const huge = await this.isRepositoryHuge(worktreePath)
     const [output, lineStats] = await Promise.all([
       git(
-        ['status', '--porcelain=v1', '-z', '-uall'],
+        ['status', '--porcelain=v1', '-z', huge ? '-unormal' : '-uall'],
         worktreePath
       ),
-      this.getDiffLineStats(worktreePath),
+      huge ? Promise.resolve(new Map<string, DiffLineStats>()) : this.getDiffLineStats(worktreePath),
     ])
     const results: FileStatus[] = []
 
@@ -1689,7 +1786,9 @@ export class GitService {
       results.push(status)
     }
 
-    const untrackedLineStats = await this.getUntrackedLineStats(worktreePath, results, lineStats)
+    const untrackedLineStats = huge
+      ? new Map<string, DiffLineStats>()
+      : await this.getUntrackedLineStats(worktreePath, results, lineStats)
 
     return results.map((entry) => {
       const stats = lineStats.get(entry.path) ?? untrackedLineStats.get(entry.path)
@@ -1831,32 +1930,83 @@ export class GitService {
     }
   }
 
+  /**
+   * Core single-file diff resolution shared by {@link getFileDiff} (swallows all
+   * errors → '') and {@link getFileDiffBounded} (distinguishes too-large from
+   * empty). Lets errors propagate so callers can classify them; `maxBuffer`
+   * overrides the default spawn cap for forced large-file loads.
+   */
+  private static async computeFileDiff(
+    worktreePath: string,
+    filePath: string,
+    maxBuffer?: number,
+  ): Promise<string> {
+    const opts = maxBuffer ? { maxBuffer } : undefined
+    // One coherent diff vs HEAD — matches what AnnotationService uses for validation.
+    // Plain `git diff` + `--staged` fallback can disagree when a file has both staged and
+    // unstaged edits.
+    const vsHead = await git(['diff', 'HEAD', '--', filePath], worktreePath, opts)
+    if (vsHead) return vsHead
+    // Untracked paths often have no `HEAD` blob; try index/worktree slices as a fallback.
+    const unstaged = await git(['diff', '--', filePath], worktreePath, opts)
+    if (unstaged) return unstaged
+    const staged = await git(['diff', '--staged', '--', filePath], worktreePath, opts)
+    if (staged) return staged
+
+    const absolutePath = isAbsolute(filePath) ? filePath : join(worktreePath, filePath)
+    const stats = await lstat(absolutePath)
+    if (stats.isSymbolicLink()) {
+      const target = await readlink(absolutePath)
+      return buildSyntheticSymlinkPatch(filePath, target)
+    }
+    // `--no-index` exits non-zero when files differ, so this throws on success —
+    // callers treat the throw as "no usable patch" and fall back to a synthetic one.
+    return await git(['diff', '--no-index', '/dev/null', filePath], worktreePath, opts)
+  }
+
   static async getFileDiff(worktreePath: string, filePath: string): Promise<string> {
     try {
-      // One coherent diff vs HEAD — matches what AnnotationService uses for validation.
-      // Plain `git diff` + `--staged` fallback can disagree when a file has both staged and
-      // unstaged edits.
-      const vsHead = await git(['diff', 'HEAD', '--', filePath], worktreePath)
-      if (vsHead) return vsHead
-      // Untracked paths often have no `HEAD` blob; try index/worktree slices as a fallback.
-      const unstaged = await git(['diff', '--', filePath], worktreePath)
-      if (unstaged) return unstaged
-      const staged = await git(['diff', '--staged', '--', filePath], worktreePath)
-      if (staged) return staged
-
-      const absolutePath = isAbsolute(filePath) ? filePath : join(worktreePath, filePath)
-      try {
-        const stats = await lstat(absolutePath)
-        if (stats.isSymbolicLink()) {
-          const target = await readlink(absolutePath)
-          return buildSyntheticSymlinkPatch(filePath, target)
-        }
-        return await git(['diff', '--no-index', '/dev/null', filePath], worktreePath)
-      } catch {
-        return ''
-      }
+      return await this.computeFileDiff(worktreePath, filePath)
     } catch {
       return ''
+    }
+  }
+
+  /**
+   * Single-file diff with a byte ceiling. When the patch exceeds `maxBytes` (and
+   * the caller did not `force`), returns `{ patch: '', tooLarge: true }` so the
+   * viewer can show a "load anyway" placeholder instead of crossing IPC with a
+   * giant string. Mirrors VS Code's `diffEditor.maxFileSize`.
+   */
+  static async getFileDiffBounded(
+    worktreePath: string,
+    filePath: string,
+    opts?: { maxBytes?: number; force?: boolean },
+  ): Promise<{ patch: string; tooLarge: boolean }> {
+    const maxBytes = opts?.maxBytes ?? this.MAX_FILE_DIFF_BYTES
+    const maxBuffer = opts?.force ? FORCED_FILE_DIFF_MAX_BUFFER : undefined
+    try {
+      const patch = await this.computeFileDiff(worktreePath, filePath, maxBuffer)
+      if (!opts?.force && Buffer.byteLength(patch, 'utf8') > maxBytes) {
+        return { patch: '', tooLarge: true }
+      }
+      return { patch, tooLarge: false }
+    } catch (err) {
+      // Overflowed even the (possibly raised) spawn buffer → too large to render.
+      if (isMaxBufferError(err)) return { patch: '', tooLarge: true }
+      // `git diff --no-index` exits non-zero (with the patch on stdout) when an
+      // untracked file differs from /dev/null — that exit is the success case for
+      // us, so recover the patch instead of discarding it (otherwise forced loads
+      // of untracked files return empty). Still honor the byte ceiling.
+      const stdout = (err as { stdout?: unknown }).stdout
+      if (typeof stdout === 'string' && stdout) {
+        if (!opts?.force && Buffer.byteLength(stdout, 'utf8') > maxBytes) {
+          return { patch: '', tooLarge: true }
+        }
+        return { patch: stdout, tooLarge: false }
+      }
+      // Genuine failure → no patch; the renderer's synthetic fallbacks take over.
+      return { patch: '', tooLarge: false }
     }
   }
 
@@ -1889,16 +2039,19 @@ export class GitService {
   static async stage(worktreePath: string, paths: string[]): Promise<void> {
     if (paths.length === 0) return
     await git(['add', '--', ...paths], worktreePath)
+    this.invalidateStatusCache(worktreePath)
   }
 
   /** Stage every change in the worktree including deletions (`git add -A`). */
   static async stageAll(worktreePath: string): Promise<void> {
     await git(['add', '-A'], worktreePath)
+    this.invalidateStatusCache(worktreePath)
   }
 
   static async unstage(worktreePath: string, paths: string[]): Promise<void> {
     if (paths.length === 0) return
     await git(['reset', 'HEAD', '--', ...paths], worktreePath)
+    this.invalidateStatusCache(worktreePath)
   }
 
   static async discard(worktreePath: string, paths: string[], untracked: string[]): Promise<void> {
@@ -1908,6 +2061,7 @@ export class GitService {
     if (untracked.length > 0) {
       await git(['clean', '-f', '--', ...untracked], worktreePath)
     }
+    this.invalidateStatusCache(worktreePath)
   }
 
   static async applyHunkAction(worktreePath: string, request: GitHunkActionRequest): Promise<void> {
@@ -1925,6 +2079,7 @@ export class GitService {
         ['--cached', '--recount', '--whitespace=nowarn'],
         `Failed to stage selected hunk in ${request.filePath}`,
       )
+      this.invalidateStatusCache(worktreePath)
       return
     }
     await applyGitPatch(
@@ -1933,10 +2088,12 @@ export class GitService {
       ['-R', '--recount', '--whitespace=nowarn'],
       `Failed to undo selected hunk in ${request.filePath}`,
     )
+    this.invalidateStatusCache(worktreePath)
   }
 
   static async commit(worktreePath: string, message: string): Promise<void> {
     await git(['commit', '-m', message], worktreePath)
+    this.invalidateStatusCache(worktreePath)
   }
 
   /**
@@ -1975,6 +2132,10 @@ export class GitService {
         throw new RebaseConflictError(files)
       }
       throw new Error(friendlyGitError(err, 'Rebase failed'))
+    } finally {
+      // A rebase rewrites the working tree even when it ends in conflict, so drop
+      // any cached status regardless of outcome.
+      this.invalidateStatusCache(worktreePath)
     }
   }
 
@@ -2061,6 +2222,10 @@ export class GitService {
       await git(args, worktreePath)
     } catch (err) {
       throw new Error(friendlyGitError(err, `Failed to checkout ${trimmed}`))
+    } finally {
+      // Switching branches changes which files show as modified — never reuse the
+      // previous branch's cached status.
+      this.invalidateStatusCache(worktreePath)
     }
   }
 
@@ -2142,6 +2307,9 @@ export class GitService {
         success: false,
         error: friendlyGitError(err, 'Sync failed'),
       }
+    } finally {
+      // stash/rebase/stash-pop rewrite the working tree on every outcome.
+      this.invalidateStatusCache(worktreePath)
     }
   }
 

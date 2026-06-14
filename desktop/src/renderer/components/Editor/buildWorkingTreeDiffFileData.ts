@@ -1,11 +1,37 @@
 import { getSingularPatch, parseDiffFromFile, type FileDiffMetadata } from '@pierre/diffs'
-import type { DiffFileData, WorkingTreeFileStatus } from '../../types/working-tree-diff'
+import {
+  MAX_FILE_DIFF_BYTES,
+  type DiffFileData,
+  type WorkingTreeFileStatus,
+} from '../../types/working-tree-diff'
 
 interface BuildWorkingTreeDiffOptions {
   includeFileDiff?: boolean
   patch?: string
   currentContent?: string | null
   hasMixedStageState?: boolean
+  /** Bypass the per-file byte ceiling (user clicked "load anyway"). */
+  force?: boolean
+}
+
+/** UTF-8 byte length of a string without allocating the encoded buffer. */
+function utf8ByteLength(s: string): number {
+  // Bytes are between 1x and 3x the code-unit count (4 bytes per 2-unit
+  // surrogate pair = 2 bytes/unit), so these bounds skip the scan in the common
+  // (well within / well over the ceiling) cases.
+  if (s.length > MAX_FILE_DIFF_BYTES) return s.length // already over (bytes ≥ units)
+  if (s.length * 3 <= MAX_FILE_DIFF_BYTES) return s.length // can't exceed even at 3x
+  let bytes = 0
+  for (let i = 0; i < s.length; i += 1) {
+    const code = s.charCodeAt(i)
+    if (code < 0x80) bytes += 1
+    else if (code < 0x800) bytes += 2
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4
+      i += 1 // consume the low surrogate
+    } else bytes += 3
+  }
+  return bytes
 }
 
 function buildSyntheticAddedPatch(filePath: string, content: string): string {
@@ -71,26 +97,47 @@ export async function buildWorkingTreeDiffFileData(
 ): Promise<DiffFileData> {
   const includeFileDiff = options.includeFileDiff ?? true
   let patch = options.patch ?? ''
+  let tooLarge = false
+
+  // No patch supplied → fetch a coherent per-file diff (modified/deleted/
+  // staged/unstaged/mixed via `git diff HEAD -- <path>`), bounded by a byte
+  // ceiling so one huge file can't stall the viewer. This replaces the old
+  // whole-tree split: every file is fetched independently and lazily.
+  if (!patch) {
+    const bounded = await window.api.git.getFileDiffBounded(worktreePath, file.path, {
+      force: options.force,
+    })
+    patch = bounded.patch
+    tooLarge = bounded.tooLarge
+  }
+
+  // Current content is only needed to synthesize a patch git couldn't produce
+  // (new files) or to build expandable full-file metadata — never for a
+  // too-large file (it would be just as large).
   let currentContent = options.currentContent
-  const needsCurrentContentForPatch = !patch && (file.status === 'added' || file.status === 'untracked')
-  if (currentContent === undefined && (includeFileDiff || needsCurrentContentForPatch)) {
+  const isNewFile = file.status === 'added' || file.status === 'untracked'
+  const needsSyntheticAdd = !patch && !tooLarge && isNewFile
+  if (currentContent === undefined && !tooLarge && (includeFileDiff || needsSyntheticAdd)) {
     currentContent = await readWorkingTreeCurrentContent(worktreePath, file.path, file.status)
   }
 
-  if (!patch && (file.status === 'added' || file.status === 'untracked')) {
-    patch = await window.api.git.getFileDiff(worktreePath, file.path)
+  // Synthetic fallbacks only when git produced nothing (and the file isn't huge).
+  if (needsSyntheticAdd && currentContent != null) {
+    // Measure UTF-8 bytes (not UTF-16 code units) so the ceiling matches the
+    // main-process one — multibyte (e.g. CJK) content must not slip past it.
+    if (!options.force && utf8ByteLength(currentContent) > MAX_FILE_DIFF_BYTES) {
+      tooLarge = true
+    } else {
+      patch = buildSyntheticAddedPatch(file.path, currentContent)
+    }
   }
 
-  if (!patch && (file.status === 'added' || file.status === 'untracked') && currentContent != null) {
-    patch = buildSyntheticAddedPatch(file.path, currentContent)
-  }
-
-  if (!patch && file.status === 'deleted') {
+  if (!patch && !tooLarge && file.status === 'deleted') {
     patch = `--- a/${file.path}\n+++ /dev/null\n@@ -1,0 +0,0 @@\n`
   }
 
   let fileDiff: FileDiffMetadata | undefined
-  if (includeFileDiff) {
+  if (includeFileDiff && !tooLarge) {
     fileDiff = await loadWorkingTreeExpandableDiffMetadata(worktreePath, {
       filePath: file.path,
       patch,
@@ -110,6 +157,7 @@ export async function buildWorkingTreeDiffFileData(
     fileDiff,
     patchLoaded: true,
     currentContent,
+    tooLarge,
   }
 }
 

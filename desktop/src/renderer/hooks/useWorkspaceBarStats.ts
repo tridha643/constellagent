@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useAppStore } from '../store/app-store'
+import { createTrailingDebounce } from '../utils/debounce'
 
 // Live edits arrive in bursts (a turn can touch dozens of files); collapse them
 // into a single recompute so the bar updates ~instantly without thrashing git.
@@ -91,13 +92,10 @@ export function useWorkspaceBarStats(): void {
     const worktreePath = ws?.worktreePath
     if (!worktreePath) return
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null
-    const scheduleRecompute = () => {
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => {
-        void recomputeWorkspaceBarStats(activeWorkspaceId)
-      }, EDIT_DEBOUNCE_MS)
-    }
+    const scheduleRecompute = createTrailingDebounce(
+      () => recomputeWorkspaceBarStats(activeWorkspaceId),
+      EDIT_DEBOUNCE_MS,
+    )
 
     // FS watcher (ref-counted in main, so this composes with the Changes panel).
     window.api.fs.watchDir(worktreePath)
@@ -117,7 +115,7 @@ export function useWorkspaceBarStats(): void {
     }, ACTIVE_SAFETY_POLL_INTERVAL)
 
     return () => {
-      if (debounceTimer) clearTimeout(debounceTimer)
+      scheduleRecompute.cancel()
       window.removeEventListener('git:files-changed', onGitFilesChanged)
       unsubDir()
       window.api.fs.unwatchDir(worktreePath)
