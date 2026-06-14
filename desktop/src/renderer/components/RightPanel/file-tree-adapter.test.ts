@@ -34,6 +34,59 @@ describe('buildFileTreeSnapshot', () => {
     ])
   })
 
+  it('overlays status from the git status map and rolls it up to ancestor dirs', () => {
+    const nodes = [
+      {
+        name: 'src',
+        path: '/repo/src',
+        type: 'directory' as const,
+        children: [
+          { name: 'index.ts', path: '/repo/src/index.ts', type: 'file' as const },
+          { name: 'util.ts', path: '/repo/src/util.ts', type: 'file' as const },
+        ],
+      },
+      { name: 'README.md', path: '/repo/README.md', type: 'file' as const },
+    ]
+    const map = new Map<string, string>([
+      ['src/index.ts', 'modified'],
+      ['README.md', 'added'],
+    ])
+
+    const snapshot = buildFileTreeSnapshot('/repo', nodes, map)
+
+    expect(snapshot.gitStatus).toEqual([
+      { path: 'src/', status: 'modified' }, // rollup: a descendant changed
+      { path: 'src/index.ts', status: 'modified' },
+      { path: 'README.md', status: 'added' },
+    ])
+    // src/util.ts is unchanged → no status entry.
+    expect(snapshot.gitStatus.some((e) => e.path === 'src/util.ts')).toBe(false)
+  })
+
+  it('resolves git rename "old -> new" keys to the new path', () => {
+    const map = new Map<string, string>([['src/old.ts -> src/new.ts', 'renamed']])
+    const snapshot = buildFileTreeSnapshot('/repo', [
+      {
+        name: 'src',
+        path: '/repo/src',
+        type: 'directory',
+        children: [{ name: 'new.ts', path: '/repo/src/new.ts', type: 'file' }],
+      },
+    ], map)
+
+    expect(snapshot.gitStatus).toContainEqual({ path: 'src/new.ts', status: 'renamed' })
+    expect(snapshot.gitStatus).toContainEqual({ path: 'src/', status: 'modified' })
+  })
+
+  it('treats the status map as authoritative, ignoring stale node.gitStatus', () => {
+    const snapshot = buildFileTreeSnapshot('/repo', [
+      { name: 'stale.ts', path: '/repo/stale.ts', type: 'file', gitStatus: 'added' },
+    ], new Map<string, string>())
+
+    // The map is empty → the node's own (stale) gitStatus must not leak through.
+    expect(snapshot.gitStatus).toEqual([])
+  })
+
   it('preserves empty directories so the Trees view can render them', () => {
     const snapshot = buildFileTreeSnapshot('/repo', [
       {

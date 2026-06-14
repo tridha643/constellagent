@@ -3,6 +3,7 @@ import { Columns2 } from 'lucide-react'
 import { useAppStore } from '../../store/app-store'
 import { STATUS_LABELS } from '../../../shared/status-labels'
 import { useFileWatcher } from '../../hooks/useFileWatcher'
+import { createTrailingDebounce } from '../../utils/debounce'
 import { Tooltip } from '../Tooltip/Tooltip'
 import { PiIcon } from '../Icons/PiIcon'
 import styles from './RightPanel.module.css'
@@ -21,6 +22,8 @@ import { buildAdHocAgentCommand } from '../../../shared/plan-build-command'
 import { formatRebaseConflictAgentPrompt } from '../../agents/conflict-prompt'
 
 const PR_POLL_HINT_EVENT = 'constellagent:pr-poll-hint'
+// Coalesce file-watcher bursts into one status refresh.
+const CHANGED_FILES_REFRESH_DEBOUNCE_MS = 120
 
 interface FileStatus {
   path: string
@@ -101,6 +104,17 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     }
   }, [worktreePath, updateGitStatusSnapshot])
 
+  // Coalesce watcher / git:files-changed bursts (e.g. an agent writing many
+  // files) into one refresh; explicit refresh() calls after user git ops stay
+  // immediate. Stable instance + ref so it always runs the latest refresh.
+  const refreshRef = useRef(refresh)
+  refreshRef.current = refresh
+  const scheduleRefresh = useMemo(
+    () => createTrailingDebounce(() => refreshRef.current(), CHANGED_FILES_REFRESH_DEBOUNCE_MS),
+    [],
+  )
+  useEffect(() => () => scheduleRefresh.cancel(), [scheduleRefresh])
+
   useEffect(() => {
     let cancelled = false
     if (!workspace) {
@@ -180,19 +194,19 @@ export function ChangedFiles({ worktreePath, workspaceId, isActive }: Props) {
     if (commitFlashTimerRef.current) clearTimeout(commitFlashTimerRef.current)
   }, [])
 
-  // Watch filesystem for changes and auto-refresh
-  useFileWatcher(worktreePath, refresh, Boolean(isActive))
+  // Watch filesystem for changes and auto-refresh (debounced to coalesce bursts)
+  useFileWatcher(worktreePath, scheduleRefresh, Boolean(isActive))
 
   // Explicit refresh after checkpoint restore / git ops that bypass FS watcher timing
   useEffect(() => {
     if (!isActive) return
     const onGitFilesChanged = (e: Event) => {
       const detail = (e as CustomEvent<{ worktreePath?: string }>).detail
-      if (detail?.worktreePath === worktreePath) void refresh()
+      if (detail?.worktreePath === worktreePath) scheduleRefresh()
     }
     window.addEventListener('git:files-changed', onGitFilesChanged)
     return () => window.removeEventListener('git:files-changed', onGitFilesChanged)
-  }, [worktreePath, refresh, isActive])
+  }, [worktreePath, scheduleRefresh, isActive])
 
   // Re-fetch when tab becomes visible (git ops only touch .git/ which the watcher ignores)
   useEffect(() => {

@@ -1,5 +1,11 @@
 import type { FileDiffMetadata } from '@pierre/diffs'
 
+/**
+ * Soft per-file diff ceiling (mirrors GitService.MAX_FILE_DIFF_BYTES). Files
+ * whose patch exceeds this load only on demand via a "load anyway" placeholder.
+ */
+export const MAX_FILE_DIFF_BYTES = 1.5 * 1024 * 1024
+
 export interface WorkingTreeFileStatus {
   path: string
   status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
@@ -19,6 +25,11 @@ export interface DiffFileData {
   fileDiff?: FileDiffMetadata
   patchLoaded?: boolean
   currentContent?: string | null
+  /**
+   * Set when the file's diff exceeds the per-file byte ceiling and was skipped.
+   * The viewer shows a "load anyway" placeholder; clicking re-fetches with force.
+   */
+  tooLarge?: boolean
 }
 
 export interface GitStatusSnapshot {

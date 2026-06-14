@@ -109,6 +109,28 @@ describe('buildParseSnapshot', () => {
     expect(overflow).toHaveLength(0)
   })
 
+  it('parses a lazily-loaded row exactly once, then serves it from cache', () => {
+    const cache = new Map<string, FileDiffMetadata>()
+    const { parse, calls } = makeStubParse()
+
+    // Status-only row (empty patch): skipped, nothing parsed or cached.
+    const pending = makeFile(7, { patch: '' })
+    buildParseSnapshot([pending], cache, parse, UNLIMITED)
+    expect(calls).toHaveLength(0)
+    expect(cache.size).toBe(0)
+
+    // The lazy queue fills in the real patch → parsed once and cached.
+    const loaded = makeFile(7)
+    const first = buildParseSnapshot([loaded], cache, parse, UNLIMITED)
+    expect(calls).toHaveLength(1)
+    expect(cache.size).toBe(1)
+    expect(first.snapshot.get(getPatchParseKey(loaded))).toBeDefined()
+
+    // A later render reuses the cached metadata (key = path + patch).
+    buildParseSnapshot([loaded], cache, parse, UNLIMITED)
+    expect(calls).toHaveLength(1)
+  })
+
   it('dedupes by content key', () => {
     const cache = new Map<string, FileDiffMetadata>()
     const { parse, calls } = makeStubParse()

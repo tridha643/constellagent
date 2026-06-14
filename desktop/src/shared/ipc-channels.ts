@@ -11,6 +11,10 @@ export const IPC = {
   GIT_GET_DIFF: 'git:get-diff',
   GIT_GET_WORKTREE_DIFF: 'git:get-worktree-diff',
   GIT_GET_FILE_DIFF: 'git:get-file-diff',
+  /** Single-file diff with a byte ceiling; returns { patch, tooLarge } so huge files load on demand. */
+  GIT_GET_FILE_DIFF_BOUNDED: 'git:get-file-diff-bounded',
+  /** True when the worktree has more tracked files than the huge-repo threshold (cached). */
+  GIT_IS_REPOSITORY_HUGE: 'git:is-repository-huge',
   GIT_GET_BRANCHES: 'git:get-branches',
   GIT_STAGE: 'git:stage',
   GIT_STAGE_ALL: 'git:stage-all',

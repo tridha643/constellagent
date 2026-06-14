@@ -113,6 +113,17 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_GET_WORKTREE_DIFF, worktreePath) as Promise<string>,
     getFileDiff: (worktreePath: string, filePath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_FILE_DIFF, worktreePath, filePath),
+    getFileDiffBounded: (
+      worktreePath: string,
+      filePath: string,
+      opts?: { maxBytes?: number; force?: boolean },
+    ) =>
+      ipcRenderer.invoke(IPC.GIT_GET_FILE_DIFF_BOUNDED, worktreePath, filePath, opts) as Promise<{
+        patch: string
+        tooLarge: boolean
+      }>,
+    isRepositoryHuge: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.GIT_IS_REPOSITORY_HUGE, worktreePath) as Promise<boolean>,
     getBranches: (repoPath: string) =>
       ipcRenderer.invoke(IPC.GIT_GET_BRANCHES, repoPath),
     stage: (worktreePath: string, paths: string[]) =>

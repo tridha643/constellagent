@@ -16,6 +16,7 @@ import { FloatingPanel } from '../FloatingPanel/FloatingPanel'
 import { TourRail } from '../HunkReview/TourRail'
 import { PatchCodeView } from './PatchCodeView'
 import { CombinedMergeFallback } from './combined-merge-fallback'
+import { TooLargeFilesNotice } from './TooLargeFilesNotice'
 import { buildPatchViewModel } from './patch-view-model'
 import { normalizePath } from './review-threads'
 import { getDiffReviewSummary } from './diff-stats'
@@ -35,6 +36,12 @@ import editorStyles from '../Editor/Editor.module.css'
 import drawerStyles from '../HunkReview/HunkReview.module.css'
 
 const MIN_PANEL_WIDTH = 480
+
+// At/above this file count the viewer runs in "summary mode": collapsed rows are
+// not backfilled, so only files the user expands fetch their diff. Keeps huge
+// changesets from spawning thousands of background per-file git invocations.
+const SUMMARY_MODE_FILE_THRESHOLD = 1000
+const SUMMARY_MODE_DELTA_LINE_THRESHOLD = 100_000
 
 /** Map the user's reduced-motion scroll preference onto CodeView's behavior set. */
 function codeViewScrollBehavior(): 'instant' | 'smooth' {
@@ -144,14 +151,29 @@ export function PatchViewerMain({
 
   const reviewSummary = useMemo(() => getDiffReviewSummary(files), [files])
 
-  // Preload full metadata for non-collapsed files so the per-file "show full file"
-  // re-expansion is ready without a flash. Throttled by the fetch queue.
+  // Hydrate files as their patches/metadata are needed, throttled by the fetch
+  // queue. Expanded files fully hydrate (patch → full-file metadata). Collapsed
+  // rows only need their patch to render — and on very large changesets (summary
+  // mode) we skip even that, loading them only when the user expands them.
   useEffect(() => {
     if (!active) return
+    // Match the loader's summary-mode trigger (file count OR total Δlines) so the
+    // two layers agree; otherwise a <1000-file but huge-Δ changeset would warm
+    // few files in the loader yet backfill every collapsed row here — the exact
+    // per-file git-invocation storm summary mode exists to avoid.
+    let totalDeltaLines = 0
+    for (const file of files) totalDeltaLines += (file.additions ?? 0) + (file.deletions ?? 0)
+    const summaryMode =
+      files.length >= SUMMARY_MODE_FILE_THRESHOLD || totalDeltaLines >= SUMMARY_MODE_DELTA_LINE_THRESHOLD
     for (const file of files) {
-      if (file.fileDiff || !file.patch) continue
-      if (viewedState.collapsedPaths.has(file.filePath)) continue
-      workingTree.ensureFileDiffLoaded(file.filePath)
+      if (file.fileDiff || file.tooLarge) continue
+      const collapsed = viewedState.collapsedPaths.has(file.filePath)
+      if (collapsed) {
+        if (summaryMode) continue
+        workingTree.ensureFilePatchLoaded(file.filePath)
+      } else {
+        workingTree.ensureFileDiffLoaded(file.filePath)
+      }
     }
   }, [active, files, viewedState.collapsedPaths, workingTree])
 
@@ -180,6 +202,9 @@ export function PatchViewerMain({
   const jumpToFile = useCallback(
     (filePath: string) => {
       viewedState.toggleCollapsed(filePath, false)
+      // Summary-mode (or otherwise unhydrated) rows have no patch yet — load it so
+      // the item materializes; the files-change effect then scrolls on next click.
+      workingTree.ensureFileDiffLoaded(filePath)
       const itemId = model.byFilePath.get(normalizePath(filePath))
       if (!itemId) return
       requestAnimationFrame(() => {
@@ -191,7 +216,7 @@ export function PatchViewerMain({
         })
       })
     },
-    [viewedState, model.byFilePath],
+    [viewedState, model.byFilePath, workingTree],
   )
 
   // Jump-to-file from the Changes panel.
@@ -357,6 +382,10 @@ export function PatchViewerMain({
     />
   )
 
+  const tooLargeNotice = (
+    <TooLargeFilesNotice files={model.tooLargeFiles} onLoad={workingTree.loadFileDiffForced} />
+  )
+
   const isEmpty = !loading && files.length === 0
 
   // ── Tab variant ──
@@ -411,6 +440,11 @@ export function PatchViewerMain({
                 First files expanded, remaining files collapsed for performance
               </span>
             )}
+            {model.emptyDiffFiles.length > 0 && (
+              <span className={editorStyles.diffSummaryMuted}>
+                {model.emptyDiffFiles.length} file{model.emptyDiffFiles.length !== 1 ? 's' : ''} with no textual changes
+              </span>
+            )}
           </div>
           <div className={editorStyles.diffControlsRight}>
             <button type="button" className={editorStyles.diffReviewButton} onClick={openReviewDrawer}>
@@ -455,6 +489,7 @@ export function PatchViewerMain({
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {codeView}
+          {tooLargeNotice}
           {model.combinedMergeFiles.length > 0 && (
             <div style={{ maxHeight: '40%', overflow: 'auto', flex: 'none' }}>{combinedMerge}</div>
           )}
@@ -594,6 +629,7 @@ export function PatchViewerMain({
               </div>
             )}
             {codeView}
+            {tooLargeNotice}
             {model.combinedMergeFiles.length > 0 && (
               <div style={{ maxHeight: '40%', overflow: 'auto', flex: 'none' }}>{combinedMerge}</div>
             )}

@@ -8,6 +8,7 @@ import { getFileTreeIconsForAppearance } from '../../utils/file-presentation'
 import { buildFileTreeSnapshot, findDirectoryNode, readExpandedDirectoryPaths, type FileNode, type FileTreeSnapshot } from './file-tree-adapter'
 import { fileTreeActions } from './file-tree-actions'
 import { ensureLetterBadgeSheet, findTreeShadowRoot } from './file-tree-shadow-css'
+import { createTrailingDebounce } from '../../utils/debounce'
 import styles from './RightPanel.module.css'
 
 interface Props {
@@ -17,6 +18,12 @@ interface Props {
 
 const EMPTY_PATHS: string[] = []
 const EMPTY_SNAPSHOT: FileTreeSnapshot = { paths: [], gitStatus: [] }
+// Coalesce watcher / git:files-changed bursts into one refresh. A longer window
+// on huge repos trades a touch of latency for far fewer whole-repo git calls.
+const REFRESH_DEBOUNCE_MS = 120
+const HUGE_REFRESH_DEBOUNCE_MS = 250
+// Max concurrent directory re-lists during a refresh (siblings are distinct nodes).
+const REFRESH_LIST_CONCURRENCY = 8
 
 function toAbsolutePath(worktreePath: string, relativePath: string): string {
   const basePath = worktreePath.replace(/[\\/]+$/, '')
@@ -193,6 +200,10 @@ export function FileTree({ worktreePath, isActive }: Props) {
     s.workspaces.find((w) => w.worktreePath === worktreePath)?.id ?? null,
   )
   const setFileTreeExpandedPaths = useAppStore((s) => s.setFileTreeExpandedPaths)
+  // Repo-wide git status, shared with the Changes tab via the store. The tree
+  // overlays it onto rows instead of asking main for status per folder expand.
+  const gitStatusMap = useAppStore((s) => s.gitFileStatuses.get(worktreePath))
+  const setGitFileStatuses = useAppStore((s) => s.setGitFileStatuses)
 
   const requestIdRef = useRef(0)
   const expandedPathsRef = useRef<string[]>([])
@@ -248,10 +259,30 @@ export function FileTree({ worktreePath, isActive }: Props) {
   // Resolved (realpath'd) root, mirrored into a ref so the lazy loaders below
   // can build absolute child paths without re-rendering on every state read.
   const treeRootRef = useRef(worktreePath)
+  // Latest status overlay, mirrored into a ref so the (ref-only) rebuildSnapshot
+  // and lazy loaders see it without being re-created on every status change.
+  const gitStatusMapRef = useRef<ReadonlyMap<string, string> | undefined>(gitStatusMap)
 
   const rebuildSnapshot = useCallback(() => {
-    setSnapshot(buildFileTreeSnapshot(treeRootRef.current, treeNodesRef.current))
+    setSnapshot(buildFileTreeSnapshot(treeRootRef.current, treeNodesRef.current, gitStatusMapRef.current))
   }, [])
+
+  /** Fetch repo-wide git status once and publish it to the shared store. The
+   * Changes tab does the same; main-side caching (getStatusCached) coalesces.
+   * Status paths are repo-root-relative; the overlay matches them against
+   * worktree-root-relative tree paths. These agree because a workspace
+   * worktreePath is always a git top-level (no `--show-prefix`); a workspace
+   * rooted at a git subdirectory would need the prefix stripped here. */
+  const refreshGitStatus = useCallback(async () => {
+    try {
+      const statuses = await window.api.git.getStatus(worktreePath)
+      const map = new Map<string, string>()
+      for (const s of statuses) map.set(s.path, s.status)
+      setGitFileStatuses(worktreePath, map)
+    } catch {
+      // Best effort — stale dots beat a crash.
+    }
+  }, [worktreePath, setGitFileStatuses])
 
   /** Fetch + attach one directory's immediate children (no-op if already loaded). */
   const loadDir = useCallback(async (absDir: string, expandRelPath?: string) => {
@@ -317,8 +348,8 @@ export function FileTree({ worktreePath, isActive }: Props) {
       return
     }
     syncExpandedPaths()
-    const dirs = [...loadedDirsRef.current].sort((a, b) => a.split('/').length - b.split('/').length)
-    for (const absDir of dirs) {
+
+    const relistOne = async (absDir: string) => {
       try {
         const { entries } = await window.api.fs.listDirectory(root, absDir)
         if (absDir === root) {
@@ -332,12 +363,76 @@ export function FileTree({ worktreePath, isActive }: Props) {
         loadedDirsRef.current.delete(absDir)
       }
     }
+
+    // Re-list level-by-level (shallow→deep): a child re-list attaches onto the
+    // node its parent's re-list just produced, so levels must stay ordered. But
+    // within a level the dirs are distinct nodes, so list them bounded-parallel.
+    const byDepth = new Map<number, string[]>()
+    for (const absDir of loadedDirsRef.current) {
+      const depth = absDir.split('/').length
+      const bucket = byDepth.get(depth)
+      if (bucket) bucket.push(absDir)
+      else byDepth.set(depth, [absDir])
+    }
+    for (const depth of [...byDepth.keys()].sort((a, b) => a - b)) {
+      const levelDirs = byDepth.get(depth)!
+      let next = 0
+      const worker = async () => {
+        while (next < levelDirs.length) {
+          const absDir = levelDirs[next]
+          next += 1
+          await relistOne(absDir)
+        }
+      }
+      await Promise.all(
+        Array.from({ length: Math.min(REFRESH_LIST_CONCURRENCY, levelDirs.length) }, () => worker()),
+      )
+    }
     rebuildSnapshot()
   }, [loadRoot, rebuildSnapshot, syncExpandedPaths])
 
   // Back-compat alias: existing call sites (create/delete/reveal) expect a single
   // "refresh the tree" entry point; lazily that means re-listing loaded dirs.
   const fetchTree = refreshLoaded
+
+  // External change (file watcher / git:files-changed): refresh both the
+  // structure (re-list loaded dirs) and the status overlay. These are decoupled
+  // now — folder expands re-list structure only; status flows from the store.
+  // Returns a Promise so the trailing debounce can await it (drop-while-busy):
+  // a watcher burst never overlaps two refreshes or thrashes the path store.
+  const handleExternalChange = useCallback(
+    () => Promise.all([fetchTree(), refreshGitStatus()]).then(() => {}),
+    [fetchTree, refreshGitStatus],
+  )
+
+  // Set by the huge-repo probe (one-shot on load) to widen the debounce window.
+  const isHugeRef = useRef(false)
+  useEffect(() => {
+    isHugeRef.current = false
+    let cancelled = false
+    window.api.git
+      .isRepositoryHuge(worktreePath)
+      .then((huge) => {
+        if (!cancelled) isHugeRef.current = huge
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [worktreePath])
+  // Always call the latest handler; keep the debounce instance itself stable so a
+  // handler-identity change never drops a pending refresh.
+  const handleExternalChangeRef = useRef(handleExternalChange)
+  handleExternalChangeRef.current = handleExternalChange
+  const scheduleExternalChange = useMemo(
+    () =>
+      createTrailingDebounce(
+        () => handleExternalChangeRef.current(),
+        () => (isHugeRef.current ? HUGE_REFRESH_DEBOUNCE_MS : REFRESH_DEBOUNCE_MS),
+      ),
+    [],
+  )
+  useEffect(() => () => scheduleExternalChange.cancel(), [scheduleExternalChange])
 
   const handleDelete = useCallback((absolutePath: string, kind: 'file' | 'directory') => {
     const name = absolutePath.split('/').pop() || absolutePath
@@ -435,8 +530,16 @@ export function FileTree({ worktreePath, isActive }: Props) {
 
   useEffect(() => {
     if (!isActive) return
-    void fetchTree()
-  }, [fetchTree, isActive])
+    handleExternalChange()
+  }, [handleExternalChange, isActive])
+
+  // Status-only update: when the shared status map changes (Changes tab refresh,
+  // our own refreshGitStatus, a branch switch), rebuild the snapshot WITHOUT
+  // re-listing any directories. Cheap O(n) overlay pass over the loaded tree.
+  useEffect(() => {
+    gitStatusMapRef.current = gitStatusMap
+    if (isLoaded) rebuildSnapshot()
+  }, [gitStatusMap, isLoaded, rebuildSnapshot])
 
   useEffect(() => {
     return () => {
@@ -451,17 +554,17 @@ export function FileTree({ worktreePath, isActive }: Props) {
     }
   }, [workspaceId, setFileTreeExpandedPaths])
 
-  useFileWatcher(worktreePath, fetchTree, Boolean(isActive))
+  useFileWatcher(worktreePath, scheduleExternalChange, Boolean(isActive))
 
   useEffect(() => {
     if (!isActive) return
     const onGitFilesChanged = (event: Event) => {
       const detail = (event as CustomEvent<{ worktreePath?: string }>).detail
-      if (detail?.worktreePath === worktreePath) void fetchTree()
+      if (detail?.worktreePath === worktreePath) scheduleExternalChange()
     }
     window.addEventListener('git:files-changed', onGitFilesChanged)
     return () => window.removeEventListener('git:files-changed', onGitFilesChanged)
-  }, [fetchTree, isActive, worktreePath])
+  }, [scheduleExternalChange, isActive, worktreePath])
 
   useLayoutEffect(() => {
     try {
