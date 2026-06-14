@@ -35,7 +35,7 @@ function cleanupTestRepo(repoPath: string): void {
 }
 
 test.describe('Sidebar workspace bar (rudu port)', () => {
-  test('PR mode renders author, PR title, and PR stats', async () => {
+  test('PR mode renders author, PR title, and WIP stats (not the PR aggregate)', async () => {
     const repoPath = createTestRepo('wsbar-pr')
     const { app, window } = await launchApp()
 
@@ -74,9 +74,17 @@ test.describe('Sidebar workspace bar (rudu port)', () => {
             isChangesRequested: false,
             updatedAt: new Date().toISOString(),
             authorLogin: 'octocat',
+            // Whole-PR diff vs base — must NOT appear on the bar.
             additions: 21,
             deletions: 3,
           },
+        })
+        // WIP (working tree vs HEAD) — this is what the bar should surface.
+        store.setWorkspaceBarStats('wsbar-pr-ws', {
+          subject: 'wip: tweak automation docs',
+          additions: 5,
+          deletions: 2,
+          headSha: '2222222222222222222222222222222222222222',
         })
       })
 
@@ -89,9 +97,12 @@ test.describe('Sidebar workspace bar (rudu port)', () => {
       await expect(prFace.locator('[class*="wsAuthorLogin"]')).toContainText('octocat')
       await expect(prFace.locator('[class*="wsTitle"]')).toContainText('email-to-PR automation')
 
+      // The PR face shows WIP stats, not the GitHub PR aggregate (+21 -3).
       const prStats = prFace.locator('[class*="wsStats"]')
-      await expect(prStats).toContainText('+21')
-      await expect(prStats).toContainText('-3')
+      await expect(prStats).toContainText('+5')
+      await expect(prStats).toContainText('-2')
+      await expect(prStats).not.toContainText('+21')
+      await expect(prStats).not.toContainText('-3')
 
       await expect(prFace.locator('[class*="wsCiPass"]')).toBeVisible()
     } finally {

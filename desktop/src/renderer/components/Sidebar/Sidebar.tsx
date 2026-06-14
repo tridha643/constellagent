@@ -542,11 +542,9 @@ function WorkspaceBarFaces({
       workspaceName: ws.name,
       workspaceBranch: ws.branch,
     });
+  // Both faces show WIP (working tree vs HEAD); the PR's GitHub aggregate diff
+  // (whole branch vs base) is intentionally not surfaced on the bar.
   const showLocalStats = shouldRenderWorkspaceBarStats(true, localAdditions, localDeletions);
-
-  const prAdditions = pr?.additions ?? 0;
-  const prDeletions = pr?.deletions ?? 0;
-  const showPrStats = shouldRenderWorkspaceBarStats(hasOpenPr, prAdditions, prDeletions);
   const prAuthor = pr?.authorLogin;
 
   const statusChips = (
@@ -597,7 +595,9 @@ function WorkspaceBarFaces({
             >
               {pr.title}
             </span>
-            {showPrStats && <WorkspaceStats additions={prAdditions} deletions={prDeletions} />}
+            {showLocalStats && (
+              <WorkspaceStats additions={localAdditions} deletions={localDeletions} />
+            )}
           </div>
         </div>
       )}
