@@ -1741,14 +1741,18 @@ export class GitService {
   }
 
   static async getStatus(worktreePath: string): Promise<FileStatus[]> {
-    // On huge repos, skip the deep untracked walk (`-uall` re-walks the whole
-    // tree) and the per-file line-count work — the tree only needs the M/A/D/R/U
-    // letters, and `additions`/`deletions` are optional. Mirrors VS Code's
-    // huge-repo degradation in its git extension.
+    // Always enumerate with `-uall`, even on huge repos. `-unormal` collapses
+    // untracked files inside an untracked directory into a single `dir/` entry,
+    // so a repo with new folders (e.g. a fresh `tools/` of 14 files) shows ONE
+    // row instead of 14 — the Changes tab silently hides most changed files.
+    // git honors `.gitignore` during the walk, so the cost is bounded by the
+    // real untracked set, not the tracked-tree size. On huge repos we still skip
+    // the per-file line-count work below — that's the actual expense on large
+    // changesets, and `additions`/`deletions` are optional decoration.
     const huge = await this.isRepositoryHuge(worktreePath)
     const [output, lineStats] = await Promise.all([
       git(
-        ['status', '--porcelain=v1', '-z', huge ? '-unormal' : '-uall'],
+        ['status', '--porcelain=v1', '-z', '-uall'],
         worktreePath
       ),
       huge ? Promise.resolve(new Map<string, DiffLineStats>()) : this.getDiffLineStats(worktreePath),
